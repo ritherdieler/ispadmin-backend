@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+siempre que devuelvas informacion de una entidad en un controller usa clases dto

@@ -1,0 +1,1 @@
+INSERT INTO wispadmin.subscription (id, address, code, dni, first_name, is_new, last_name, password, phone, service_is_suspended, subscription_date, network_device_id, place_id, plan_id) VALUES (1, 'mz k lt 2', 123, '48271836', 'sergio', true, 'carrillo diestra', '1234', '996342913', false, 123, 1, 1, 1);

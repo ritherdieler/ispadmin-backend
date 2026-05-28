@@ -1,0 +1,27 @@
+{
+  "name": "Sample of merchant server",
+  "description": "Sample of merchant server for mobile SDK using Spring Boot",
+  "repository": "https://github.com/lyra/rest-api-server-examples",
+  "env": {
+    "SDK_SERVER_USERNAME": {
+      "value": "25993692"
+    },
+    "SDK_SERVER_PASSWORD": {
+      "value": "testpassword_MKNnv9KcrncjCV0A4QMkoNwD1ITGpNlMx20gfFGICwRSZ"
+    },
+    "SDK_REST_API_SERVER_NAME": {
+      "value": "https://api.micuentaweb.pe"
+    },
+    "SDK_HASH_KEY": {
+      "value": "E8rMnQpFbfOhYnU09j8vLqiO8gMn9Xo8HbY0VuiunzX5O"
+    },
+    "SERVER_AUTH_USER": {
+      "value": "gigafiber2023"
+    },
+    "SERVER_AUTH_TOKEN": {
+      "value": "$2a$10$WC/WvWOZduC5NoL6t4RB5.qdEphtPNq.opgypwq8WkiuQanfnDvHm"
+    }
+  }
+}
+
+

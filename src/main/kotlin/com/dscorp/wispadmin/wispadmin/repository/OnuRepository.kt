@@ -1,0 +1,11 @@
+package com.dscorp.wispadmin.wispadmin.repository;
+
+import com.dscorp.wispadmin.wispadmin.data.model.AppVersion
+import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicket
+import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicketStatus
+import com.dscorp.wispadmin.wispadmin.data.model.Onu
+import org.springframework.data.jpa.repository.JpaRepository
+
+interface OnuRepository : JpaRepository<Onu, String> {
+
+}

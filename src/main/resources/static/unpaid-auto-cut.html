@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clientes con Facturas Pendientes</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        .table-container {
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: #fff;
+        }
+        .header {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: 15px;
+        }
+        th {
+            cursor: pointer;
+        }
+        th:hover {
+            background-color: #e9ecef;
+        }
+        .search-container {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sorted-asc::after {
+            content: " ↑";
+        }
+        .sorted-desc::after {
+            content: " ↓";
+        }
+        .export-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container table-container">
+        <div class="header">
+            <h2 class="mb-0">Clientes con Facturas Pendientes</h2>
+            <p class="text-muted mb-0">Total: {{TOTAL_CLIENTES}} clientes</p>
+        </div>
+        
+        <div class="search-container">
+            <div class="input-group" style="max-width: 500px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" id="searchInput" class="form-control" placeholder="Buscar cliente...">
+            </div>
+            
+            <a href="/subscription/unpaid-auto-cut-excel" class="btn btn-success export-btn">
+                <i class="bi bi-file-earmark-excel"></i> Exportar a Excel
+            </a>
+        </div>
+        
+        <div class="table-responsive">
+            <table class="table table-striped table-hover" id="clientesTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th onclick="sortTable(0)" class="text-nowrap">ID <span id="sort-0"></span></th>
+                        <th onclick="sortTable(1)" class="text-nowrap">Nombre <span id="sort-1"></span></th>
+                        <th onclick="sortTable(2)" class="text-nowrap">IP <span id="sort-2"></span></th>
+                        <th onclick="sortTable(3)" class="text-nowrap">Facturas Pendientes <span id="sort-3"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    {{TABLA_CLIENTES}}
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="noResults" class="alert alert-info d-none">
+            No se encontraron resultados que coincidan con la búsqueda.
+        </div>
+    </div>
+    
+    <script>
+        // Función para buscar
+        const searchInput = document.getElementById('searchInput');
+        const tableBody = document.getElementById('tableBody');
+        const noResults = document.getElementById('noResults');
+        const rows = tableBody.getElementsByTagName('tr');
+        
+        searchInput.addEventListener('keyup', function() {
+            const searchTerm = this.value.toLowerCase();
+            let resultsFound = false;
+            
+            for (let i = 0; i < rows.length; i++) {
+                const rowText = rows[i].textContent.toLowerCase();
+                if (rowText.includes(searchTerm)) {
+                    rows[i].style.display = '';
+                    resultsFound = true;
+                } else {
+                    rows[i].style.display = 'none';
+                }
+            }
+            
+            if (resultsFound) {
+                noResults.classList.add('d-none');
+            } else {
+                noResults.classList.remove('d-none');
+            }
+        });
+        
+        // Función para ordenar la tabla
+        let currentSortColumn = -1;
+        let isAscending = true;
+        
+        function sortTable(columnIndex) {
+            // Resetear indicadores de orden
+            for (let i = 0; i < 4; i++) {
+                document.getElementById('sort-' + i).textContent = '';
+            }
+            
+            // Cambiar dirección si se hace clic en la misma columna
+            if (currentSortColumn === columnIndex) {
+                isAscending = !isAscending;
+            } else {
+                isAscending = true;
+                currentSortColumn = columnIndex;
+            }
+            
+            // Mostrar indicador de orden
+            document.getElementById('sort-' + columnIndex).textContent = isAscending ? ' ↑' : ' ↓';
+            
+            // Ordenar filas
+            const rowsArray = Array.from(rows);
+            rowsArray.sort((a, b) => {
+                let aValue = a.getElementsByTagName('td')[columnIndex].textContent;
+                let bValue = b.getElementsByTagName('td')[columnIndex].textContent;
+                
+                // Convertir a número si es la columna de ID o facturas pendientes
+                if (columnIndex === 0 || columnIndex === 3) {
+                    aValue = parseInt(aValue) || 0;
+                    bValue = parseInt(bValue) || 0;
+                }
+                
+                if (aValue < bValue) return isAscending ? -1 : 1;
+                if (aValue > bValue) return isAscending ? 1 : -1;
+                return 0;
+            });
+            
+            // Reordenar filas en la tabla
+            for (const row of rowsArray) {
+                tableBody.appendChild(row);
+            }
+        }
+    </script>
+</body>
+</html> 
