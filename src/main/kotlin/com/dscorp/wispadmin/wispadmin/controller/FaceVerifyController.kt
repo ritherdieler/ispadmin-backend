@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.requestbody.IdentifyFaceBody
+import com.dscorp.wispadmin.wispadmin.requestbody.OfflineAttendanceSyncBody
 import com.dscorp.wispadmin.wispadmin.requestbody.PasswordAttendanceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.VerifyFaceBody
 import com.dscorp.wispadmin.wispadmin.response.VerifyFaceResponse
@@ -51,5 +52,11 @@ class FaceVerifyController(
     @PostMapping("/verify/password")
     fun verifyPassword(@RequestBody body: PasswordAttendanceBody): ResponseEntity<VerifyFaceResponse> {
         return ResponseEntity.ok(faceVerifyService.verifyAndMarkWithPassword(body))
+    }
+
+    // Recibe marcaciones realizadas sin conexion y las registra con la hora original del dispositivo.
+    @PostMapping("/attendance/offline-sync")
+    fun syncOfflineAttendance(@RequestBody body: OfflineAttendanceSyncBody): ResponseEntity<VerifyFaceResponse> {
+        return ResponseEntity.ok(faceVerifyService.verifyAndMarkOffline(body))
     }
 }

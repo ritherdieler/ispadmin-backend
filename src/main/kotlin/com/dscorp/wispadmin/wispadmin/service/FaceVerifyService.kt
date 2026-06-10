@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.repository.AttendanceRepository
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.IdentifyFaceBody
+import com.dscorp.wispadmin.wispadmin.requestbody.OfflineAttendanceSyncBody
 import com.dscorp.wispadmin.wispadmin.requestbody.PasswordAttendanceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.VerifyFaceBody
 import com.dscorp.wispadmin.wispadmin.response.VerifyFaceResponse
@@ -254,6 +255,91 @@ class FaceVerifyService(
         }
     }
 
+    // Sincroniza una marcacion realizada en modo offline.
+    // La identidad ya fue validada localmente, por eso registra con auditoria FACE_OFFLINE y respeta la hora real capturada.
+    fun verifyAndMarkOffline(body: OfflineAttendanceSyncBody): VerifyFaceResponse {
+        if (body.offlineId.isBlank()) {
+            return VerifyFaceResponse(
+                matched = false,
+                message = "Identificador offline vacio."
+            )
+        }
+
+        // Evita duplicar asistencias si el frontend reintenta sincronizar el mismo pendiente offline.
+        attendanceRepository.findByOfflineId(body.offlineId)?.let { existing ->
+            return VerifyFaceResponse(
+                matched = true,
+                userId = existing.user.id,
+                userName = existing.user.fullName(),
+                userDni = existing.user.dni,
+                userType = existing.user.type?.name,
+                action = body.action.name,
+                message = "Marcacion offline ya sincronizada.",
+                checkInTime = formatTime(existing.checkIn),
+                attendanceStatus = existing.status,
+                nextAction = if (existing.checkOut == null) "CHECK_OUT" else "NONE",
+                alreadyRegistered = true
+            )
+        }
+
+        val user = userRepository.findById(body.userId).orElse(null)
+            ?: return VerifyFaceResponse(
+                matched = false,
+                userId = body.userId,
+                message = "Usuario offline no encontrado."
+            )
+
+        if (!user.verified || user.type == User.UserType.CLIENT) {
+            return VerifyFaceResponse(
+                matched = false,
+                userId = user.id,
+                userName = user.fullName(),
+                userDni = user.dni,
+                userType = user.type?.name,
+                message = "Usuario no habilitado para sincronizar asistencia offline."
+            )
+        }
+
+        if (body.faceDataId != null) {
+            val faceData = faceDataRepository.findById(body.faceDataId).orElse(null)
+                ?: return VerifyFaceResponse(
+                    matched = false,
+                    userId = user.id,
+                    userName = user.fullName(),
+                    message = "Registro facial offline no encontrado."
+                )
+
+            if (faceData.user.id != user.id) {
+                return VerifyFaceResponse(
+                    matched = false,
+                    userId = user.id,
+                    userName = user.fullName(),
+                    message = "El registro facial offline no pertenece al usuario."
+                )
+            }
+        }
+
+        val occurredAt = Date(body.occurredAtMillis)
+        return when (body.action) {
+            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(
+                user.id,
+                user.fullName(),
+                user,
+                occurredAt,
+                method = "FACE_OFFLINE",
+                offlineId = body.offlineId
+            )
+            VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(
+                user.id,
+                user.fullName(),
+                user,
+                occurredAt,
+                method = "FACE_OFFLINE",
+                offlineId = body.offlineId
+            )
+        }
+    }
+
     private fun findBestMatch(
         descriptor: List<Double>,
         threshold: Double = THRESHOLD,
@@ -404,7 +490,8 @@ class FaceVerifyService(
         userName: String?,
         user: User,
         occurredAt: Date = Date(),
-        method: String = "FACIAL"
+        method: String = "FACIAL",
+        offlineId: String? = null
     ): VerifyFaceResponse {
         val (dayStart, dayEnd) = dayRange(occurredAt)
         val previous = attendanceRepository.findTopByUser_IdAndCheckInBetweenOrderByCheckInDesc(
@@ -442,6 +529,7 @@ class FaceVerifyService(
             checkOut = null,
             method = method,
             status = status,
+            offlineId = offlineId,
             user = user
         )
         attendanceRepository.save(attendance)
@@ -466,7 +554,8 @@ class FaceVerifyService(
         userName: String?,
         user: User,
         occurredAt: Date = Date(),
-        method: String = "FACIAL"
+        method: String = "FACIAL",
+        offlineId: String? = null
     ): VerifyFaceResponse {
         val open = attendanceRepository.findTopByUser_IdAndCheckOutIsNullOrderByCheckInDesc(userId)
             ?: return VerifyFaceResponse(

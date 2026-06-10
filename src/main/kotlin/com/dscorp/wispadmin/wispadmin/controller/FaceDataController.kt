@@ -5,10 +5,13 @@ import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SaveFaceDataBody
+import com.dscorp.wispadmin.wispadmin.response.OfflineFaceDatasetResponse
+import com.dscorp.wispadmin.wispadmin.response.OfflineFaceItemResponse
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoDescriptorService
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoQualityService
 import com.dscorp.wispadmin.wispadmin.service.FaceVerifyService
 import com.dscorp.wispadmin.wispadmin.util.PasswordHashUtil
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.http.HttpStatus
@@ -37,6 +40,13 @@ class FaceDataController(
     private val facePhotoQualityService: FacePhotoQualityService,
     private val faceVerifyService: FaceVerifyService
 ) {
+    companion object {
+        private const val OFFLINE_FACE_METRIC = "COSINE_SIMILARITY"
+        private const val OFFLINE_FACE_THRESHOLD = 0.80
+        private const val OFFLINE_FACE_MIN_MARGIN = 0.04
+        private const val OFFLINE_DESCRIPTOR_SIZE = 512
+    }
+
     @PostConstruct
     fun ensureFaceEmbeddingColumnSize() {
         jdbcTemplate.execute("ALTER TABLE face_data MODIFY COLUMN face_embedding LONGTEXT NOT NULL")
@@ -54,6 +64,41 @@ class FaceDataController(
         }
         return ResponseEntity.ok(data)
     }
+
+    // Entrega el dataset facial minimo para que el frontend pueda preparar el modo offline.
+    // No modifica registros existentes y mantiene separado el endpoint legacy /api/face-data.
+    @GetMapping("/offline-dataset")
+    fun getOfflineDataset(): ResponseEntity<OfflineFaceDatasetResponse> {
+        val faces = faceDataRepository.findAll().mapNotNull { faceData ->
+            val embedding = parseEmbedding(faceData.faceEmbedding) ?: return@mapNotNull null
+            val user = faceData.user
+
+            OfflineFaceItemResponse(
+                faceDataId = faceData.id,
+                userId = user.id,
+                userName = "${user.name ?: ""} ${user.lastName ?: ""}".trim().ifBlank {
+                    user.username ?: "Usuario"
+                },
+                userDni = user.dni,
+                userType = user.type?.name,
+                faceEmbedding = embedding,
+                registeredAt = faceData.createdAt
+            )
+        }
+
+        return ResponseEntity.ok(
+            OfflineFaceDatasetResponse(
+                datasetVersion = faces.maxOfOrNull { it.registeredAt.time } ?: System.currentTimeMillis(),
+                generatedAt = Date(),
+                metric = OFFLINE_FACE_METRIC,
+                threshold = OFFLINE_FACE_THRESHOLD,
+                minMargin = OFFLINE_FACE_MIN_MARGIN,
+                descriptorSize = OFFLINE_DESCRIPTOR_SIZE,
+                faces = faces
+            )
+        )
+    }
+
     @GetMapping("/user/{userId}/exists")
     fun existsByUserId(@PathVariable userId: Int): ResponseEntity<Any> {
         if (!userRepository.existsById(userId)) {
@@ -248,5 +293,13 @@ class FaceDataController(
                 "message" to "Rostro detectado."
             )
         )
+    }
+
+    private fun parseEmbedding(json: String): List<Double>? {
+        return try {
+            objectMapper.readValue(json, object : TypeReference<List<Double>>() {})
+        } catch (e: Exception) {
+            null
+        }
     }
 }
