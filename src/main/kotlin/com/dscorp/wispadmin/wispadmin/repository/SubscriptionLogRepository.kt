@@ -23,15 +23,28 @@ interface SubscriptionLogRepository : JpaRepository<SubscriptionLog, Int> {
     """)
     fun getSubscriptionLogSummary(startDate: Date): List<Map<String, Any>>
 
+    @Query("""
+        SELECT sl FROM SubscriptionLog sl
+        WHERE sl.actionType = 'CANCELED_BY_STORED_PROCEDURE'
+          AND sl.date >= :startDate
+          AND sl.date <= :endDate
+    """)
+    fun getCanceledSubscriptionsBySystem(startDate: Date, endDate: Date): List<SubscriptionLog>
 
+    @Query("""
+        SELECT sl FROM SubscriptionLog sl
+        WHERE sl.actionType = 'CANCEL_SUBSCRIPTION'
+          AND sl.date >= :startDate
+          AND sl.date <= :endDate
+    """)
+    fun getCanceledSubscriptionsByUser(startDate: Date, endDate: Date): List<SubscriptionLog>
 
-    @Query("SELECT sl FROM SubscriptionLog sl WHERE sl.actionType = 'CANCELED_BY_STORED_PROCEDURE' AND MONTH(sl.date) = MONTH(?1) AND YEAR(sl.date) = YEAR(?1)")
-    fun getCanceledSubscriptionsBySystem(date: Date): List<SubscriptionLog>
-
-    @Query("SELECT sl FROM SubscriptionLog sl WHERE sl.actionType = 'CANCEL_SUBSCRIPTION' AND MONTH(sl.date) = MONTH(?1) AND YEAR(sl.date) = YEAR(?1)")
-    fun getCanceledSubscriptionsByUser(date: Date): List<SubscriptionLog>
-
-    @Query("SELECT sl FROM SubscriptionLog sl WHERE sl.actionType = 'RECONNECT_CANCELLED_SUBSCRIPTION' AND MONTH(sl.date) = MONTH(?1) AND YEAR(sl.date) = YEAR(?1)")
-    fun getReconnections(date: Date): List<SubscriptionLog>
+    @Query("""
+        SELECT sl FROM SubscriptionLog sl
+        WHERE sl.actionType = 'RECONNECT_CANCELLED_SUBSCRIPTION'
+          AND sl.date >= :startDate
+          AND sl.date <= :endDate
+    """)
+    fun getReconnections(startDate: Date, endDate: Date): List<SubscriptionLog>
 
 }

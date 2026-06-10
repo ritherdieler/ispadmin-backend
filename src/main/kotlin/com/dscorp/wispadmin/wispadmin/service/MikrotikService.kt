@@ -13,7 +13,7 @@ import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 import org.springframework.stereotype.Service
 import javax.persistence.EntityNotFoundException
 import javax.transaction.Transactional
-
+import java.time.LocalDateTime
 @Service
 class MikrotikService(
     private val repository: PaymentRepository,
@@ -29,13 +29,15 @@ class MikrotikService(
 
         if (newPayment.discountAmount > payment.amountToPay) throw Exception("El descuento no puede ser mayor al monto a pagar")
 
+
+
         payment.apply {
             amountPaid = payment.amountToPay - newPayment.discountAmount
             method = newPayment.method
             discountAmount = newPayment.discountAmount
             discountReason = newPayment.discountReason
             paid = true
-            paymentDate = System.currentTimeMillis()
+            paymentDateDatetime = LocalDateTime.now()
             responsible = userRepository.getReferenceById(newPayment.responsibleId)
             electronicPayerName = newPayment.electronicPayerName
         }
@@ -69,7 +71,7 @@ class MikrotikService(
             paid = true
             method = "card-app"
             amountPaid = amountToPay
-            paymentDate = System.currentTimeMillis()
+            paymentDateDatetime = LocalDateTime.now()
         }
 
         repository.save(payment)

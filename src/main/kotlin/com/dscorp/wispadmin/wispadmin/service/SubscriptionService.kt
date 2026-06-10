@@ -28,7 +28,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
 import java.util.concurrent.CompletableFuture
-
+import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
+import java.time.LocalDateTime
 @Service
 class SubscriptionService(
     private val repository: SubscriptionRepository,
@@ -188,7 +189,9 @@ class SubscriptionService(
         freeIp: Pair<String, IpPool>
     ): Subscription {
         return newSubscription.toModel().apply {
-            subscriptionDate = Date().time
+            subscriptionDatetime = LocalDateTime.now()
+
+
             this.ip = freeIp.first
             this.ipPool = freeIp.second
 
@@ -468,8 +471,10 @@ class SubscriptionService(
 
         borneManagementService.releaseBorne(subscription)
 
-        val cancellationDate = Calendar.getInstance().timeInMillis
-        repository.cancelService(idSubscription, cancellationDate)
+        repository.cancelService(
+            idSubscription = idSubscription,
+            cancellationDateDatetime = LocalDateTime.now()
+        )
 
         subscription.hostDevice?.let {
             if (subscription.ip?.isValidIpAddress() == true)

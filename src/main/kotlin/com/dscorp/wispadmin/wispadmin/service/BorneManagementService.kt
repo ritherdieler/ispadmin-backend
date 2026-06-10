@@ -184,20 +184,17 @@ class BorneManagementService(
             }
         }
     }
-    
+
     /**
-     * Verifica si una suscripción requiere validación de borne basándose en la fecha de suscripción
-     * Política: Solo suscripciones a partir de agosto 2025 requieren validación
+     * Verifica si una suscripcion requiere validacion de borne segun la fecha de suscripcion.
+     * Politica: solo suscripciones desde el 1 de agosto de 2025 requieren validacion.
      */
     private fun requiresBorneValidationByDate(subscription: Subscription): Boolean {
-        // Fecha límite: 1 de agosto de 2025
-        val august2025Date = Calendar.getInstance().apply {
-            set(2025, Calendar.AUGUST, 1, 0, 0, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        
-        return subscription.subscriptionDate != null && 
-               subscription.subscriptionDate!! >= august2025Date
+        val limitDate = java.time.LocalDateTime.of(2025, 8, 1, 0, 0)
+
+        return subscription.subscriptionDatetime
+            ?.let { it >= limitDate }
+            ?: false
     }
     
     /**

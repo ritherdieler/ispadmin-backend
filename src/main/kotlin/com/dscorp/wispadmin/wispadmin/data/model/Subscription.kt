@@ -10,6 +10,7 @@ import java.time.LocalDate
 import java.util.*
 import javax.persistence.*
 import javax.persistence.UniqueConstraint
+import java.time.LocalDateTime
 
 @Entity
 @Table(
@@ -19,11 +20,11 @@ import javax.persistence.UniqueConstraint
     indexes = [
         // Índices para optimizar consultas del dashboard
         Index(name = "idx_subscription_service_status", columnList = "serviceStatus"),
-        Index(name = "idx_subscription_subscription_date", columnList = "subscriptionDate"),
+        Index(name = "idx_subscription_subscription_date", columnList = "subscription_date_datetime"),
         Index(name = "idx_subscription_dni", columnList = "dni"),
-        Index(name = "idx_subscription_place_subscription_date", columnList = "place_id, subscriptionDate"),
+        Index(name = "idx_subscription_place_subscription_date", columnList = "place_id, subscription_date_datetime"),
         Index(name = "idx_subscription_technician", columnList = "technician_id"),
-        Index(name = "idx_subscription_installation_type_date", columnList = "installationType, subscriptionDate"),
+        Index(name = "idx_subscription_installation_type_date", columnList = "installationType, subscription_date_datetime"),
         Index(name = "idx_subscription_payment_commit_auto_cut", columnList = "isPaymentCommit, auto_cut, serviceStatus")
     ]
 )
@@ -49,18 +50,23 @@ data class Subscription(
 
     @Column(unique = true)
     var ip: String? = null,
-    var subscriptionDate: Long? = null,
+
+    @Column(name = "subscription_date_datetime")//edwin
+    var subscriptionDatetime: LocalDateTime? = null,
     var isServiceCutOff: Boolean = false,
     @Column(name = "last_cut_off_date")
     var lastCutOffDate: LocalDate? = null,
-    var cancellationDate: Long? = null,
+    @Column(name = "cancellation_date_datetime")//edwin
+    var cancellationDateDatetime: LocalDateTime? = null,
     var isNew: Boolean? = false,
 
     var isPaymentCommit: Boolean? = false,
-    var paymentCommitmentDate: Long? = null,
+    @Column(name = "payment_commitment_date_datetime")//edwin
+    var paymentCommitmentDateDatetime: LocalDateTime? = null,
 
     var isReactivation: Boolean? = false,
-    var reactivationDate: Long? = null,
+    @Column(name = "reactivation_date_datetime")//edwin
+    var reactivationDateDatetime: LocalDateTime? = null,
 
     @Convert(converter = GeoLocationConverter::class)
     @Column(columnDefinition = "json")
@@ -172,14 +178,23 @@ data class Subscription(
         installationType = installationType,
         serviceStatus = serviceStatus,
         ip = ip,
-        subscriptionDate = subscriptionDate,
+        subscriptionDate = subscriptionDatetime
+            ?.atZone(java.time.ZoneId.systemDefault())
+            ?.toInstant()
+            ?.toEpochMilli(),
         isMigration = isMigration ?: false,
         price = price,
-        paymentCommitmentDate = paymentCommitmentDate,
+        paymentCommitmentDate = paymentCommitmentDateDatetime
+            ?.atZone(java.time.ZoneId.systemDefault())
+            ?.toInstant()
+            ?.toEpochMilli(),
         isPaymentCommitment = isPaymentCommit,
         lastCutOffDate = lastCutOffDate,
         isReactivation = isReactivation ?: false,
-        reactivationDate = reactivationDate,
+        reactivationDate = reactivationDateDatetime
+            ?.atZone(java.time.ZoneId.systemDefault())
+            ?.toInstant()
+            ?.toEpochMilli(),
         note = note,
         email = email,
         facadePhotoUrl = facadePhotoUrl,
@@ -204,22 +219,23 @@ data class Subscription(
     )
 
     private fun getLastPaymentDate(): String? {
-        val lastPayment = payments.filter { it.paid }.maxByOrNull { it.paymentDate ?: 0 }
-        return lastPayment?.paymentDate?.let {
-            Calendar.getInstance().apply {
-                timeInMillis = it
-            }.let {
-                "${it.get(Calendar.DAY_OF_MONTH)}/${it.get(Calendar.MONTH) + 1}/${it.get(Calendar.YEAR)}"
-            }
+        val lastPayment = payments
+            .filter { it.paid && it.paymentDateDatetime != null }
+            .maxByOrNull { it.paymentDateDatetime!! }
+
+        return lastPayment?.paymentDateDatetime?.let {
+            "${it.dayOfMonth}/${it.monthValue}/${it.year}"
         }
     }
 
     fun getSubscriptionQualification(): Int {
-        val paymentDayAverage = payments.filter { it.paid && it.paymentDate != null }.map {
-            Calendar.getInstance().apply {
-                timeInMillis = it.paymentDate!!
-            }.get(Calendar.DAY_OF_MONTH)
-        }.average().toInt()
+        val paidPaymentDays = payments
+            .filter { it.paid && it.paymentDateDatetime != null }
+            .map { it.paymentDateDatetime!!.dayOfMonth }
+
+        if (paidPaymentDays.isEmpty()) return 0
+
+        val paymentDayAverage = paidPaymentDays.average().toInt()
 
         return when {
             paymentDayAverage <= 5 -> 5
@@ -232,9 +248,8 @@ data class Subscription(
     }
 
     fun geSubscriptionAntiquity() = payments.groupBy {
-        val calendar = Calendar.getInstance()
-        calendar.timeInMillis = it.billingDate
-        Pair(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH))
+        val billingDate = it.billingDateDatetime
+        Pair(billingDate.year, billingDate.monthValue)
     }.size
 
 
@@ -261,14 +276,14 @@ data class Subscription(
             ruc,
             clientType ?: ClientType.PERSON,
             ip,
-            subscriptionDate,
+            subscriptionDatetime,
             lastCutOffDate,
-            cancellationDate,
+            cancellationDateDatetime,
             isNew,
             isPaymentCommit,
-            paymentCommitmentDate,
+            paymentCommitmentDateDatetime,
             isReactivation,
-            reactivationDate,
+            reactivationDateDatetime,
             location,
             plan,
             place,

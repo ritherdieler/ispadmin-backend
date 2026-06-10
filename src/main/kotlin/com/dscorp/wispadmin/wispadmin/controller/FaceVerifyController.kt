@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.requestbody.IdentifyFaceBody
+import com.dscorp.wispadmin.wispadmin.requestbody.PasswordAttendanceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.VerifyFaceBody
 import com.dscorp.wispadmin.wispadmin.response.VerifyFaceResponse
 import com.dscorp.wispadmin.wispadmin.service.FaceVerifyService
@@ -40,8 +41,15 @@ class FaceVerifyController(
     @PostMapping("/verify/photo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun verifyPhoto(
         @RequestParam("photo") photo: MultipartFile,
-        @RequestParam("action") action: VerifyFaceBody.Action
+        @RequestParam("action") action: VerifyFaceBody.Action,
+        @RequestParam("occurredAtMillis", required = false) occurredAtMillis: Long?
     ): ResponseEntity<VerifyFaceResponse> {
-        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action))
+        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action, occurredAtMillis))
+    }
+
+    // Fallback de asistencia: valida credenciales y registra entrada/salida sin depender de la camara.
+    @PostMapping("/verify/password")
+    fun verifyPassword(@RequestBody body: PasswordAttendanceBody): ResponseEntity<VerifyFaceResponse> {
+        return ResponseEntity.ok(faceVerifyService.verifyAndMarkWithPassword(body))
     }
 }

@@ -203,7 +203,10 @@ class DashBoardController @Autowired constructor(
                         phone = subscription.phone,
                         dni = subscription.dni,
                         ip = subscription.ip,
-                        subscriptionDate = subscription.subscriptionDate,
+                        subscriptionDate = subscription.subscriptionDatetime
+                            ?.atZone(java.time.ZoneId.systemDefault())
+                            ?.toInstant()
+                            ?.toEpochMilli(),
                         lastCutOffDate = subscription.lastCutOffDate,
                         pendingInvoiceQuantity = pendingInvoices,
                         totalDebt = totalDebt,

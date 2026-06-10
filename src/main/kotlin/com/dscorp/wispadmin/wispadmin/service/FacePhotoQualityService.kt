@@ -12,10 +12,10 @@ class FacePhotoQualityService {
     private val logger = LoggerFactory.getLogger(FacePhotoQualityService::class.java)
 
     companion object {
-        private const val MIN_BRIGHTNESS = 35.0
+        private const val MIN_BRIGHTNESS = 12.0
         private const val MAX_BRIGHTNESS = 235.0
-        private const val MIN_SKIN_RATIO = 0.018
-        private const val MIN_EDGE_RATIO = 0.012
+        private const val MIN_SKIN_RATIO = 0.006
+        private const val MIN_EDGE_RATIO = 0.004
     }
 
     // Valida que la foto tenga condiciones minimas de rostro antes de generar/comparar embeddings.

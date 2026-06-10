@@ -897,8 +897,18 @@ class SubscriptionController @Autowired constructor(
         return try {
             val lastMonth = Calendar.getInstance()
             lastMonth.add(Calendar.MONTH, -1)
-            val initialDate = lastMonth.getFirstDayOfMonthInMillis()
-            val endDate = lastMonth.getLastDayOfMonthInMillis()
+
+            val initialDateInMillis = lastMonth.getFirstDayOfMonthInMillis()
+            val endDateInMillis = lastMonth.getLastDayOfMonthInMillis()
+
+            val initialDate = java.time.Instant.ofEpochMilli(initialDateInMillis)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime()
+
+            val endDate = java.time.Instant.ofEpochMilli(endDateInMillis)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime()
+
             val subscriptions: List<SubscriptionDto> =
                 repository.getDebtorsFromLastMonth(initialDate, endDate).map { it.toDto() }
             val response = createGenericSubscriptionDocument(subscriptions, "clientes_cortados")
@@ -1150,32 +1160,30 @@ class SubscriptionController @Autowired constructor(
         @RequestParam(value = "endDate") endDate: String
     ): ResponseEntity<List<SubscriptionDto>> {
         return try {
+            val formatter = SimpleDateFormat(DATE_FORMAT)
 
-            val initDate = Calendar.getInstance().apply {
-                timeInMillis = SimpleDateFormat(DATE_FORMAT).parse(startDate).time
-            }.timeInMillis
+            val initDate = formatter.parse(startDate)
+                .toInstant()
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime()
 
-            val finalDate = Calendar.getInstance().apply {
-                timeInMillis = SimpleDateFormat(DATE_FORMAT).parse(endDate).time
-            }.timeInMillis
+            val finalDate = formatter.parse(endDate)
+                .toInstant()
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime()
 
-            if (initDate == finalDate) {
-                val calendar = Calendar.getInstance().apply { timeInMillis = initDate }
-                calendar.add(Calendar.DAY_OF_MONTH, 1)
-                val nextDay = calendar.timeInMillis
-                val result = repository.findBySubscriptionDateGreaterThanEqualAndSubscriptionDateLessThanEqual(
-                    initDate,
-                    nextDay
-                )
-                ResponseEntity.status(200).body(result.map { it.toDto() })
+            val searchEndDate = if (initDate == finalDate) {
+                initDate.plusDays(1)
             } else {
-                val result = repository.findBySubscriptionDateGreaterThanEqualAndSubscriptionDateLessThanEqual(
-                    initDate,
-                    finalDate
-                )
-                ResponseEntity.status(200).body(result.map { it.toDto() })
+                finalDate
             }
 
+            val result = repository.findBySubscriptionDateGreaterThanEqualAndSubscriptionDateLessThanEqual(
+                initDate,
+                searchEndDate
+            )
+
+            ResponseEntity.status(200).body(result.map { it.toDto() })
         } catch (e: Exception) {
             e.printStackTrace()
             errorLogRepository.save(e.toErrorLog(Modules.SUBSCRIPTION))
@@ -1213,7 +1221,10 @@ class SubscriptionController @Autowired constructor(
                         phone = subscription.phone,
                         dni = subscription.dni,
                         ip = subscription.ip,
-                        subscriptionDate = subscription.subscriptionDate,
+                        subscriptionDate = subscription.subscriptionDatetime
+                            ?.atZone(java.time.ZoneId.systemDefault())
+                            ?.toInstant()
+                            ?.toEpochMilli(),
                         lastCutOffDate = subscription.lastCutOffDate,
                         pendingInvoiceQuantity = pendingInvoices,
                         totalDebt = totalDebt,

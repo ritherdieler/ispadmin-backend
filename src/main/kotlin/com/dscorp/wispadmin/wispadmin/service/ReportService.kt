@@ -15,9 +15,17 @@ class ReportService {
         firstDayOfMonthInMillis: Long,
         lastDayOfMonthInMillis: Long
     ): List<Subscription> {
+        val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
         return subscriptionRepository.findSubscriptionsByCancellationDate(
-            firstDayOfMonthInMillis,
-            lastDayOfMonthInMillis
+            firstDayOfMonth,
+            lastDayOfMonth
         )
     }
 

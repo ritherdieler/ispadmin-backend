@@ -2,7 +2,6 @@ package com.dscorp.wispadmin.wispadmin.data.model
 
 import com.dscorp.wispadmin.wispadmin.controller.toDto
 import com.dscorp.wispadmin.wispadmin.dto.PaymentDto
-import com.dscorp.wispadmin.wispadmin.extensions.toFormattedDate
 import javax.persistence.*
 import java.time.LocalDateTime
 
@@ -11,22 +10,24 @@ import java.time.LocalDateTime
     name = "payment",
     indexes = [
         // Índices para optimizar consultas del dashboard
-        Index(name = "idx_payment_billing_date_paid", columnList = "billingDate, paid"),
-        Index(name = "idx_payment_billing_date_method", columnList = "billingDate, method"),
-        Index(name = "idx_payment_subscription_billing_date", columnList = "subscription_id, billingDate"),
-        Index(name = "idx_payment_paid_billing_date_amount", columnList = "paid, billingDate, amountToPay"),
+        Index(name = "idx_payment_billing_date_paid", columnList = "billing_date_datetime, paid"),
+        Index(name = "idx_payment_billing_date_method", columnList = "billing_date_datetime, method"),
+        Index(name = "idx_payment_subscription_billing_date", columnList = "subscription_id, billing_date_datetime"),
+        Index(name = "idx_payment_paid_billing_date_amount", columnList = "paid, billing_date_datetime, amountToPay"),
         Index(name = "idx_payment_method_paid", columnList = "method, paid"),
         Index(name = "idx_payment_electronic_payer", columnList = "subscription_id, electronicPayerName"),
-        Index(name = "idx_payment_billing_date_subscription", columnList = "billingDate, subscription_id")
+        Index(name = "idx_payment_billing_date_subscription", columnList = "billing_date_datetime, subscription_id")
     ]
 )
 class Payment(
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var id: Int? = null,
     var discountAmount: Double,
     var discountReason: String? = "",
-    var billingDate: Long = System.currentTimeMillis(),
+    @Column(name = "billing_date_datetime")
+    var billingDateDatetime: LocalDateTime = LocalDateTime.now(),
     var dueDate: LocalDateTime? = null,
-    var paymentDate: Long? = null,
+    @Column(name = "payment_date_datetime")
+    var paymentDateDatetime: LocalDateTime? = null,
     var method: String? = "",
     var amountPaid: Double? = null,
     var paid: Boolean,
@@ -36,7 +37,8 @@ class Payment(
     @ManyToOne @JoinColumn(name = "responsible_user_id")
     var responsible: User? = null,
     var isPaymentCommit: Boolean? = false,
-    var paymentCommitmentDate: Long? = null,
+    @Column(name = "payment_commitment_date_datetime")
+    var paymentCommitmentDateDatetime: LocalDateTime? = null,
     var amountToPay: Double,
     var electronicPayerName: String? = null,
 ) {
@@ -46,9 +48,15 @@ class Payment(
         id = id,
         discountAmount = discountAmount,
         discountReason = discountReason,
-        billingDate = billingDate,
+        billingDate = billingDateDatetime
+            .atZone(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli(),
         dueDate = dueDate,
-        paymentDate = paymentDate,
+        paymentDate = paymentDateDatetime
+            ?.atZone(java.time.ZoneId.systemDefault())
+            ?.toInstant()
+            ?.toEpochMilli(),
         method = method,
         amountPaid = amountPaid,
         paid = paid,
@@ -63,7 +71,9 @@ class Payment(
         subscriptionName = subscription!!.getFullName(),
         electronicPayerName = electronicPayerName!!,
         paymentMethod = method!!,
-        paymentDate = paymentDate?.toFormattedDate()?:"",
+        paymentDate = paymentDateDatetime
+            ?.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+            ?: "",
         amountPaid = amountPaid!!
     )
 

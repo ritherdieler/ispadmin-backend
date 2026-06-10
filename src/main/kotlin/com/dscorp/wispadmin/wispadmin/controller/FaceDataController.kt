@@ -1,11 +1,14 @@
 package com.dscorp.wispadmin.wispadmin.controller
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
+import com.dscorp.wispadmin.wispadmin.dto.UserDto
+import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SaveFaceDataBody
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoDescriptorService
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoQualityService
 import com.dscorp.wispadmin.wispadmin.service.FaceVerifyService
+import com.dscorp.wispadmin.wispadmin.util.PasswordHashUtil
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.http.HttpStatus
@@ -21,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import javax.annotation.PostConstruct
 import java.util.Date
-
+import org.springframework.web.bind.annotation.PathVariable
 @RestController
 @RequestMapping("/api/face-data")
 @CrossOrigin(origins = ["http://localhost:5173"])
@@ -50,6 +53,17 @@ class FaceDataController(
             )
         }
         return ResponseEntity.ok(data)
+    }
+    @GetMapping("/user/{userId}/exists")
+    fun existsByUserId(@PathVariable userId: Int): ResponseEntity<Any> {
+        if (!userRepository.existsById(userId)) {
+            return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(mapOf("hasFace" to false, "message" to "Usuario no encontrado."))
+        }
+        return ResponseEntity.ok(
+            mapOf("hasFace" to faceDataRepository.existsByUser_Id(userId))
+        )
     }
 
     @PostMapping
@@ -154,13 +168,64 @@ class FaceDataController(
         )
     }
 
+    // Registra el rostro desde la app despues de validar la identidad del usuario.
+    // Este endpoint evita confiar solamente en un userId enviado por el dispositivo.
+    @PostMapping("/photo/enroll", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun enrollFromPhoto(
+        @RequestParam("username") username: String,
+        @RequestParam("password") password: String,
+        @RequestParam("photo") photo: MultipartFile
+    ): ResponseEntity<UserDto> {
+        val normalizedUsername = username.trim()
+        val user = userRepository.findByUsername(normalizedUsername)
+            ?: userRepository.findByUsernameIgnoreCase(normalizedUsername)
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null)
+
+        if (!PasswordHashUtil.matches(password, user.password)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null)
+        }
+
+        if (!user.verified) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null)
+        }
+
+        if (photo.isEmpty) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null)
+        }
+
+        val photoBytes = photo.bytes
+        if (!facePhotoQualityService.hasUsableFaceCandidate(photoBytes)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null)
+        }
+
+        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+            ?: return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null)
+
+        val embedding = objectMapper.writeValueAsString(descriptor)
+        val faceData = faceDataRepository.findByUser_Id(user.id)?.apply {
+            faceEmbedding = embedding
+            imageUrl = null
+            this.user = user
+            createdAt = Date()
+        } ?: Face_data(
+            faceEmbedding = embedding,
+            imageUrl = null,
+            user = user
+        )
+
+        faceDataRepository.save(faceData)
+        faceVerifyService.clearFaceEmbeddingCache()
+
+        return ResponseEntity.ok(user.toDto())
+    }
+
     // Valida una foto sin guardar datos; se usa para habilitar el boton solo cuando DJL detecta un rostro usable.
     @PostMapping("/photo/check", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun checkPhoto(@RequestParam("photo") photo: MultipartFile): ResponseEntity<Any> {
         if (photo.isEmpty) {
-            return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(mapOf("valid" to false, "message" to "La foto facial esta vacia."))
+            return ResponseEntity.ok(
+                mapOf("valid" to false, "message" to "La foto facial esta vacia.")
+            )
         }
 
         val photoBytes = photo.bytes
@@ -170,10 +235,11 @@ class FaceDataController(
             )
         }
 
-        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
-            ?: return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(mapOf("valid" to false, "message" to "No se detecto un rostro claro."))
+        val descriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+        val descriptor = descriptors.firstOrNull()
+            ?: return ResponseEntity.ok(
+                mapOf("valid" to false, "message" to "No se pudo generar descriptor facial.")
+            )
 
         return ResponseEntity.ok(
             mapOf(

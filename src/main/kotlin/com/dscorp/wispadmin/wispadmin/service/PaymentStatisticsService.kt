@@ -3,24 +3,28 @@ package com.dscorp.wispadmin.wispadmin.service
 import com.dscorp.wispadmin.wispadmin.dto.PaymentMethodStatisticsDto
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import org.springframework.stereotype.Service
-import java.util.*
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
- * Servicio optimizado para estadísticas de métodos de pago
+ * Servicio optimizado para estadisticas de metodos de pago.
  */
 @Service
 class PaymentStatisticsService(
     private val paymentRepository: PaymentRepository
 ) {
-    
+
     /**
-     * Obtiene estadísticas de métodos de pago optimizadas
-     * Esta versión es mucho más rápida que la original
+     * Obtiene el porcentaje mensual de pagos digitales dentro del rango enviado.
+     * Mantiene la entrada en milisegundos por compatibilidad con los controladores existentes.
      */
     fun getPaymentMethodStatisticsOptimized(startDate: Long, endDate: Long): Map<String, Double> {
-        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(startDate, endDate)
-        
-        // Convertir resultados a DTOs
+        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(
+            startDate.toLocalDateTime(),
+            endDate.toLocalDateTime()
+        )
+
         val statistics = rawResults.map { row ->
             PaymentMethodStatisticsDto(
                 month = (row[0] as? Number)?.toInt() ?: 0,
@@ -31,28 +35,30 @@ class PaymentStatisticsService(
                 digitalPayments = (row[5] as? Number)?.toLong() ?: 0L
             )
         }
-        
-        // Agrupar por mes y calcular porcentajes
-        val monthlyStats = statistics
-            .groupBy { "${it.getMonthNameShort()}" }
+
+        return statistics
+            .groupBy { it.getMonthNameShort() }
             .mapValues { (_, monthStats) ->
                 val totalPayments = monthStats.sumOf { it.totalPayments }
                 val digitalPayments = monthStats.sumOf { it.digitalPayments }
-                
+
                 if (totalPayments > 0) {
                     (digitalPayments.toDouble() / totalPayments) * 100
-                } else 0.0
+                } else {
+                    0.0
+                }
             }
-        
-        return monthlyStats
     }
-    
+
     /**
-     * Obtiene estadísticas detalladas por método de pago
+     * Obtiene estadisticas detalladas por metodo de pago dentro del rango enviado.
      */
     fun getDetailedPaymentMethodStatistics(startDate: Long, endDate: Long): List<PaymentMethodStatisticsDto> {
-        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(startDate, endDate)
-        
+        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(
+            startDate.toLocalDateTime(),
+            endDate.toLocalDateTime()
+        )
+
         return rawResults.map { row ->
             PaymentMethodStatisticsDto(
                 month = (row[0] as? Number)?.toInt() ?: 0,
@@ -64,18 +70,28 @@ class PaymentStatisticsService(
             )
         }
     }
-    
+
     /**
-     * Obtiene el porcentaje promedio de pagos digitales en el período
+     * Obtiene el porcentaje promedio de pagos digitales dentro del rango enviado.
      */
     fun getAverageDigitalPaymentPercentage(startDate: Long, endDate: Long): Double {
         val statistics = getDetailedPaymentMethodStatistics(startDate, endDate)
-        
         val totalPayments = statistics.sumOf { it.totalPayments }
         val totalDigitalPayments = statistics.sumOf { it.digitalPayments }
-        
+
         return if (totalPayments > 0) {
             (totalDigitalPayments.toDouble() / totalPayments) * 100
-        } else 0.0
+        } else {
+            0.0
+        }
+    }
+
+    /**
+     * Convierte los milisegundos recibidos por APIs antiguas al tipo datetime usado por la entidad Payment.
+     */
+    private fun Long.toLocalDateTime(): LocalDateTime {
+        return Instant.ofEpochMilli(this)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDateTime()
     }
 }

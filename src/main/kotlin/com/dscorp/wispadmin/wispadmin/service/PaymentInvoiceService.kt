@@ -6,7 +6,8 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentInvoiceCreateRequest
 import org.springframework.stereotype.Service
 import java.util.Calendar
-
+import java.time.Instant
+import java.time.ZoneId
 @Service
 class PaymentInvoiceService(
     private val paymentRepository: PaymentRepository,
@@ -26,12 +27,18 @@ class PaymentInvoiceService(
             set(Calendar.MILLISECOND, 0)
             set(Calendar.DAY_OF_MONTH, 1)
         }
-        val startOfMonth = calendar.timeInMillis
+        val startOfMonth = calendar.toInstant()
+            .atZone(ZoneId.systemDefault())
+            .toLocalDateTime()
+
         calendar.add(Calendar.MONTH, 1)
         calendar.add(Calendar.MILLISECOND, -1)
-        val endOfMonth = calendar.timeInMillis
 
-        val existsForMonth = paymentRepository.existsBySubscriptionIdAndBillingDateBetween(
+        val endOfMonth = calendar.toInstant()
+            .atZone(ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        val existsForMonth = paymentRepository.existsBySubscriptionIdAndBillingDateDatetimeBetween(
             request.subscriptionId,
             startOfMonth,
             endOfMonth
@@ -41,16 +48,16 @@ class PaymentInvoiceService(
         val payment = Payment(
             discountAmount = 0.0,
             discountReason = null,
-            billingDate = request.billingDate,
+            billingDateDatetime = Instant.ofEpochMilli(request.billingDate)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime(),
             dueDate = null,
-            paymentDate = null,
             method = null,
             amountPaid = 0.0,
             paid = false,
             subscription = subscription,
             responsible = null,
             isPaymentCommit = false,
-            paymentCommitmentDate = null,
             amountToPay = request.amountToPay,
             electronicPayerName = null
         )

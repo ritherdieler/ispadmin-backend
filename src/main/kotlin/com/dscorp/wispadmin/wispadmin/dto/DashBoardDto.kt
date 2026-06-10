@@ -13,7 +13,7 @@ data class DashBoardDto(
     val paymentResume: Map<String, Double>,
     val subscriptionsHistoryStatics: List<MonthlySubscriptionResumeDto>,
     val monthlyCollects: List<MonthlyCollectsResumeDto>,
-    val grossRevenueHistoryStatics: List<Map<Double, Long>>,
+    val grossRevenueHistoryStatics: List<Map<String, Any>>,
     
     // Nuevos campos para datos adicionales
     val assistanceTicketResume: AssistanceTicketResumeDto? = null,

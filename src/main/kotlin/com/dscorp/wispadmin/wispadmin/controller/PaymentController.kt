@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import javax.persistence.EntityManager
 import javax.persistence.PersistenceContext
+import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 
 @CrossOrigin(origins = ["*"])
 @RestController
@@ -97,11 +98,17 @@ class PaymentController @Autowired constructor(
             if (subscriptionCode == null) {
                 return ResponseEntity.status(400).body(emptyList())
             }
-            
+
+            val initDate = (startDate ?: 0L).toLocalDateTimeOrNull()
+                ?: java.time.LocalDateTime.of(1970, 1, 1, 0, 0)
+
+            val finalDate = (endDate ?: System.currentTimeMillis()).toLocalDateTimeOrNull()
+                ?: java.time.LocalDateTime.now()
+
             val payments = repository.findBySubscriptionFiltered(
-                subscriptionCode, 
-                startDate ?: 0L, 
-                endDate ?: Long.MAX_VALUE
+                subscriptionCode,
+                initDate,
+                finalDate
             )
             ResponseEntity.status(200).body(payments.map { it.toDto() })
         } catch (e: Exception) {
@@ -122,8 +129,7 @@ class PaymentController @Autowired constructor(
                 return ResponseEntity.status(400).body(emptyList())
             }
 
-            val payments = repository.findBySubscriptionIdOrderByBillingDateDesc(subscriptionId)
-            
+            val payments = repository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId)
             // Aplicar límite si se especifica
             val limitedPayments = if (limit != null && limit > 0) {
                 payments.take(limit)
@@ -162,8 +168,12 @@ class PaymentController @Autowired constructor(
             updateRequest.discountReason?.let { payment.discountReason = it }
             updateRequest.method?.let { payment.method = it }
             updateRequest.electronicPayerName?.let { payment.electronicPayerName = it }
-            updateRequest.paymentDate?.let { payment.paymentDate = it }
-            updateRequest.billingDate?.let { payment.billingDate = it }
+            updateRequest.paymentDate?.let {
+                payment.paymentDateDatetime = it.toLocalDateTimeOrNull()
+            }
+            updateRequest.billingDate?.let {
+                payment.billingDateDatetime = it.toLocalDateTimeOrNull() ?: payment.billingDateDatetime
+            }
 
             val updatedPayment = repository.save(payment)
             ResponseEntity.status(200).body(updatedPayment.toDto())

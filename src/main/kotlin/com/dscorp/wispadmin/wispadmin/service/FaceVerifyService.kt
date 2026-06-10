@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.repository.AttendanceRepository
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.IdentifyFaceBody
+import com.dscorp.wispadmin.wispadmin.requestbody.PasswordAttendanceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.VerifyFaceBody
 import com.dscorp.wispadmin.wispadmin.response.VerifyFaceResponse
 import com.fasterxml.jackson.core.type.TypeReference
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+import com.dscorp.wispadmin.wispadmin.util.PasswordHashUtil
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -43,7 +45,7 @@ class FaceVerifyService(
     companion object {
         private const val THRESHOLD = 0.48
         private const val EUCLIDEAN_MIN_MARGIN = 0.06
-        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.86
+        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.80
         private const val COSINE_MIN_MARGIN = 0.04
         private const val FACE_CACHE_TTL_MS = 60_000L
         private const val FACE_REVALIDATION_MONTHS = 6
@@ -99,14 +101,16 @@ class FaceVerifyService(
             )
         }
 
-        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
-            ?: return VerifyFaceResponse(
+        val descriptors = generateFastPhotoDescriptors(photoBytes)
+        if (descriptors.isEmpty()) {
+            return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
+        }
 
-        val match = findBestMatch(
-            descriptor = descriptor,
+        val match = findBestMatchFromCandidates(
+            descriptors = descriptors,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-identify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -154,8 +158,57 @@ class FaceVerifyService(
         }
     }
 
+    // Fallback operacional para asistencia: autentica usuario/contrasena y marca con metodo PASSWORD.
+    fun verifyAndMarkWithPassword(body: PasswordAttendanceBody): VerifyFaceResponse {
+        val username = body.username.trim()
+        if (username.isBlank() || body.password.isBlank()) {
+            return VerifyFaceResponse(
+                matched = false,
+                message = "Usuario y contrasena son obligatorios."
+            )
+        }
+
+        val user = userRepository.findByUsername(username) ?: userRepository.findByUsernameIgnoreCase(username)
+        if (user == null || !PasswordHashUtil.matches(body.password, user.password)) {
+            return VerifyFaceResponse(
+                matched = false,
+                message = "Credenciales incorrectas."
+            )
+        }
+
+        if (!user.verified || user.type == User.UserType.CLIENT) {
+            return VerifyFaceResponse(
+                matched = false,
+                userId = user.id,
+                userName = user.fullName(),
+                userDni = user.dni,
+                userType = user.type?.name,
+                message = "Usuario no habilitado para marcar asistencia."
+            )
+        }
+
+        if (!PasswordHashUtil.isHashed(user.password)) {
+            user.password = PasswordHashUtil.passwordToStoreAfterLegacyLogin(body.password, user.password)
+            userRepository.save(user)
+        }
+
+        val action = body.action ?: when (nextAttendanceAction(user.id)) {
+            "CHECK_OUT" -> VerifyFaceBody.Action.CHECK_OUT
+            else -> VerifyFaceBody.Action.CHECK_IN
+        }
+
+        return when (action) {
+            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(user.id, user.fullName(), user, method = "PASSWORD")
+            VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(user.id, user.fullName(), user, method = "PASSWORD")
+        }
+    }
+
     // Marca asistencia o salida desde foto usando el mismo motor DJL que genera face_data.
-    fun verifyAndMarkFromPhoto(photo: MultipartFile, action: VerifyFaceBody.Action): VerifyFaceResponse {
+    fun verifyAndMarkFromPhoto(
+        photo: MultipartFile,
+        action: VerifyFaceBody.Action,
+        occurredAtMillis: Long? = null
+    ): VerifyFaceResponse {
         if (photo.isEmpty) {
             return VerifyFaceResponse(
                 matched = false,
@@ -171,14 +224,16 @@ class FaceVerifyService(
             )
         }
 
-        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
-            ?: return VerifyFaceResponse(
+        val descriptors = generateFastPhotoDescriptors(photoBytes)
+        if (descriptors.isEmpty()) {
+            return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
+        }
 
-        val match = findBestMatch(
-            descriptor = descriptor,
+        val match = findBestMatchFromCandidates(
+            descriptors = descriptors,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-verify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -191,9 +246,11 @@ class FaceVerifyService(
             return expiredFaceResponse(match)
         }
 
+        val occurredAt = occurredAtMillis?.let { Date(it) } ?: Date()
+
         return when (action) {
-            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user)
-            VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(match.user.id, match.userName, match.user)
+            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user, occurredAt)
+            VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(match.user.id, match.userName, match.user, occurredAt)
         }
     }
 
@@ -265,6 +322,28 @@ class FaceVerifyService(
         return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt)
     }
 
+    // Prueba varios descriptores de una misma foto y conserva el match mas confiable.
+    private fun findBestMatchFromCandidates(
+        descriptors: List<List<Double>>,
+        threshold: Double,
+        source: String,
+        metric: FaceComparisonMetric
+    ): FaceMatch? {
+        for ((index, descriptor) in descriptors.withIndex()) {
+            val match = findBestMatch(
+                descriptor = descriptor,
+                threshold = threshold,
+                source = "$source-candidate-$index",
+                metric = metric
+            )
+            if (match != null) {
+                return match
+            }
+        }
+
+        return null
+    }
+
     // Limpia el cache cuando se registra o actualiza un rostro para que el login use el embedding nuevo al instante.
     fun clearFaceEmbeddingCache() {
         synchronized(faceCacheLock) {
@@ -320,9 +399,14 @@ class FaceVerifyService(
         )
     }
 
-    private fun registerCheckIn(userId: Int, userName: String?, user: User): VerifyFaceResponse {
-        val now = Date()
-        val (dayStart, dayEnd) = dayRange(now)
+    private fun registerCheckIn(
+        userId: Int,
+        userName: String?,
+        user: User,
+        occurredAt: Date = Date(),
+        method: String = "FACIAL"
+    ): VerifyFaceResponse {
+        val (dayStart, dayEnd) = dayRange(occurredAt)
         val previous = attendanceRepository.findTopByUser_IdAndCheckInBetweenOrderByCheckInDesc(
             userId,
             dayStart,
@@ -330,7 +414,7 @@ class FaceVerifyService(
         )
 
         if (previous != null) {
-            val nextAction = if (previous.checkOut == null && canRegisterCheckOut(previous.checkIn, now)) {
+            val nextAction = if (previous.checkOut == null && canRegisterCheckOut(previous.checkIn, occurredAt)) {
                 "CHECK_OUT"
             } else {
                 "NONE"
@@ -351,12 +435,12 @@ class FaceVerifyService(
             )
         }
 
-        val status = if (isLate(now)) "TARDANZA" else "OK"
+        val status = if (isLate(occurredAt)) "TARDANZA" else "OK"
         val attendance = Attendance(
             id = 0,
-            checkIn = now,
+            checkIn = occurredAt,
             checkOut = null,
-            method = "FACIAL",
+            method = method,
             status = status,
             user = user
         )
@@ -370,14 +454,20 @@ class FaceVerifyService(
             userType = user.type?.name,
             action = "CHECK_IN",
             message = if (status == "TARDANZA") "Asistencia registrada con tardanza." else "Asistencia registrada.",
-            checkInTime = formatTime(now),
+            checkInTime = formatTime(occurredAt),
             attendanceStatus = status,
             nextAction = "CHECK_OUT",
             alreadyRegistered = false
         )
     }
 
-    private fun registerCheckOut(userId: Int, userName: String?, user: User): VerifyFaceResponse {
+    private fun registerCheckOut(
+        userId: Int,
+        userName: String?,
+        user: User,
+        occurredAt: Date = Date(),
+        method: String = "FACIAL"
+    ): VerifyFaceResponse {
         val open = attendanceRepository.findTopByUser_IdAndCheckOutIsNullOrderByCheckInDesc(userId)
             ?: return VerifyFaceResponse(
                 matched = true,
@@ -389,7 +479,7 @@ class FaceVerifyService(
                 message = "No hay un ingreso abierto para registrar salida."
             )
 
-        if (!canRegisterCheckOut(open.checkIn, Date())) {
+        if (!canRegisterCheckOut(open.checkIn, occurredAt)) {
             return VerifyFaceResponse(
                 matched = true,
                 userId = userId,
@@ -402,7 +492,7 @@ class FaceVerifyService(
             )
         }
 
-        open.checkOut = Date()
+        open.checkOut = occurredAt
         attendanceRepository.save(open)
 
         return VerifyFaceResponse(
@@ -484,6 +574,15 @@ class FaceVerifyService(
         }
     }
 
+    // Usa primero un descriptor principal para que la asistencia responda rapido.
+    // Si ese camino no genera descriptor, recien usa los recortes alternativos como respaldo.
+    private fun generateFastPhotoDescriptors(photoBytes: ByteArray): List<List<Double>> {
+        facePhotoDescriptorService.generateDescriptor(photoBytes)?.let { descriptor ->
+            return listOf(descriptor)
+        }
+        return facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+    }
+
     private fun isSecondBest(score: Double, secondBestScore: Double, metric: FaceComparisonMetric): Boolean {
         return when (metric) {
             FaceComparisonMetric.EUCLIDEAN_DISTANCE -> score < secondBestScore
@@ -540,6 +639,10 @@ class FaceVerifyService(
         return SimpleDateFormat("h:mm a", Locale.US).format(date).replace(" ", "")
     }
 
+    private fun User.fullName(): String {
+        return "${name ?: ""} ${lastName ?: ""}".trim().ifBlank { username ?: "Usuario" }
+    }
+
     private data class FaceMatch(
         val user: User,
         val userName: String,
@@ -588,7 +691,12 @@ class FaceVerifyService(
             return null
         }
 
-        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes) ?: return null
-        return indentifyUserForLogin(descriptor)
+        val descriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+        return findBestMatchFromCandidates(
+            descriptors = descriptors,
+            threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
+            source = "login-photo-djl",
+            metric = FaceComparisonMetric.COSINE_SIMILARITY
+        )?.user
     }
 }

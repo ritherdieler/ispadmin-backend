@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import java.util.*
+import java.time.LocalDateTime
 
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("SELECT distinct s FROM Subscription s inner join  s.payments p WHERE p.paid = false ")
@@ -55,11 +56,11 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     fun countByServiceStatus(serviceStatus: ServiceStatus): Long
 
     //get debtors from last month
-    @Query("SELECT distinct s FROM Subscription s inner join  s.payments p WHERE p.paid = false AND p.billingDate >= ?1 AND p.billingDate <= ?2")
-    fun getDebtorsFromLastMonth(startDate: Long, endDate: Long): List<Subscription>
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    fun getDebtorsFromLastMonth(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
-    @Query("SELECT distinct s FROM Subscription s inner join  s.payments p WHERE p.paid = false AND p.billingDate >= ?1 AND p.billingDate <= ?2")
-    fun getCancelledServicesFromDateInterval(startDate: Long, endDate: Long): List<Subscription>
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    fun getCancelledServicesFromDateInterval(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     @Query("SELECT distinct s FROM Subscription s WHERE s.isPaymentCommit = true")
     fun getWithPaymentCommitment(): List<Subscription>
@@ -85,31 +86,66 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("SELECT s FROM Subscription s WHERE LOWER(s.ip) LIKE LOWER(CONCAT('%', :ip, '%')) ORDER BY s.id ASC")
     fun findTop20ByIpContainingIgnoreCase(ip: String): List<Subscription>
 
-    @Query("SELECT s FROM Subscription s WHERE s.subscriptionDate >= :startDate AND s.subscriptionDate <= :endDate ")
+    @Query(
+        """
+    SELECT s FROM Subscription s
+    WHERE s.subscriptionDatetime >= :startDate
+      AND s.subscriptionDatetime <= :endDate
+    """
+    )
     fun findBySubscriptionDateGreaterThanEqualAndSubscriptionDateLessThanEqual(
-        startDate: Long,
-        endDate: Long
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
     ): List<Subscription>
 
-    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDate >= ?1 AND s.cancellationDate <= ?2")
-    fun findQuantityByCancellationDate(startDate: Long, endDate: Long): Int
+    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    fun findQuantityByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): Int
 
-    @Query("SELECT s FROM Subscription s WHERE s.cancellationDate >= ?1 AND s.cancellationDate <= ?2")
-    fun findSubscriptionsByCancellationDate(startDate: Long, endDate: Long): List<Subscription>
+    @Query("SELECT s FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    fun findSubscriptionsByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     fun findByPlanId(planId: Int): List<Subscription>
 
     @Modifying
-    @Query("UPDATE Subscription s SET s.isPaymentCommit = ?1, s.paymentCommitmentDate = ?2, s.serviceStatus='ACTIVE' WHERE s.id = ?3")
-    fun updatePaymentCommitment(isPaymentCommitment: Boolean, paymentCommitmentDate: Long, id: Int)
+    @Query(
+        "UPDATE Subscription s SET " +
+                "s.isPaymentCommit = :isPaymentCommitment, " +
+                "s.paymentCommitmentDateDatetime = :paymentCommitmentDateDatetime, " +
+                "s.serviceStatus = 'ACTIVE' " +
+                "WHERE s.id = :id"
+    )
+    fun updatePaymentCommitment(
+        isPaymentCommitment: Boolean,
+        paymentCommitmentDateDatetime: LocalDateTime,
+        id: Int
+    )
+    @Modifying
+    @Query(
+        "UPDATE Subscription s SET " +
+                "s.isReactivation = :isReactivation, " +
+                "s.reactivationDateDatetime = :reactivationDateDatetime, " +
+                "s.serviceStatus = 'ACTIVE', " +
+                "s.isPaymentCommit = false, " +
+                "s.paymentCommitmentDateDatetime = null " +
+                "WHERE s.id = :id"
+    )
+    fun reactivateService(
+        isReactivation: Boolean,
+        reactivationDateDatetime: LocalDateTime,
+        id: Int
+    )
 
     @Modifying
-    @Query("UPDATE Subscription s SET s.isReactivation = :isReactivation, s.reactivationDate =:reactivationDate , s.serviceStatus='ACTIVE', s.isPaymentCommit = false, s.paymentCommitmentDate = null WHERE s.id = :id")
-    fun reactivateService(isReactivation: Boolean, reactivationDate: Long, id: Int)
-
-    @Modifying
-    @Query("UPDATE Subscription s SET s.cancellationDate =:cancellationDate , s.serviceStatus='CANCELLED' WHERE s.id = :idSubscription")
-    fun cancelService(idSubscription: Int, cancellationDate: Long)
+    @Query(
+        "UPDATE Subscription s SET " +
+                "s.cancellationDateDatetime = :cancellationDateDatetime, " +
+                "s.serviceStatus = 'CANCELLED' " +
+                "WHERE s.id = :idSubscription"
+    )
+    fun cancelService(
+        idSubscription: Int,
+        cancellationDateDatetime: LocalDateTime
+    )
 
     @Query("SELECT s FROM Subscription s WHERE s.dni = :dni AND s.password = :password")
     fun logIn(dni: String, password: String): Subscription?

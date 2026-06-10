@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.util.*
 import kotlin.math.roundToInt
+import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 
 @Service
 class ServiceReactivationManager(
@@ -75,7 +76,11 @@ class ServiceReactivationManager(
     ) {
         createBill(subscription, responsible.id)
 
-        subscriptionRepository.reactivateService(true, Calendar.getInstance().timeInMillis, id = subscription.id!!)
+        subscriptionRepository.reactivateService(
+            isReactivation = true,
+            reactivationDateDatetime = LocalDateTime.now(),
+            id = subscription.id!!
+        )
 
         val reconnection = SubscriptionReconnection(
             subscription = subscription,
@@ -125,10 +130,12 @@ class ServiceReactivationManager(
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
+        }.toInstant()
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
 
         val existAnotherPaymentWithSameDate =
-            paymentRepository.existsByBillingDateAndSubscriptionId(lastMonthBillingDate, subscription.id!!)
+            paymentRepository.existsByBillingDateDatetimeAndSubscriptionId(lastMonthBillingDate, subscription.id!!)
 
         if (existAnotherPaymentWithSameDate)
             return
@@ -148,7 +155,7 @@ class ServiceReactivationManager(
         val payment = Payment(
             discountAmount = discountAmount,
             discountReason = "Descuento por reactivación de servicio",
-            billingDate = lastMonthBillingDate,
+            billingDateDatetime = lastMonthBillingDate,
             paid = false,
             amountToPay = subscription.plan!!.price!!.toDouble(),
             amountPaid = amountToPay.toDouble(),
@@ -167,11 +174,19 @@ class ServiceReactivationManager(
             else -> savePaymentCommitment(currentDateCalendar, subscriptionId)
         }
     }
-    
+
     private fun savePaymentCommitment(currentDateCalendar: Calendar, subscriptionId: Int) {
         val subscription = subscriptionRepository.findById(subscriptionId).get()
 
-        subscriptionRepository.updatePaymentCommitment(true, currentDateCalendar.timeInMillis, subscriptionId)
+        val paymentCommitmentDate = currentDateCalendar.toInstant()
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        subscriptionRepository.updatePaymentCommitment(
+            isPaymentCommitment = true,
+            paymentCommitmentDateDatetime = paymentCommitmentDate,
+            id = subscriptionId
+        )
 
         subscription.hostDevice?.let {
             it.executeCommand { connection ->

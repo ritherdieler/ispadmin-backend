@@ -12,7 +12,7 @@ import java.time.YearMonth
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-
+import java.time.temporal.ChronoUnit
 const val CABLE_TV = "cable"
 
 @Service
@@ -44,6 +44,8 @@ class DashBoardService(
             val endDate = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
             val firstDayOfMonthInMillis = Calendar.getInstance().getFirstDayOfMonthInMillis()
             val lastDayOfMonthInMillis = Calendar.getInstance().getLastDayOfMonthInMillis()
+            val firstDayOfMonthDate = Date(firstDayOfMonthInMillis)
+            val lastDayOfMonthDate = Date(lastDayOfMonthInMillis)
             val date = Date()
 
             // ===== GRUPO 1: Consultas de pagos (independientes entre sí) =====
@@ -86,13 +88,13 @@ class DashBoardService(
             // ===== GRUPO 2: Consultas de suscripciones y logs (independientes entre sí) =====
             val canceledSubscriptionsByUsersFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("subscriptionLogRepository.getCanceledSubscriptionsByUser") {
-                    subscriptionLogRepository.getCanceledSubscriptionsByUser(date)
+                    subscriptionLogRepository.getCanceledSubscriptionsByUser(firstDayOfMonthDate, lastDayOfMonthDate)
                 }
             }
 
             val canceledSubscriptionsBySystemFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("subscriptionLogRepository.getCanceledSubscriptionsBySystem") {
-                    subscriptionLogRepository.getCanceledSubscriptionsBySystem(date)
+                    subscriptionLogRepository.getCanceledSubscriptionsBySystem(firstDayOfMonthDate, lastDayOfMonthDate)
                 }
             }
 
@@ -104,7 +106,7 @@ class DashBoardService(
 
             val reconnectionsFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("subscriptionLogRepository.getReconnections") {
-                    subscriptionLogRepository.getReconnections(date)
+                    subscriptionLogRepository.getReconnections(firstDayOfMonthDate, lastDayOfMonthDate)
                 }
             }
             
@@ -116,8 +118,8 @@ class DashBoardService(
 
             // ===== GRUPO 3: Consultas de datos corporativos y estadísticas (independientes entre sí) =====
             val grossCorporateRevenueFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("corporateClientRepository.findAll") {
-                    corporateClientRepository.findAll().filter { it.active }.sumOf { it.invoicedAmount }
+                performanceMonitor.measureTime("corporateClientRepository.sumActiveInvoicedAmount") {
+                    corporateClientRepository.sumActiveInvoicedAmount()
                 }
             }
 
@@ -142,17 +144,14 @@ class DashBoardService(
 
             // ===== GRUPO 4: Consultas de costos (independientes entre sí) =====
             val outLaysFromCurrentMonthFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("outLayRepository.findByDateGreaterThanEqualAndDateLessThanEqual") {
-                    outLayRepository.findByDateGreaterThanEqualAndDateLessThanEqual(
-                        Date(firstDayOfMonthInMillis),
-                        Date(lastDayOfMonthInMillis)
-                    ).sumOf { it.amount }
+                performanceMonitor.measureTime("outLayRepository.sumAmountByDateBetween") {
+                    outLayRepository.sumAmountByDateBetween(firstDayOfMonthDate, lastDayOfMonthDate)
                 }
             }
 
             val fixedCostAmountFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("fixedCostRepository.findAll") {
-                    fixedCostRepository.findAll().sumOf { it.amount }
+                performanceMonitor.measureTime("fixedCostRepository.sumAllAmounts") {
+                    fixedCostRepository.sumAllAmounts()
                 }
             }
 
@@ -223,15 +222,25 @@ class DashBoardService(
 
         val grossRevenueHistory = paymentRepository.getTop6GrossRevenueHistory()
 
-        val startDate = Calendar.getInstance().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
+        val startDateInMillis = Calendar.getInstance().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
 
-        val endDate = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+        val endDateInMillis = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+
+        val startDate = java.time.Instant.ofEpochMilli(startDateInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        val endDate = java.time.Instant.ofEpochMilli(endDateInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
 
         val paymentMethodStatics =
-            paymentRepository.getLasMonthsPaymentMethodStatics(startDate, endDate).sortedBy { it.billingDate }.groupBy {
-                Calendar.getInstance().apply { timeInMillis = it.billingDate }.get(Calendar.MONTH).getMonthName()
-                    .substring(0, 3).capitalize() + "."
-            }
+            paymentRepository.getLasMonthsPaymentMethodStatics(startDate, endDate)
+                .sortedBy { it.billingDateDatetime }
+                .groupBy {
+                    it.billingDateDatetime.month.value.getMonthName()
+                        .substring(0, 3).capitalize() + "."
+                }
 
         val paymentMethodStaticsByDate: Map<String, Double> = paymentMethodStatics.mapValues {
             ((it.value.filter {
@@ -244,18 +253,29 @@ class DashBoardService(
         val firstDayOfMonthInMillis = Calendar.getInstance().getFirstDayOfMonthInMillis()
 
         val lastDayOfMonthInMillis = Calendar.getInstance().getLastDayOfMonthInMillis()
+        val firstDayOfMonthDate = Date(firstDayOfMonthInMillis)
+        val lastDayOfMonthDate = Date(lastDayOfMonthInMillis)
+
+        val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
 
         val canceledSubscriptionsByUsers = subscriptionRepository.findQuantityByCancellationDate(
-            firstDayOfMonthInMillis,
-            lastDayOfMonthInMillis
+            firstDayOfMonth,
+            lastDayOfMonth
         )
 
         val canceledSubscriptionsBySystem = subscriptionLogRepository.getCanceledSubscriptionsBySystem(
-            Date()
+            firstDayOfMonthDate,
+            lastDayOfMonthDate
         )
 
 //get the gross revenue
-        val grossCorporateRevenue = corporateClientRepository.findAll().filter { it.active }.sumOf { it.invoicedAmount }
+        val grossCorporateRevenue = corporateClientRepository.sumActiveInvoicedAmount()
 
         val installations = getInstallationResume(firstDayOfMonthInMillis, lastDayOfMonthInMillis).toMutableMap()
 
@@ -265,12 +285,9 @@ class DashBoardService(
         val monthlyCollects =
             monthlyCollectsRepository.findTop8ByOrderByDateDesc().reversed().map { it.toDtoAsCurrency() }
 
-        val outLaysFromCurrentMonth = outLayRepository.findByDateGreaterThanEqualAndDateLessThanEqual(
-            Date(firstDayOfMonthInMillis),
-            Date(lastDayOfMonthInMillis)
-        ).sumOf { it.amount }
+        val outLaysFromCurrentMonth = outLayRepository.sumAmountByDateBetween(firstDayOfMonthDate, lastDayOfMonthDate)
 
-        val fixedCostAmount = fixedCostRepository.findAll().sumOf { it.amount }
+        val fixedCostAmount = fixedCostRepository.sumAllAmounts()
 
         val economicResume = EconomicResume(
             grossRevenue = grossRevenue,
@@ -285,7 +302,7 @@ class DashBoardService(
         )
 
         val activeSubscriptions = subscriptionRepository.countByServiceStatus(ServiceStatus.ACTIVE)
-        val reconnections = subscriptionLogRepository.getReconnections(Date())
+        val reconnections = subscriptionLogRepository.getReconnections(firstDayOfMonthDate, lastDayOfMonthDate)
 
         return DashBoardDto(
             economicResume = economicResume,
@@ -390,10 +407,18 @@ class DashBoardService(
         firstDayOfMonthInMillis: Long,
         lastDayOfMonthInMillis: Long
     ): Map<String, Int> {
+        val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
+        val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+
         val subscriptions =
             subscriptionRepository.findBySubscriptionDateGreaterThanEqualAndSubscriptionDateLessThanEqual(
-                firstDayOfMonthInMillis,
-                lastDayOfMonthInMillis
+                firstDayOfMonth,
+                lastDayOfMonth
             )
 
         val cableTvInstallations = subscriptions.filter {
@@ -932,12 +957,13 @@ class DashBoardService(
                     .filter { it.subscription?.id == subscription.id }
                     .minByOrNull { it.createdAt }
 
-                if (firstTicket != null && subscription.subscriptionDate != null) {
-                    val subscriptionDate = Date(subscription.subscriptionDate!!)
-                    val daysBetween = TimeUnit.MILLISECONDS.toDays(
-                        firstTicket.createdAt.time - subscriptionDate.time
+                if (firstTicket != null && subscription.subscriptionDatetime != null) {
+                    ChronoUnit.DAYS.between(
+                        subscription.subscriptionDatetime,
+                        firstTicket.createdAt.toInstant()
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime()
                     ).toDouble()
-                    daysBetween
                 } else 0.0
             }.filter { it > 0 }.average()
         } else 0.0
@@ -945,10 +971,11 @@ class DashBoardService(
         // Tiempo promedio hasta la cancelación (días)
         val averageDaysToCancellation = if (cancelledSubscriptions.isNotEmpty()) {
             cancelledSubscriptions
-                .filter { it.subscriptionDate != null && it.cancellationDate != null }
+                .filter { it.subscriptionDatetime != null && it.cancellationDateDatetime != null }
                 .map {
-                    TimeUnit.MILLISECONDS.toDays(
-                        it.cancellationDate!! - it.subscriptionDate!!
+                    ChronoUnit.DAYS.between(
+                        it.subscriptionDatetime,
+                        it.cancellationDateDatetime
                     ).toDouble()
                 }
                 .filter { it > 0 }

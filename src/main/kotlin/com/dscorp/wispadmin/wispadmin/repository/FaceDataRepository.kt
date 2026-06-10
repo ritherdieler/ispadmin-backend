@@ -5,4 +5,5 @@ import org.springframework.stereotype.Repository
 @Repository
 interface FaceDataRepository: JpaRepository<Face_data, Int> {
     fun findByUser_Id(userId: Int): Face_data?
+    fun existsByUser_Id(userId: Int): Boolean
 }

@@ -3,6 +3,9 @@ package com.dscorp.wispadmin.wispadmin.requestbody
 import com.dscorp.wispadmin.wispadmin.data.model.*
 import com.dscorp.wispadmin.wispadmin.dto.OnuDto
 import com.dscorp.wispadmin.wispadmin.extensions.removeSpecialCharacters
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 data class SubscriptionRequest(
     var id: Int? = null,
@@ -26,9 +29,9 @@ data class SubscriptionRequest(
     var couponId: Int? = null,
     var price: Double? = null,
     var note: String? = null,
-    var facadePhotoUrl: String? = null, //URL de la foto de fachada desde Android a Firebase Storage
+    var facadePhotoUrl: String? = null,
     var isMigration: Boolean = false,
-    var installationOrderId : Int? = null,
+    var installationOrderId: Int? = null,
     var borneNumber: String? = null,
     var equipmentCondition: EquipmentCondition = EquipmentCondition.LOAN,
     var autoCut: Boolean = true,
@@ -40,7 +43,7 @@ data class SubscriptionRequest(
         password = dni,
         address = address,
         phone = phone,
-        subscriptionDate = subscriptionDate,
+        subscriptionDatetime = subscriptionDateAsLocalDateTime(),
         plan = Plan(id = planId),
         additionalDevices = additionalDeviceIds.map { NetworkDevice(id = it) },
         place = Place(id = placeId),
@@ -61,6 +64,11 @@ data class SubscriptionRequest(
         autoCut = autoCut
     )
 
-    fun getClientName(): String = "$firstName $lastName"
+    private fun subscriptionDateAsLocalDateTime(): LocalDateTime {
+        return Instant.ofEpochMilli(subscriptionDate)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDateTime()
+    }
 
+    fun getClientName(): String = "$firstName $lastName"
 }
