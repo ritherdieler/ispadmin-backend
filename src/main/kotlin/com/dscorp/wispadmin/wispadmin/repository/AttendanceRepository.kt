@@ -9,4 +9,5 @@ interface AttendanceRepository: JpaRepository<Attendance, Int>{
     //Busca el ultimo attendance sin salida (checkOut IS NULL). //check-out
     fun findTopByUser_IdAndCheckOutIsNullOrderByCheckInDesc(userId: Int): Attendance?
     fun findTopByUser_IdAndCheckInBetweenOrderByCheckInDesc(userId: Int, from: Date, to: Date): Attendance?
+    fun findByOfflineId(offlineId: String): Attendance?
 }

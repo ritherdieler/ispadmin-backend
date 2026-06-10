@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  */
 @Service
 class FacePhotoPreprocessorService(
-    @Value("\${face.login.djl-detector-model-path:C:/ispadmin/models/ultranet.zip}")
+    @Value("\${face.login.djl-detector-model-path:models/ultranet.zip}")
     private val detectorModelPath: String,
     @Value("\${face.login.djl-detector-model-name:ultranet}")
     private val detectorModelName: String

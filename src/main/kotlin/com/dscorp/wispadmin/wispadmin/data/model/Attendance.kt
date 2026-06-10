@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.data.model
 import com.dscorp.wispadmin.wispadmin.dto.AssistanceTicketDto
 import com.dscorp.wispadmin.wispadmin.dto.AttendanceDto
 import java.util.Date
+import javax.persistence.Column
 import javax.persistence.Entity
 import javax.persistence.GeneratedValue
 import javax.persistence.GenerationType
@@ -19,6 +20,8 @@ data class Attendance(
     var checkOut: Date? = null,// Debe ser 'var' para actualizar al marcar salida. // JPA
     val method: String = "FACIAL",// Método (FACIAL/MANUAL)
     val status: String = "ACTIVO",// Estado
+    @Column(unique = true)
+    val offlineId: String? = null,// Identificador local para evitar duplicados al sincronizar marcaciones offline.
 
     @OneToOne
     val user: User //usuario asociado
