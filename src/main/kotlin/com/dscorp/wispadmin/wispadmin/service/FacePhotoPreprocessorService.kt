@@ -33,7 +33,9 @@ class FacePhotoPreprocessorService(
     @Value("\${face.login.djl-detector-model-path:models/ultranet.zip}")
     private val detectorModelPath: String,
     @Value("\${face.login.djl-detector-model-name:ultranet}")
-    private val detectorModelName: String
+    private val detectorModelName: String,
+    @Value("\${face.login.djl-model-path:}")
+    private val descriptorModelPath: String
 ) {
     private val logger = LoggerFactory.getLogger(FacePhotoPreprocessorService::class.java)
     private val modelLock = Any()
@@ -198,14 +200,25 @@ class FacePhotoPreprocessorService(
      * la ejecucion del backend.
      */
     private fun resolveDetectorModelFile(): File {
-        val modelFile = File(detectorModelPath)
+        val modelFile = resolveExistingDetectorModelFile()
         if (!modelFile.exists() || !modelFile.isFile) {
             throw IllegalStateException(
                 "No se encontro el detector facial DJL en $detectorModelPath. " +
-                    "Coloca ultranet.zip en esa ruta antes de iniciar el backend."
+                    "Coloca ultranet.zip en models/ o junto al modelo principal antes de iniciar el backend."
             )
         }
         return modelFile
+    }
+
+    private fun resolveExistingDetectorModelFile(): File {
+        val configuredFile = File(detectorModelPath)
+        if (configuredFile.exists() && configuredFile.isFile) return configuredFile
+
+        val descriptorFile = descriptorModelPath.takeIf { it.isNotBlank() }?.let { File(it) }
+        val siblingDetector = descriptorFile?.parentFile?.let { File(it, configuredFile.name) }
+        if (siblingDetector?.exists() == true && siblingDetector.isFile) return siblingDetector
+
+        return configuredFile
     }
 
     /**

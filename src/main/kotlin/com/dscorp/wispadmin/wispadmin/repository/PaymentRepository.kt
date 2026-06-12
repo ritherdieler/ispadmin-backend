@@ -4,12 +4,33 @@ import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import java.time.LocalDateTime
+import org.springframework.data.repository.query.Param
+
 interface PaymentRepository : JpaRepository<Payment, Int> {
     @Query("select p from Payment p where p.subscription.id = :subscriptionId and p.billingDateDatetime between :startDate and :endDate")
     fun findBySubscriptionFiltered(
         subscriptionId: Int,
         startDate: LocalDateTime,
         endDate: LocalDateTime
+    ): List<Payment>
+
+    // Busca facturas pendientes con telefono de cliente disponible.
+    // Se usa para enviar recordatorios de pago por WhatsApp de forma controlada.
+    @Query(
+        value = """
+        SELECT p.*
+        FROM payment p
+        INNER JOIN subscription s ON s.id = p.subscription_id
+        WHERE p.paid = false
+          AND s.phone IS NOT NULL
+          AND s.phone <> ''
+        ORDER BY p.billing_date_datetime ASC, p.id ASC
+        LIMIT :limit
+    """,
+        nativeQuery = true
+    )
+    fun findPendingPaymentsWithPhone(
+        @Param("limit") limit: Int
     ): List<Payment>
 
     @Query(

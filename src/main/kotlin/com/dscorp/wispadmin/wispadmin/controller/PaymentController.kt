@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*
 import javax.persistence.EntityManager
 import javax.persistence.PersistenceContext
 import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
+import com.dscorp.wispadmin.wispadmin.service.PaymentWhatsAppNotificationService
 
 @CrossOrigin(origins = ["*"])
 @RestController
@@ -28,7 +29,8 @@ class PaymentController @Autowired constructor(
     private val repository: PaymentRepository,
     private val mikrotikService: MikrotikService,
     private val errorLogRepository: ErrorLogRepository,
-    private val paymentInvoiceService: PaymentInvoiceService
+    private val paymentInvoiceService: PaymentInvoiceService,
+    private val paymentWhatsAppNotificationService: PaymentWhatsAppNotificationService
 ) {
 
     val objectErrorResponse: ResponseEntity<PaymentDto> = ResponseEntity.status(500).body(null)
@@ -325,5 +327,59 @@ class PaymentController @Autowired constructor(
         }
     }
 
+    // Envia un recordatorio de pago por WhatsApp usando una factura pendiente existente.
+    @PostMapping("/{id}/send-whatsapp-reminder")
+    fun sendPaymentReminderByWhatsApp(@PathVariable id: Int): ResponseEntity<BaseResponse> {
+        return try {
+            paymentWhatsAppNotificationService.sendPaymentReminder(id)
 
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Recordatorio enviado correctamente por WhatsApp.",
+                    data = null
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            ResponseEntity.status(500).body(
+                BaseResponse(
+                    status = 500,
+                    message = e.message ?: "No se pudo enviar el recordatorio por WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
+
+    // Envia recordatorios por WhatsApp a varias facturas pendientes.
+    // El parametro limit controla cuantos mensajes se intentan enviar.
+    @PostMapping("/send-whatsapp-reminders")
+    fun sendPendingPaymentRemindersByWhatsApp(
+        @RequestParam(defaultValue = "5") limit: Int
+    ): ResponseEntity<BaseResponse> {
+        return try {
+            val result = paymentWhatsAppNotificationService.sendPendingPaymentReminders(limit)
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Proceso de recordatorios WhatsApp finalizado.",
+                    data = result
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            ResponseEntity.status(500).body(
+                BaseResponse(
+                    status = 500,
+                    message = e.message ?: "No se pudieron enviar los recordatorios por WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
 }
