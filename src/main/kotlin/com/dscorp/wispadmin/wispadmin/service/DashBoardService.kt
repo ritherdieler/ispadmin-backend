@@ -37,11 +37,20 @@ class DashBoardService(
     private val paymentStatisticsService: PaymentStatisticsService
 ) {
 
+    private fun currentMonthRange(): Pair<java.time.LocalDateTime, java.time.LocalDateTime> {
+        val zone = java.time.ZoneId.of("America/Lima")
+        val today = java.time.LocalDate.now(zone)
+        val startDate = today.withDayOfMonth(1).atStartOfDay()
+        val endDate = today.plusMonths(1).withDayOfMonth(1).atStartOfDay()
+        return startDate to endDate
+    }
+
     fun createDashBoard(): DashBoardDto {
         return performanceMonitor.measureTime("createDashBoard") {
             // Preparar fechas una sola vez
             val startDate = Calendar.getInstance().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
             val endDate = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+            val (currentMonthStart, nextMonthStart) = currentMonthRange()
             val firstDayOfMonthInMillis = Calendar.getInstance().getFirstDayOfMonthInMillis()
             val lastDayOfMonthInMillis = Calendar.getInstance().getLastDayOfMonthInMillis()
             val firstDayOfMonthDate = Date(firstDayOfMonthInMillis)
@@ -50,26 +59,26 @@ class DashBoardService(
 
             // ===== GRUPO 1: Consultas de pagos (independientes entre sí) =====
             val grossRevenueFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("paymentRepository.getGrossRevenueForCurrentMonth") {
-                    paymentRepository.getGrossRevenueForCurrentMonth()
+                performanceMonitor.measureTime("paymentRepository.getGrossRevenueBetween") {
+                    paymentRepository.getGrossRevenueBetween(currentMonthStart, nextMonthStart)
                 }
             }
             
             val totalRaisedFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("paymentRepository.getTotalRaisedForCurrentMonth") {
-                    paymentRepository.getTotalRaisedForCurrentMonth()
+                performanceMonitor.measureTime("paymentRepository.getTotalRaisedBetween") {
+                    paymentRepository.getTotalRaisedBetween(currentMonthStart, nextMonthStart)
                 }
             }
             
             val totalDiscountFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("paymentRepository.getTotalDiscountsForCurrentMonth") {
-                    paymentRepository.getTotalDiscountsForCurrentMonth()
+                performanceMonitor.measureTime("paymentRepository.getTotalDiscountsBetween") {
+                    paymentRepository.getTotalDiscountsBetween(currentMonthStart, nextMonthStart)
                 }
             }
             
             val totalToCollectFuture = CompletableFuture.supplyAsync {
-                performanceMonitor.measureTime("paymentRepository.calculateTotalToCollectForCurrentMonth") {
-                    paymentRepository.calculateTotalToCollectForCurrentMonth()
+                performanceMonitor.measureTime("paymentRepository.calculateTotalToCollectBetween") {
+                    paymentRepository.calculateTotalToCollectBetween(currentMonthStart, nextMonthStart)
                 }
             }
 
@@ -215,10 +224,11 @@ class DashBoardService(
 
 
     fun createDashBoardV2(): DashBoardDto {
-        val grossRevenue = paymentRepository.getGrossRevenueForCurrentMonth()
-        val totalRaised = paymentRepository.getTotalRaisedForCurrentMonth()
-        val totalDiscount = paymentRepository.getTotalDiscountsForCurrentMonth()
-        val totalToCollect = paymentRepository.calculateTotalToCollectForCurrentMonth()
+        val (currentMonthStart, nextMonthStart) = currentMonthRange()
+        val grossRevenue = paymentRepository.getGrossRevenueBetween(currentMonthStart, nextMonthStart)
+        val totalRaised = paymentRepository.getTotalRaisedBetween(currentMonthStart, nextMonthStart)
+        val totalDiscount = paymentRepository.getTotalDiscountsBetween(currentMonthStart, nextMonthStart)
+        val totalToCollect = paymentRepository.calculateTotalToCollectBetween(currentMonthStart, nextMonthStart)
 
         val grossRevenueHistory = paymentRepository.getTop6GrossRevenueHistory()
 
@@ -642,7 +652,8 @@ class DashBoardService(
 
         // Ratio costo/ingreso
         val totalCosts = allFixedCosts.filter { it.enabled }.sumOf { it.amount }
-        val totalRevenue = paymentRepository.getGrossRevenueForCurrentMonth()
+        val (currentMonthStart, nextMonthStart) = currentMonthRange()
+        val totalRevenue = paymentRepository.getGrossRevenueBetween(currentMonthStart, nextMonthStart)
         val costToIncomeRatio = if (totalRevenue > 0) totalCosts / totalRevenue else 0.0
 
         // Mayor categoría de gasto
