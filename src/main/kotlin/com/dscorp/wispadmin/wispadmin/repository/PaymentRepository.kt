@@ -16,14 +16,16 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
-        INNER JOIN subscription s ON p.subscription_id = s.id
         WHERE p.paid = false
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun calculateTotalToCollectForCurrentMonth(): Double
+    fun calculateTotalToCollectBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
 
     @Query(
@@ -31,36 +33,44 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SELECT COALESCE(SUM(p.discount_amount), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.payment_date_datetime >= :startDate
+          AND p.payment_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalDiscountsForCurrentMonth(): Double
+    fun getTotalDiscountsBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
-        INNER JOIN subscription s ON p.subscription_id = s.id
-        WHERE p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+        WHERE p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getGrossRevenueForCurrentMonth(): Double
+    fun getGrossRevenueBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_paid), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.payment_date_datetime >= :startDate
+          AND p.payment_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalRaisedForCurrentMonth(): Double
+    fun getTotalRaisedBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
 
     @Query(
@@ -119,11 +129,12 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     @Query(
         value = """
-            SELECT 
+    SELECT 
                 SUM(p.amount_to_pay) AS totalCharged,
-                UNIX_TIMESTAMP(DATE(MIN(p.billing_date_datetime))) * 1000 AS billingDate
+                UNIX_TIMESTAMP(DATE(MIN(p.billing_date_datetime))) * 1000 + 86400000 AS billingDate
             FROM payment p
             WHERE p.billing_date_datetime IS NOT NULL
+              AND DATE(p.billing_date_datetime) < LAST_DAY(CURRENT_DATE())
             GROUP BY DATE(p.billing_date_datetime)
             ORDER BY DATE(p.billing_date_datetime) DESC
             LIMIT 6
