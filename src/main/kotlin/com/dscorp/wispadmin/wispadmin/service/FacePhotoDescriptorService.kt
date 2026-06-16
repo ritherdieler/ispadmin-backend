@@ -9,12 +9,12 @@ import ai.djl.repository.zoo.Criteria
 import ai.djl.repository.zoo.ZooModel
 import ai.djl.training.util.ProgressBar
 import ai.djl.translate.TranslateException
+import com.dscorp.wispadmin.wispadmin.util.FaceModelFileResolver
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.IOException
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
@@ -24,11 +24,12 @@ import kotlin.math.roundToInt
 
 @Service
 class FacePhotoDescriptorService(
-    @Value("\${face.login.djl-model-path:C:/ispadmin/models/face_feature.zip}")
+    @Value("\${face.login.djl-model-path:classpath:models/face_feature.zip}")
     private val djlModelPath: String,
     @Value("\${face.login.djl-model-name:face_feature}")
     private val djlModelName: String,
-    private val facePhotoPreprocessorService: FacePhotoPreprocessorService
+    private val facePhotoPreprocessorService: FacePhotoPreprocessorService,
+    private val faceModelFileResolver: FaceModelFileResolver
 ) {
     private val logger = LoggerFactory.getLogger(FacePhotoDescriptorService::class.java)
     private val modelLock = Any()
@@ -236,14 +237,6 @@ class FacePhotoDescriptorService(
     }
 
     // Valida que el zip del modelo exista localmente antes de pedirle a DJL que lo cargue.
-    private fun resolveLocalModelFile(): File {
-        val modelFile = File(djlModelPath)
-        if (!modelFile.exists() || !modelFile.isFile) {
-            throw IllegalStateException(
-                "No se encontro el modelo facial DJL en $djlModelPath. " +
-                    "Coloca face_feature.zip en esa ruta antes de iniciar el backend."
-            )
-        }
-        return modelFile
-    }
+    private fun resolveLocalModelFile() =
+        faceModelFileResolver.resolve(djlModelPath, "face_feature")
 }

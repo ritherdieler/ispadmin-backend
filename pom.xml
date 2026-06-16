@@ -18,6 +18,8 @@
         <java.version>1.8</java.version>
         <kotlin.version>1.9.23</kotlin.version>
         <djl.version>0.36.0</djl.version>
+        <pytorch.version>2.7.1</pytorch.version>
+        <pytorch.jni.version>2.7.1-0.36.0</pytorch.jni.version>
     </properties>
     <dependencies>
         <dependency>
@@ -141,7 +143,130 @@
             <artifactId>pytorch-engine</artifactId>
             <version>${djl.version}</version>
         </dependency>
+        <dependency>
+            <groupId>ai.djl.pytorch</groupId>
+            <artifactId>pytorch-jni</artifactId>
+            <version>${pytorch.jni.version}</version>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>djl-macos-arm</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>aarch64</arch>
+                </os>
+                <property>
+                    <name>!djl.linux</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>osx-aarch64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>djl-macos-intel</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>x86_64</arch>
+                </os>
+                <property>
+                    <name>!djl.linux</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>osx-x86_64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>djl-linux-x86_64-cross</id>
+            <activation>
+                <property>
+                    <name>djl.linux</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>linux-x86_64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>djl-linux-x86_64-auto</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>Linux</name>
+                    <arch>amd64</arch>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>linux-x86_64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>djl-linux-aarch64-cross</id>
+            <activation>
+                <property>
+                    <name>djl.linux.aarch64</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>linux-aarch64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>djl-linux-aarch64-auto</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>Linux</name>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ai.djl.pytorch</groupId>
+                    <artifactId>pytorch-native-cpu</artifactId>
+                    <version>${pytorch.version}</version>
+                    <classifier>linux-aarch64</classifier>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 
     <build>
         <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
@@ -190,6 +315,25 @@
                 <configuration>
                     <warName>ispadmin</warName>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-djl-for-tomcat</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeGroupIds>ai.djl,ai.djl.pytorch</includeGroupIds>
+                            <outputDirectory>${project.build.directory}/tomcat-lib</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

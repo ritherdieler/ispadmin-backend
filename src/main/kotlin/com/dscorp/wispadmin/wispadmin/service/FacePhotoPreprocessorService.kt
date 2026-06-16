@@ -9,12 +9,12 @@ import ai.djl.repository.zoo.Criteria
 import ai.djl.repository.zoo.ZooModel
 import ai.djl.training.util.ProgressBar
 import ai.djl.translate.TranslateException
+import com.dscorp.wispadmin.wispadmin.util.FaceModelFileResolver
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.IOException
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
@@ -30,10 +30,11 @@ import kotlin.math.roundToInt
  */
 @Service
 class FacePhotoPreprocessorService(
-    @Value("\${face.login.djl-detector-model-path:src/main/kotlin/com/dscorp/wispadmin/wispadmin/util/models/ultranet.zip}")
+    @Value("\${face.login.djl-detector-model-path:classpath:models/ultranet.zip}")
     private val detectorModelPath: String,
     @Value("\${face.login.djl-detector-model-name:ultranet}")
-    private val detectorModelName: String
+    private val detectorModelName: String,
+    private val faceModelFileResolver: FaceModelFileResolver
 ) {
     private val logger = LoggerFactory.getLogger(FacePhotoPreprocessorService::class.java)
     private val modelLock = Any()
@@ -197,16 +198,8 @@ class FacePhotoPreprocessorService(
      * Valida que el detector exista localmente para evitar descargas durante
      * la ejecucion del backend.
      */
-    private fun resolveDetectorModelFile(): File {
-        val modelFile = File(detectorModelPath)
-        if (!modelFile.exists() || !modelFile.isFile) {
-            throw IllegalStateException(
-                "No se encontro el detector facial DJL en $detectorModelPath. " +
-                    "Coloca ultranet.zip en esa ruta antes de iniciar el backend."
-            )
-        }
-        return modelFile
-    }
+    private fun resolveDetectorModelFile() =
+        faceModelFileResolver.resolve(detectorModelPath, "ultranet")
 
     /**
      * Amplia ligeramente la caja detectada para conservar el contorno facial
