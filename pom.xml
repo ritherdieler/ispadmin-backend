@@ -314,7 +314,41 @@
                 <artifactId>maven-war-plugin</artifactId>
                 <configuration>
                     <warName>ispadmin</warName>
+                    <packagingExcludes>
+                        WEB-INF/lib/api-${djl.version}.jar,
+                        WEB-INF/lib/pytorch-engine-${djl.version}.jar,
+                        WEB-INF/lib/pytorch-jni-${pytorch.jni.version}.jar,
+                        WEB-INF/lib/pytorch-native-cpu-*.jar,
+                        WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class
+                    </packagingExcludes>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>package-djl-native-helper</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>ispadmin</finalName>
+                            <classifier>djl-native-helper</classifier>
+                            <outputDirectory>${project.build.directory}/tomcat-lib</outputDirectory>
+                            <includes>
+                                <include>com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper*.class</include>
+                            </includes>
+                            <archive>
+                                <manifest>
+                                    <addDefaultImplementationEntries>false</addDefaultImplementationEntries>
+                                    <addDefaultSpecificationEntries>false</addDefaultSpecificationEntries>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -327,7 +361,8 @@
                             <goal>copy-dependencies</goal>
                         </goals>
                         <configuration>
-                            <includeGroupIds>ai.djl,ai.djl.pytorch</includeGroupIds>
+                            <includeGroupIds>ai.djl,ai.djl.pytorch,org.slf4j,com.google.code.gson,net.java.dev.jna,org.apache.commons</includeGroupIds>
+                            <includeArtifactIds>api,pytorch-engine,pytorch-jni,pytorch-native-cpu,slf4j-api,gson,jna,commons-compress</includeArtifactIds>
                             <outputDirectory>${project.build.directory}/tomcat-lib</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
                             <overWriteSnapshots>true</overWriteSnapshots>

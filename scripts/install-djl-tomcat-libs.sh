@@ -17,6 +17,18 @@ if [ ! -d "$TOMCAT_LIB_SRC" ]; then
   exit 1
 fi
 
+if [ ! -f "$TOMCAT_LIB_SRC/ispadmin-djl-native-helper.jar" ]; then
+  echo "Falta $TOMCAT_LIB_SRC/ispadmin-djl-native-helper.jar"
+  echo "Compila primero: bash mvnw clean package -DskipTests -Ddjl.linux"
+  exit 1
+fi
+
+if ! find "$TOMCAT_LIB_SRC" -maxdepth 1 -name "pytorch-native-cpu-*-linux-x86_64.jar" -print -quit | grep -q .; then
+  echo "Falta pytorch-native-cpu linux-x86_64 en $TOMCAT_LIB_SRC"
+  echo "El VPS Debian confirmado es x86_64; compila desde Mac con: bash mvnw clean package -DskipTests -Ddjl.linux"
+  exit 1
+fi
+
 mkdir -p "$CATALINA_HOME/lib"
 cp -v "$TOMCAT_LIB_SRC"/*.jar "$CATALINA_HOME/lib/"
 
@@ -38,4 +50,5 @@ else
 fi
 
 echo "JARs DJL copiados a $CATALINA_HOME/lib"
+echo "Incluye ispadmin-djl-native-helper.jar para native_helper=com.dscorp.wispadmin.wispadmin.util.PytorchNativeHelper"
 echo "Reinicia Tomcat: $CATALINA_HOME/bin/shutdown.sh && $CATALINA_HOME/bin/startup.sh"

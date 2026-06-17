@@ -33,6 +33,7 @@ build/
 .vscode/
 /logs/
 /catalina.base_IS_UNDEFINED/
+/scripts/deploy.config.local
 /src/main/resources/firebase_service_account.json
 /src/main/resources/firebase_service_account_dev.json
 /src/main/resources/firebase_service_account_prod.json

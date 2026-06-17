@@ -44,6 +44,6 @@ bash mvnw clean package -DskipTests -Ddjl.linux.aarch64
 
 Building directly on a Linux server auto-selects the native classifier from `uname -m`.
 
-This bundles `pytorch-native-cpu` and `pytorch-jni` inside the WAR. For Tomcat, also copy `target/tomcat-lib/*.jar` to `$CATALINA_HOME/lib/` — see `.agent-docs/djl-tomcat-debian.md`.
+This bundles `pytorch-native-cpu` and `pytorch-jni` inside the WAR. For Tomcat Docker in production, DJL JARs live in the Docker image `lib/` — see `.agent-docs/deploy-flow.md`.
 
 Local macOS development uses the matching `osx-aarch64` or `osx-x86_64` native profile automatically.
