@@ -1,0 +1,12 @@
+VPS_HOST=212.85.13.47
+VPS_USER=root
+VPS_PORT=22
+DOCKER_COMPOSE_DIR=/opt/gigafiber
+DOCKER_TOMCAT_CONTAINER=tomcat9027
+DOCKER_TOMCAT_LIB_HOST_DIR=/opt/gigafiber/tomcat/lib
+DOCKER_TOMCAT_DOCKERFILE=/opt/gigafiber/tomcat/Dockerfile
+DOCKER_COMPOSE_FILE=/opt/gigafiber/docker-compose.yml
+CATALINA_HOME=/usr/local/tomcat
+WAR_NAME=ispadmin.war
+SSH_IDENTITY_FILE=
+DEPLOY_SSH_PASSWORD=
