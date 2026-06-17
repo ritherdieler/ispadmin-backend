@@ -5,11 +5,14 @@ import org.springframework.stereotype.Service
 import java.time.format.DateTimeFormatter
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppReminderBatchResultDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppReminderResultDto
-
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import java.time.LocalDate
 @Service
 class PaymentWhatsAppNotificationService(
     private val paymentRepository: PaymentRepository,
-    private val whatsAppService: WhatsAppService
+    private val whatsAppService: WhatsAppService,
+    private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository
 ) {
 
     // Busca una factura pendiente y envia un mensaje de cobranza por WhatsApp al cliente.
@@ -17,7 +20,19 @@ class PaymentWhatsAppNotificationService(
         val payment = paymentRepository.findById(paymentId).orElseThrow {
             Exception("Factura no encontrada.")
         }
-
+        val todayStart = LocalDate.now().atStartOfDay()
+        val tomorrowStart = todayStart.plusDays(1)
+        if (
+            whatsAppMessageLogRepository.existsByPaymentIdAndMessageTypeAndStatusAndCreatedAtBetween(
+                paymentId = paymentId,
+                messageType = "PAYMENT_REMINDER",
+                status = "SENT",
+                startDate = todayStart,
+                endDate = tomorrowStart
+            )
+        ) {
+            throw IllegalStateException("Ya se envio un recordatorio de pago por WhatsApp hoy.")
+        }
         if (payment.paid) {
             throw Exception("La factura ya se encuentra pagada.")
         }
@@ -40,10 +55,42 @@ class PaymentWhatsAppNotificationService(
             billingDate = billingDate
         )
 
-        return whatsAppService.sendTextMessage(
-            phoneNumber = phone,
-            message = message
-        )
+        return try {
+            val sent = whatsAppService.sendTextMessage(
+                phoneNumber = phone,
+                message = message
+            )
+
+            whatsAppMessageLogRepository.save(
+                WhatsAppMessageLog(
+                    paymentId = payment.id,
+                    subscriptionId = subscription.id,
+                    phone = phone,
+                    messageType = "PAYMENT_REMINDER",
+                    status = "SENT",
+                    message = message,
+                    errorMessage = null
+                )
+            )
+
+            sent
+        } catch (e: Exception) {
+            val friendlyError = friendlyWhatsAppErrorMessage(e.message)
+
+            whatsAppMessageLogRepository.save(
+                WhatsAppMessageLog(
+                    paymentId = payment.id,
+                    subscriptionId = subscription.id,
+                    phone = phone,
+                    messageType = "PAYMENT_REMINDER",
+                    status = "FAILED",
+                    message = message,
+                    errorMessage = friendlyError
+                )
+            )
+
+            throw Exception(friendlyError, e)
+        }
     }
 
     // Envia recordatorios de pago a varias facturas pendientes.
@@ -125,6 +172,18 @@ class PaymentWhatsAppNotificationService(
                         reason = "Recordatorio enviado correctamente."
                     )
                 )
+            } catch (e: IllegalStateException) {
+                skippedCount++
+
+                details.add(
+                    WhatsAppReminderResultDto(
+                        paymentId = paymentId,
+                        subscriptionId = subscriptionId,
+                        phone = phone,
+                        status = "SKIPPED",
+                        reason = e.message ?: "Ya se envio un recordatorio de pago por WhatsApp hoy."
+                    )
+                )
             } catch (e: Exception) {
                 failedCount++
 
@@ -171,4 +230,34 @@ class PaymentWhatsAppNotificationService(
         Gracias por su preferencia.
     """.trimIndent()
     }
+
+    private fun friendlyWhatsAppErrorMessage(errorMessage: String?): String {
+        if (errorMessage.isNullOrBlank()) {
+            return "No se pudo enviar el recordatorio."
+        }
+
+        return when {
+            errorMessage.contains("132001") ||
+                    errorMessage.contains("Template name does not exist", ignoreCase = true) -> {
+                "La plantilla de WhatsApp no existe, no esta aprobada o el idioma configurado no coincide."
+            }
+
+            errorMessage.contains("131030") ||
+                    errorMessage.contains("not in allowed list", ignoreCase = true) ||
+                    errorMessage.contains("lista de autorizados", ignoreCase = true) -> {
+                "El numero no esta autorizado en Meta para pruebas."
+            }
+
+            errorMessage.contains("401 Unauthorized", ignoreCase = true) -> {
+                "Token de WhatsApp invalido o vencido."
+            }
+
+            errorMessage.contains("Unsupported post request", ignoreCase = true) -> {
+                "Phone Number ID de WhatsApp incorrecto o sin permisos para este token."
+            }
+
+            else -> errorMessage
+        }
+    }
+
 }

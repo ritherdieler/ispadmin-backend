@@ -8,6 +8,11 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateLanguage
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateMessageBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
 
 @Service
 class WhatsAppService(
@@ -48,14 +53,72 @@ class WhatsAppService(
         return response.statusCode.is2xxSuccessful
     }
 
-    // Limpia el numero para enviarlo en el formato que Meta espera: 51999999999.
+    fun sendTemplateMessage(
+        phoneNumber: String,
+        templateName: String,
+        languageCode: String,
+        parameters: List<String>
+    ): Boolean {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+
+        if (templateName.isBlank()) {
+            throw IllegalArgumentException("La plantilla de WhatsApp no esta configurada.")
+        }
+
+        if (languageCode.isBlank()) {
+            throw IllegalArgumentException("El idioma de la plantilla de WhatsApp no esta configurado.")
+        }
+
+        val cleanPhoneNumber = normalizePhoneNumber(phoneNumber)
+
+        val body = WhatsAppTemplateMessageBody(
+            to = cleanPhoneNumber,
+            template = WhatsAppTemplate(
+                name = templateName,
+                language = WhatsAppTemplateLanguage(
+                    code = languageCode
+                ),
+                components = listOf(
+                    WhatsAppTemplateComponent(
+                        parameters = parameters.map {
+                            WhatsAppTemplateParameter(text = it)
+                        }
+                    )
+                )
+            )
+        )
+
+        val headers = HttpHeaders()
+        headers.contentType = MediaType.APPLICATION_JSON
+        headers.setBearerAuth(whatsAppProperties.accessToken)
+
+        val request = HttpEntity(body, headers)
+
+        val response = RestTemplate().postForEntity(
+            whatsAppProperties.messagesUrl(),
+            request,
+            String::class.java
+        )
+
+        return response.statusCode.is2xxSuccessful
+    }
+
+    // Normaliza celulares peruanos al formato que Meta espera: 51999999999.
     private fun normalizePhoneNumber(phoneNumber: String): String {
-        return phoneNumber
-            .replace("+", "")
-            .replace(" ", "")
-            .replace("-", "")
-            .replace("(", "")
-            .replace(")", "")
-            .trim()
+        val digits = phoneNumber.filter { it.isDigit() }
+
+        val normalized = when {
+            digits.length == 9 && digits.startsWith("9") -> "51$digits"
+            digits.length == 11 && digits.startsWith("51") -> digits
+            else -> throw IllegalArgumentException("El telefono debe ser un celular peruano valido.")
+        }
+
+        if (!normalized.substring(2).startsWith("9")) {
+            throw IllegalArgumentException("El telefono debe ser un celular peruano valido.")
+        }
+
+        return normalized
     }
 }

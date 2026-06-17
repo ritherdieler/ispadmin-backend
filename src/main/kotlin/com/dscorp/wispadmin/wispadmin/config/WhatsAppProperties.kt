@@ -11,6 +11,8 @@ class WhatsAppProperties {
     var phoneNumberId: String = ""
     var businessAccountId: String = ""
     var accessToken: String = ""
+    var paymentReminderTemplateName: String = ""
+    var paymentReminderTemplateLanguage: String = "es_PE"
 
     fun graphApiBaseUrl(): String {
         return "https://graph.facebook.com/$apiVersion"

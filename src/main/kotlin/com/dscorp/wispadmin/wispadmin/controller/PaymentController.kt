@@ -340,6 +340,14 @@ class PaymentController @Autowired constructor(
                     data = null
                 )
             )
+        } catch (e: IllegalStateException) {
+            ResponseEntity.status(409).body(
+                BaseResponse(
+                    status = 409,
+                    message = e.message ?: "Ya existe un recordatorio enviado hoy.",
+                    data = null
+                )
+            )
         } catch (e: Exception) {
             e.printStackTrace()
             errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
