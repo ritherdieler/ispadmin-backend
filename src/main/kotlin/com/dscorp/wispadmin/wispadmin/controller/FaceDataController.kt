@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.controller
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
+import com.dscorp.wispadmin.wispadmin.data.model.Face_data.FaceAngle
 import com.dscorp.wispadmin.wispadmin.dto.UserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import javax.annotation.PostConstruct
 import java.util.Date
+import javax.transaction.Transactional
 import org.springframework.web.bind.annotation.PathVariable
 @RestController
 @RequestMapping("/api/face-data")
@@ -50,6 +52,7 @@ class FaceDataController(
     @PostConstruct
     fun ensureFaceEmbeddingColumnSize() {
         jdbcTemplate.execute("ALTER TABLE face_data MODIFY COLUMN face_embedding LONGTEXT NOT NULL")
+        dropLegacyUniqueUserIdIndexes()
     }
 
     @GetMapping
@@ -137,7 +140,7 @@ class FaceDataController(
                 .body(mapOf("message" to "Falta faceEmbedding o descriptor."))
         }
 
-        val faceData = faceDataRepository.findByUser_Id(userId)?.apply {
+        val faceData = faceDataRepository.findTopByUser_IdOrderByCreatedAtDesc(userId)?.apply {
             faceEmbedding = embedding
             imageUrl = body.imageUrl
             this.user = user
@@ -189,7 +192,7 @@ class FaceDataController(
                 .body(mapOf("message" to "No se pudo generar descriptor facial con DJL."))
 
         val embedding = objectMapper.writeValueAsString(descriptor)
-        val faceData = faceDataRepository.findByUser_Id(userId)?.apply {
+        val faceData = faceDataRepository.findTopByUser_IdOrderByCreatedAtDesc(userId)?.apply {
             faceEmbedding = embedding
             imageUrl = null
             this.user = user
@@ -247,7 +250,7 @@ class FaceDataController(
             ?: return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null)
 
         val embedding = objectMapper.writeValueAsString(descriptor)
-        val faceData = faceDataRepository.findByUser_Id(user.id)?.apply {
+        val faceData = faceDataRepository.findTopByUser_IdOrderByCreatedAtDesc(user.id)?.apply {
             faceEmbedding = embedding
             imageUrl = null
             this.user = user
@@ -262,6 +265,81 @@ class FaceDataController(
         faceVerifyService.clearFaceEmbeddingCache()
 
         return ResponseEntity.ok(user.toDto())
+    }
+
+    // Registro facial multiangulo: reemplaza el registro facial del usuario por tres embeddings.
+    @PostMapping("/photo/enroll/multi-angle", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @Transactional
+    fun enrollMultiAngleFromPhoto(
+        @RequestParam("username") username: String,
+        @RequestParam("password") password: String,
+        @RequestParam("frontPhoto") frontPhoto: MultipartFile,
+        @RequestParam("leftPhoto") leftPhoto: MultipartFile,
+        @RequestParam("rightPhoto") rightPhoto: MultipartFile
+    ): ResponseEntity<Any> {
+        val normalizedUsername = username.trim()
+        val user = userRepository.findByUsername(normalizedUsername)
+            ?: userRepository.findByUsernameIgnoreCase(normalizedUsername)
+            ?: return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(mapOf("message" to "Credenciales incorrectas."))
+
+        if (!PasswordHashUtil.matches(password, user.password)) {
+            return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(mapOf("message" to "Credenciales incorrectas."))
+        }
+
+        if (!user.verified) {
+            return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(mapOf("message" to "Usuario no habilitado para registrar rostro."))
+        }
+
+        val missingAngles = listOfNotNull(
+            "FRONT".takeIf { frontPhoto.isEmpty },
+            "LEFT".takeIf { leftPhoto.isEmpty },
+            "RIGHT".takeIf { rightPhoto.isEmpty }
+        )
+
+        if (missingAngles.isNotEmpty()) {
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(mapOf("message" to "Faltan capturas faciales: ${missingAngles.joinToString(", ")}."))
+        }
+
+        val descriptors = listOf(
+            FaceAngle.FRONT to generateEnrollmentDescriptor(FaceAngle.FRONT, frontPhoto),
+            FaceAngle.LEFT to generateEnrollmentDescriptor(FaceAngle.LEFT, leftPhoto),
+            FaceAngle.RIGHT to generateEnrollmentDescriptor(FaceAngle.RIGHT, rightPhoto)
+        )
+
+        descriptors.firstOrNull { it.second.descriptor == null }?.let { (_, result) ->
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(mapOf("message" to result.errorMessage))
+        }
+
+        faceDataRepository.deleteAllByUser_Id(user.id)
+
+        val savedFaces = descriptors.map { (angle, result) ->
+            Face_data(
+                faceEmbedding = objectMapper.writeValueAsString(result.descriptor),
+                imageUrl = null,
+                angle = angle,
+                user = user
+            )
+        }.let { faceDataRepository.saveAll(it) }
+
+        faceVerifyService.clearFaceEmbeddingCache()
+
+        return ResponseEntity.ok(
+            mapOf(
+                "userId" to user.id,
+                "registeredAngles" to savedFaces.map { it.angle.name },
+                "message" to "Rostro registrado correctamente en tres angulos."
+            )
+        )
     }
 
     // Valida una foto sin guardar datos; se usa para habilitar el boton solo cuando DJL detecta un rostro usable.
@@ -300,6 +378,60 @@ class FaceDataController(
             objectMapper.readValue(json, object : TypeReference<List<Double>>() {})
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private fun generateEnrollmentDescriptor(angle: FaceAngle, photo: MultipartFile): EnrollmentDescriptorResult {
+        val angleLabel = when (angle) {
+            FaceAngle.FRONT -> "frontal"
+            FaceAngle.LEFT -> "izquierda"
+            FaceAngle.RIGHT -> "derecha"
+        }
+
+        val photoBytes = photo.bytes
+        if (!facePhotoQualityService.hasUsableFaceCandidate(photoBytes)) {
+            return EnrollmentDescriptorResult(
+                descriptor = null,
+                errorMessage = "No se detecto un rostro claro en la captura $angleLabel."
+            )
+        }
+
+        val descriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+            ?: return EnrollmentDescriptorResult(
+                descriptor = null,
+                errorMessage = "No se pudo generar descriptor facial para la captura $angleLabel."
+            )
+
+        return EnrollmentDescriptorResult(descriptor = descriptor, errorMessage = null)
+    }
+
+    private data class EnrollmentDescriptorResult(
+        val descriptor: List<Double>?,
+        val errorMessage: String?
+    )
+
+    private fun dropLegacyUniqueUserIdIndexes() {
+        val sql = """
+            SELECT s.INDEX_NAME
+            FROM INFORMATION_SCHEMA.STATISTICS s
+            WHERE s.TABLE_SCHEMA = DATABASE()
+              AND s.TABLE_NAME = 'face_data'
+              AND s.COLUMN_NAME = 'user_id'
+              AND s.NON_UNIQUE = 0
+              AND s.INDEX_NAME <> 'PRIMARY'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM INFORMATION_SCHEMA.STATISTICS s2
+                  WHERE s2.TABLE_SCHEMA = s.TABLE_SCHEMA
+                    AND s2.TABLE_NAME = s.TABLE_NAME
+                    AND s2.INDEX_NAME = s.INDEX_NAME
+                    AND s2.COLUMN_NAME <> 'user_id'
+              )
+        """.trimIndent()
+
+        val indexNames = jdbcTemplate.queryForList(sql, String::class.java)
+        indexNames.forEach { indexName ->
+            jdbcTemplate.execute("ALTER TABLE face_data DROP INDEX `$indexName`")
         }
     }
 }

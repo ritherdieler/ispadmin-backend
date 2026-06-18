@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.Attendance
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
+import com.dscorp.wispadmin.wispadmin.data.model.Face_data.FaceAngle
 import com.dscorp.wispadmin.wispadmin.data.model.User
 import com.dscorp.wispadmin.wispadmin.repository.AttendanceRepository
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
@@ -376,7 +377,7 @@ class FaceVerifyService(
         }
 
         logger.debug(
-            "Login facial [{}]: mejor resultado={}, segundo resultado={}, umbral={}, metrica={}, descriptorSize={}, faceDataId={}, userId={}",
+            "Login facial [{}]: mejor resultado={}, segundo resultado={}, umbral={}, metrica={}, descriptorSize={}, faceDataId={}, userId={}, angle={}",
             source,
             bestScore,
             secondBestScore,
@@ -384,7 +385,8 @@ class FaceVerifyService(
             metric,
             descriptor.size,
             bestFaceRef?.id,
-            bestFaceRef?.userId
+            bestFaceRef?.userId,
+            bestFaceRef?.angle
         )
 
         val matchesThreshold = when (metric) {
@@ -405,7 +407,7 @@ class FaceVerifyService(
         }
 
         val user = userRepository.findById(bestFaceRef.userId).orElse(null) ?: return null
-        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt)
+        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt, bestFaceRef.angle)
     }
 
     // Prueba varios descriptores de una misma foto y conserva el match mas confiable.
@@ -438,7 +440,7 @@ class FaceVerifyService(
         }
     }
 
-    // Mantiene los embeddings ya parseados por un tiempo corto para no leer y convertir toda la tabla en cada login.
+    // Mantiene todos los embeddings parseados por un tiempo corto, incluyendo los angulos FRONT, LEFT y RIGHT.
     private fun getStoredFaceEmbeddings(): List<StoredFaceEmbedding> {
         val now = System.currentTimeMillis()
         val cached = faceEmbeddingCache
@@ -469,7 +471,8 @@ class FaceVerifyService(
             id = id,
             embedding = embedding,
             userId = user.id,
-            createdAt = createdAt
+            createdAt = createdAt,
+            angle = angle
         )
     }
 
@@ -735,14 +738,16 @@ class FaceVerifyService(
     private data class FaceMatch(
         val user: User,
         val userName: String,
-        val faceCreatedAt: Date
+        val faceCreatedAt: Date,
+        val angle: FaceAngle
     )
 
     private data class StoredFaceEmbedding(
         val id: Int,
         val embedding: List<Double>,
         val userId: Int,
-        val createdAt: Date
+        val createdAt: Date,
+        val angle: FaceAngle
     )
 
     private enum class FaceComparisonMetric {
@@ -763,7 +768,7 @@ class FaceVerifyService(
         ) ?: return null
 
         if (isFaceExpired(match.faceCreatedAt)) {
-            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}", match.user.id)
+            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}, angle={}", match.user.id, match.angle)
             return null
         }
         return  match.user
