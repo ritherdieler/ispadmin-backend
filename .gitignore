@@ -36,3 +36,4 @@ build/
 /src/main/resources/firebase_service_account.json
 /src/main/resources/firebase_service_account_dev.json
 /src/main/resources/firebase_service_account_prod.json
+/src/main/resources/application-local.properties

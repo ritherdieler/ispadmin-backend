@@ -352,9 +352,11 @@ class PaymentController @Autowired constructor(
             e.printStackTrace()
             errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
 
-            ResponseEntity.status(500).body(
+            val status = whatsAppHttpStatus(e.message)
+
+            ResponseEntity.status(status).body(
                 BaseResponse(
-                    status = 500,
+                    status = status,
                     message = e.message ?: "No se pudo enviar el recordatorio por WhatsApp.",
                     data = null
                 )
@@ -388,6 +390,46 @@ class PaymentController @Autowired constructor(
                     data = null
                 )
             )
+        }
+    }
+
+    @PostMapping("/send-monthly-whatsapp-reminders")
+    fun sendMonthlyPaymentRemindersByWhatsApp(
+        @RequestParam(required = false) limit: Int?
+    ): ResponseEntity<BaseResponse> {
+        return try {
+            val result = paymentWhatsAppNotificationService.sendMonthlyPaymentReminders(limit)
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Proceso mensual de recordatorios WhatsApp finalizado.",
+                    data = result
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            ResponseEntity.status(500).body(
+                BaseResponse(
+                    status = 500,
+                    message = e.message ?: "No se pudo ejecutar el proceso mensual de recordatorios WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
+
+    private fun whatsAppHttpStatus(errorMessage: String?): Int {
+        val message = errorMessage.orEmpty().lowercase()
+
+        return when {
+            "ya se envio" in message -> 409
+            "token de whatsapp invalido" in message -> 401
+            "telefono debe ser un celular peruano valido" in message -> 400
+            "numero no esta autorizado" in message -> 422
+            "plantilla de whatsapp no existe" in message -> 400
+            else -> 500
         }
     }
 }

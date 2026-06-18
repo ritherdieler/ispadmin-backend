@@ -24,6 +24,25 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         WHERE p.paid = false
           AND s.phone IS NOT NULL
           AND s.phone <> ''
+          AND (
+              (
+                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 9
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '9%'
+              )
+              OR
+              (
+                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 11
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '519%'
+              )
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM whatsapp_message_log w
+              WHERE w.payment_id = p.id
+                AND w.message_type = 'PAYMENT_REMINDER'
+                AND w.status = 'SENT'
+                AND DATE(w.created_at) = CURRENT_DATE
+          )
         ORDER BY p.billing_date_datetime ASC, p.id ASC
         LIMIT :limit
     """,
@@ -31,6 +50,13 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
     )
     fun findPendingPaymentsWithPhone(
         @Param("limit") limit: Int
+    ): List<Payment>
+
+    // Busca facturas pendientes dentro de un periodo de cobranza.
+    // La validacion de telefono y logs se mantiene en el servicio para poder auditar omitidos.
+    fun findByPaidFalseAndBillingDateDatetimeGreaterThanEqualAndBillingDateDatetimeLessThanOrderByBillingDateDatetimeAscIdAsc(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
     ): List<Payment>
 
     @Query(
