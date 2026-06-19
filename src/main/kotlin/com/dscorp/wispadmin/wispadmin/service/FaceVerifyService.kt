@@ -407,7 +407,7 @@ class FaceVerifyService(
         }
 
         val user = userRepository.findById(bestFaceRef.userId).orElse(null) ?: return null
-        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt, bestFaceRef.angle)
+        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt, bestFaceRef.angle, bestScore)
     }
 
     // Prueba varios descriptores de una misma foto y conserva el match mas confiable.
@@ -417,6 +417,8 @@ class FaceVerifyService(
         source: String,
         metric: FaceComparisonMetric
     ): FaceMatch? {
+        var bestCandidateMatch: FaceMatch? = null
+
         for ((index, descriptor) in descriptors.withIndex()) {
             val match = findBestMatch(
                 descriptor = descriptor,
@@ -424,12 +426,13 @@ class FaceVerifyService(
                 source = "$source-candidate-$index",
                 metric = metric
             )
-            if (match != null) {
-                return match
+
+            if (match != null && isBetterMatch(match, bestCandidateMatch, metric)) {
+                bestCandidateMatch = match
             }
         }
 
-        return null
+        return bestCandidateMatch
     }
 
     // Limpia el cache cuando se registra o actualiza un rostro para que el login use el embedding nuevo al instante.
@@ -666,13 +669,22 @@ class FaceVerifyService(
         }
     }
 
-    // Usa primero un descriptor principal para que la asistencia responda rapido.
-    // Si ese camino no genera descriptor, recien usa los recortes alternativos como respaldo.
+    // Usa el descriptor principal y tambien recortes alternativos para mejorar la identificacion
+    // cuando el rostro no queda perfectamente centrado en la marcacion.
     private fun generateFastPhotoDescriptors(photoBytes: ByteArray): List<List<Double>> {
+        val descriptors = mutableListOf<List<Double>>()
+
         facePhotoDescriptorService.generateDescriptor(photoBytes)?.let { descriptor ->
-            return listOf(descriptor)
+            descriptors.add(descriptor)
         }
-        return facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+
+        facePhotoDescriptorService.generateDescriptorCandidates(photoBytes).forEach { candidate ->
+            if (descriptors.none { it == candidate }) {
+                descriptors.add(candidate)
+            }
+        }
+
+        return descriptors
     }
 
     private fun isSecondBest(score: Double, secondBestScore: Double, metric: FaceComparisonMetric): Boolean {
@@ -689,6 +701,15 @@ class FaceVerifyService(
                 secondBestScore == Double.MAX_VALUE || secondBestScore - bestScore >= EUCLIDEAN_MIN_MARGIN
             FaceComparisonMetric.COSINE_SIMILARITY ->
                 secondBestScore == -1.0 || bestScore - secondBestScore >= COSINE_MIN_MARGIN
+        }
+    }
+
+    private fun isBetterMatch(candidate: FaceMatch, current: FaceMatch?, metric: FaceComparisonMetric): Boolean {
+        if (current == null) return true
+
+        return when (metric) {
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> candidate.score < current.score
+            FaceComparisonMetric.COSINE_SIMILARITY -> candidate.score > current.score
         }
     }
 
@@ -739,7 +760,8 @@ class FaceVerifyService(
         val user: User,
         val userName: String,
         val faceCreatedAt: Date,
-        val angle: FaceAngle
+        val angle: FaceAngle,
+        val score: Double
     )
 
     private data class StoredFaceEmbedding(
