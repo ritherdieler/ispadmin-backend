@@ -19,6 +19,10 @@ class WhatsAppService(
     private val whatsAppProperties: WhatsAppProperties
 ) {
 
+    companion object {
+        private val PAYMENT_REMINDER_PARAMETER_NAMES = listOf("customer_name", "amount", "billing_period")
+    }
+
     // Envia un mensaje de texto simple usando WhatsApp Cloud API.
     fun sendTextMessage(
         phoneNumber: String,
@@ -71,6 +75,10 @@ class WhatsAppService(
             throw IllegalArgumentException("El idioma de la plantilla de WhatsApp no esta configurado.")
         }
 
+        if (parameters.size != PAYMENT_REMINDER_PARAMETER_NAMES.size) {
+            throw IllegalArgumentException("La plantilla de recordatorio requiere ${PAYMENT_REMINDER_PARAMETER_NAMES.size} parametros.")
+        }
+
         val cleanPhoneNumber = normalizePhoneNumber(phoneNumber)
 
         val body = WhatsAppTemplateMessageBody(
@@ -82,8 +90,11 @@ class WhatsAppService(
                 ),
                 components = listOf(
                     WhatsAppTemplateComponent(
-                        parameters = parameters.map {
-                            WhatsAppTemplateParameter(text = it)
+                        parameters = parameters.zip(PAYMENT_REMINDER_PARAMETER_NAMES).map { (value, name) ->
+                            WhatsAppTemplateParameter(
+                                parameter_name = name,
+                                text = value
+                            )
                         }
                     )
                 )
@@ -122,3 +133,5 @@ class WhatsAppService(
         return normalized
     }
 }
+
+

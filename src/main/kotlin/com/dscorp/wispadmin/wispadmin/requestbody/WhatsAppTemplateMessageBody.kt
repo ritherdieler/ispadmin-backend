@@ -24,5 +24,6 @@ data class WhatsAppTemplateComponent(
 
 data class WhatsAppTemplateParameter(
     val type: String = "text",
+    val parameter_name: String? = null,
     val text: String
 )
