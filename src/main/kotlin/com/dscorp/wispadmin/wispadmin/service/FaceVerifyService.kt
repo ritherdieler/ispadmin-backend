@@ -47,8 +47,8 @@ class FaceVerifyService(
     companion object {
         private const val THRESHOLD = 0.48
         private const val EUCLIDEAN_MIN_MARGIN = 0.06
-        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.80
-        private const val COSINE_MIN_MARGIN = 0.04
+        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.76
+        private const val COSINE_MIN_MARGIN = 0.025
         private const val FACE_CACHE_TTL_MS = 60_000L
         private const val FACE_REVALIDATION_MONTHS = 6
         private const val CHECK_IN_LIMIT_HOUR = 8
@@ -103,16 +103,17 @@ class FaceVerifyService(
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
+        val match = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-identify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -226,16 +227,17 @@ class FaceVerifyService(
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
+        val match = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-verify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -433,6 +435,35 @@ class FaceVerifyService(
         }
 
         return bestCandidateMatch
+    }
+
+    // Camino rapido para marcacion: primero intenta con un solo descriptor.
+    // Solo si no hay match confiable usa recortes/candidatos como respaldo.
+    private fun findBestMatchWithFallbackCandidates(
+        primaryDescriptor: List<Double>,
+        photoBytes: ByteArray,
+        threshold: Double,
+        source: String,
+        metric: FaceComparisonMetric
+    ): FaceMatch? {
+        findBestMatch(
+            descriptor = primaryDescriptor,
+            threshold = threshold,
+            source = "$source-primary",
+            metric = metric
+        )?.let { return it }
+
+        val fallbackDescriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+            .filterNot { it == primaryDescriptor }
+
+        if (fallbackDescriptors.isEmpty()) return null
+
+        return findBestMatchFromCandidates(
+            descriptors = fallbackDescriptors,
+            threshold = threshold,
+            source = "$source-fallback",
+            metric = metric
+        )
     }
 
     // Limpia el cache cuando se registra o actualiza un rostro para que el login use el embedding nuevo al instante.
