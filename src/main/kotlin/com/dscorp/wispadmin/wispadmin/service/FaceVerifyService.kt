@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.Attendance
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
+import com.dscorp.wispadmin.wispadmin.data.model.Face_data.FaceAngle
 import com.dscorp.wispadmin.wispadmin.data.model.User
 import com.dscorp.wispadmin.wispadmin.repository.AttendanceRepository
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
@@ -46,8 +47,8 @@ class FaceVerifyService(
     companion object {
         private const val THRESHOLD = 0.48
         private const val EUCLIDEAN_MIN_MARGIN = 0.06
-        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.80
-        private const val COSINE_MIN_MARGIN = 0.04
+        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.76
+        private const val COSINE_MIN_MARGIN = 0.025
         private const val FACE_CACHE_TTL_MS = 60_000L
         private const val FACE_REVALIDATION_MONTHS = 6
         private const val CHECK_IN_LIMIT_HOUR = 8
@@ -102,16 +103,17 @@ class FaceVerifyService(
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
+        val match = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-identify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -225,16 +227,17 @@ class FaceVerifyService(
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
+        val match = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
             threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
             source = "attendance-verify-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
@@ -376,7 +379,7 @@ class FaceVerifyService(
         }
 
         logger.debug(
-            "Login facial [{}]: mejor resultado={}, segundo resultado={}, umbral={}, metrica={}, descriptorSize={}, faceDataId={}, userId={}",
+            "Login facial [{}]: mejor resultado={}, segundo resultado={}, umbral={}, metrica={}, descriptorSize={}, faceDataId={}, userId={}, angle={}",
             source,
             bestScore,
             secondBestScore,
@@ -384,7 +387,8 @@ class FaceVerifyService(
             metric,
             descriptor.size,
             bestFaceRef?.id,
-            bestFaceRef?.userId
+            bestFaceRef?.userId,
+            bestFaceRef?.angle
         )
 
         val matchesThreshold = when (metric) {
@@ -405,7 +409,7 @@ class FaceVerifyService(
         }
 
         val user = userRepository.findById(bestFaceRef.userId).orElse(null) ?: return null
-        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt)
+        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt, bestFaceRef.angle, bestScore)
     }
 
     // Prueba varios descriptores de una misma foto y conserva el match mas confiable.
@@ -415,6 +419,8 @@ class FaceVerifyService(
         source: String,
         metric: FaceComparisonMetric
     ): FaceMatch? {
+        var bestCandidateMatch: FaceMatch? = null
+
         for ((index, descriptor) in descriptors.withIndex()) {
             val match = findBestMatch(
                 descriptor = descriptor,
@@ -422,12 +428,42 @@ class FaceVerifyService(
                 source = "$source-candidate-$index",
                 metric = metric
             )
-            if (match != null) {
-                return match
+
+            if (match != null && isBetterMatch(match, bestCandidateMatch, metric)) {
+                bestCandidateMatch = match
             }
         }
 
-        return null
+        return bestCandidateMatch
+    }
+
+    // Camino rapido para marcacion: primero intenta con un solo descriptor.
+    // Solo si no hay match confiable usa recortes/candidatos como respaldo.
+    private fun findBestMatchWithFallbackCandidates(
+        primaryDescriptor: List<Double>,
+        photoBytes: ByteArray,
+        threshold: Double,
+        source: String,
+        metric: FaceComparisonMetric
+    ): FaceMatch? {
+        findBestMatch(
+            descriptor = primaryDescriptor,
+            threshold = threshold,
+            source = "$source-primary",
+            metric = metric
+        )?.let { return it }
+
+        val fallbackDescriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+            .filterNot { it == primaryDescriptor }
+
+        if (fallbackDescriptors.isEmpty()) return null
+
+        return findBestMatchFromCandidates(
+            descriptors = fallbackDescriptors,
+            threshold = threshold,
+            source = "$source-fallback",
+            metric = metric
+        )
     }
 
     // Limpia el cache cuando se registra o actualiza un rostro para que el login use el embedding nuevo al instante.
@@ -438,7 +474,7 @@ class FaceVerifyService(
         }
     }
 
-    // Mantiene los embeddings ya parseados por un tiempo corto para no leer y convertir toda la tabla en cada login.
+    // Mantiene todos los embeddings parseados por un tiempo corto, incluyendo los angulos FRONT, LEFT y RIGHT.
     private fun getStoredFaceEmbeddings(): List<StoredFaceEmbedding> {
         val now = System.currentTimeMillis()
         val cached = faceEmbeddingCache
@@ -469,7 +505,8 @@ class FaceVerifyService(
             id = id,
             embedding = embedding,
             userId = user.id,
-            createdAt = createdAt
+            createdAt = createdAt,
+            angle = angle
         )
     }
 
@@ -663,13 +700,22 @@ class FaceVerifyService(
         }
     }
 
-    // Usa primero un descriptor principal para que la asistencia responda rapido.
-    // Si ese camino no genera descriptor, recien usa los recortes alternativos como respaldo.
+    // Usa el descriptor principal y tambien recortes alternativos para mejorar la identificacion
+    // cuando el rostro no queda perfectamente centrado en la marcacion.
     private fun generateFastPhotoDescriptors(photoBytes: ByteArray): List<List<Double>> {
+        val descriptors = mutableListOf<List<Double>>()
+
         facePhotoDescriptorService.generateDescriptor(photoBytes)?.let { descriptor ->
-            return listOf(descriptor)
+            descriptors.add(descriptor)
         }
-        return facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+
+        facePhotoDescriptorService.generateDescriptorCandidates(photoBytes).forEach { candidate ->
+            if (descriptors.none { it == candidate }) {
+                descriptors.add(candidate)
+            }
+        }
+
+        return descriptors
     }
 
     private fun isSecondBest(score: Double, secondBestScore: Double, metric: FaceComparisonMetric): Boolean {
@@ -686,6 +732,15 @@ class FaceVerifyService(
                 secondBestScore == Double.MAX_VALUE || secondBestScore - bestScore >= EUCLIDEAN_MIN_MARGIN
             FaceComparisonMetric.COSINE_SIMILARITY ->
                 secondBestScore == -1.0 || bestScore - secondBestScore >= COSINE_MIN_MARGIN
+        }
+    }
+
+    private fun isBetterMatch(candidate: FaceMatch, current: FaceMatch?, metric: FaceComparisonMetric): Boolean {
+        if (current == null) return true
+
+        return when (metric) {
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> candidate.score < current.score
+            FaceComparisonMetric.COSINE_SIMILARITY -> candidate.score > current.score
         }
     }
 
@@ -735,14 +790,17 @@ class FaceVerifyService(
     private data class FaceMatch(
         val user: User,
         val userName: String,
-        val faceCreatedAt: Date
+        val faceCreatedAt: Date,
+        val angle: FaceAngle,
+        val score: Double
     )
 
     private data class StoredFaceEmbedding(
         val id: Int,
         val embedding: List<Double>,
         val userId: Int,
-        val createdAt: Date
+        val createdAt: Date,
+        val angle: FaceAngle
     )
 
     private enum class FaceComparisonMetric {
@@ -763,7 +821,7 @@ class FaceVerifyService(
         ) ?: return null
 
         if (isFaceExpired(match.faceCreatedAt)) {
-            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}", match.user.id)
+            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}, angle={}", match.user.id, match.angle)
             return null
         }
         return  match.user

@@ -31,8 +31,8 @@ data class User(
     @OneToMany(mappedBy = "user")
     val attendances: List<Attendance>? = null,
 
-    @OneToOne(mappedBy = "user")
-    val faceData: Face_data? = null,
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    val faceData: List<Face_data> = emptyList(),
 
     //@OneToMany(mappedBy = "user")
     //val attendanceLogs: List<AttendanceLog>? = null
