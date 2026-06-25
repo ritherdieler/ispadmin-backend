@@ -1,4 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.controller
+import com.dscorp.wispadmin.wispadmin.config.FaceRecognitionProperties
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data.FaceAngle
 import com.dscorp.wispadmin.wispadmin.dto.UserDto
@@ -11,6 +12,7 @@ import com.dscorp.wispadmin.wispadmin.response.OfflineFaceItemResponse
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoDescriptorService
 import com.dscorp.wispadmin.wispadmin.service.FacePhotoQualityService
 import com.dscorp.wispadmin.wispadmin.service.FaceVerifyService
+import com.dscorp.wispadmin.wispadmin.util.FaceEmbeddingMath
 import com.dscorp.wispadmin.wispadmin.util.PasswordHashUtil
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -40,15 +42,9 @@ class FaceDataController(
     private val jdbcTemplate: JdbcTemplate,
     private val facePhotoDescriptorService: FacePhotoDescriptorService,
     private val facePhotoQualityService: FacePhotoQualityService,
-    private val faceVerifyService: FaceVerifyService
+    private val faceVerifyService: FaceVerifyService,
+    private val faceRecognitionProperties: FaceRecognitionProperties
 ) {
-    companion object {
-        private const val OFFLINE_FACE_METRIC = "COSINE_SIMILARITY"
-        private const val OFFLINE_FACE_THRESHOLD = 0.80
-        private const val OFFLINE_FACE_MIN_MARGIN = 0.04
-        private const val OFFLINE_DESCRIPTOR_SIZE = 512
-    }
-
     @PostConstruct
     fun ensureFaceEmbeddingColumnSize() {
         jdbcTemplate.execute("ALTER TABLE face_data MODIFY COLUMN face_embedding LONGTEXT NOT NULL")
@@ -93,10 +89,10 @@ class FaceDataController(
             OfflineFaceDatasetResponse(
                 datasetVersion = faces.maxOfOrNull { it.registeredAt.time } ?: System.currentTimeMillis(),
                 generatedAt = Date(),
-                metric = OFFLINE_FACE_METRIC,
-                threshold = OFFLINE_FACE_THRESHOLD,
-                minMargin = OFFLINE_FACE_MIN_MARGIN,
-                descriptorSize = OFFLINE_DESCRIPTOR_SIZE,
+                metric = faceRecognitionProperties.matching.offlineMetric,
+                threshold = faceRecognitionProperties.matching.offlineThreshold,
+                minMargin = faceRecognitionProperties.matching.offlineMinMargin,
+                descriptorSize = faceRecognitionProperties.matching.offlineDescriptorSize,
                 faces = faces
             )
         )
@@ -322,6 +318,9 @@ class FaceDataController(
 
         faceDataRepository.deleteAllByUser_Id(user.id)
 
+        val angleEmbeddings = descriptors.mapNotNull { (_, result) -> result.descriptor }
+        val masterEmbedding = FaceEmbeddingMath.averageL2Normalized(angleEmbeddings)
+
         val savedFaces = descriptors.map { (angle, result) ->
             Face_data(
                 faceEmbedding = objectMapper.writeValueAsString(result.descriptor),
@@ -329,15 +328,28 @@ class FaceDataController(
                 angle = angle,
                 user = user
             )
-        }.let { faceDataRepository.saveAll(it) }
+        }.toMutableList()
+
+        if (masterEmbedding != null) {
+            savedFaces.add(
+                Face_data(
+                    faceEmbedding = objectMapper.writeValueAsString(masterEmbedding),
+                    imageUrl = null,
+                    angle = FaceAngle.MASTER,
+                    user = user
+                )
+            )
+        }
+
+        val persistedFaces = faceDataRepository.saveAll(savedFaces)
 
         faceVerifyService.clearFaceEmbeddingCache()
 
         return ResponseEntity.ok(
             mapOf(
                 "userId" to user.id,
-                "registeredAngles" to savedFaces.map { it.angle.name },
-                "message" to "Rostro registrado correctamente en tres angulos."
+                "registeredAngles" to persistedFaces.map { it.angle.name },
+                "message" to "Rostro registrado correctamente en tres angulos con template maestro."
             )
         )
     }
@@ -373,6 +385,49 @@ class FaceDataController(
         )
     }
 
+    // Inventario de embeddings agrupado por dimension del vector.
+    // Util durante una migracion de modelo para ver cuantos usuarios siguen con el modelo anterior.
+    @GetMapping("/admin/embedding-inventory")
+    fun embeddingInventory(): ResponseEntity<Any> {
+        val all = faceDataRepository.findAll()
+        val bySize = all.groupingBy { parseEmbedding(it.faceEmbedding)?.size ?: -1 }.eachCount()
+        val usersBySize = all
+            .mapNotNull { face -> parseEmbedding(face.faceEmbedding)?.size?.let { it to face.user.id } }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { entry -> entry.value.distinct().size }
+
+        return ResponseEntity.ok(
+            mapOf(
+                "totalEmbeddings" to all.size,
+                "embeddingsByDescriptorSize" to bySize,
+                "usersByDescriptorSize" to usersBySize
+            )
+        )
+    }
+
+    // Invalida todos los registros faciales para forzar el re-enrolamiento de todos los usuarios.
+    // Necesario al cambiar el modelo de embeddings (el espacio vectorial cambia y los vectores viejos quedan inservibles).
+    @PostMapping("/admin/reset-embeddings")
+    @Transactional
+    fun resetEmbeddings(@RequestParam("confirm") confirm: String): ResponseEntity<Any> {
+        if (confirm != "DELETE_ALL_FACE_DATA") {
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(mapOf("message" to "Confirmacion invalida. Envia confirm=DELETE_ALL_FACE_DATA para borrar todos los rostros."))
+        }
+
+        val deleted = faceDataRepository.count()
+        faceDataRepository.deleteAll()
+        faceVerifyService.clearFaceEmbeddingCache()
+
+        return ResponseEntity.ok(
+            mapOf(
+                "deleted" to deleted,
+                "message" to "Se invalidaron todos los registros faciales. Todos los usuarios deben re-enrolar su rostro."
+            )
+        )
+    }
+
     private fun parseEmbedding(json: String): List<Double>? {
         return try {
             objectMapper.readValue(json, object : TypeReference<List<Double>>() {})
@@ -386,6 +441,7 @@ class FaceDataController(
             FaceAngle.FRONT -> "frontal"
             FaceAngle.LEFT -> "izquierda"
             FaceAngle.RIGHT -> "derecha"
+            FaceAngle.MASTER -> "maestro"
         }
 
         val photoBytes = photo.bytes

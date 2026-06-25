@@ -7,4 +7,4 @@ echo "Base de datos: ispadmin_dev"
 echo "Firebase: ispadmin-dev"
 echo ""
 
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+sh mvnw spring-boot:run -Dspring-boot.run.profiles=dev

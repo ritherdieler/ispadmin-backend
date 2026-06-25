@@ -4,11 +4,14 @@ import ai.djl.ModelException
 import ai.djl.inference.Predictor
 import ai.djl.modality.cv.Image
 import ai.djl.modality.cv.ImageFactory
+import ai.djl.modality.cv.output.Landmark
 import ai.djl.modality.cv.output.DetectedObjects
 import ai.djl.repository.zoo.Criteria
 import ai.djl.repository.zoo.ZooModel
 import ai.djl.training.util.ProgressBar
 import ai.djl.translate.TranslateException
+import com.dscorp.wispadmin.wispadmin.config.FaceEmbeddingProperties
+import com.dscorp.wispadmin.wispadmin.config.FaceRecognitionProperties
 import com.dscorp.wispadmin.wispadmin.util.FaceModelFileResolver
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -16,6 +19,7 @@ import org.springframework.stereotype.Service
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import javax.imageio.ImageIO
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
 import kotlin.math.max
@@ -34,7 +38,9 @@ class FacePhotoPreprocessorService(
     private val detectorModelPath: String,
     @Value("\${face.login.djl-detector-model-name:ultranet}")
     private val detectorModelName: String,
-    private val faceModelFileResolver: FaceModelFileResolver
+    private val faceModelFileResolver: FaceModelFileResolver,
+    private val faceRecognitionProperties: FaceRecognitionProperties,
+    private val faceEmbeddingProperties: FaceEmbeddingProperties
 ) {
     private val logger = LoggerFactory.getLogger(FacePhotoPreprocessorService::class.java)
     private val modelLock = Any()
@@ -43,11 +49,7 @@ class FacePhotoPreprocessorService(
     private var detectorModel: ZooModel<Image, DetectedObjects>? = null
 
     companion object {
-        private const val CONFIDENCE_THRESHOLD = 0.72
-        private const val NMS_THRESHOLD = 0.45
         private const val TOP_K = 5000
-        private const val FACE_MARGIN_RATIO = 0.18
-        private const val MIN_FACE_WIDTH_RATIO = 0.12
 
         private val VARIANCE = doubleArrayOf(0.1, 0.2)
         private val SCALES = arrayOf(
@@ -114,12 +116,32 @@ class FacePhotoPreprocessorService(
             val bounds = detectedFace.boundingBox.bounds
             val faceWidthRatio = bounds.width
 
-            if (faceWidthRatio < MIN_FACE_WIDTH_RATIO) {
+            if (faceWidthRatio < faceRecognitionProperties.detector.minFaceWidthRatio) {
                 logger.info(
                     "Foto facial rechazada: rostro demasiado lejano. widthRatio={}.",
                     faceWidthRatio
                 )
                 return null
+            }
+
+            val sourceBuffered = ImageIO.read(ByteArrayInputStream(photoBytes))
+            if (sourceBuffered != null && detectedFace.boundingBox is Landmark) {
+                val landmark = detectedFace.boundingBox as Landmark
+                val aligned = if (faceEmbeddingProperties.isArcFaceAlignment()) {
+                    ArcFaceLandmarkAligner.alignFace(
+                        source = sourceBuffered,
+                        landmark = landmark,
+                        outputSize = faceEmbeddingProperties.inputSize
+                    )
+                } else {
+                    FaceLandmarkAligner.alignFace(
+                        source = sourceBuffered,
+                        landmark = landmark
+                    )
+                }
+                if (aligned != null) {
+                    return bufferedImageToJpegBytes(aligned)
+                }
             }
 
             val crop = calculateCrop(
@@ -174,8 +196,8 @@ class FacePhotoPreprocessorService(
     private fun loadDetectorModel(): ZooModel<Image, DetectedObjects> {
         val modelFile = resolveDetectorModelFile()
         val translator = FaceDetectionTranslator(
-            confidenceThreshold = CONFIDENCE_THRESHOLD,
-            nmsThreshold = NMS_THRESHOLD,
+            confidenceThreshold = faceRecognitionProperties.detector.confidenceThreshold,
+            nmsThreshold = faceRecognitionProperties.detector.nmsThreshold,
             variance = VARIANCE,
             topK = TOP_K,
             scales = SCALES,
@@ -217,8 +239,8 @@ class FacePhotoPreprocessorService(
         val faceY = yRatio * imageHeight
         val faceWidth = widthRatio * imageWidth
         val faceHeight = heightRatio * imageHeight
-        val horizontalMargin = faceWidth * FACE_MARGIN_RATIO
-        val verticalMargin = faceHeight * FACE_MARGIN_RATIO
+        val horizontalMargin = faceWidth * faceRecognitionProperties.detector.faceMarginRatio
+        val verticalMargin = faceHeight * faceRecognitionProperties.detector.faceMarginRatio
 
         val left = max(0.0, faceX - horizontalMargin).roundToInt()
         val top = max(0.0, faceY - verticalMargin).roundToInt()
@@ -231,6 +253,13 @@ class FacePhotoPreprocessorService(
             width = max(1, right - left),
             height = max(1, bottom - top)
         )
+    }
+
+    private fun bufferedImageToJpegBytes(image: java.awt.image.BufferedImage): ByteArray {
+        return ByteArrayOutputStream().use { output ->
+            ImageIO.write(image, "jpg", output)
+            output.toByteArray()
+        }
     }
 
     private data class CropArea(

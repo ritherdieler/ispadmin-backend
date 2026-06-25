@@ -149,6 +149,13 @@
             <version>${pytorch.jni.version}</version>
             <scope>runtime</scope>
         </dependency>
+
+        <!-- Motor ONNX Runtime para modelos ArcFace/InsightFace (activable via face.embedding.engine=OnnxRuntime). -->
+        <dependency>
+            <groupId>ai.djl.onnxruntime</groupId>
+            <artifactId>onnxruntime-engine</artifactId>
+            <version>${djl.version}</version>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -319,6 +326,8 @@
                         WEB-INF/lib/pytorch-engine-${djl.version}.jar,
                         WEB-INF/lib/pytorch-jni-${pytorch.jni.version}.jar,
                         WEB-INF/lib/pytorch-native-cpu-*.jar,
+                        WEB-INF/lib/onnxruntime-engine-${djl.version}.jar,
+                        WEB-INF/lib/onnxruntime-*.jar,
                         WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class
                     </packagingExcludes>
                 </configuration>
@@ -361,8 +370,8 @@
                             <goal>copy-dependencies</goal>
                         </goals>
                         <configuration>
-                            <includeGroupIds>ai.djl,ai.djl.pytorch,org.slf4j,com.google.code.gson,net.java.dev.jna,org.apache.commons</includeGroupIds>
-                            <includeArtifactIds>api,pytorch-engine,pytorch-jni,pytorch-native-cpu,slf4j-api,gson,jna,commons-compress</includeArtifactIds>
+                            <includeGroupIds>ai.djl,ai.djl.pytorch,ai.djl.onnxruntime,com.microsoft.onnxruntime,org.slf4j,com.google.code.gson,net.java.dev.jna,org.apache.commons</includeGroupIds>
+                            <includeArtifactIds>api,pytorch-engine,pytorch-jni,pytorch-native-cpu,onnxruntime-engine,onnxruntime,slf4j-api,gson,jna,commons-compress</includeArtifactIds>
                             <outputDirectory>${project.build.directory}/tomcat-lib</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
                             <overWriteSnapshots>true</overWriteSnapshots>

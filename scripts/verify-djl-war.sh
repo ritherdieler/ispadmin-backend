@@ -15,7 +15,7 @@ if [ ! -f "$WAR" ]; then
 fi
 
 MODELS_DIR="$PROJECT_DIR/src/main/resources/models"
-for model in face_feature.zip ultranet.zip; do
+for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
   if [ ! -f "$MODELS_DIR/$model" ]; then
     fail "Falta $MODELS_DIR/$model. Restaura los modelos DJL antes de compilar/desplegar."
   fi
@@ -23,15 +23,15 @@ done
 
 WAR_LIST="$(jar tf "$WAR")"
 
-for model in face_feature.zip ultranet.zip; do
+for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
   if ! grep -q "WEB-INF/classes/models/$model" <<< "$WAR_LIST"; then
     fail "El WAR no contiene WEB-INF/classes/models/$model. Recompila tras restaurar src/main/resources/models/$model"
   fi
 done
 
-if grep -q "WEB-INF/lib/.*\\(api-${DJL_VERSION:-0.36.0}\\|pytorch-engine\\|pytorch-jni\\|pytorch-native-cpu\\).*\\.jar" <<< "$WAR_LIST"; then
-  echo "$WAR_LIST" | grep "WEB-INF/lib/.*\\(api-${DJL_VERSION:-0.36.0}\\|pytorch-engine\\|pytorch-jni\\|pytorch-native-cpu\\).*\\.jar" >&2
-  fail "El WAR contiene jars DJL/PyTorch. En Tomcat deben vivir solo en CATALINA_HOME/lib para permitir redeploy por Manager sin choque de classloaders."
+if grep -q "WEB-INF/lib/.*\\(api-${DJL_VERSION:-0.36.0}\\|pytorch-engine\\|pytorch-jni\\|pytorch-native-cpu\\|onnxruntime-engine\\|onnxruntime-\\).*\\.jar" <<< "$WAR_LIST"; then
+  echo "$WAR_LIST" | grep -E "WEB-INF/lib/.*(api-${DJL_VERSION:-0.36.0}|pytorch-engine|pytorch-jni|pytorch-native-cpu|onnxruntime-engine|onnxruntime-).*\.jar" >&2
+  fail "El WAR contiene jars DJL/PyTorch/ONNX. En Tomcat deben vivir solo en CATALINA_HOME/lib para permitir redeploy por Manager sin choque de classloaders."
 fi
 
 if grep -q "osx-aarch64" <<< "$WAR_LIST"; then
@@ -64,12 +64,20 @@ for required in "gson-*.jar" "jna-*.jar" "commons-compress-*.jar"; do
   fi
 done
 
-echo "OK: WAR sin DJL/PyTorch, modelos faciales empaquetados y target/tomcat-lib contiene DJL/PyTorch para Debian x86_64."
+if ! find "$TOMCAT_LIB" -maxdepth 1 -name "onnxruntime-engine-*.jar" -print -quit | grep -q .; then
+  fail "Falta onnxruntime-engine en target/tomcat-lib."
+fi
+
+if ! find "$TOMCAT_LIB" -maxdepth 1 -name "onnxruntime-*.jar" -print -quit | grep -q .; then
+  fail "Falta com.microsoft.onnxruntime:onnxruntime en target/tomcat-lib."
+fi
+
+echo "OK: WAR sin DJL/PyTorch/ONNX, modelos faciales empaquetados y target/tomcat-lib contiene DJL/PyTorch/ONNX para Debian x86_64."
 echo "WAR models:"
 jar tf "$WAR" | grep "WEB-INF/classes/models/" || echo "NONE"
-echo "WAR DJL/PyTorch (must be NONE):"
-jar tf "$WAR" | grep -E "WEB-INF/lib/(api-${DJL_VERSION:-0.36.0}|pytorch-engine|pytorch-jni|pytorch-native-cpu)" || echo "NONE"
+echo "WAR DJL/PyTorch/ONNX (must be NONE):"
+jar tf "$WAR" | grep -E "WEB-INF/lib/(api-${DJL_VERSION:-0.36.0}|pytorch-engine|pytorch-jni|pytorch-native-cpu|onnxruntime-engine|onnxruntime-)" || echo "NONE"
 echo "WAR native helper:"
 jar tf "$WAR" | grep "WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class" || echo "NONE"
 echo "Tomcat lib:"
-ls -1 "$TOMCAT_LIB" | grep -E "^(api|pytorch|ispadmin-djl|slf4j-api|gson|jna|commons-compress)"
+ls -1 "$TOMCAT_LIB" | grep -E "^(api|pytorch|onnxruntime|ispadmin-djl|slf4j-api|gson|jna|commons-compress)"

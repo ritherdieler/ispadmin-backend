@@ -12,5 +12,6 @@ data class VerifyFaceResponse(
     val attendanceStatus: String? = null,
     val nextAction: String? = null,
     val alreadyRegistered: Boolean = false,
-    val requiresReenrollment: Boolean = false
+    val requiresReenrollment: Boolean = false,
+    val challengeRequired: Boolean = false
 )

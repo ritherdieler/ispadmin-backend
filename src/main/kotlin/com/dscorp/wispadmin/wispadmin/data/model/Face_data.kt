@@ -40,7 +40,8 @@ data class Face_data (
     enum class FaceAngle {
         FRONT,
         LEFT,
-        RIGHT
+        RIGHT,
+        MASTER
     }
 }
 

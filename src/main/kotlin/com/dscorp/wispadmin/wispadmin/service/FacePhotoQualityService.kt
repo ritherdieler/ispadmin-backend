@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.wispadmin.config.FaceRecognitionProperties
+import com.dscorp.wispadmin.wispadmin.util.FaceEmbeddingMath
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.awt.image.BufferedImage
@@ -8,20 +10,33 @@ import javax.imageio.ImageIO
 import kotlin.math.abs
 
 @Service
-class FacePhotoQualityService {
+class FacePhotoQualityService(
+    private val faceRecognitionProperties: FaceRecognitionProperties
+) {
     private val logger = LoggerFactory.getLogger(FacePhotoQualityService::class.java)
 
-    companion object {
-        private const val MIN_BRIGHTNESS = 12.0
-        private const val MAX_BRIGHTNESS = 235.0
-        private const val MIN_SKIN_RATIO = 0.006
-        private const val MIN_EDGE_RATIO = 0.004
-    }
+    fun hasUsableFaceCandidate(photoBytes: ByteArray): Boolean = evaluate(photoBytes).valid
 
-    // Valida que la foto tenga condiciones minimas de rostro antes de generar/comparar embeddings.
-    fun hasUsableFaceCandidate(photoBytes: ByteArray): Boolean {
-        val image = readImage(photoBytes) ?: return false
-        if (image.width < 80 || image.height < 80) return false
+    /**
+     * Calcula las metricas de calidad de la foto y decide si es usable.
+     * Expone los valores intermedios para poder registrarlos y analizarlos despues.
+     */
+    fun evaluate(photoBytes: ByteArray): QualityResult {
+        val image = readImage(photoBytes)
+            ?: return QualityResult(valid = false, width = 0, height = 0, brightness = 0.0, skinRatio = 0.0, edgeRatio = 0.0, qualityScore = 0.0)
+
+        val minImageSize = faceRecognitionProperties.quality.minImageSize
+        if (image.width < minImageSize || image.height < minImageSize) {
+            return QualityResult(
+                valid = false,
+                width = image.width,
+                height = image.height,
+                brightness = 0.0,
+                skinRatio = 0.0,
+                edgeRatio = 0.0,
+                qualityScore = 0.0
+            )
+        }
 
         val bounds = centralBounds(image)
         var totalPixels = 0
@@ -50,15 +65,26 @@ class FacePhotoQualityService {
             }
         }
 
-        if (totalPixels == 0) return false
+        if (totalPixels == 0) {
+            return QualityResult(
+                valid = false,
+                width = image.width,
+                height = image.height,
+                brightness = 0.0,
+                skinRatio = 0.0,
+                edgeRatio = 0.0,
+                qualityScore = 0.0
+            )
+        }
 
         val brightness = brightnessSum / totalPixels
         val skinRatio = skinPixels.toDouble() / totalPixels
         val edgeRatio = edgePixels.toDouble() / totalPixels
+        val quality = faceRecognitionProperties.quality
 
-        val valid = brightness in MIN_BRIGHTNESS..MAX_BRIGHTNESS &&
-            skinRatio >= MIN_SKIN_RATIO &&
-            edgeRatio >= MIN_EDGE_RATIO
+        val valid = brightness in quality.minBrightness..quality.maxBrightness &&
+            skinRatio >= quality.minSkinRatio &&
+            edgeRatio >= quality.minEdgeRatio
 
         if (!valid) {
             logger.info(
@@ -69,8 +95,36 @@ class FacePhotoQualityService {
             )
         }
 
-        return valid
+        val qualityScore = FaceEmbeddingMath.qualityWeight(
+            brightness = brightness,
+            skinRatio = skinRatio,
+            edgeRatio = edgeRatio,
+            minBrightness = quality.minBrightness,
+            maxBrightness = quality.maxBrightness,
+            minSkinRatio = quality.minSkinRatio,
+            minEdgeRatio = quality.minEdgeRatio
+        )
+
+        return QualityResult(
+            valid = valid,
+            width = image.width,
+            height = image.height,
+            brightness = brightness,
+            skinRatio = skinRatio,
+            edgeRatio = edgeRatio,
+            qualityScore = qualityScore
+        )
     }
+
+    data class QualityResult(
+        val valid: Boolean,
+        val width: Int,
+        val height: Int,
+        val brightness: Double,
+        val skinRatio: Double,
+        val edgeRatio: Double,
+        val qualityScore: Double = 0.0
+    )
 
     private fun readImage(photoBytes: ByteArray): BufferedImage? {
         return try {
@@ -80,7 +134,6 @@ class FacePhotoQualityService {
         }
     }
 
-    // Evalua principalmente el centro, que coincide con el recuadro donde el usuario coloca el rostro.
     private fun centralBounds(image: BufferedImage): ImageBounds {
         val width = image.width
         val height = image.height
@@ -91,7 +144,6 @@ class FacePhotoQualityService {
         return ImageBounds(left, top, right, bottom)
     }
 
-    // Rango amplio de piel en YCbCr/RGB para evitar aceptar fondos planos sin rostro.
     private fun isSkinLike(r: Int, g: Int, b: Int): Boolean {
         val cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b
         val cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b

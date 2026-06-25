@@ -156,15 +156,14 @@ run_scp() {
 
 build_war() {
   local models_dir="$PROJECT_DIR/src/main/resources/models"
-  for model in face_feature.zip ultranet.zip; do
+  for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
     if [[ ! -f "$models_dir/$model" ]]; then
       echo "Missing $models_dir/$model — required for facial recognition." >&2
-      echo "Restore from git: git checkout a4c8d3c -- src/main/resources/models/face_feature.zip" >&2
       exit 1
     fi
   done
   echo "Building WAR for Linux x86_64..."
-  (cd "$PROJECT_DIR" && bash mvnw clean package -DskipTests -Ddjl.linux)
+  (cd "$PROJECT_DIR" && sh mvnw clean package -DskipTests -Ddjl.linux)
   bash "$SCRIPT_DIR/verify-djl-war.sh"
 }
 
@@ -316,7 +315,7 @@ verify_djl_logs() {
   echo "Checking DJL startup in container logs..."
   local i
   for i in $(seq 1 12); do
-    if run_ssh "docker logs '$DOCKER_TOMCAT_CONTAINER' 2>&1 | grep -q 'Motor facial DJL listo'"; then
+    if run_ssh "docker logs '$DOCKER_TOMCAT_CONTAINER' 2>&1 | grep -qE 'Motor facial DJL listo|Cargando modelo facial ONNX'"; then
       echo "DJL face engine ready"
       return 0
     fi
