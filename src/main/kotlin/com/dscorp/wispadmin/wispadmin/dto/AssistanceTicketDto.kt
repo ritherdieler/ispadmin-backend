@@ -13,6 +13,7 @@ data class AssistanceTicketDto(
     val comments: String? = null,
     var priority: String? = null,
     var createdAt: Date = Date(),
+    var scheduledAt: Date? = null,
     var assignedAt: Date? = null,
     val resolvedAt: Date? = null,
     var closedAt: Date? = null,
