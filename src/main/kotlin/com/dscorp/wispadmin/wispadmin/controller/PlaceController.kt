@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.data.model.Place
+import com.dscorp.wispadmin.wispadmin.data.model.util.BaseResponse
 import com.dscorp.wispadmin.wispadmin.dto.PlaceDto
 import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
 import org.springframework.beans.factory.annotation.Autowired
@@ -30,13 +31,25 @@ class PlaceController {
 
 
     @GetMapping("/findByLocation")
-    fun findPlaceByLocation(@RequestParam("latitude") latitude: Double, @RequestParam("longitude") longitude: Double): ResponseEntity<PlaceDto> {
+    fun findPlaceByLocation(
+        @RequestParam("latitude") latitude: Double,
+        @RequestParam("longitude") longitude: Double
+    ): BaseResponse {
         return try {
             val place = repository.findPlaceContainingPoint(latitude, longitude)
-            ResponseEntity.status(200).body(place?.toDto() ?: throw Exception("Place not found"))
+            if (place == null) {
+                BaseResponse(
+                    status = 404,
+                    error = "No se encontró un lugar para las coordenadas latitude=$latitude, longitude=$longitude"
+                )
+            } else {
+                BaseResponse(status = 200, data = place.toDto())
+            }
         } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
+            BaseResponse(
+                status = 500,
+                error = e.message ?: "Error al buscar lugar por ubicación"
+            )
         }
     }
 

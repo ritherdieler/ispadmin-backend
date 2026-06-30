@@ -13,8 +13,9 @@ interface PlaceRepository : JpaRepository<Place, Int> {
         """
         SELECT * 
         FROM place p
-        WHERE ST_Contains(
-            p.area, 
+        WHERE p.area IS NOT NULL
+        AND ST_Contains(
+            ST_SRID(p.area, 4326),
             ST_GeomFromText(
                 CONCAT('POINT(', :longitude, ' ', :latitude, ')'),
                 4326
