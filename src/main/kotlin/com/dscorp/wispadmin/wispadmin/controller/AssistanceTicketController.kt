@@ -19,7 +19,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import java.util.*
-
+import org.springframework.http.HttpStatus
 @RestController
 @RequestMapping("/assistanceTicket")
 class AssistanceTicketController @Autowired constructor(
@@ -48,7 +48,7 @@ class AssistanceTicketController @Autowired constructor(
             val mStartDate = Date(startDate)
             val mEndDate = Date(endDate)
 
-            val assistanceTickets = repository.findAllByStatusAndCreatedAtBetweenOrderByCreatedAtDesc(
+            val assistanceTickets = repository.findAllByStatusAndScheduledAtBetween(
                 status = status,
                 start = mStartDate,
                 end = mEndDate
@@ -238,7 +238,7 @@ class AssistanceTicketController @Autowired constructor(
     @GetMapping("/findAll")
     fun findBy(@RequestParam("status") status: AssistanceTicketStatus): ResponseEntity<List<AssistanceTicketDto>> {
         return try {
-            val assistanceTickets = repository.findTop40ByStatusOrderByCreatedAtDesc(status)
+            val assistanceTickets = repository.findTop40ByStatusOrderByScheduledAt(status)
             ResponseEntity.status(200).body(assistanceTickets.map { it.toDto() })
         } catch (e: Exception) {
             errorLogRepository.save(e.toErrorLog(Modules.ASSISTANCE_TICKET))
@@ -281,6 +281,7 @@ class AssistanceTicketController @Autowired constructor(
             ticket.apply {
                 this.priority = priority
                 this.createdAt = Date()
+                this.scheduledAt = this.createdAt
             }
             //si el ticket es de un cliente externo
             if (subscription == null) {
@@ -359,7 +360,47 @@ class AssistanceTicketController @Autowired constructor(
             objectErrorResponse
         }
     }
+    data class RescheduleTicketRequest(
+        val scheduledAt: Long = 0
+    )
+    @PutMapping("/{id}/reschedule")
+    fun rescheduleTicket(
+        @PathVariable id: Int,
+        @RequestBody request: RescheduleTicketRequest
+    ): ResponseEntity<AssistanceTicketDto> {
+        return try {
+            val ticket = repository.findById(id).orElseThrow()
+            if (request.scheduledAt <= 0) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ticket.toDto())
+            }
 
+            if (ticket.status in listOf(
+                    AssistanceTicketStatus.CLOSED,
+                    AssistanceTicketStatus.CANCELLED,
+                    AssistanceTicketStatus.RESOLVED
+                )
+            ) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ticket.toDto())
+            }
+
+            ticket.scheduledAt = Date(request.scheduledAt)
+
+            val updatedTicket = repository.save(ticket)
+            val ticketDto = updatedTicket.toDto()
+
+            ticketNotificationService.notifyTicketStatusChange(
+                ticketId = ticket.id.toLong(),
+                oldStatus = ticket.status.name,
+                newStatus = ticket.status.name
+            )
+
+            ResponseEntity.ok(ticketDto)
+        } catch (e: Exception) {
+            errorLogRepository.save(e.toErrorLog(Modules.ASSISTANCE_TICKET))
+            e.printStackTrace()
+            objectErrorResponse
+        }
+    }
 }
 
 private fun Any.toJson(): Any {
@@ -385,6 +426,7 @@ private fun AssistanceTicket.toDto(): AssistanceTicketDto = AssistanceTicketDto(
     comments = comments,
     priority = getPriorityLabel(priority),
     createdAt = createdAt,
+    scheduledAt = scheduledAt,
     assignedAt = assignedAt,
     resolvedAt = resolvedAt,
     closedAt = closedAt,
