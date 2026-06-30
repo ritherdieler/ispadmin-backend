@@ -194,4 +194,20 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         status: ServiceStatus
     ): List<String>
 
+    @Query("SELECT s.borneNumber FROM Subscription s WHERE s.napBox.id = :napBoxId AND s.borneNumber IS NOT NULL")
+    fun findBorneNumbersByNapBoxId(napBoxId: Int): List<String>
+
+    @Query(
+        """
+        SELECT COUNT(s) > 0 FROM Subscription s
+        WHERE s.napBox.id = :napBoxId AND s.borneNumber = :borneNumber
+        AND (:excludeSubscriptionId IS NULL OR s.id <> :excludeSubscriptionId)
+        """
+    )
+    fun existsByNapBoxIdAndBorneNumberExcludingSubscriptionId(
+        napBoxId: Int,
+        borneNumber: String,
+        excludeSubscriptionId: Int?
+    ): Boolean
+
 }
