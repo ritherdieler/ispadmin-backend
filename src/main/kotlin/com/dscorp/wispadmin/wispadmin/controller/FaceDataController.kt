@@ -490,4 +490,5 @@ class FaceDataController(
             jdbcTemplate.execute("ALTER TABLE face_data DROP INDEX `$indexName`")
         }
     }
+
 }

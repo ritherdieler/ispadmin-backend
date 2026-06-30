@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*
 import javax.persistence.EntityManager
 import javax.persistence.PersistenceContext
 import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
+import com.dscorp.wispadmin.wispadmin.service.PaymentWhatsAppNotificationService
 
 @CrossOrigin(origins = ["*"])
 @RestController
@@ -28,7 +29,8 @@ class PaymentController @Autowired constructor(
     private val repository: PaymentRepository,
     private val mikrotikService: MikrotikService,
     private val errorLogRepository: ErrorLogRepository,
-    private val paymentInvoiceService: PaymentInvoiceService
+    private val paymentInvoiceService: PaymentInvoiceService,
+    private val paymentWhatsAppNotificationService: PaymentWhatsAppNotificationService
 ) {
 
     val objectErrorResponse: ResponseEntity<PaymentDto> = ResponseEntity.status(500).body(null)
@@ -325,5 +327,109 @@ class PaymentController @Autowired constructor(
         }
     }
 
+    // Envia un recordatorio de pago por WhatsApp usando una factura pendiente existente.
+    @PostMapping("/{id}/send-whatsapp-reminder")
+    fun sendPaymentReminderByWhatsApp(@PathVariable id: Int): ResponseEntity<BaseResponse> {
+        return try {
+            paymentWhatsAppNotificationService.sendPaymentReminder(id)
 
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Recordatorio enviado correctamente por WhatsApp.",
+                    data = null
+                )
+            )
+        } catch (e: IllegalStateException) {
+            ResponseEntity.status(409).body(
+                BaseResponse(
+                    status = 409,
+                    message = e.message ?: "Ya existe un recordatorio enviado hoy.",
+                    data = null
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            val status = whatsAppHttpStatus(e.message)
+
+            ResponseEntity.status(status).body(
+                BaseResponse(
+                    status = status,
+                    message = e.message ?: "No se pudo enviar el recordatorio por WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
+
+    // Envia recordatorios por WhatsApp a varias facturas pendientes.
+    // El parametro limit controla cuantos mensajes se intentan enviar.
+    @PostMapping("/send-whatsapp-reminders")
+    fun sendPendingPaymentRemindersByWhatsApp(
+        @RequestParam(defaultValue = "5") limit: Int
+    ): ResponseEntity<BaseResponse> {
+        return try {
+            val result = paymentWhatsAppNotificationService.sendPendingPaymentReminders(limit)
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Proceso de recordatorios WhatsApp finalizado.",
+                    data = result
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            ResponseEntity.status(500).body(
+                BaseResponse(
+                    status = 500,
+                    message = e.message ?: "No se pudieron enviar los recordatorios por WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
+
+    @PostMapping("/send-monthly-whatsapp-reminders")
+    fun sendMonthlyPaymentRemindersByWhatsApp(
+        @RequestParam(required = false) limit: Int?
+    ): ResponseEntity<BaseResponse> {
+        return try {
+            val result = paymentWhatsAppNotificationService.sendMonthlyPaymentReminders(limit)
+            ResponseEntity.status(200).body(
+                BaseResponse(
+                    status = 200,
+                    message = "Proceso mensual de recordatorios WhatsApp finalizado.",
+                    data = result
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorLogRepository.save(e.toErrorLog(Modules.PAYMENT))
+
+            ResponseEntity.status(500).body(
+                BaseResponse(
+                    status = 500,
+                    message = e.message ?: "No se pudo ejecutar el proceso mensual de recordatorios WhatsApp.",
+                    data = null
+                )
+            )
+        }
+    }
+
+    private fun whatsAppHttpStatus(errorMessage: String?): Int {
+        val message = errorMessage.orEmpty().lowercase()
+
+        return when {
+            "ya se envio" in message -> 409
+            "token de whatsapp invalido" in message -> 401
+            "telefono debe ser un celular peruano valido" in message -> 400
+            "numero no esta autorizado" in message -> 422
+            "plantilla de whatsapp no existe" in message -> 400
+            else -> 500
+        }
+    }
 }
