@@ -8,7 +8,7 @@ import java.time.LocalDateTime
 data class ScheduledTaskLogDto(
     val id: Int?,
     val taskType: String,
-    val taskTypeName: String,
+    val taskTypeName: String,   
     val executionDate: LocalDateTime,
     val processedCount: Int,
     val createdCount: Int,
