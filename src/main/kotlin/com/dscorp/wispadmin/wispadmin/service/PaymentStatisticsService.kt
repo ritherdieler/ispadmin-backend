@@ -20,21 +20,17 @@ class PaymentStatisticsService(
      * Mantiene la entrada en milisegundos por compatibilidad con los controladores existentes.
      */
     fun getPaymentMethodStatisticsOptimized(startDate: Long, endDate: Long): Map<String, Double> {
-        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(
+        return getPaymentMethodStatisticsOptimized(
             startDate.toLocalDateTime(),
             endDate.toLocalDateTime()
         )
+    }
 
-        val statistics = rawResults.map { row ->
-            PaymentMethodStatisticsDto(
-                month = (row[0] as? Number)?.toInt() ?: 0,
-                year = (row[1] as? Number)?.toInt() ?: 0,
-                method = row[2] as? String ?: "Desconocido",
-                totalPayments = (row[3] as? Number)?.toLong() ?: 0L,
-                paidPayments = (row[4] as? Number)?.toLong() ?: 0L,
-                digitalPayments = (row[5] as? Number)?.toLong() ?: 0L
-            )
-        }
+    /**
+     * Obtiene el porcentaje mensual de pagos digitales usando fechas normales.
+     */
+    fun getPaymentMethodStatisticsOptimized(startDate: LocalDateTime, endDate: LocalDateTime): Map<String, Double> {
+        val statistics = getDetailedPaymentMethodStatistics(startDate, endDate)
 
         return statistics
             .groupBy { it.getMonthNameShort() }
@@ -54,10 +50,17 @@ class PaymentStatisticsService(
      * Obtiene estadisticas detalladas por metodo de pago dentro del rango enviado.
      */
     fun getDetailedPaymentMethodStatistics(startDate: Long, endDate: Long): List<PaymentMethodStatisticsDto> {
-        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(
+        return getDetailedPaymentMethodStatistics(
             startDate.toLocalDateTime(),
             endDate.toLocalDateTime()
         )
+    }
+
+    /**
+     * Obtiene estadisticas detalladas por metodo de pago usando fechas normales.
+     */
+    fun getDetailedPaymentMethodStatistics(startDate: LocalDateTime, endDate: LocalDateTime): List<PaymentMethodStatisticsDto> {
+        val rawResults = paymentRepository.getPaymentMethodStatisticsOptimized(startDate, endDate)
 
         return rawResults.map { row ->
             PaymentMethodStatisticsDto(

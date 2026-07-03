@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 @Service
 class ReportService {
@@ -12,20 +13,12 @@ class ReportService {
     lateinit var subscriptionRepository: SubscriptionRepository
 
     fun getCancelledSubscriptionsBetweenTwoDates(
-        firstDayOfMonthInMillis: Long,
-        lastDayOfMonthInMillis: Long
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
     ): List<Subscription> {
-        val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
-            .toLocalDateTime()
-
-        val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
-            .toLocalDateTime()
-
         return subscriptionRepository.findSubscriptionsByCancellationDate(
-            firstDayOfMonth,
-            lastDayOfMonth
+            startDate,
+            endDate
         )
     }
 

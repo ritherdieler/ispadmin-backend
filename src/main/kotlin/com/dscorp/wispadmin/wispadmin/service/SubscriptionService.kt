@@ -28,7 +28,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
 import java.util.concurrent.CompletableFuture
-import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 import java.time.LocalDateTime
 @Service
 class SubscriptionService(
@@ -469,6 +468,10 @@ class SubscriptionService(
     fun cancelService(idSubscription: Int, onSuccess: (subscription: Subscription) -> Unit) {
         val subscription = repository.findById(idSubscription).get()
 
+        if (subscription.serviceStatus == ServiceStatus.CANCELLED) {
+            return
+        }
+
         borneManagementService.releaseBorne(subscription)
 
         repository.cancelService(
@@ -501,7 +504,7 @@ class SubscriptionService(
                     subscription = subscription,
                     actionType = SubscriptionActionType.UPDATE_LOCATION,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )

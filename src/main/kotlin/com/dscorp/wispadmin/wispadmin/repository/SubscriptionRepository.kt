@@ -56,10 +56,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     fun countByServiceStatus(serviceStatus: ServiceStatus): Long
 
     //get debtors from last month
-    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime < ?2")
     fun getDebtorsFromLastMonth(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
-    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime < ?2")
     fun getCancelledServicesFromDateInterval(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     @Query("SELECT distinct s FROM Subscription s WHERE s.isPaymentCommit = true")
@@ -98,10 +98,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         endDate: LocalDateTime
     ): List<Subscription>
 
-    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime < ?2")
     fun findQuantityByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): Int
 
-    @Query("SELECT s FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    @Query("SELECT s FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime < ?2")
     fun findSubscriptionsByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     fun findByPlanId(planId: Int): List<Subscription>

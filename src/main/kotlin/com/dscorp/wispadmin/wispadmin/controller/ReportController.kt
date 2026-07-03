@@ -2,8 +2,9 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.dto.DownloadDocumentDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
-import com.dscorp.wispadmin.wispadmin.extensions.getFirstDayOfMonthInMillis
-import com.dscorp.wispadmin.wispadmin.extensions.getLastDayOfMonthInMillis
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import com.dscorp.wispadmin.wispadmin.service.ReportService
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,15 +24,22 @@ class ReportController {
     @Autowired
     lateinit var reportService: ReportService
 
+    private fun monthRange(monthsAgo: Long): Pair<LocalDateTime, LocalDateTime> {
+        val zone = ZoneId.of("America/Lima")
+        val targetMonth = LocalDate.now(zone).minusMonths(monthsAgo)
+
+        val startDate = targetMonth.withDayOfMonth(1).atStartOfDay()
+        val endDate = targetMonth.plusMonths(1).withDayOfMonth(1).atStartOfDay()
+
+        return startDate to endDate
+    }
+
     @GetMapping("/canceled-current-month")
     fun getCancelledSubscriptionFromLastMonth(): ResponseEntity<DownloadDocumentDto> {
         return try {
-            val firstDayOfMonthInMillis =
-                Calendar.getInstance().getFirstDayOfMonthInMillis()
-            val lastDayOfMonthInMillis =
-                Calendar.getInstance().getLastDayOfMonthInMillis()
+            val (startDate, endDate) = monthRange(monthsAgo = 0)
             val result =
-                reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
+                reportService.getCancelledSubscriptionsBetweenTwoDates(startDate, endDate)
                     .map { it.toDto() }
 
             val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_actual")
@@ -45,12 +53,9 @@ class ReportController {
     @GetMapping("/canceled-past-month")
     fun getCancelledSubscriptionsFromPastMont(): ResponseEntity<DownloadDocumentDto> {
         return try {
-            val firstDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getFirstDayOfMonthInMillis()
-            val lastDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+            val (startDate, endDate) = monthRange(monthsAgo = 1)
             val result =
-                reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
+                reportService.getCancelledSubscriptionsBetweenTwoDates(startDate, endDate)
                     .map { it.toDto() }
 
             val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_pasado")

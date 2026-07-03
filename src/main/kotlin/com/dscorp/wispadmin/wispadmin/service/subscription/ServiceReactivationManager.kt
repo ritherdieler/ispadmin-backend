@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.util.*
 import kotlin.math.roundToInt
-import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 
 @Service
 class ServiceReactivationManager(
@@ -95,7 +94,7 @@ class ServiceReactivationManager(
                 subscription = subscription,
                 actionType = SubscriptionActionType.RECONNECT_CANCELLED_SUBSCRIPTION,
                 planName = subscription.plan?.name,
-                planPrince = subscription.plan?.price ?: 0.0,
+                planPrice = subscription.plan?.price ?: 0.0,
                 planId = subscription.plan?.id
             )
         )
