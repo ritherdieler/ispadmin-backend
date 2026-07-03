@@ -1,4 +1,6 @@
 FROM tomcat:9.0-jdk11-temurin-jammy
+ENV TZ=America/Lima
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 COPY lib/*.jar /usr/local/tomcat/lib/
 COPY conf/tomcat-users.xml /usr/local/tomcat/conf/tomcat-users.xml
 COPY conf/context.xml /usr/local/tomcat/conf/context.xml

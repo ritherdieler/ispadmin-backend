@@ -65,12 +65,15 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         FROM payment p
         INNER JOIN subscription s ON p.subscription_id = s.id
         WHERE p.paid = false
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun calculateTotalToCollectForCurrentMonth(): Double
+    fun calculateTotalToCollectForCurrentMonth(
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Double
 
 
     @Query(
@@ -78,36 +81,45 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SELECT COALESCE(SUM(p.discount_amount), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalDiscountsForCurrentMonth(): Double
+    fun getTotalDiscountsForCurrentMonth(
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
         INNER JOIN subscription s ON p.subscription_id = s.id
-        WHERE p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+        WHERE p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getGrossRevenueForCurrentMonth(): Double
+    fun getGrossRevenueForCurrentMonth(
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_paid), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalRaisedForCurrentMonth(): Double
+    fun getTotalRaisedForCurrentMonth(
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Double
 
 
     @Query(

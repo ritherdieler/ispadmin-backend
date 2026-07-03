@@ -6,7 +6,9 @@ import com.dscorp.wispadmin.wispadmin.dto.*
 import com.dscorp.wispadmin.wispadmin.extensions.getFirstDayOfMonthInMillis
 import com.dscorp.wispadmin.wispadmin.extensions.getLastDayOfMonthInMillis
 import com.dscorp.wispadmin.wispadmin.repository.*
+import com.dscorp.wispadmin.wispadmin.util.AppTimeZone
 import com.dscorp.wispadmin.wispadmin.util.PerformanceMonitor
+import com.dscorp.wispadmin.wispadmin.util.spanishMonthShort
 import org.springframework.stereotype.Service
 import java.time.YearMonth
 import java.util.*
@@ -39,11 +41,11 @@ class DashBoardService(
 
     fun createDashBoard(): DashBoardDto {
         return performanceMonitor.measureTime("createDashBoard") {
-            // Preparar fechas una sola vez
-            val startDate = Calendar.getInstance().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
-            val endDate = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
-            val firstDayOfMonthInMillis = Calendar.getInstance().getFirstDayOfMonthInMillis()
-            val lastDayOfMonthInMillis = Calendar.getInstance().getLastDayOfMonthInMillis()
+            val (billingStart, billingEnd) = AppTimeZone.currentBillingPeriod()
+            val startDate = AppTimeZone.calendar().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
+            val endDate = AppTimeZone.calendar().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+            val firstDayOfMonthInMillis = AppTimeZone.calendar().getFirstDayOfMonthInMillis()
+            val lastDayOfMonthInMillis = AppTimeZone.calendar().getLastDayOfMonthInMillis()
             val firstDayOfMonthDate = Date(firstDayOfMonthInMillis)
             val lastDayOfMonthDate = Date(lastDayOfMonthInMillis)
             val date = Date()
@@ -51,25 +53,25 @@ class DashBoardService(
             // ===== GRUPO 1: Consultas de pagos (independientes entre sí) =====
             val grossRevenueFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.getGrossRevenueForCurrentMonth") {
-                    paymentRepository.getGrossRevenueForCurrentMonth()
+                    paymentRepository.getGrossRevenueForCurrentMonth(billingStart, billingEnd)
                 }
             }
             
             val totalRaisedFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.getTotalRaisedForCurrentMonth") {
-                    paymentRepository.getTotalRaisedForCurrentMonth()
+                    paymentRepository.getTotalRaisedForCurrentMonth(billingStart, billingEnd)
                 }
             }
             
             val totalDiscountFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.getTotalDiscountsForCurrentMonth") {
-                    paymentRepository.getTotalDiscountsForCurrentMonth()
+                    paymentRepository.getTotalDiscountsForCurrentMonth(billingStart, billingEnd)
                 }
             }
             
             val totalToCollectFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.calculateTotalToCollectForCurrentMonth") {
-                    paymentRepository.calculateTotalToCollectForCurrentMonth()
+                    paymentRepository.calculateTotalToCollectForCurrentMonth(billingStart, billingEnd)
                 }
             }
 
@@ -215,31 +217,31 @@ class DashBoardService(
 
 
     fun createDashBoardV2(): DashBoardDto {
-        val grossRevenue = paymentRepository.getGrossRevenueForCurrentMonth()
-        val totalRaised = paymentRepository.getTotalRaisedForCurrentMonth()
-        val totalDiscount = paymentRepository.getTotalDiscountsForCurrentMonth()
-        val totalToCollect = paymentRepository.calculateTotalToCollectForCurrentMonth()
+        val (billingStart, billingEnd) = AppTimeZone.currentBillingPeriod()
+        val grossRevenue = paymentRepository.getGrossRevenueForCurrentMonth(billingStart, billingEnd)
+        val totalRaised = paymentRepository.getTotalRaisedForCurrentMonth(billingStart, billingEnd)
+        val totalDiscount = paymentRepository.getTotalDiscountsForCurrentMonth(billingStart, billingEnd)
+        val totalToCollect = paymentRepository.calculateTotalToCollectForCurrentMonth(billingStart, billingEnd)
 
         val grossRevenueHistory = paymentRepository.getTop6GrossRevenueHistory()
 
-        val startDateInMillis = Calendar.getInstance().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
+        val startDateInMillis = AppTimeZone.calendar().apply { add(Calendar.MONTH, -8) }.getFirstDayOfMonthInMillis()
 
-        val endDateInMillis = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+        val endDateInMillis = AppTimeZone.calendar().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
 
         val startDate = java.time.Instant.ofEpochMilli(startDateInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val endDate = java.time.Instant.ofEpochMilli(endDateInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val paymentMethodStatics =
             paymentRepository.getLasMonthsPaymentMethodStatics(startDate, endDate)
                 .sortedBy { it.billingDateDatetime }
                 .groupBy {
-                    it.billingDateDatetime.month.value.getMonthName()
-                        .substring(0, 3).capitalize() + "."
+                    spanishMonthShort(it.billingDateDatetime.month.value)
                 }
 
         val paymentMethodStaticsByDate: Map<String, Double> = paymentMethodStatics.mapValues {
@@ -250,18 +252,18 @@ class DashBoardService(
             }.size * 100) / it.value.size).toDouble()
         }
 
-        val firstDayOfMonthInMillis = Calendar.getInstance().getFirstDayOfMonthInMillis()
+        val firstDayOfMonthInMillis = AppTimeZone.calendar().getFirstDayOfMonthInMillis()
 
-        val lastDayOfMonthInMillis = Calendar.getInstance().getLastDayOfMonthInMillis()
+        val lastDayOfMonthInMillis = AppTimeZone.calendar().getLastDayOfMonthInMillis()
         val firstDayOfMonthDate = Date(firstDayOfMonthInMillis)
         val lastDayOfMonthDate = Date(lastDayOfMonthInMillis)
 
         val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val canceledSubscriptionsByUsers = subscriptionRepository.findQuantityByCancellationDate(
@@ -322,7 +324,7 @@ class DashBoardService(
     }
 
     private fun getSubscriptionLogSummary(): Map<SubscriptionActionType, ActionTypeSummary> {
-        val startDate = Calendar.getInstance().apply {
+        val startDate = AppTimeZone.calendar().apply {
             add(Calendar.MONTH, -12)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -408,11 +410,11 @@ class DashBoardService(
         lastDayOfMonthInMillis: Long
     ): Map<String, Int> {
         val firstDayOfMonth = java.time.Instant.ofEpochMilli(firstDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val lastDayOfMonth = java.time.Instant.ofEpochMilli(lastDayOfMonthInMillis)
-            .atZone(java.time.ZoneId.systemDefault())
+            .atZone(AppTimeZone.zoneId())
             .toLocalDateTime()
 
         val subscriptions =
@@ -615,7 +617,7 @@ class DashBoardService(
             .mapValues { it.value.sumOf { cost -> cost.amount } }
 
         // Tendencia de costos en los últimos 6 meses
-        val sixMonthsAgo = Calendar.getInstance().apply {
+        val sixMonthsAgo = AppTimeZone.calendar().apply {
             add(Calendar.MONTH, -6)
         }.time
 
@@ -624,11 +626,11 @@ class DashBoardService(
 
         val costTrend = recentCosts
             .groupBy {
-                val calendar = Calendar.getInstance()
+                val calendar = AppTimeZone.calendar()
                 calendar.time = it.date
                 val year = calendar.get(Calendar.YEAR)
                 val month = calendar.get(Calendar.MONTH)
-                Calendar.getInstance().apply {
+                AppTimeZone.calendar().apply {
                     set(Calendar.YEAR, year)
                     set(Calendar.MONTH, month)
                     set(Calendar.DAY_OF_MONTH, 1)
@@ -642,7 +644,8 @@ class DashBoardService(
 
         // Ratio costo/ingreso
         val totalCosts = allFixedCosts.filter { it.enabled }.sumOf { it.amount }
-        val totalRevenue = paymentRepository.getGrossRevenueForCurrentMonth()
+        val (billingStart, billingEnd) = AppTimeZone.currentBillingPeriod()
+        val totalRevenue = paymentRepository.getGrossRevenueForCurrentMonth(billingStart, billingEnd)
         val costToIncomeRatio = if (totalRevenue > 0) totalCosts / totalRevenue else 0.0
 
         // Mayor categoría de gasto
@@ -712,14 +715,14 @@ class DashBoardService(
         } else 0.0
 
         // Instalaciones por mes
-        val sixMonthsAgo = Calendar.getInstance().apply {
+        val sixMonthsAgo = AppTimeZone.calendar().apply {
             add(Calendar.MONTH, -6)
         }.time
 
         val recentOrders = allOrders.filter {
             it.createdAt != null &&
                     it.createdAt!!.isAfter(
-                        sixMonthsAgo.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+                        sixMonthsAgo.toInstant().atZone(AppTimeZone.zoneId()).toLocalDateTime()
                     )
         }
 
@@ -729,7 +732,7 @@ class DashBoardService(
                 java.util.Date.from(
                     localDate.withDayOfMonth(1)
                         .atStartOfDay()
-                        .atZone(java.time.ZoneId.systemDefault())
+                        .atZone(AppTimeZone.zoneId())
                         .toInstant()
                 )
             }
@@ -961,7 +964,7 @@ class DashBoardService(
                     ChronoUnit.DAYS.between(
                         subscription.subscriptionDatetime,
                         firstTicket.createdAt.toInstant()
-                            .atZone(java.time.ZoneId.systemDefault())
+                            .atZone(AppTimeZone.zoneId())
                             .toLocalDateTime()
                     ).toDouble()
                 } else 0.0
@@ -1070,21 +1073,3 @@ private fun Subscription.isCableTvInstallation(): Boolean {
 }
 
 private fun Subscription.isWirelessInstallation() = installationType == InstallationType.WIRELESS
-private fun Int.getMonthName(): String {
-    return when (this) {
-        0 -> "Enero"
-        1 -> "Febrero"
-        2 -> "Marzo"
-        3 -> "Abril"
-        4 -> "Mayo"
-        5 -> "Junio"
-        6 -> "Julio"
-        7 -> "Agosto"
-        8 -> "Setiembre"
-        9 -> "Octubre"
-        10 -> "Noviembre"
-        11 -> "Diciembre"
-        else -> "Unknown"
-    }
-
-}
