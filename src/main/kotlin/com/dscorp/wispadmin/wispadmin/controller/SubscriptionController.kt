@@ -3,8 +3,9 @@ package com.dscorp.wispadmin.wispadmin.controller
 import com.dscorp.wispadmin.wispadmin.data.model.*
 import com.dscorp.wispadmin.wispadmin.data.model.util.BaseResponse
 import com.dscorp.wispadmin.wispadmin.dto.*
-import com.dscorp.wispadmin.wispadmin.extensions.getFirstDayOfMonthInMillis
-import com.dscorp.wispadmin.wispadmin.extensions.getLastDayOfMonthInMillis
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import com.dscorp.wispadmin.wispadmin.extensions.toErrorLog
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.requestbody.*
@@ -80,7 +81,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = SubscriptionActionType.CHANGE_NAP_BOX,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -92,6 +93,16 @@ class SubscriptionController @Autowired constructor(
         }
     }
 
+    private fun monthRange(monthsAgo: Long): Pair<LocalDateTime, LocalDateTime> {
+        val zone = ZoneId.of("America/Lima")
+        val targetMonth = LocalDate.now(zone).minusMonths(monthsAgo)
+
+        val startDate = targetMonth.withDayOfMonth(1).atStartOfDay()
+        val endDate = targetMonth.plusMonths(1).withDayOfMonth(1).atStartOfDay()
+
+        return startDate to endDate
+    }
+
     @PutMapping("/reboot-fiber-onu")
     fun rebootFiberOnu(@RequestParam subscriptionId: Int): ResponseEntity<Any> {
         return try {
@@ -101,7 +112,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = SubscriptionActionType.REBOOT_FIBER_ONU,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -183,7 +194,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = SubscriptionActionType.MIGRATE_SUBSCRIPTION,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -382,7 +393,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = SubscriptionActionType.CHANGE_PLAN,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -420,7 +431,7 @@ class SubscriptionController @Autowired constructor(
 
 
     @PutMapping("/cancel-subscription")
-    fun cancelSubscription(@RequestParam("subscriptionId") subscriptionId: Int): ResponseEntity<Any> {
+    fun cancelSubscription(@RequestParam("subscriptionId") subscriptionId: Int, @RequestParam("responsibleId") responsibleId: Int): ResponseEntity<Any> {
         return try {
             subscriptionService.cancelService(
                 idSubscription = subscriptionId,
@@ -430,8 +441,9 @@ class SubscriptionController @Autowired constructor(
                             subscription = subscription,
                             actionType = SubscriptionActionType.CANCEL_SUBSCRIPTION,
                             planName = subscription.plan?.name,
-                            planPrince = subscription.plan?.price ?: 0.0,
-                            planId = subscription.plan?.id
+                            planPrice = subscription.plan?.price ?: 0.0,
+                            planId = subscription.plan?.id,
+                            responsibleId = responsibleId.toString()
                         )
                     )
                 }
@@ -457,7 +469,7 @@ class SubscriptionController @Autowired constructor(
                             subscription = it,
                             actionType = SubscriptionActionType.NEW_SUBSCRIPTION,
                             planName = it.plan?.name,
-                            planPrince = it.plan?.price ?: 0.0,
+                            planPrice = it.plan?.price ?: 0.0,
                             planId = it.plan?.id
                         )
                     )
@@ -502,7 +514,7 @@ class SubscriptionController @Autowired constructor(
                             subscription = it,
                             actionType = SubscriptionActionType.NEW_SUBSCRIPTION,
                             planName = it.plan?.name,
-                            planPrince = it.plan?.price ?: 0.0,
+                            planPrice = it.plan?.price ?: 0.0,
                             planId = it.plan?.id
                         )
                     )
@@ -576,7 +588,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = actionType,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -641,7 +653,7 @@ class SubscriptionController @Autowired constructor(
                     subscription = subscription,
                     actionType = SubscriptionActionType.UPDATE_LOCATION,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )
@@ -895,29 +907,18 @@ class SubscriptionController @Autowired constructor(
     @GetMapping("last-month-debtors-report-document")
     fun getDebtorsFromLastMonth(): ResponseEntity<DownloadDocumentDto> {
         return try {
-            val lastMonth = Calendar.getInstance()
-            lastMonth.add(Calendar.MONTH, -1)
-
-            val initialDateInMillis = lastMonth.getFirstDayOfMonthInMillis()
-            val endDateInMillis = lastMonth.getLastDayOfMonthInMillis()
-
-            val initialDate = java.time.Instant.ofEpochMilli(initialDateInMillis)
-                .atZone(java.time.ZoneId.systemDefault())
-                .toLocalDateTime()
-
-            val endDate = java.time.Instant.ofEpochMilli(endDateInMillis)
-                .atZone(java.time.ZoneId.systemDefault())
-                .toLocalDateTime()
+            val (startDate, endDate) = monthRange(monthsAgo = 1)
 
             val subscriptions: List<SubscriptionDto> =
-                repository.getDebtorsFromLastMonth(initialDate, endDate).map { it.toDto() }
+                repository.getDebtorsFromLastMonth(startDate, endDate).map { it.toDto() }
+
             val response = createGenericSubscriptionDocument(subscriptions, "clientes_cortados")
-            return ResponseEntity.ok().body(response)
+            ResponseEntity.ok().body(response)
         } catch (e: Exception) {
             e.printStackTrace()
             errorLogRepository.save(e.toErrorLog(Modules.SUBSCRIPTION))
 
-            return ResponseEntity.status(500).body(null)
+            ResponseEntity.status(500).body(null)
         }
     }
 
