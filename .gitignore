@@ -40,3 +40,4 @@ build/
 /.agent-docs/
 /src/main/resources/application-local.properties
 
+/scripts/

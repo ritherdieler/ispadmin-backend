@@ -73,7 +73,7 @@ fi
 SSH_TARGET="${VPS_USER}@${VPS_HOST}"
 WAR_PATH="$PROJECT_DIR/target/$WAR_NAME"
 TOMCAT_LIB_SRC="$PROJECT_DIR/target/tomcat-lib"
-CATALINA_OPTS_VALUE='-DPYTORCH_VERSION=2.7.1 -DPYTORCH_FLAVOR=cpu -Dai.djl.pytorch.native_helper=com.dscorp.wispadmin.wispadmin.util.PytorchNativeHelper'
+CATALINA_OPTS_VALUE='-Duser.timezone=America/Lima -DPYTORCH_VERSION=2.7.1 -DPYTORCH_FLAVOR=cpu -Dai.djl.pytorch.native_helper=com.dscorp.wispadmin.wispadmin.util.PytorchNativeHelper'
 TOMCAT_BASE_IMAGE="${TOMCAT_BASE_IMAGE:-tomcat:9.0-jdk11-temurin-jammy}"
 
 SSH_CONTROL_DIR=""

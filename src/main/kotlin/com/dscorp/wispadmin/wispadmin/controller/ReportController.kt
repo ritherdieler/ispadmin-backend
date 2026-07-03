@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.extensions.getFirstDayOfMonthInMillis
 import com.dscorp.wispadmin.wispadmin.extensions.getLastDayOfMonthInMillis
 import com.dscorp.wispadmin.wispadmin.service.ReportService
+import com.dscorp.wispadmin.wispadmin.util.AppTimeZone
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.ResponseEntity
@@ -27,9 +28,9 @@ class ReportController {
     fun getCancelledSubscriptionFromLastMonth(): ResponseEntity<DownloadDocumentDto> {
         return try {
             val firstDayOfMonthInMillis =
-                Calendar.getInstance().getFirstDayOfMonthInMillis()
+                AppTimeZone.calendar().getFirstDayOfMonthInMillis()
             val lastDayOfMonthInMillis =
-                Calendar.getInstance().getLastDayOfMonthInMillis()
+                AppTimeZone.calendar().getLastDayOfMonthInMillis()
             val result =
                 reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
                     .map { it.toDto() }
@@ -46,9 +47,9 @@ class ReportController {
     fun getCancelledSubscriptionsFromPastMont(): ResponseEntity<DownloadDocumentDto> {
         return try {
             val firstDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getFirstDayOfMonthInMillis()
+                AppTimeZone.calendar().apply { add(Calendar.MONTH, -1) }.getFirstDayOfMonthInMillis()
             val lastDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
+                AppTimeZone.calendar().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
             val result =
                 reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
                     .map { it.toDto() }

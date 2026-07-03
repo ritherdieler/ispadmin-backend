@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin
 
+import com.dscorp.wispadmin.wispadmin.util.AppTimeZone
 import com.dscorp.wispadmin.wispadmin.util.DjlNativeBootstrap
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.builder.SpringApplicationBuilder
@@ -30,5 +31,6 @@ class WispAdminApplication
 
 fun main(args: Array<String>) {
     DjlNativeBootstrap.initialize()
+    AppTimeZone.initialize(System.getProperty("app.timezone", "America/Lima"))
     runApplication<WispAdminApplication>(*args)
 }
