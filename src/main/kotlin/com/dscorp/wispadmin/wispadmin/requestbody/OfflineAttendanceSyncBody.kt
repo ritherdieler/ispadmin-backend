@@ -8,6 +8,7 @@ data class OfflineAttendanceSyncBody @JsonCreator constructor(
     @JsonProperty("userId") val userId: Int,
     @JsonProperty("action") val action: VerifyFaceBody.Action,
     @JsonProperty("occurredAtMillis") val occurredAtMillis: Long,
+    @JsonProperty("attendanceStatus") val attendanceStatus: String? = null,
     @JsonProperty("score") val score: Double? = null,
     @JsonProperty("faceDataId") val faceDataId: Int? = null
 )

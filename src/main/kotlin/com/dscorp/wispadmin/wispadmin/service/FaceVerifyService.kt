@@ -52,7 +52,8 @@ class FaceVerifyService(
         private const val FACE_CACHE_TTL_MS = 60_000L
         private const val FACE_REVALIDATION_MONTHS = 6
         private const val CHECK_IN_LIMIT_HOUR = 8
-        private const val CHECK_IN_LIMIT_MINUTE = 15
+        private const val CHECK_IN_LIMIT_MINUTE = 30
+        private const val CHECK_IN_TOLERANCE_MINUTES = 20
         private const val CHECK_OUT_LIMIT_HOUR = 18
         private const val CHECK_OUT_LIMIT_MINUTE = 0
     }
@@ -210,7 +211,8 @@ class FaceVerifyService(
     fun verifyAndMarkFromPhoto(
         photo: MultipartFile,
         action: VerifyFaceBody.Action,
-        occurredAtMillis: Long? = null
+        occurredAtMillis: Long? = null,
+        attendanceStatus: String? = null
     ): VerifyFaceResponse {
         if (photo.isEmpty) {
             return VerifyFaceResponse(
@@ -253,7 +255,7 @@ class FaceVerifyService(
         val occurredAt = occurredAtMillis?.let { Date(it) } ?: Date()
 
         return when (action) {
-            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user, occurredAt)
+            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user, occurredAt, attendanceStatus = attendanceStatus)
             VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(match.user.id, match.userName, match.user, occurredAt)
         }
     }
@@ -528,7 +530,8 @@ class FaceVerifyService(
         user: User,
         occurredAt: Date = Date(),
         method: String = "FACIAL",
-        offlineId: String? = null
+        offlineId: String? = null,
+        attendanceStatus: String? = null
     ): VerifyFaceResponse {
         val (dayStart, dayEnd) = dayRange(occurredAt)
         val previous = attendanceRepository.findTopByUser_IdAndCheckInBetweenOrderByCheckInDesc(
@@ -559,7 +562,7 @@ class FaceVerifyService(
             )
         }
 
-        val status = if (isLate(occurredAt)) "TARDANZA" else "OK"
+        val status = attendanceStatus?.trim()?.takeIf { it.isNotEmpty() } ?: if (isLate(occurredAt)) "TARDANZA" else "OK"
         val attendance = Attendance(
             id = 0,
             checkIn = occurredAt,
@@ -767,6 +770,7 @@ class FaceVerifyService(
             set(Calendar.MINUTE, CHECK_IN_LIMIT_MINUTE)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            add(Calendar.MINUTE, CHECK_IN_TOLERANCE_MINUTES)
         }
         return date.after(limit.time)
     }
