@@ -13,7 +13,9 @@ interface AssistanceTicketRepository : JpaRepository<AssistanceTicket, Int> {
         """
         SELECT t
         FROM AssistanceTicket t
+        LEFT JOIN t.subscription s
         WHERE t.status = :status
+          AND (t.subscription IS NULL OR s.id IS NOT NULL)
         ORDER BY COALESCE(t.scheduledAt, t.createdAt) ASC
         """
     )
