@@ -35,4 +35,6 @@ interface AssistanceTicketRepository : JpaRepository<AssistanceTicket, Int> {
         @Param("start") start: Date,
         @Param("end") end: Date
     ): List<AssistanceTicket>
+
+    fun findByStatusIn(statuses: Collection<AssistanceTicketStatus>): List<AssistanceTicket>
 }

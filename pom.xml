@@ -132,6 +132,16 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
+        <!-- Cache con Caffeine para el resumen del Mapa Inteligente -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- DJL ejecuta el modelo facial en Java, sin Node, Chrome ni JavaScript. -->
         <dependency>
             <groupId>ai.djl</groupId>

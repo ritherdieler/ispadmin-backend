@@ -797,6 +797,16 @@ class DashBoardService(
     }
 
     /**
+     * Cancelaciones agrupadas por zona/sector, para el semaforo de riesgo de cancelacion.
+     */
+    fun getCancellationsByZone(): Map<String, Int> {
+        return subscriptionRepository.findCancelledSubscriptions()
+            .filter { it.place != null }
+            .groupBy { it.place!!.name ?: "Sin nombre" }
+            .mapValues { it.value.size }
+    }
+
+    /**
      * Obtiene datos de rendimiento del equipo
      */
     fun getTeamPerformanceData(): TeamPerformanceResumeDto {
