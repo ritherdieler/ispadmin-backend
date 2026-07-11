@@ -52,7 +52,7 @@ class PaymentWhatsAppNotificationService(
         )
 
         return try {
-            val sent = sendPaymentReminderByConfiguredMode(
+            val wamid = sendPaymentReminderByConfiguredMode(
                 phone = phone,
                 message = message,
                 clientName = clientName,
@@ -67,12 +67,13 @@ class PaymentWhatsAppNotificationService(
                     phone = phone,
                     messageType = "PAYMENT_REMINDER",
                     status = "SENT",
+                    metaMessageId = wamid,
                     message = message,
                     errorMessage = null
                 )
             )
 
-            sent
+            true
         } catch (e: Exception) {
             val friendlyError = friendlyWhatsAppErrorMessage(e.message)
 
@@ -392,7 +393,7 @@ class PaymentWhatsAppNotificationService(
         clientName: String,
         amount: Double,
         billingDate: String
-    ): Boolean {
+    ): String? {
         return when (whatsAppProperties.paymentReminderMode.lowercase()) {
             "text" -> whatsAppService.sendTextMessage(
                 phoneNumber = phone,

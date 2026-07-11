@@ -8,16 +8,19 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
+
 @RestController
 @RequestMapping("/whatsapp")
 class WhatsAppController(
     private val whatsAppService: WhatsAppService,
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
+    private val whatsAppInboundMessageRepository: WhatsAppInboundMessageRepository,
     private val whatsAppProperties: WhatsAppProperties
 ) {
     @GetMapping("/logs")
@@ -44,12 +47,12 @@ class WhatsAppController(
         @RequestBody request: WhatsAppTestMessageRequest
     ): ResponseEntity<String> {
         return try {
-            whatsAppService.sendTextMessage(
+            val wamid = whatsAppService.sendTextMessage(
                 phoneNumber = request.phoneNumber,
                 message = request.message
             )
-
-            ResponseEntity.ok("Mensaje enviado correctamente por WhatsApp.")
+            val detail = if (wamid != null) " (id: $wamid)" else ""
+            ResponseEntity.ok("Mensaje enviado correctamente por WhatsApp.$detail")
         } catch (e: IllegalArgumentException) {
             ResponseEntity
                 .badRequest()
@@ -66,7 +69,7 @@ class WhatsAppController(
         @RequestBody request: WhatsAppTemplateTestMessageRequest
     ): ResponseEntity<String> {
         return try {
-            whatsAppService.sendTemplateMessage(
+            val wamid = whatsAppService.sendTemplateMessage(
                 phoneNumber = request.phoneNumber,
                 templateName = whatsAppProperties.paymentReminderTemplateName,
                 languageCode = whatsAppProperties.paymentReminderTemplateLanguage,
@@ -76,8 +79,8 @@ class WhatsAppController(
                     request.billingPeriod
                 )
             )
-
-            ResponseEntity.ok("Plantilla enviada correctamente por WhatsApp.")
+            val detail = if (wamid != null) " (id: $wamid)" else ""
+            ResponseEntity.ok("Plantilla enviada correctamente por WhatsApp.$detail")
         } catch (e: IllegalArgumentException) {
             ResponseEntity
                 .badRequest()
@@ -87,6 +90,22 @@ class WhatsAppController(
                 .status(500)
                 .body("No se pudo enviar la plantilla por WhatsApp: ${friendlyTemplateErrorMessage(e.message)}")
         }
+    }
+
+    @GetMapping("/inbound-messages")
+    fun getRecentInboundMessages(): ResponseEntity<Any> {
+        return ResponseEntity.ok(
+            whatsAppInboundMessageRepository.findTop50ByOrderByCreatedAtDesc().map { it.toDto() }
+        )
+    }
+
+    @GetMapping("/inbound-messages/subscription/{subscriptionId}")
+    fun getInboundMessagesBySubscription(
+        @PathVariable subscriptionId: Int
+    ): ResponseEntity<Any> {
+        return ResponseEntity.ok(
+            whatsAppInboundMessageRepository.findBySubscriptionIdOrderByCreatedAtDesc(subscriptionId).map { it.toDto() }
+        )
     }
 
     private fun friendlyTemplateErrorMessage(errorMessage: String?): String {

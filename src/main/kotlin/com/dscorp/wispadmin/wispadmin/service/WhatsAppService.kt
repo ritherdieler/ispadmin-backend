@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.service
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -21,13 +22,13 @@ class WhatsAppService(
 
     companion object {
         private val PAYMENT_REMINDER_PARAMETER_NAMES = listOf("customer_name", "amount", "billing_period")
+        private val objectMapper = ObjectMapper()
     }
 
-    // Envia un mensaje de texto simple usando WhatsApp Cloud API.
     fun sendTextMessage(
         phoneNumber: String,
         message: String
-    ): Boolean {
+    ): String? {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
@@ -54,7 +55,8 @@ class WhatsAppService(
             String::class.java
         )
 
-        return response.statusCode.is2xxSuccessful
+        if (!response.statusCode.is2xxSuccessful) return null
+        return extractWamid(response.body)
     }
 
     fun sendTemplateMessage(
@@ -62,7 +64,7 @@ class WhatsAppService(
         templateName: String,
         languageCode: String,
         parameters: List<String>
-    ): Boolean {
+    ): String? {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
@@ -113,11 +115,11 @@ class WhatsAppService(
             String::class.java
         )
 
-        return response.statusCode.is2xxSuccessful
+        if (!response.statusCode.is2xxSuccessful) return null
+        return extractWamid(response.body)
     }
 
-    // Normaliza celulares peruanos al formato que Meta espera: 51999999999.
-    private fun normalizePhoneNumber(phoneNumber: String): String {
+    fun normalizePhoneNumber(phoneNumber: String): String {
         val digits = phoneNumber.filter { it.isDigit() }
 
         val normalized = when {
@@ -132,6 +134,14 @@ class WhatsAppService(
 
         return normalized
     }
+
+    private fun extractWamid(responseBody: String?): String? {
+        if (responseBody.isNullOrBlank()) return null
+        return try {
+            val tree = objectMapper.readTree(responseBody)
+            tree.path("messages").path(0).path("id").asText(null)
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
-
-

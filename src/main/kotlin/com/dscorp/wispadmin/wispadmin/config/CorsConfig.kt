@@ -24,6 +24,10 @@ class CorsConfig {
         // Orígenes específicos para desarrollo (mantener compatibilidad)
         config.addAllowedOrigin("http://localhost:3000") // Puerto común para desarrollos React
         config.addAllowedOrigin("http://localhost:5173") // Puerto por defecto de Vite
+
+        // Orígenes productivos HTTPS
+        config.addAllowedOrigin("https://api.gigafiberperu.cloud")
+        config.addAllowedOrigin("https://backoffice.gigafiberperu.cloud")
         
         // Permitir todos los métodos HTTP
         config.addAllowedMethod("*")

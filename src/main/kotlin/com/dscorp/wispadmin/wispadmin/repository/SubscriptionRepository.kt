@@ -106,6 +106,13 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     fun findByPlanId(planId: Int): List<Subscription>
 
+    @Query("""
+        SELECT s FROM Subscription s
+        WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = :normalizedPhone
+        OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = CONCAT('51', :normalizedPhone)
+    """)
+    fun findByNormalizedPhone(normalizedPhone: String): List<Subscription>
+
     @Modifying
     @Query(
         "UPDATE Subscription s SET " +

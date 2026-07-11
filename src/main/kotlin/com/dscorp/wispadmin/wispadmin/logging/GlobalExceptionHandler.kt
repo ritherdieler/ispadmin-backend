@@ -5,12 +5,14 @@ import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 import java.util.*
 import javax.servlet.http.HttpServletRequest
@@ -23,6 +25,39 @@ class GlobalExceptionHandler @Autowired constructor(
     private val loggingService: LoggingService,
     private val errorLogRepository: ErrorLogRepository
 ) : ResponseEntityExceptionHandler() {
+
+    @Value("\${spring.servlet.multipart.max-file-size:8MB}")
+    private lateinit var maxFileSize: String
+
+    @ExceptionHandler(MaxUploadSizeExceededException::class)
+    fun handleMaxUploadSizeExceeded(
+        ex: MaxUploadSizeExceededException,
+        request: WebRequest
+    ): ResponseEntity<Any> {
+        val httpRequest = (request as ServletWebRequest).request
+        val path = httpRequest.requestURI
+        val method = httpRequest.method
+        val ip = httpRequest.remoteAddr
+        val userAgent = httpRequest.getHeader("User-Agent") ?: "Unknown"
+        val moduleName = extractModuleFromRequest(httpRequest)
+
+        loggingService.logError(
+            module = moduleName,
+            exception = ex,
+            data = "URL: $path, Method: $method, IP: $ip, Agent: $userAgent"
+        )
+
+        httpRequest.setAttribute(HttpFailureContext.ATTR_STACK_SUMMARY, StackTraceSummarizer.summarize(ex))
+
+        val errorResponse = mapOf(
+            "timestamp" to Date(),
+            "status" to HttpStatus.PAYLOAD_TOO_LARGE.value(),
+            "error" to "El archivo supera el tamaño máximo permitido ($maxFileSize)",
+            "path" to path
+        )
+
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(errorResponse)
+    }
 
     /**
      * Maneja cualquier excepción no controlada en la aplicación
