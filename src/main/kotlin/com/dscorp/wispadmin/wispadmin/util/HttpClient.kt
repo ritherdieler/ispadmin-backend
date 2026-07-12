@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.util
 
+import com.dscorp.wispadmin.observability.tracing.TracingInterceptorHolder
 import com.dscorp.wispadmin.wispadmin.config.OLT_SERVICE_API_KEY
 import com.dscorp.wispadmin.wispadmin.config.OLT_SERVICE_BASE_URL
 import org.springframework.http.HttpEntity
@@ -13,6 +14,7 @@ object HttpClient {
     fun <T> get(url: String, responseType: Class<T>): T {
         val restTemplate = RestTemplate()
         restTemplate.interceptors.add(RequestResponseLoggingInterceptor())
+        TracingInterceptorHolder.instance?.let { restTemplate.interceptors.add(it) }
         val headers = HttpHeaders()
         headers.set("X-Token", OLT_SERVICE_API_KEY)
         val requestEntity = HttpEntity<Any>(headers)
@@ -23,6 +25,7 @@ object HttpClient {
     fun <T> post(url: String, body: Any? = null, responseType: Class<T>): T {
         val restTemplate = RestTemplate()
         restTemplate.interceptors.add(RequestResponseLoggingInterceptor())
+        TracingInterceptorHolder.instance?.let { restTemplate.interceptors.add(it) }
         val headers = HttpHeaders()
         headers.set("X-Token", OLT_SERVICE_API_KEY)
         val requestEntity = HttpEntity<Any>(body, headers)

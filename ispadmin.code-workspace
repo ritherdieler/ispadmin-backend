@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../IpsAdmin-android app"
+		},
+		{
+			"path": "../ispadmin-asistencias"
+		},
+		{
+			"path": "../ispadmin-backoffice"
+		},
+		{
+			"path": "../ispadmin-observability-web"
+		}
+	],
+	"settings": {}
+}

@@ -1,44 +1,27 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.data.model.Coupon
-import com.dscorp.wispadmin.wispadmin.repository.CouponRepository
-import org.springframework.beans.factory.annotation.Autowired
+import com.dscorp.wispadmin.wispadmin.dto.CouponRequestDto
+import com.dscorp.wispadmin.wispadmin.dto.CouponResponseDto
+import com.dscorp.wispadmin.wispadmin.service.CouponService
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RestController
+import javax.validation.Valid
 
 @RestController
 @RequestMapping("/cupon")
-class CouponController {
-
-    val objectErrorResponse: ResponseEntity<Coupon> = ResponseEntity.status(500).body(null)
-    val listObjectErrorResponse: ResponseEntity<List<Coupon>> = ResponseEntity.status(500).body(null)
-
-    @Autowired
-    lateinit var repository: CouponRepository
+class CouponController(
+    private val couponService: CouponService
+) {
 
     @PostMapping
-    fun registerCoupon(@RequestBody newCoupon: Coupon): ResponseEntity<Coupon> {
-        return try {
-            val Coupon = repository.save(newCoupon)
-            if (Coupon != null) ResponseEntity.status(200).body(Coupon)
-            else objectErrorResponse
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
-        }
-    }
-
+    fun registerCoupon(@Valid @RequestBody request: CouponRequestDto): ResponseEntity<CouponResponseDto> =
+        ResponseEntity.ok(couponService.register(request))
 
     @GetMapping
-    fun getCouponList(): ResponseEntity<List<Coupon>> {
-        return try {
-            val CouponList = repository.findAll()
-            if (CouponList != null) ResponseEntity.status(200).body(CouponList)
-            else listObjectErrorResponse
-        } catch (e: Exception) {
-            e.printStackTrace()
-            listObjectErrorResponse
-        }
-    }
-
+    fun getCouponList(): ResponseEntity<List<CouponResponseDto>> =
+        ResponseEntity.ok(couponService.findAll())
 }

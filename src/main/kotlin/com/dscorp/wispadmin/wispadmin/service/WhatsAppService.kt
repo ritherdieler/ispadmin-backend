@@ -17,8 +17,11 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
 
 @Service
 class WhatsAppService(
-    private val whatsAppProperties: WhatsAppProperties
+    private val whatsAppProperties: WhatsAppProperties,
+    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
 ) {
+
+    private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
 
     companion object {
         private val PAYMENT_REMINDER_PARAMETER_NAMES = listOf("customer_name", "amount", "billing_period")
@@ -49,7 +52,7 @@ class WhatsAppService(
 
         val request = HttpEntity(body, headers)
 
-        val response = RestTemplate().postForEntity(
+        val response = restTemplate.postForEntity(
             whatsAppProperties.messagesUrl(),
             request,
             String::class.java
@@ -109,7 +112,7 @@ class WhatsAppService(
 
         val request = HttpEntity(body, headers)
 
-        val response = RestTemplate().postForEntity(
+        val response = restTemplate.postForEntity(
             whatsAppProperties.messagesUrl(),
             request,
             String::class.java

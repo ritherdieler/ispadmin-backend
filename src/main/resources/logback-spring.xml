@@ -84,17 +84,6 @@
         <appender-ref ref="ERROR_FILE" />
     </logger>
 
-    <!-- Main application class - silence completely -->
-    <logger name="com.dscorp.wispadmin.wispadmin.WispAdminApplicationKt" level="OFF" />
-
-    <!-- Spring Boot loggers - Set to OFF to completely silence them -->
-    <logger name="org.springframework" level="OFF" />
-    <logger name="org.hibernate" level="OFF" />
-    <logger name="org.apache.catalina" level="OFF" />
-    <logger name="org.apache.coyote" level="OFF" />
-    <logger name="org.apache.tomcat" level="OFF" />
-    <logger name="org.springframework.web.servlet.DispatcherServlet" level="OFF" />
-    
     <!-- Request and controller specific loggers -->
     <logger name="com.dscorp.wispadmin.wispadmin.config.RequestLoggingInterceptor" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE" />

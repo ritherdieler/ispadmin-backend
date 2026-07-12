@@ -1,0 +1,10 @@
+**/target/
+**/build/
+**/node_modules/
+**/dist/
+**/.gradle/
+**/.kotlin/
+**/logs/
+**/*.log
+**/.DS_Store
+**/.idea/

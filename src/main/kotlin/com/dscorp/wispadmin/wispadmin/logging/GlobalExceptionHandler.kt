@@ -1,5 +1,9 @@
 package com.dscorp.wispadmin.wispadmin.logging
 
+import com.dscorp.wispadmin.observability.config.CorrelationIdFilter
+import com.dscorp.wispadmin.observability.config.TraceContextFilter
+import com.dscorp.wispadmin.observability.port.ObservabilityReporter
+import com.dscorp.wispadmin.observability.port.ReportedEvent
 import com.dscorp.wispadmin.wispadmin.config.HttpFailureContext
 import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
@@ -23,8 +27,13 @@ import javax.servlet.http.HttpServletRequest
 @ControllerAdvice
 class GlobalExceptionHandler @Autowired constructor(
     private val loggingService: LoggingService,
-    private val errorLogRepository: ErrorLogRepository
+    private val errorLogRepository: ErrorLogRepository,
+    private val observabilityReporter: ObservabilityReporter? = null
 ) : ResponseEntityExceptionHandler() {
+
+    companion object {
+        const val ATTR_OBS_REPORTED = "obsEventReported"
+    }
 
     @Value("\${spring.servlet.multipart.max-file-size:8MB}")
     private lateinit var maxFileSize: String
@@ -48,6 +57,7 @@ class GlobalExceptionHandler @Autowired constructor(
         )
 
         httpRequest.setAttribute(HttpFailureContext.ATTR_STACK_SUMMARY, StackTraceSummarizer.summarize(ex))
+        reportToObservability(httpRequest, ex, HttpStatus.PAYLOAD_TOO_LARGE.value())
 
         val errorResponse = mapOf(
             "timestamp" to Date(),
@@ -98,6 +108,7 @@ class GlobalExceptionHandler @Autowired constructor(
         )
 
         httpRequest.setAttribute(HttpFailureContext.ATTR_STACK_SUMMARY, StackTraceSummarizer.summarize(ex))
+        reportToObservability(httpRequest, ex, HttpStatus.INTERNAL_SERVER_ERROR.value())
 
         val errorResponse = mapOf(
             "timestamp" to Date(),
@@ -107,6 +118,34 @@ class GlobalExceptionHandler @Autowired constructor(
         )
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse)
+    }
+
+    private fun reportToObservability(request: HttpServletRequest, ex: Exception, status: Int) {
+        val reporter = observabilityReporter ?: return
+        try {
+            request.setAttribute(ATTR_OBS_REPORTED, true)
+            val correlationId = request.getAttribute(CorrelationIdFilter.ATTRIBUTE) as? String
+                ?: request.getHeader(CorrelationIdFilter.HEADER)
+            val sessionId = request.getAttribute(TraceContextFilter.ATTRIBUTE_SESSION) as? String
+                ?: request.getHeader(TraceContextFilter.HEADER_SESSION)
+            reporter.report(
+                ReportedEvent(
+                    eventType = "error",
+                    platform = "backend",
+                    severity = if (status >= 500) "error" else "warning",
+                    message = ex.message,
+                    errorType = ex.javaClass.name,
+                    stacktrace = ex.stackTraceToString(),
+                    correlationId = correlationId,
+                    sessionId = sessionId,
+                    url = request.requestURI,
+                    httpMethod = request.method,
+                    httpStatus = status,
+                    userAgent = request.getHeader("User-Agent")
+                )
+            )
+        } catch (_: Exception) {
+        }
     }
     
     /**

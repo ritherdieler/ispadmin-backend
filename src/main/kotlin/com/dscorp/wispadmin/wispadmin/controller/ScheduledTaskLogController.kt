@@ -4,7 +4,6 @@ import com.dscorp.wispadmin.wispadmin.data.model.ScheduledTaskType
 import com.dscorp.wispadmin.wispadmin.dto.ScheduledTaskLogDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -12,10 +11,9 @@ import java.time.LocalDateTime
 
 @RestController
 @RequestMapping("/api/scheduled-task-logs")
-class ScheduledTaskLogController {
-
-    @Autowired
-    private lateinit var scheduledTaskLogService: ScheduledTaskLogService
+class ScheduledTaskLogController(
+    private val scheduledTaskLogService: ScheduledTaskLogService
+) {
 
     @GetMapping("/recent")
     fun getRecentLogs(

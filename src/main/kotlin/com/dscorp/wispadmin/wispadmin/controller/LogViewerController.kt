@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.ClassPathResource
 import org.springframework.data.domain.PageRequest
@@ -115,7 +114,7 @@ data class HttpFailuresResponseDTO(
 
 @RestController
 @RequestMapping("/api/logs")
-class LogViewerController @Autowired constructor(
+class LogViewerController(
     private val errorLogRepository: ErrorLogRepository,
     private val objectMapper: ObjectMapper
 ) {

@@ -28,6 +28,8 @@ class CorsConfig {
         // Orígenes productivos HTTPS
         config.addAllowedOrigin("https://api.gigafiberperu.cloud")
         config.addAllowedOrigin("https://backoffice.gigafiberperu.cloud")
+        config.addAllowedOrigin("https://asistencias.gigafiberperu.cloud")
+        config.addAllowedOrigin("https://observability.gigafiberperu.cloud")
         
         // Permitir todos los métodos HTTP
         config.addAllowedMethod("*")
