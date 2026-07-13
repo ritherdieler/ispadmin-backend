@@ -56,9 +56,10 @@ class FaceVerifyController(
         @RequestParam("photo") photo: MultipartFile,
         @RequestParam("action") action: VerifyFaceBody.Action,
         @RequestParam("occurredAtMillis", required = false) occurredAtMillis: Long?,
-        @RequestParam("challengeToken", required = false) challengeToken: String?
+        @RequestParam("challengeToken", required = false) challengeToken: String?,
+        @RequestParam("attendanceStatus", required = false) attendanceStatus: String?
     ): ResponseEntity<VerifyFaceResponse> {
-        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action, occurredAtMillis, challengeToken))
+        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action, occurredAtMillis, challengeToken, attendanceStatus))
     }
 
     // Fallback de asistencia: valida credenciales y registra entrada/salida sin depender de la camara.

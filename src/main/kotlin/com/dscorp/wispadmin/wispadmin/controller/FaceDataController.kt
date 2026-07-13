@@ -48,7 +48,14 @@ class FaceDataController(
     @PostConstruct
     fun ensureFaceEmbeddingColumnSize() {
         jdbcTemplate.execute("ALTER TABLE face_data MODIFY COLUMN face_embedding LONGTEXT NOT NULL")
+        migrateLegacyFaceAngles()
         dropLegacyUniqueUserIdIndexes()
+    }
+
+    // Registros antiguos guardaban angle='MASTER' (un solo embedding por usuario).
+    // El enum actual solo admite FRONT/LEFT/RIGHT; sin esta migracion Hibernate falla al leer esas filas.
+    private fun migrateLegacyFaceAngles() {
+        jdbcTemplate.update("UPDATE face_data SET angle = 'FRONT' WHERE angle = 'MASTER'")
     }
 
     @GetMapping
