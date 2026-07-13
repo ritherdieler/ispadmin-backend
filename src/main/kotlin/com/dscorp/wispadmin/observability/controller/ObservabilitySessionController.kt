@@ -32,8 +32,13 @@ class ObservabilitySessionController(
     }
 
     @GetMapping("/{sessionId}")
-    fun detail(@PathVariable sessionId: String): ResponseEntity<SessionDetailDto> {
-        val session = sessionQueryService.getSession(sessionId) ?: return ResponseEntity.notFound().build()
+    fun detail(
+        @PathVariable sessionId: String,
+        @RequestParam(required = false) feature: String?,
+        @RequestParam(required = false) action: String?
+    ): ResponseEntity<SessionDetailDto> {
+        val session = sessionQueryService.getSession(sessionId, feature, action)
+            ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(session)
     }
 }

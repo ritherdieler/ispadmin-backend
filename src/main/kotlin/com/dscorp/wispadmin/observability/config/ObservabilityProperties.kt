@@ -11,6 +11,8 @@ class ObservabilityProperties {
 
     var apiKeys: MutableMap<String, String> = mutableMapOf()
 
+    var readApiPlatforms: MutableList<String> = mutableListOf("dashboard")
+
     var maxEventsPerBatch: Int = 100
 
     var maxPayloadBytes: Int = 2_000_000
@@ -157,6 +159,11 @@ class ObservabilityProperties {
     fun platformForApiKey(key: String?): String? {
         if (key.isNullOrBlank()) return null
         return apiKeys.entries.firstOrNull { it.value == key }?.key
+    }
+
+    fun isReadApiPlatform(platform: String?): Boolean {
+        if (platform.isNullOrBlank()) return false
+        return readApiPlatforms.any { it.equals(platform, ignoreCase = true) }
     }
 }
 

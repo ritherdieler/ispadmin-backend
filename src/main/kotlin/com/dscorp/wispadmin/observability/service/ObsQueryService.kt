@@ -123,6 +123,9 @@ class ObsQueryService(
         val bySeverity = issueRepository.countOpenGroupedBySeverity().associate {
             (it[0]?.toString() ?: "unknown") to (it[1] as Number).toLong()
         }
+        val byFeature = eventRepository.countGroupedByFeatureSince(now.minusHours(24), PageRequest.of(0, 10)).associate {
+            (it[0]?.toString() ?: "unknown") to (it[1] as Number).toLong()
+        }
         val topIssues = issueRepository.findTopOpenIssues(PageRequest.of(0, 10)).map { it.toSummaryDto() }
 
         val nowMs = System.currentTimeMillis()
@@ -143,6 +146,7 @@ class ObsQueryService(
             eventsLastHour = eventRepository.countSince(now.minusHours(1)),
             issuesByPlatform = byPlatform,
             openIssuesBySeverity = bySeverity,
+            eventsByFeature = byFeature,
             topIssues = topIssues,
             tracesLastHour = tracesLastHour,
             errorTraceRate = errorTraceRate,

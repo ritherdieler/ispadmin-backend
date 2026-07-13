@@ -23,6 +23,34 @@ interface ObsEventRepository : JpaRepository<ObsEvent, Long> {
 
     @Query(
         """
+        SELECT e FROM ObsEvent e
+        WHERE e.sessionId = :sessionId
+          AND (:feature IS NULL OR e.feature = :feature)
+          AND (:action IS NULL OR e.action = :action)
+        ORDER BY e.createdAt DESC
+        """
+    )
+    fun findSessionEventsFiltered(
+        @Param("sessionId") sessionId: String,
+        @Param("feature") feature: String?,
+        @Param("action") action: String?
+    ): List<ObsEvent>
+
+    @Query(
+        """
+        SELECT e.feature, COUNT(e) FROM ObsEvent e
+        WHERE e.createdAt >= :from AND e.feature IS NOT NULL
+        GROUP BY e.feature
+        ORDER BY COUNT(e) DESC
+        """
+    )
+    fun countGroupedByFeatureSince(
+        @Param("from") from: LocalDateTime,
+        pageable: Pageable
+    ): List<Array<Any>>
+
+    @Query(
+        """
         SELECT e.sessionId, e.platform, COUNT(e), MAX(e.createdAt), MIN(e.createdAt)
         FROM ObsEvent e
         WHERE e.sessionId IS NOT NULL

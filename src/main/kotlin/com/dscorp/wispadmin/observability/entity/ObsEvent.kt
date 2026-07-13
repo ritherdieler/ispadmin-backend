@@ -18,7 +18,9 @@ import javax.persistence.Table
         Index(name = "idx_obs_event_fingerprint", columnList = "fingerprint"),
         Index(name = "idx_obs_event_created_at", columnList = "created_at"),
         Index(name = "idx_obs_event_correlation", columnList = "correlation_id"),
-        Index(name = "idx_obs_event_session", columnList = "session_id")
+        Index(name = "idx_obs_event_session", columnList = "session_id"),
+        Index(name = "idx_obs_event_feature", columnList = "feature"),
+        Index(name = "idx_obs_event_action", columnList = "action")
     ]
 )
 data class ObsEvent(
@@ -40,6 +42,12 @@ data class ObsEvent(
 
     @Column(name = "severity", length = 30)
     var severity: String? = null,
+
+    @Column(name = "feature", length = 80)
+    var feature: String? = null,
+
+    @Column(name = "action", length = 120)
+    var action: String? = null,
 
     @Lob
     @Column(name = "message", columnDefinition = "TEXT")

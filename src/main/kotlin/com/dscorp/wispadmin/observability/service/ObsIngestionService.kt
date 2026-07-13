@@ -96,6 +96,8 @@ class ObsIngestionService(
             eventType = event.eventType.ifBlank { "error" },
             platform = platform,
             severity = severity,
+            feature = tagString(event.tags, "feature")?.take(80),
+            action = tagString(event.tags, "action")?.take(120),
             message = event.message,
             errorType = event.errorType?.take(300),
             stacktrace = event.stacktrace,
@@ -134,6 +136,11 @@ class ObsIngestionService(
             else -> "${event.platform} ${event.eventType}"
         }
         return base.take(500)
+    }
+
+    private fun tagString(tags: Map<String, Any?>?, key: String): String? {
+        val value = tags?.get(key) ?: return null
+        return value.toString().trim().takeIf { it.isNotBlank() }
     }
 
     private fun toJson(value: Any?): String? {

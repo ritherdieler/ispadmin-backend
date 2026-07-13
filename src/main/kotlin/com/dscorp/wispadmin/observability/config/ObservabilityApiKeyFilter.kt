@@ -21,6 +21,15 @@ class ObservabilityApiKeyFilter(
     companion object {
         const val HEADER = "X-Obs-Api-Key"
         const val PLATFORM_ATTRIBUTE = "obsPlatform"
+
+        private val INGESTION_PATH_SUFFIXES = listOf(
+            "/observability/events",
+            "/observability/spans",
+            "/observability/rum",
+            "/observability/replays",
+            "/observability/symbols/sourcemaps",
+            "/observability/symbols/proguard"
+        )
     }
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
@@ -44,8 +53,19 @@ class ObservabilityApiKeyFilter(
             writeUnauthorized(response)
             return
         }
-        properties.platformForApiKey(key)?.let { request.setAttribute(PLATFORM_ATTRIBUTE, it) }
+        val platform = properties.platformForApiKey(key)
+        if (!isIngestionRequest(request) && !properties.isReadApiPlatform(platform)) {
+            writeForbidden(response)
+            return
+        }
+        platform?.let { request.setAttribute(PLATFORM_ATTRIBUTE, it) }
         filterChain.doFilter(request, response)
+    }
+
+    private fun isIngestionRequest(request: HttpServletRequest): Boolean {
+        if (!"POST".equals(request.method, ignoreCase = true)) return false
+        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        return INGESTION_PATH_SUFFIXES.any { path.endsWith(it) }
     }
 
     private fun isObservabilityPath(request: HttpServletRequest): Boolean {
@@ -59,6 +79,16 @@ class ObservabilityApiKeyFilter(
         val body = mapOf(
             "error" to "unauthorized",
             "message" to "Missing or invalid X-Obs-Api-Key header"
+        )
+        response.writer.write(objectMapper.writeValueAsString(body))
+    }
+
+    private fun writeForbidden(response: HttpServletResponse) {
+        response.status = HttpStatus.FORBIDDEN.value()
+        response.contentType = MediaType.APPLICATION_JSON_VALUE
+        val body = mapOf(
+            "error" to "forbidden",
+            "message" to "This API key is not authorized to read observability data"
         )
         response.writer.write(objectMapper.writeValueAsString(body))
     }

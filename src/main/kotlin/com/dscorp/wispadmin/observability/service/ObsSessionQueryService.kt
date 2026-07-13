@@ -69,8 +69,18 @@ class ObsSessionQueryService(
         )
     }
 
-    fun getSession(sessionId: String): SessionDetailDto? {
-        val events = eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
+    fun getSession(
+        sessionId: String,
+        feature: String? = null,
+        action: String? = null
+    ): SessionDetailDto? {
+        val normalizedFeature = feature?.takeIf { it.isNotBlank() }
+        val normalizedAction = action?.takeIf { it.isNotBlank() }
+        val events = if (normalizedFeature != null || normalizedAction != null) {
+            eventRepository.findSessionEventsFiltered(sessionId, normalizedFeature, normalizedAction)
+        } else {
+            eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
+        }
         val rootSpans = spanRepository.searchRootSpans(
             null, null, null, null, null, null, sessionId, PageRequest.of(0, 200)
         ).content
