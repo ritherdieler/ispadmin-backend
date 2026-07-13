@@ -7,13 +7,13 @@ import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
-import com.dscorp.wispadmin.wispadmin.service.OnuService
+import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 @Component
 class FiberInstallationStrategy(
-    private val onuService: OnuService
+    private val cancelledOnuReuseService: CancelledOnuReuseService
 ) : IInstallationStrategy {
     
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -54,7 +54,7 @@ class FiberInstallationStrategy(
                 custom_profile = DEFAULT_CUSTOM_PROFILE
             )
             
-            onuService.authorizeOnuInSmartOltWidthPostMethod(authorizeRequest)
+            cancelledOnuReuseService.authorizeWithCancelledReuse(authorizeRequest)
             onuAuthorized = true
 
             val queueName = buildQueueName(subscription)

@@ -168,7 +168,16 @@ class MockOltService : OltService {
         
         // Simular delay de red
         Thread.sleep(1000)
-        
+
+        // Simular rechazo de SmartOLT cuando el SN ya esta autorizado (reuso de ONU)
+        if (authorizedOnus.containsKey(authorizationRequest.sn)) {
+            throw RuntimeException(
+                "400 Bad Request: \"{\"status\":false,\"error\":\"Invalid parameters: " +
+                    "The SN ${authorizationRequest.sn} already exists on this OLT\"," +
+                    "\"error_code\":\"sn_already_exists\"}\""
+            )
+        }
+
         // Guardar en estado mock
         authorizedOnus[authorizationRequest.sn] = authorizationRequest
         
@@ -258,10 +267,14 @@ class MockOltService : OltService {
         
         // Simular delay de red
         Thread.sleep(300)
-        
+
+        // El id externo mock es "mock-<sn>"; aceptar tambien el SN crudo
+        val sn = onuExternalId.removePrefix("mock-")
+
         // Remover de estado mock
-        authorizedOnus.entries.removeIf { it.value.sn == onuExternalId }
-        onuDetails.remove(onuExternalId)
+        authorizedOnus.remove(sn)
+        authorizedOnus.entries.removeIf { it.value.sn == sn }
+        onuDetails.remove(sn)
         
         logger.info("MOCK OLT: ONU eliminada exitosamente")
     }

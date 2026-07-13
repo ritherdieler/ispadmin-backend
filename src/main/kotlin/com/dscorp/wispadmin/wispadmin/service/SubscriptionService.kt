@@ -51,7 +51,8 @@ class SubscriptionService(
     private val serviceReactivationManager: IServiceReactivationManager,
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
-    private val installationStrategyFactory: InstallationStrategyFactory
+    private val installationStrategyFactory: InstallationStrategyFactory,
+    private val cancelledOnuReuseService: CancelledOnuReuseService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -109,11 +110,11 @@ class SubscriptionService(
                 queueManager.recreateQueueForSubscription(connection, subscription)
             }
 
-            onuService.authorizeOnuInSmartOltWidthPostMethod(authorizationRequest)
+            cancelledOnuReuseService.authorizeWithCancelledReuse(authorizationRequest)
 
             return subscription
         } catch (e: Exception) {
-            throw Exception("No se pudo migrar el servicio")
+            throw Exception("No se pudo migrar el servicio: ${e.message}", e)
         }
 
     }

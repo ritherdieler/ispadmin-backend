@@ -34,6 +34,18 @@ class OnuService @Autowired constructor(
         oltService.deleteOnu(onuExternalId)
     }
 
+    fun deleteOnuBySn(onuSn: String) {
+        val details = getOnuBySn(onuSn)
+        if (details.onus.isEmpty()) {
+            throw IllegalArgumentException("No se encontró la ONU en SmartOLT para el serial indicado")
+        }
+        val uniqueId = details.onus[0].unique_external_id
+        if (uniqueId.isBlank()) {
+            throw IllegalStateException("La ONU no tiene identificador externo en SmartOLT")
+        }
+        oltService.deleteOnu(uniqueId)
+    }
+
     fun rebootOnuBySn(onuSn: String) {
         val details = getOnuBySn(onuSn)
         if (details.onus.isEmpty()) {

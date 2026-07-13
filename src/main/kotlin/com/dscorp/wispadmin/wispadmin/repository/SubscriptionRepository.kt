@@ -217,4 +217,17 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         excludeSubscriptionId: Int?
     ): Boolean
 
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        WHERE s.serviceStatus = 'CANCELLED'
+        AND s.fiberOnu IS NOT NULL
+        AND (
+            UPPER(s.fiberOnu.sn) = UPPER(:sn)
+            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+        )
+        """
+    )
+    fun findCancelledByFiberOnuSn(sn: String, suffix: String): List<Subscription>
+
 }
