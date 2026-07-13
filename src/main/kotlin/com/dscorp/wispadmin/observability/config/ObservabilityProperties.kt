@@ -39,6 +39,14 @@ class ObservabilityProperties {
 
     val alerts: AlertsProperties = AlertsProperties()
 
+    val session: SessionProperties = SessionProperties()
+
+    class SessionProperties {
+        var secret: String = ""
+        var ttlMinutes: Long = 720
+        var refreshTtlMinutes: Long = 43200
+    }
+
     class AlertsProperties {
         var enabled: Boolean = true
         var evaluationIntervalMs: Long = 60000

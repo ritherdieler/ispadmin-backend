@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.observability.config
 
+import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
@@ -15,17 +16,21 @@ import javax.servlet.http.HttpServletResponse
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 class ObservabilityApiKeyFilter(
     private val properties: ObservabilityProperties,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val sessionTokenService: ObservabilitySessionTokenService
 ) : OncePerRequestFilter() {
 
     companion object {
         const val HEADER = "X-Obs-Api-Key"
+        const val SESSION_HEADER = "X-Obs-Session"
         const val PLATFORM_ATTRIBUTE = "obsPlatform"
+        const val SESSION_CLAIMS_ATTRIBUTE = "obsSessionClaims"
     }
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         if ("OPTIONS".equals(request.method, ignoreCase = true)) return true
         if (isTrackerWebhookPath(request)) return true
+        if (isObservabilityWebSocketPath(request)) return true
         return !isObservabilityPath(request)
     }
 
@@ -34,18 +39,46 @@ class ObservabilityApiKeyFilter(
         return path.contains("/observability/tracker/") && path.trimEnd('/').endsWith("/webhook")
     }
 
+    private fun isObservabilityWebSocketPath(request: HttpServletRequest): Boolean {
+        val path = request.servletPath ?: request.requestURI ?: ""
+        return path.contains("/ws/observability")
+    }
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
         filterChain: FilterChain
     ) {
-        val key = request.getHeader(HEADER)
-        if (!properties.isValidApiKey(key)) {
-            writeUnauthorized(response)
+        if (isTelemetryIngestPath(request)) {
+            val key = request.getHeader(HEADER)
+            if (!properties.isValidApiKey(key)) {
+                writeUnauthorized(response, "Missing or invalid $HEADER header")
+                return
+            }
+            properties.platformForApiKey(key)?.let { request.setAttribute(PLATFORM_ATTRIBUTE, it) }
+            filterChain.doFilter(request, response)
             return
         }
-        properties.platformForApiKey(key)?.let { request.setAttribute(PLATFORM_ATTRIBUTE, it) }
+
+        val token = request.getHeader(SESSION_HEADER)
+        val claims = sessionTokenService.verifyAdmin(token)
+        if (claims == null) {
+            writeUnauthorized(response, "Missing or invalid $SESSION_HEADER token")
+            return
+        }
+        request.setAttribute(SESSION_CLAIMS_ATTRIBUTE, claims)
         filterChain.doFilter(request, response)
+    }
+
+    private fun isTelemetryIngestPath(request: HttpServletRequest): Boolean {
+        if (!"POST".equals(request.method, ignoreCase = true)) return false
+        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        return path.endsWith("/observability/events") ||
+            path.endsWith("/observability/spans") ||
+            path.endsWith("/observability/rum") ||
+            path.endsWith("/observability/replays") ||
+            path.endsWith("/observability/symbols/sourcemaps") ||
+            path.endsWith("/observability/symbols/proguard")
     }
 
     private fun isObservabilityPath(request: HttpServletRequest): Boolean {
@@ -53,12 +86,12 @@ class ObservabilityApiKeyFilter(
         return path.startsWith("/observability") || path.contains("/observability/")
     }
 
-    private fun writeUnauthorized(response: HttpServletResponse) {
+    private fun writeUnauthorized(response: HttpServletResponse, message: String) {
         response.status = HttpStatus.UNAUTHORIZED.value()
         response.contentType = MediaType.APPLICATION_JSON_VALUE
         val body = mapOf(
             "error" to "unauthorized",
-            "message" to "Missing or invalid X-Obs-Api-Key header"
+            "message" to message
         )
         response.writer.write(objectMapper.writeValueAsString(body))
     }

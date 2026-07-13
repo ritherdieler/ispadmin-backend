@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
+import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
 import com.dscorp.wispadmin.wispadmin.data.model.User
 import com.dscorp.wispadmin.wispadmin.dto.UserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
@@ -26,7 +27,8 @@ class UserController(
     private val userService: UserService,
     private val repository: UserRepository,
     private val fcm: FirebaseMessaging,
-    private val faceVerifyService: FaceVerifyService
+    private val faceVerifyService: FaceVerifyService,
+    private val observabilitySessionTokenService: ObservabilitySessionTokenService
 ) {
 
     companion object {
@@ -110,7 +112,7 @@ class UserController(
                 foundUser.password = PasswordHashUtil.passwordToStoreAfterLegacyLogin(user.password, foundUser.password)
                 repository.save(foundUser)
             }
-            return ResponseEntity.ok(foundUser.toDto())
+            return ResponseEntity.ok(foundUser.toDto().withSessionTokens(foundUser))
         }
         return ResponseEntity.notFound().build()
     }
@@ -119,14 +121,37 @@ class UserController(
     fun loginWithFace(@RequestBody body: FaceLoginBody): ResponseEntity<UserDto> {
         val user = faceVerifyService.indentifyUserForLogin(body.descriptor)
             ?: return ResponseEntity.status(401).body(null)
-        return ResponseEntity.ok(user.toDto())
+        return ResponseEntity.ok(user.toDto().withSessionTokens(user))
     }
 
     @PostMapping("/login/face/photo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun loginWithFacePhoto(@RequestPart("photo") photo: MultipartFile): ResponseEntity<UserDto> {
         val user = faceVerifyService.identifyUserFromPhotoForLogin(photo)
             ?: return ResponseEntity.status(401).body(null)
-        return ResponseEntity.ok(user.toDto())
+        return ResponseEntity.ok(user.toDto().withSessionTokens(user))
+    }
+
+    @PostMapping("/token/refresh")
+    fun refreshToken(@RequestBody body: RefreshTokenBody): ResponseEntity<TokenRefreshResponse> {
+        val claims = observabilitySessionTokenService.verifyRefresh(body.refreshToken)
+            ?: return ResponseEntity.status(401).build()
+        val userId = claims.userId ?: return ResponseEntity.status(401).build()
+        val user = repository.findById(userId).orElse(null)
+            ?: return ResponseEntity.status(401).build()
+        val access = observabilitySessionTokenService.issueAccess(user.id, user.username, user.type?.name)
+        val refresh = observabilitySessionTokenService.issueRefresh(user.id, user.username, user.type?.name)
+        if (access == null || refresh == null) return ResponseEntity.status(500).build()
+        return ResponseEntity.ok(TokenRefreshResponse(accessToken = access, refreshToken = refresh))
+    }
+
+    private fun UserDto.withSessionTokens(user: User): UserDto {
+        val access = observabilitySessionTokenService.issueAccess(user.id, user.username, user.type?.name)
+        val refresh = observabilitySessionTokenService.issueRefresh(user.id, user.username, user.type?.name)
+        return this.copy(
+            accessToken = access,
+            refreshToken = refresh,
+            obsSessionToken = if (user.type == User.UserType.ADMIN) access else this.obsSessionToken
+        )
     }
 
     @PutMapping("/device-token")
@@ -173,3 +198,12 @@ class UserController(
         }
     }
 }
+
+data class RefreshTokenBody(
+    val refreshToken: String = ""
+)
+
+data class TokenRefreshResponse(
+    val accessToken: String,
+    val refreshToken: String
+)

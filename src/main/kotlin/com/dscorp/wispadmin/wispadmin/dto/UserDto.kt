@@ -16,4 +16,7 @@ data class UserDto(
     val email: String? = null,
     val phone: String? = null,
     val dni: String? = null,
+    val obsSessionToken: String? = null,
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
 ) : Serializable
