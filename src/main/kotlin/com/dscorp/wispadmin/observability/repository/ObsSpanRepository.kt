@@ -164,6 +164,24 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
         @Param("release") release: String?
     ): List<Array<Any>>
 
+    @Query(
+        """
+        SELECT s.httpRoute, s.httpMethod, s.durationMs, s.status
+        FROM ObsSpan s
+        WHERE s.parentSpanId IS NULL
+          AND s.httpRoute IS NOT NULL
+          AND s.durationMs IS NOT NULL
+          AND s.startEpochMs >= :from
+          AND s.startEpochMs <= :to
+          AND (:release IS NULL OR s.release = :release)
+        """
+    )
+    fun rootSpanMetricsByRoute(
+        @Param("from") from: Long,
+        @Param("to") to: Long,
+        @Param("release") release: String?
+    ): List<Array<Any>>
+
     @Modifying
     @Query("DELETE FROM ObsSpan s WHERE s.startEpochMs < :threshold")
     fun deleteOlderThan(@Param("threshold") threshold: Long): Int
