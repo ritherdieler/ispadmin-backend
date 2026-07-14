@@ -380,6 +380,32 @@ load_release_version() {
   # shellcheck source=/dev/null
   source "$SCRIPT_DIR/version.sh"
   echo "Release version: $RELEASE_VERSION"
+  if [[ "${RELEASE_DIRTY:-0}" == "1" ]]; then
+    echo "ERROR: hay cambios sin commitear; el SHA ($RELEASE_SHA) no representa el código a desplegar." >&2
+    echo "Haz commit (y crea un tag nuevo si corresponde) antes de desplegar para no repetir versión." >&2
+    exit 1
+  fi
+}
+
+check_version_not_registered() {
+  if [[ -z "$OBS_BASE_URL" || -z "$OBS_API_KEY" ]]; then
+    echo "WARNING: OBS_BASE_URL/OBS_API_KEY sin definir; no se puede verificar duplicado de versión" >&2
+    return 0
+  fi
+  echo "Verificando que $RELEASE_VERSION no esté ya registrada..."
+  local existing
+  existing="$(curl -sf "$OBS_BASE_URL/observability/releases?platform=backend" \
+    -H "X-Obs-Api-Key: $OBS_API_KEY" 2>/dev/null || true)"
+  if [[ -z "$existing" ]]; then
+    echo "WARNING: no se pudo consultar releases; se continúa sin verificación de duplicado" >&2
+    return 0
+  fi
+  if printf '%s' "$existing" | grep -qF "\"release\":\"$RELEASE_VERSION\""; then
+    echo "ERROR: la versión $RELEASE_VERSION ya está desplegada/registrada (mismo tag+SHA)." >&2
+    echo "El código no cambió. Haz un commit nuevo y/o crea un tag nuevo antes de desplegar." >&2
+    exit 1
+  fi
+  echo "OK: $RELEASE_VERSION no estaba registrada."
 }
 
 update_release_env() {
@@ -431,8 +457,9 @@ case "$MODE" in
     echo "Setup complete. Redeploy WAR with: ./scripts/deploy.sh --war-only"
     ;;
   full)
-    setup_djl
     load_release_version
+    check_version_not_registered
+    setup_djl
     update_release_env
     deploy_war
     wait_for_app
@@ -441,8 +468,9 @@ case "$MODE" in
     register_deploy
     ;;
   war-only)
-    init_ssh
     load_release_version
+    check_version_not_registered
+    init_ssh
     update_release_env
     deploy_war
     wait_for_app
@@ -450,9 +478,10 @@ case "$MODE" in
     register_deploy
     ;;
   deploy)
+    load_release_version
+    check_version_not_registered
     build_war
     init_ssh
-    load_release_version
     update_release_env
     deploy_war
     wait_for_app

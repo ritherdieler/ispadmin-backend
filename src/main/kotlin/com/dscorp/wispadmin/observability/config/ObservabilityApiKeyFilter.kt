@@ -60,6 +60,15 @@ class ObservabilityApiKeyFilter(
             return
         }
 
+        if (isReleasesReadPath(request)) {
+            val key = request.getHeader(HEADER)
+            if (properties.isValidApiKey(key)) {
+                properties.platformForApiKey(key)?.let { request.setAttribute(PLATFORM_ATTRIBUTE, it) }
+                filterChain.doFilter(request, response)
+                return
+            }
+        }
+
         val token = request.getHeader(SESSION_HEADER)
         val claims = sessionTokenService.verifyAdmin(token)
         if (claims == null) {
@@ -80,6 +89,12 @@ class ObservabilityApiKeyFilter(
             path.endsWith("/observability/releases") ||
             path.endsWith("/observability/symbols/sourcemaps") ||
             path.endsWith("/observability/symbols/proguard")
+    }
+
+    private fun isReleasesReadPath(request: HttpServletRequest): Boolean {
+        if (!"GET".equals(request.method, ignoreCase = true)) return false
+        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        return path.endsWith("/observability/releases")
     }
 
     private fun isObservabilityPath(request: HttpServletRequest): Boolean {
