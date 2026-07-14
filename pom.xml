@@ -97,6 +97,25 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>io.mockk</groupId>
+            <artifactId>mockk-jvm</artifactId>
+            <version>1.13.11</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Buscador: SDK de Meilisearch (aislado en infrastructure/search/meili). Compatible con Java 8. -->
+        <dependency>
+            <groupId>com.meilisearch.sdk</groupId>
+            <artifactId>meilisearch-java</artifactId>
+            <version>0.14.6</version>
+        </dependency>
+        <!-- Dependencia peer requerida por meilisearch-java (solo v4.x soportadas). -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.12.0</version>
+        </dependency>
+        <dependency>
             <groupId>me.legrange</groupId>
             <artifactId>mikrotik</artifactId>
             <version>3.0.7</version>

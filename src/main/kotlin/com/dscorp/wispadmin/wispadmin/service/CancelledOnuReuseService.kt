@@ -3,14 +3,17 @@ package com.dscorp.wispadmin.wispadmin.service
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
+import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
 @Service
 class CancelledOnuReuseService(
     private val onuService: OnuService,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     private val logger = LoggerFactory.getLogger(CancelledOnuReuseService::class.java)
@@ -60,6 +63,7 @@ class CancelledOnuReuseService(
         onuService.deleteOnuBySn(oltSn)
         subscription.fiberOnu = null
         subscriptionRepository.save(subscription)
+        subscription.id?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
     }
 
     companion object {

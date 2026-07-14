@@ -24,6 +24,7 @@ class CancelledOnuReuseServiceTest {
 
     private lateinit var onuService: OnuService
     private lateinit var subscriptionRepository: SubscriptionRepository
+    private lateinit var eventPublisher: org.springframework.context.ApplicationEventPublisher
     private lateinit var service: CancelledOnuReuseService
 
     private val oltSn = "4857544315F5CD86"
@@ -51,7 +52,8 @@ class CancelledOnuReuseServiceTest {
     fun setUp() {
         onuService = mock(OnuService::class.java)
         subscriptionRepository = mock(SubscriptionRepository::class.java)
-        service = CancelledOnuReuseService(onuService, subscriptionRepository)
+        eventPublisher = mock(org.springframework.context.ApplicationEventPublisher::class.java)
+        service = CancelledOnuReuseService(onuService, subscriptionRepository, eventPublisher)
     }
 
     @Test

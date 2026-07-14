@@ -12,6 +12,8 @@ import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.dscorp.wispadmin.wispadmin.service.BorneValidationResult
+import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
+import org.springframework.context.ApplicationEventPublisher
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.springframework.core.io.ClassPathResource
 import org.springframework.dao.DataIntegrityViolationException
@@ -42,8 +44,13 @@ class SubscriptionController(
     private val networkDeviceRepository: NetworkDeviceRepository,
     private val couponRepository: CouponRepository,
     private val subscriptionLogRepository: SubscriptionLogRepository,
-    private val storageService: FirebaseStorageService
+    private val storageService: FirebaseStorageService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
+
+    private fun publishSubscriptionChanged(subscriptionId: Int?) {
+        subscriptionId?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
+    }
 
     @GetMapping("/findByElectronicPayerName")
     fun findByElectronicPayerName(@RequestParam("electronicPayerName") electronicPayerName: String): BaseResponse {
@@ -309,6 +316,7 @@ class SubscriptionController(
                         responsibleId = responsibleId.toString()
                     )
                 )
+                publishSubscriptionChanged(subscription.id)
             }
         )
         return ResponseEntity.ok(null)
@@ -332,6 +340,7 @@ class SubscriptionController(
                 }
             )
 
+            publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             BaseResponse(
@@ -369,6 +378,7 @@ class SubscriptionController(
                 }
             )
 
+            publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             BaseResponse(
@@ -395,6 +405,7 @@ class SubscriptionController(
 
         subscription.facadePhotoUrl = facadePhotoUrl
         val savedSubscription = repository.save(subscription)
+        publishSubscriptionChanged(savedSubscription.id)
 
         return BaseResponse(
             status = 200,
@@ -416,6 +427,7 @@ class SubscriptionController(
                 planId = subscription.plan?.id
             )
         )
+        publishSubscriptionChanged(subscription.id)
 
         return ResponseEntity.ok(subscription.toDto())
     }
@@ -433,6 +445,7 @@ class SubscriptionController(
                 address = updatedSubscriptionRequest.address
             }
             repository.save(subscription)
+            publishSubscriptionChanged(subscription.id)
 
             ResponseEntity.status(HttpStatus.OK).body(subscription.toUpdateSubscriptionRequest())
         } else {
@@ -457,6 +470,7 @@ class SubscriptionController(
 
         subscription.location = GeoLocation(latitude, longitude)
         repository.save(subscription)
+        publishSubscriptionChanged(subscription.id)
 
         subscriptionLogRepository.save(
             SubscriptionLog(
@@ -730,6 +744,7 @@ class SubscriptionController(
     fun find(@RequestParam(value = "dni") dni: String): ResponseEntity<List<SubscriptionDto>> =
         ResponseEntity.ok(repository.findByDni(dni).map { it.toDto() })
 
+    @Deprecated("Usar GET /subscription/search. Se mantiene por compatibilidad con clientes existentes.")
     @GetMapping("find/nameAndLastName")
     fun findByNameAndLastName(
         @RequestParam(value = "name", required = false) name: String?,
@@ -752,6 +767,7 @@ class SubscriptionController(
     fun findByIP(@RequestParam(value = "ip") ip: String): ResponseEntity<List<SubscriptionDto>> =
         ResponseEntity.ok(repository.findTop20ByIpContainingIgnoreCase(ip).map { it.toDto() })
 
+    @Deprecated("Usar GET /subscription/search. Se mantiene por compatibilidad con clientes existentes.")
     @GetMapping("fastSearch")
     fun findByNameOrLastName(@RequestParam("keyword") keyword: String): ResponseEntity<List<SubscriptionSearchDto>> {
         val fullNameSplit = keyword.split(" ")
@@ -810,6 +826,7 @@ class SubscriptionController(
             }
 
             repository.save(subscription)
+            publishSubscriptionChanged(subscription.id)
 
             ResponseEntity.status(HttpStatus.OK).body(subscription.toDto())
         } else {
