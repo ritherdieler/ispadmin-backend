@@ -11,8 +11,8 @@ class ObsDatabaseQueryService(
     private val spanRepository: ObsSpanRepository
 ) {
 
-    fun topQueries(from: Long?, to: Long?, limit: Int): List<DbQueryAggregateDto> {
-        val rows = spanRepository.aggregateDbStatements(from, to, PageRequest.of(0, limit.coerceIn(1, 500)))
+    fun topQueries(from: Long?, to: Long?, limit: Int, release: String? = null): List<DbQueryAggregateDto> {
+        val rows = spanRepository.aggregateDbStatements(from, to, release?.takeIf { it.isNotBlank() }, PageRequest.of(0, limit.coerceIn(1, 500)))
         val grandTotal = rows.sumOf { (it[2] as Number).toLong() }
         return rows.map {
             val total = (it[2] as Number).toLong()
@@ -27,8 +27,8 @@ class ObsDatabaseQueryService(
         }
     }
 
-    fun nPlusOne(from: Long?, to: Long?, threshold: Long): List<NPlusOneCandidateDto> {
-        val rows = spanRepository.findNPlusOneCandidates(from, to, threshold.coerceAtLeast(1))
+    fun nPlusOne(from: Long?, to: Long?, threshold: Long, release: String? = null): List<NPlusOneCandidateDto> {
+        val rows = spanRepository.findNPlusOneCandidates(from, to, threshold.coerceAtLeast(1), release?.takeIf { it.isNotBlank() })
         return rows.groupBy { it[1]?.toString() }
             .map { (statement, group) ->
                 val best = group.maxByOrNull { (it[2] as Number).toLong() }
@@ -37,7 +37,8 @@ class ObsDatabaseQueryService(
                     exampleTraceId = best?.get(0)?.toString(),
                     maxRepetitions = group.maxOf { (it[2] as Number).toLong() },
                     totalMs = group.sumOf { (it[3] as Number).toLong() },
-                    affectedTraces = group.size.toLong()
+                    affectedTraces = group.size.toLong(),
+                    httpRoute = best?.getOrNull(4)?.toString()
                 )
             }
             .sortedByDescending { it.maxRepetitions }

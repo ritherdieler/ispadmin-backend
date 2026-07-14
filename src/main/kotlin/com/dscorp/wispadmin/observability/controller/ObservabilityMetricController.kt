@@ -26,11 +26,12 @@ class ObservabilityMetricController(
     @GetMapping("/endpoints")
     fun endpoints(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
+        @RequestParam(required = false) release: String?
     ): List<EndpointMetricAggregateDto> {
         val toDate = to ?: LocalDateTime.now()
         val fromDate = from ?: toDate.minusHours(1)
-        return metricQueryService.aggregate(fromDate, toDate)
+        return metricQueryService.aggregate(fromDate, toDate, release)
     }
 
     @GetMapping("/timeseries")

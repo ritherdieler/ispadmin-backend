@@ -55,7 +55,7 @@ class TraceContextFilter(
             sessionId = sessionId,
             platform = "backend",
             environment = null,
-            release = null
+            release = properties.release.takeIf { it.isNotBlank() }
         )
         TraceContext.set(scope)
 
@@ -109,7 +109,8 @@ class TraceContextFilter(
                 status = if (status >= 400) "ERROR" else "OK",
                 httpMethod = request.method,
                 httpRoute = route,
-                httpStatus = status
+                httpStatus = status,
+                release = properties.release.takeIf { it.isNotBlank() }
             )
         )
     }

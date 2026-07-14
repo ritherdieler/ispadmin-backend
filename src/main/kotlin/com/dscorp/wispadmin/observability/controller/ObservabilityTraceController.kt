@@ -31,6 +31,7 @@ class ObservabilityTraceController(
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) platform: String?,
         @RequestParam(required = false) sessionId: String?,
+        @RequestParam(required = false) release: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "25") size: Int
     ): PagedResponse<TraceSummaryDto> {
@@ -38,7 +39,7 @@ class ObservabilityTraceController(
         return traceQueryService.searchTraces(
             from?.atZone(zone)?.toInstant()?.toEpochMilli(),
             to?.atZone(zone)?.toInstant()?.toEpochMilli(),
-            route, minDurationMs, status, platform, sessionId, page, size
+            route, minDurationMs, status, platform, sessionId, release, page, size
         )
     }
 

@@ -11,6 +11,26 @@ import java.util.*
 import java.time.LocalDateTime
 
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.place
+        LEFT JOIN FETCH s.napBox nb
+        LEFT JOIN FETCH nb.mufa
+        LEFT JOIN FETCH s.hostDevice
+        LEFT JOIN FETCH s.technician
+        LEFT JOIN FETCH s.fiberOnu
+        LEFT JOIN FETCH s.ipPool
+        LEFT JOIN FETCH s.cpe
+        LEFT JOIN FETCH s.coupon
+        LEFT JOIN FETCH s.additionalDevices
+        ORDER BY s.id
+        """
+    )
+    fun findAllWithCoreRelations(): List<Subscription>
+
     @Query("SELECT distinct s FROM Subscription s inner join  s.payments p WHERE p.paid = false ")
     fun getDebtors(): List<Subscription>
 

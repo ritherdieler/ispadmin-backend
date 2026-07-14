@@ -10,3 +10,13 @@ CATALINA_HOME=/usr/local/tomcat
 WAR_NAME=ispadmin.war
 SSH_IDENTITY_FILE=
 DEPLOY_SSH_PASSWORD=
+
+# Ruta del .env remoto donde se escribe APP_RELEASE (versionado por deploy)
+BACKEND_ENV_FILE=/opt/gigafiber/.env
+
+# Registro de deploys en el hub de observabilidad (POST /observability/releases).
+# OBS_BASE_URL: URL base de la API (context-path /ispadmin incluido).
+# OBS_API_KEY: key con header X-Obs-Api-Key (usar OBS_API_KEY_DASHBOARD del backend).
+# Si se dejan vacíos, el deploy no falla: solo omite el registro.
+OBS_BASE_URL=https://api.gigafiberperu.cloud/ispadmin
+OBS_API_KEY=

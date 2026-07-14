@@ -46,7 +46,21 @@ class PlatformAuthFilter(
         if (path.contains("/actuator")) return true
         if (path.endsWith("/app/check_version")) return true
         if (path.endsWith("/fcm/save-token")) return true
+        if (isAttendancePublicPath(path)) return true
         return false
+    }
+
+    private fun isAttendancePublicPath(path: String): Boolean {
+        if (path.endsWith("/api/face-data/offline-dataset")) return true
+        if (!path.contains("/api/face/")) return false
+        return path.endsWith("/challenge/start") ||
+            path.endsWith("/identify") ||
+            path.endsWith("/identify/photo") ||
+            path.endsWith("/verify") ||
+            path.endsWith("/verify/photo") ||
+            path.endsWith("/verify/password") ||
+            path.endsWith("/attendance/offline-sync") ||
+            path.endsWith("/evidence")
     }
 
     override fun doFilterInternal(

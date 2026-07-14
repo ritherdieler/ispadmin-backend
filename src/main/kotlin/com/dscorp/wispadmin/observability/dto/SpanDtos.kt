@@ -41,7 +41,8 @@ data class TraceSummaryDto(
     val startEpochMs: Long?,
     val durationMs: Long?,
     val spanCount: Long,
-    val hasError: Boolean
+    val hasError: Boolean,
+    val release: String?
 )
 
 data class SpanDto(

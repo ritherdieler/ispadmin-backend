@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.dto.*
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.DashBoardService
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -15,7 +16,8 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/dashboard")
 class DashBoardController(
     private val dashBoardService: DashBoardService,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val subscriptionService: SubscriptionService
 ) {
 
     @GetMapping
@@ -68,7 +70,7 @@ class DashBoardController(
 
     @GetMapping("/subscription/locations")
     fun getSubscriptionsLocations(): ResponseEntity<List<ClienteUbicacionDto>> {
-        val subscriptions = subscriptionRepository.findAll()
+        val subscriptions = subscriptionService.findAllForListing()
 
         val subscriptionsWithLocation = subscriptions
             .filter { it.location != null && it.location!!.latitude != 0.0 && it.location!!.longitude != 0.0 }

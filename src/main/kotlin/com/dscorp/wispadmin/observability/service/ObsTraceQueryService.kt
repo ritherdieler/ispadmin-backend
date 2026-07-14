@@ -29,6 +29,7 @@ class ObsTraceQueryService(
         status: String?,
         platform: String?,
         sessionId: String?,
+        release: String?,
         page: Int,
         size: Int
     ): PagedResponse<TraceSummaryDto> {
@@ -41,6 +42,7 @@ class ObsTraceQueryService(
             status?.takeIf { it.isNotBlank() },
             platform?.takeIf { it.isNotBlank() },
             sessionId?.takeIf { it.isNotBlank() },
+            release?.takeIf { it.isNotBlank() },
             pageable
         )
 
@@ -68,7 +70,8 @@ class ObsTraceQueryService(
                 startEpochMs = root.startEpochMs,
                 durationMs = root.durationMs,
                 spanCount = spanCount,
-                hasError = errorCount > 0 || root.status == "ERROR"
+                hasError = errorCount > 0 || root.status == "ERROR",
+                release = root.release
             )
         }
 

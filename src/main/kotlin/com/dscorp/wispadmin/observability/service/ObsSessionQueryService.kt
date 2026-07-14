@@ -82,7 +82,7 @@ class ObsSessionQueryService(
             eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
         }
         val rootSpans = spanRepository.searchRootSpans(
-            null, null, null, null, null, null, sessionId, PageRequest.of(0, 200)
+            null, null, null, null, null, null, sessionId, null, PageRequest.of(0, 200)
         ).content
         val replayEntities = replayRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
 
@@ -146,7 +146,8 @@ class ObsSessionQueryService(
                 startEpochMs = root.startEpochMs,
                 durationMs = root.durationMs,
                 spanCount = spanCount,
-                hasError = errorCount > 0 || root.status == "ERROR"
+                hasError = errorCount > 0 || root.status == "ERROR",
+                release = root.release
             )
         }
     }

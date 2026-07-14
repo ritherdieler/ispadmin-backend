@@ -9,6 +9,8 @@ class ObservabilityProperties {
 
     var enabled: Boolean = true
 
+    var release: String = ""
+
     var apiKeys: MutableMap<String, String> = mutableMapOf()
 
     var maxEventsPerBatch: Int = 100

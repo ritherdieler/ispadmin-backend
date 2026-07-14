@@ -720,7 +720,7 @@ class SubscriptionController(
 
     @GetMapping("/all")
     fun getAllSubscriptions(): ResponseEntity<List<SubscriptionDto>> =
-        ResponseEntity.ok(repository.findAll().map { it.toDto() })
+        ResponseEntity.ok(subscriptionService.getAllSubscriptionsForList())
 
     @GetMapping("debtors")
     fun getDebtors(): ResponseEntity<List<SubscriptionDto>> =
@@ -850,7 +850,7 @@ class SubscriptionController(
 
     @GetMapping("/locations")
     fun getSubscriptionsLocations(): ResponseEntity<List<ClienteUbicacionDto>> {
-        val subscriptions = repository.findAll()
+        val subscriptions = subscriptionService.findAllForListing()
 
         val subscriptionsWithLocation = subscriptions
             .filter { it.location != null && it.location!!.latitude != 0.0 && it.location!!.longitude != 0.0 }

@@ -103,7 +103,8 @@ data class NPlusOneCandidateDto(
     val exampleTraceId: String?,
     val maxRepetitions: Long,
     val totalMs: Long,
-    val affectedTraces: Long
+    val affectedTraces: Long,
+    val httpRoute: String?
 )
 
 data class SessionSummaryDto(
@@ -136,6 +137,12 @@ data class TimeSeriesPointDto(
     val bucket: String,
     val platform: String?,
     val count: Long
+)
+
+data class LlmContextDto(
+    val format: String = "markdown",
+    val content: String,
+    val generatedAt: String
 )
 
 fun ObsIssue.toSummaryDto() = IssueSummaryDto(

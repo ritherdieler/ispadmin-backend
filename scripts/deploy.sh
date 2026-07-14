@@ -64,6 +64,9 @@ CATALINA_HOME="${CATALINA_HOME:-/usr/local/tomcat}"
 WAR_NAME="${WAR_NAME:-ispadmin.war}"
 SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-}"
 DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-}"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/opt/gigafiber/.env}"
+OBS_BASE_URL="${OBS_BASE_URL:-}"
+OBS_API_KEY="${OBS_API_KEY:-}"
 
 if [[ -z "$VPS_HOST" ]]; then
   echo "VPS_HOST is required in deploy.config.local" >&2
@@ -241,6 +244,34 @@ else:
     compose_path.write_text("\\n".join(out) + "\\n")
     print("Added CATALINA_OPTS to docker-compose.yml")
 PY
+
+python3 - <<PY
+from pathlib import Path
+
+compose_path = Path("$DOCKER_COMPOSE_FILE")
+text = compose_path.read_text()
+
+if "APP_RELEASE" in text:
+    print("docker-compose already contains APP_RELEASE")
+else:
+    lines = text.splitlines()
+    out = []
+    in_tomcat = False
+    inserted = False
+    for line in lines:
+        if line.rstrip() == "  tomcat:":
+            in_tomcat = True
+        elif in_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
+            in_tomcat = False
+        out.append(line)
+        if in_tomcat and not inserted and line.strip() == "environment:":
+            out.append("      APP_RELEASE: \${APP_RELEASE:-}")
+            inserted = True
+    if not inserted:
+        raise SystemExit("Could not insert APP_RELEASE under tomcat.environment")
+    compose_path.write_text("\\n".join(out) + "\\n")
+    print("Added APP_RELEASE to docker-compose.yml")
+PY
 EOF
 }
 
@@ -345,6 +376,55 @@ setup_djl() {
   verify_djl_logs || true
 }
 
+load_release_version() {
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/version.sh"
+  echo "Release version: $RELEASE_VERSION"
+}
+
+update_release_env() {
+  echo "Ensuring APP_RELEASE=$RELEASE_VERSION in $BACKEND_ENV_FILE ..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+ENV_FILE='$BACKEND_ENV_FILE'
+VALUE='$RELEASE_VERSION'
+touch "\$ENV_FILE"
+if grep -q '^APP_RELEASE=' "\$ENV_FILE"; then
+  current="\$(grep '^APP_RELEASE=' "\$ENV_FILE" | head -1 | cut -d= -f2-)"
+  if [[ "\$current" == "\$VALUE" ]]; then
+    echo "APP_RELEASE ya está en \$VALUE"
+    exit 0
+  fi
+  cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+  sed -i "s#^APP_RELEASE=.*#APP_RELEASE=\$VALUE#" "\$ENV_FILE"
+else
+  cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+  printf '\nAPP_RELEASE=%s\n' "\$VALUE" >> "\$ENV_FILE"
+fi
+echo "Recreando Tomcat para cargar APP_RELEASE..."
+cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat
+EOF
+}
+
+register_deploy() {
+  if [[ -z "$OBS_BASE_URL" || -z "$OBS_API_KEY" ]]; then
+    echo "WARNING: OBS_BASE_URL/OBS_API_KEY sin definir; se omite el registro del deploy" >&2
+    return 0
+  fi
+  echo "Registrando deploy event en $OBS_BASE_URL/observability/releases ..."
+  local payload
+  payload="$(printf '{"platform":"backend","release":"%s","semver":"%s","gitSha":"%s","notes":null}' \
+    "$RELEASE_VERSION" "$RELEASE_SEMVER" "$RELEASE_SHA")"
+  if curl -sf -X POST "$OBS_BASE_URL/observability/releases" \
+    -H "X-Obs-Api-Key: $OBS_API_KEY" \
+    -H 'Content-Type: application/json' \
+    -d "$payload" >/dev/null; then
+    echo "Deploy event registrado ($RELEASE_VERSION)"
+  else
+    echo "WARNING: no se pudo registrar el deploy event (no fatal)" >&2
+  fi
+}
+
 case "$MODE" in
   setup)
     setup_djl
@@ -352,23 +432,32 @@ case "$MODE" in
     ;;
   full)
     setup_djl
+    load_release_version
+    update_release_env
     deploy_war
     wait_for_app
     verify_djl_logs || true
     verify_http || true
+    register_deploy
     ;;
   war-only)
     init_ssh
+    load_release_version
+    update_release_env
     deploy_war
     wait_for_app
     verify_http || true
+    register_deploy
     ;;
   deploy)
     build_war
     init_ssh
+    load_release_version
+    update_release_env
     deploy_war
     wait_for_app
     verify_http || true
+    register_deploy
     ;;
 esac
 

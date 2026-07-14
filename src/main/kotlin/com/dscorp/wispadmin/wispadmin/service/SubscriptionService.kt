@@ -60,6 +60,26 @@ class SubscriptionService(
         return queueManager.createSubscriptionsSimpleQueue()
     }
 
+    @Transactional(readOnly = true)
+    fun findAllForListing(): List<Subscription> {
+        val subscriptions = repository.findAllWithCoreRelations()
+        if (subscriptions.isEmpty()) return subscriptions
+
+        val paymentsBySubscriptionId = paymentRepository
+            .findBySubscriptionIdInFetchResponsible(subscriptions.mapNotNull { it.id })
+            .groupBy { it.subscription?.id }
+
+        subscriptions.forEach { subscription ->
+            subscription.payments = paymentsBySubscriptionId[subscription.id].orEmpty().toMutableSet()
+        }
+
+        return subscriptions
+    }
+
+    @Transactional(readOnly = true)
+    fun getAllSubscriptionsForList(): List<SubscriptionDto> =
+        findAllForListing().map { it.toDto() }
+
     fun changeNapBox(request: MoveOnuRequest): Subscription {
         val subscription = repository.findById(request.subscriptionId).get()
         val currentSubscriptionOnu = subscription.fiberOnu

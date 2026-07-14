@@ -23,7 +23,8 @@ class ObservabilityDatabaseController(
     fun queries(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
-        @RequestParam(defaultValue = "50") limit: Int
+        @RequestParam(defaultValue = "50") limit: Int,
+        @RequestParam(required = false) release: String?
     ): List<DbQueryAggregateDto> {
         val zone = ZoneId.of(appTimezone)
         val toDate = to ?: LocalDateTime.now()
@@ -31,7 +32,8 @@ class ObservabilityDatabaseController(
         return databaseQueryService.topQueries(
             fromDate.atZone(zone).toInstant().toEpochMilli(),
             toDate.atZone(zone).toInstant().toEpochMilli(),
-            limit
+            limit,
+            release
         )
     }
 
@@ -39,7 +41,8 @@ class ObservabilityDatabaseController(
     fun nplusone(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
-        @RequestParam(defaultValue = "5") threshold: Long
+        @RequestParam(defaultValue = "5") threshold: Long,
+        @RequestParam(required = false) release: String?
     ): List<NPlusOneCandidateDto> {
         val zone = ZoneId.of(appTimezone)
         val toDate = to ?: LocalDateTime.now()
@@ -47,7 +50,8 @@ class ObservabilityDatabaseController(
         return databaseQueryService.nPlusOne(
             fromDate.atZone(zone).toInstant().toEpochMilli(),
             toDate.atZone(zone).toInstant().toEpochMilli(),
-            threshold
+            threshold,
+            release
         )
     }
 }

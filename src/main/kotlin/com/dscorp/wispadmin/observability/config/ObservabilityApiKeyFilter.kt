@@ -77,6 +77,7 @@ class ObservabilityApiKeyFilter(
             path.endsWith("/observability/spans") ||
             path.endsWith("/observability/rum") ||
             path.endsWith("/observability/replays") ||
+            path.endsWith("/observability/releases") ||
             path.endsWith("/observability/symbols/sourcemaps") ||
             path.endsWith("/observability/symbols/proguard")
     }

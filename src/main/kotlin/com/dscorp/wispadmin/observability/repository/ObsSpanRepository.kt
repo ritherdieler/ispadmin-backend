@@ -23,6 +23,7 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
           AND (:status IS NULL OR s.status = :status)
           AND (:platform IS NULL OR s.platform = :platform)
           AND (:sessionId IS NULL OR s.sessionId = :sessionId)
+          AND (:release IS NULL OR s.release = :release)
         ORDER BY s.startEpochMs DESC
         """
     )
@@ -34,6 +35,7 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
         @Param("status") status: String?,
         @Param("platform") platform: String?,
         @Param("sessionId") sessionId: String?,
+        @Param("release") release: String?,
         pageable: Pageable
     ): Page<ObsSpan>
 
@@ -48,6 +50,7 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
           AND s.dbStatement IS NOT NULL
           AND (:from IS NULL OR s.startEpochMs >= :from)
           AND (:to IS NULL OR s.startEpochMs <= :to)
+          AND (:release IS NULL OR s.release = :release)
         GROUP BY s.dbStatement
         ORDER BY SUM(s.durationMs) DESC
         """
@@ -55,17 +58,21 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
     fun aggregateDbStatements(
         @Param("from") from: Long?,
         @Param("to") to: Long?,
+        @Param("release") release: String?,
         pageable: Pageable
     ): List<Array<Any>>
 
     @Query(
         """
-        SELECT s.traceId, s.dbStatement, COUNT(s), SUM(s.durationMs)
-        FROM ObsSpan s
+        SELECT s.traceId, s.dbStatement, COUNT(s), SUM(s.durationMs), MAX(root.httpRoute)
+        FROM ObsSpan s, ObsSpan root
         WHERE s.kind = 'DB'
           AND s.dbStatement IS NOT NULL
+          AND root.parentSpanId IS NULL
+          AND root.traceId = s.traceId
           AND (:from IS NULL OR s.startEpochMs >= :from)
           AND (:to IS NULL OR s.startEpochMs <= :to)
+          AND (:release IS NULL OR s.release = :release)
         GROUP BY s.traceId, s.dbStatement
         HAVING COUNT(s) >= :threshold
         ORDER BY COUNT(s) DESC
@@ -74,7 +81,8 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
     fun findNPlusOneCandidates(
         @Param("from") from: Long?,
         @Param("to") to: Long?,
-        @Param("threshold") threshold: Long
+        @Param("threshold") threshold: Long,
+        @Param("release") release: String?
     ): List<Array<Any>>
 
     @Query(
@@ -146,12 +154,14 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
           AND root.httpRoute IS NOT NULL
           AND root.startEpochMs >= :from
           AND root.startEpochMs <= :to
+          AND (:release IS NULL OR root.release = :release)
         GROUP BY root.httpRoute
         """
     )
     fun aggregateDbTimeByRoute(
         @Param("from") from: Long,
-        @Param("to") to: Long
+        @Param("to") to: Long,
+        @Param("release") release: String?
     ): List<Array<Any>>
 
     @Modifying

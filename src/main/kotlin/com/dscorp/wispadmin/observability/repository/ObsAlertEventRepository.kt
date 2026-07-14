@@ -13,6 +13,8 @@ interface ObsAlertEventRepository : JpaRepository<ObsAlertEvent, Long> {
 
     fun findAllByOrderByCreatedAtDesc(pageable: Pageable): Page<ObsAlertEvent>
 
+    fun findByIssueIdOrderByCreatedAtDesc(issueId: Long, pageable: Pageable): List<ObsAlertEvent>
+
     @Query("SELECT COUNT(e) FROM ObsAlertEvent e WHERE e.dedupKey = :dedupKey AND e.createdAt >= :since")
     fun countRecentByDedupKey(
         @Param("dedupKey") dedupKey: String,

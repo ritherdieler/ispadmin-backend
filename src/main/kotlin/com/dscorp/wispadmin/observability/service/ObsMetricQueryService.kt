@@ -36,11 +36,11 @@ class ObsMetricQueryService(
             }
     }
 
-    fun aggregate(from: LocalDateTime, to: LocalDateTime): List<EndpointMetricAggregateDto> {
+    fun aggregate(from: LocalDateTime, to: LocalDateTime, release: String? = null): List<EndpointMetricAggregateDto> {
         val zone = ZoneId.of(appTimezone)
         val fromMs = from.atZone(zone).toInstant().toEpochMilli()
         val toMs = to.atZone(zone).toInstant().toEpochMilli()
-        val dbTimeByRoute = spanRepository.aggregateDbTimeByRoute(fromMs, toMs).associate {
+        val dbTimeByRoute = spanRepository.aggregateDbTimeByRoute(fromMs, toMs, release?.takeIf { it.isNotBlank() }).associate {
             (it[0]?.toString() ?: "") to (it[1] as Number).toLong()
         }
         return metricRepository.aggregateByRoute(from, to).map {

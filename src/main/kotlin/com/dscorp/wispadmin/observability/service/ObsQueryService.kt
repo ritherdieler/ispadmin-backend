@@ -180,7 +180,8 @@ class ObsQueryService(
                 startEpochMs = root.startEpochMs,
                 durationMs = root.durationMs,
                 spanCount = spanCount,
-                hasError = errorCount > 0 || root.status == "ERROR"
+                hasError = errorCount > 0 || root.status == "ERROR",
+                release = root.release
             )
         }
     }
