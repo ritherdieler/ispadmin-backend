@@ -13,6 +13,7 @@ data class RumVitalRequest(
     val value: Double? = null,
     val rating: String? = null,
     val page: String? = null,
+    val release: String? = null,
     val navigationType: String? = null,
     val timestamp: Long? = null
 )

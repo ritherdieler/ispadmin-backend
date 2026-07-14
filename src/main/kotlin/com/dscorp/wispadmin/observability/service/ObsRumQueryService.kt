@@ -15,18 +15,22 @@ class ObsRumQueryService(
         from: LocalDateTime,
         to: LocalDateTime,
         page: String?,
-        metricName: String?
+        metricName: String?,
+        release: String? = null
     ): List<RumMetricPointDto> {
         val normalizedMetric = metricName?.takeIf { it.isNotBlank() }?.uppercase()
+        val normalizedRelease = release?.takeIf { it.isNotBlank() }
         return rumMetricRepository.findByBucketStartBetweenOrderByBucketStartAsc(from, to)
             .filter { page.isNullOrBlank() || it.page == page }
             .filter { normalizedMetric == null || it.metricName == normalizedMetric }
+            .filter { normalizedRelease == null || it.release == normalizedRelease }
             .map {
                 RumMetricPointDto(
                     bucketStart = it.bucketStart,
                     page = it.page,
                     platform = it.platform,
                     metricName = it.metricName,
+                    release = it.release,
                     sampleCount = it.sampleCount,
                     p50 = it.p50,
                     p75 = it.p75,
@@ -42,8 +46,9 @@ class ObsRumQueryService(
             }
     }
 
-    fun aggregate(from: LocalDateTime, to: LocalDateTime): List<RumMetricAggregateDto> {
-        return rumMetricRepository.aggregateByPageAndMetric(from, to).map {
+    fun aggregate(from: LocalDateTime, to: LocalDateTime, release: String? = null): List<RumMetricAggregateDto> {
+        val normalizedRelease = release?.takeIf { it.isNotBlank() }
+        return rumMetricRepository.aggregateByPageAndMetric(from, to, normalizedRelease).map {
             val page = it[0]?.toString()
             val metricName = it[1]?.toString()
             val sampleCount = (it[2] as Number).toLong()
@@ -59,6 +64,7 @@ class ObsRumQueryService(
             RumMetricAggregateDto(
                 page = page,
                 metricName = metricName,
+                release = normalizedRelease,
                 sampleCount = sampleCount,
                 goodCount = goodCount,
                 needsImprovementCount = needsImprovementCount,

@@ -68,7 +68,7 @@ class ObsLlmContextServiceTest {
             )
         )
         `when`(sessionQueryService.getSession("sess-1")).thenReturn(null)
-        `when`(databaseQueryService.topQueries(anyLong(), anyLong(), anyInt(), any())).thenReturn(
+        `when`(databaseQueryService.topQueries(anyLong(), anyLong(), anyInt(), any(), any())).thenReturn(
             listOf(
                 DbQueryAggregateDto(
                     statement = "SELECT * FROM payments WHERE id = ?",

@@ -23,12 +23,13 @@ class ObservabilitySessionController(
     fun list(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
+        @RequestParam(required = false) release: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "25") size: Int
     ): PagedResponse<SessionSummaryDto> {
         val toDate = to ?: LocalDateTime.now()
         val fromDate = from ?: toDate.minusHours(24)
-        return sessionQueryService.listSessions(fromDate, toDate, page, size)
+        return sessionQueryService.listSessions(fromDate, toDate, release, page, size)
     }
 
     @GetMapping("/{sessionId}")

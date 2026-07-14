@@ -35,6 +35,9 @@ data class ObsRumMetric(
     @Column(name = "metric_name", length = 16)
     var metricName: String? = null,
 
+    @Column(name = "app_release", length = 120)
+    var release: String? = null,
+
     @Column(name = "sample_count")
     var sampleCount: Long = 0,
 

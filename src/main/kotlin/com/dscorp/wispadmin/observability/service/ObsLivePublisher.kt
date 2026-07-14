@@ -83,6 +83,7 @@ class ObsLivePublisher(
                     "page" to metric.page,
                     "platform" to metric.platform,
                     "metricName" to metric.metricName,
+                    "release" to metric.release,
                     "sampleCount" to metric.sampleCount,
                     "p50" to metric.p50,
                     "p75" to metric.p75,

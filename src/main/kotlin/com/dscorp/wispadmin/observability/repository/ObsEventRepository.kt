@@ -55,6 +55,7 @@ interface ObsEventRepository : JpaRepository<ObsEvent, Long> {
         FROM ObsEvent e
         WHERE e.sessionId IS NOT NULL
           AND e.createdAt BETWEEN :from AND :to
+          AND (:release IS NULL OR e.release = :release)
         GROUP BY e.sessionId, e.platform
         ORDER BY MAX(e.createdAt) DESC
         """,
@@ -63,13 +64,67 @@ interface ObsEventRepository : JpaRepository<ObsEvent, Long> {
         FROM ObsEvent e
         WHERE e.sessionId IS NOT NULL
           AND e.createdAt BETWEEN :from AND :to
+          AND (:release IS NULL OR e.release = :release)
         """
     )
     fun aggregateRecentSessions(
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime,
+        @Param("release") release: String?,
         pageable: Pageable
     ): Page<Array<Any>>
+
+    @Query(
+        """
+        SELECT COUNT(e) FROM ObsEvent e
+        WHERE e.release = :release
+          AND e.createdAt >= :from AND e.createdAt <= :to
+        """
+    )
+    fun countByReleaseBetween(
+        @Param("release") release: String,
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT e.sessionId) FROM ObsEvent e
+        WHERE e.release = :release
+          AND e.sessionId IS NOT NULL
+          AND e.createdAt >= :from AND e.createdAt <= :to
+        """
+    )
+    fun countDistinctSessionsByReleaseBetween(
+        @Param("release") release: String,
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(e) FROM ObsEvent e
+        WHERE e.createdAt >= :from AND e.createdAt <= :to
+        """
+    )
+    fun countBetween(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): Long
+
+    @Query(
+        """
+        SELECT e.feature, COUNT(e) FROM ObsEvent e
+        WHERE e.createdAt >= :from AND e.createdAt <= :to AND e.feature IS NOT NULL
+        GROUP BY e.feature
+        ORDER BY COUNT(e) DESC
+        """
+    )
+    fun countGroupedByFeatureBetween(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        pageable: Pageable
+    ): List<Array<Any>>
 
     @Query("SELECT COUNT(e) FROM ObsEvent e WHERE e.createdAt >= :from")
     fun countSince(@Param("from") from: LocalDateTime): Long

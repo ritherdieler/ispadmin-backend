@@ -21,13 +21,15 @@ interface ObsRumMetricRepository : JpaRepository<ObsRumMetric, Long> {
                AVG(m.avg), MAX(m.p75), MAX(m.p95), MAX(m.p99), MAX(m.max)
         FROM ObsRumMetric m
         WHERE m.bucketStart >= :from AND m.bucketStart <= :to
+          AND (:release IS NULL OR m.release = :release)
         GROUP BY m.page, m.metricName
         ORDER BY SUM(m.sampleCount) DESC
         """
     )
     fun aggregateByPageAndMetric(
         @Param("from") from: LocalDateTime,
-        @Param("to") to: LocalDateTime
+        @Param("to") to: LocalDateTime,
+        @Param("release") release: String?
     ): List<Array<Any>>
 
     @Modifying

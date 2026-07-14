@@ -11,8 +11,15 @@ class ObsDatabaseQueryService(
     private val spanRepository: ObsSpanRepository
 ) {
 
-    fun topQueries(from: Long?, to: Long?, limit: Int, release: String? = null): List<DbQueryAggregateDto> {
-        val rows = spanRepository.aggregateDbStatements(from, to, release?.takeIf { it.isNotBlank() }, PageRequest.of(0, limit.coerceIn(1, 500)))
+    fun topQueries(from: Long?, to: Long?, limit: Int, release: String? = null, route: String? = null): List<DbQueryAggregateDto> {
+        val normalizedRelease = release?.takeIf { it.isNotBlank() }
+        val normalizedRoute = route?.takeIf { it.isNotBlank() }
+        val pageable = PageRequest.of(0, limit.coerceIn(1, 500))
+        val rows = if (normalizedRoute != null) {
+            spanRepository.aggregateDbStatementsByRoute(from, to, normalizedRelease, normalizedRoute, pageable)
+        } else {
+            spanRepository.aggregateDbStatements(from, to, normalizedRelease, pageable)
+        }
         val grandTotal = rows.sumOf { (it[2] as Number).toLong() }
         return rows.map {
             val total = (it[2] as Number).toLong()
@@ -27,8 +34,8 @@ class ObsDatabaseQueryService(
         }
     }
 
-    fun nPlusOne(from: Long?, to: Long?, threshold: Long, release: String? = null): List<NPlusOneCandidateDto> {
-        val rows = spanRepository.findNPlusOneCandidates(from, to, threshold.coerceAtLeast(1), release?.takeIf { it.isNotBlank() })
+    fun nPlusOne(from: Long?, to: Long?, threshold: Long, release: String? = null, route: String? = null): List<NPlusOneCandidateDto> {
+        val rows = spanRepository.findNPlusOneCandidates(from, to, threshold.coerceAtLeast(1), release?.takeIf { it.isNotBlank() }, route?.takeIf { it.isNotBlank() })
         return rows.groupBy { it[1]?.toString() }
             .map { (statement, group) ->
                 val best = group.maxByOrNull { (it[2] as Number).toLong() }

@@ -1,10 +1,12 @@
 package com.dscorp.wispadmin.observability.controller
 
+import com.dscorp.wispadmin.observability.dto.EndpointDetailDto
 import com.dscorp.wispadmin.observability.dto.EndpointMetricAggregateDto
 import com.dscorp.wispadmin.observability.dto.EndpointMetricPointDto
 import com.dscorp.wispadmin.observability.dto.RumMetricAggregateDto
 import com.dscorp.wispadmin.observability.dto.RumMetricPointDto
 import com.dscorp.wispadmin.observability.dto.SystemMetricPointDto
+import com.dscorp.wispadmin.observability.service.ObsEndpointDetailService
 import com.dscorp.wispadmin.observability.service.ObsMetricQueryService
 import com.dscorp.wispadmin.observability.service.ObsRumQueryService
 import com.dscorp.wispadmin.observability.service.ObsSystemMetricQueryService
@@ -20,7 +22,8 @@ import java.time.LocalDateTime
 class ObservabilityMetricController(
     private val metricQueryService: ObsMetricQueryService,
     private val rumMetricQueryService: ObsRumQueryService,
-    private val systemMetricQueryService: ObsSystemMetricQueryService
+    private val systemMetricQueryService: ObsSystemMetricQueryService,
+    private val endpointDetailService: ObsEndpointDetailService
 ) {
 
     @GetMapping("/endpoints")
@@ -32,6 +35,18 @@ class ObservabilityMetricController(
         val toDate = to ?: LocalDateTime.now()
         val fromDate = from ?: toDate.minusHours(1)
         return metricQueryService.aggregate(fromDate, toDate, release)
+    }
+
+    @GetMapping("/endpoints/detail")
+    fun endpointDetail(
+        @RequestParam route: String,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
+        @RequestParam(required = false) release: String?
+    ): EndpointDetailDto {
+        val toDate = to ?: LocalDateTime.now()
+        val fromDate = from ?: toDate.minusHours(1)
+        return endpointDetailService.detail(route, fromDate, toDate, release)
     }
 
     @GetMapping("/timeseries")
@@ -48,11 +63,12 @@ class ObservabilityMetricController(
     @GetMapping("/web-vitals")
     fun webVitals(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
+        @RequestParam(required = false) release: String?
     ): List<RumMetricAggregateDto> {
         val toDate = to ?: LocalDateTime.now()
         val fromDate = from ?: toDate.minusHours(1)
-        return rumMetricQueryService.aggregate(fromDate, toDate)
+        return rumMetricQueryService.aggregate(fromDate, toDate, release)
     }
 
     @GetMapping("/web-vitals/timeseries")
@@ -60,11 +76,12 @@ class ObservabilityMetricController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
         @RequestParam(required = false) page: String?,
-        @RequestParam(required = false) metric: String?
+        @RequestParam(required = false) metric: String?,
+        @RequestParam(required = false) release: String?
     ): List<RumMetricPointDto> {
         val toDate = to ?: LocalDateTime.now()
         val fromDate = from ?: toDate.minusHours(1)
-        return rumMetricQueryService.timeSeries(fromDate, toDate, page, metric)
+        return rumMetricQueryService.timeSeries(fromDate, toDate, page, metric, release)
     }
 
     @GetMapping("/system")

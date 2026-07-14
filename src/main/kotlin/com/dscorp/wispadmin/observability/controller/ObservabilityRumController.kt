@@ -52,7 +52,7 @@ class ObservabilityRumController(
                 continue
             }
             try {
-                rumCollector.record(page, platform, metricName, value, raw.rating)
+                rumCollector.record(page, platform, metricName, value, raw.rating, raw.release?.takeIf { it.isNotBlank() })
                 accepted++
             } catch (e: Exception) {
                 rejected++

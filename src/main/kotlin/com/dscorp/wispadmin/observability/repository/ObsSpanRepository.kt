@@ -64,12 +64,37 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
 
     @Query(
         """
+        SELECT s.dbStatement, COUNT(s), SUM(s.durationMs), AVG(s.durationMs), MAX(s.durationMs)
+        FROM ObsSpan s, ObsSpan root
+        WHERE s.kind = 'DB'
+          AND s.dbStatement IS NOT NULL
+          AND root.parentSpanId IS NULL
+          AND root.traceId = s.traceId
+          AND root.httpRoute = :route
+          AND (:from IS NULL OR s.startEpochMs >= :from)
+          AND (:to IS NULL OR s.startEpochMs <= :to)
+          AND (:release IS NULL OR s.release = :release)
+        GROUP BY s.dbStatement
+        ORDER BY SUM(s.durationMs) DESC
+        """
+    )
+    fun aggregateDbStatementsByRoute(
+        @Param("from") from: Long?,
+        @Param("to") to: Long?,
+        @Param("release") release: String?,
+        @Param("route") route: String,
+        pageable: Pageable
+    ): List<Array<Any>>
+
+    @Query(
+        """
         SELECT s.traceId, s.dbStatement, COUNT(s), SUM(s.durationMs), MAX(root.httpRoute)
         FROM ObsSpan s, ObsSpan root
         WHERE s.kind = 'DB'
           AND s.dbStatement IS NOT NULL
           AND root.parentSpanId IS NULL
           AND root.traceId = s.traceId
+          AND (:route IS NULL OR root.httpRoute = :route)
           AND (:from IS NULL OR s.startEpochMs >= :from)
           AND (:to IS NULL OR s.startEpochMs <= :to)
           AND (:release IS NULL OR s.release = :release)
@@ -82,7 +107,8 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
         @Param("from") from: Long?,
         @Param("to") to: Long?,
         @Param("threshold") threshold: Long,
-        @Param("release") release: String?
+        @Param("release") release: String?,
+        @Param("route") route: String?
     ): List<Array<Any>>
 
     @Query(
@@ -133,6 +159,50 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
         """
     )
     fun rootSpanDurationsSince(@Param("from") from: Long): List<Long>
+
+    @Query(
+        """
+        SELECT s.durationMs
+        FROM ObsSpan s
+        WHERE s.parentSpanId IS NULL
+          AND s.startEpochMs >= :from
+          AND s.startEpochMs <= :to
+          AND s.durationMs IS NOT NULL
+        ORDER BY s.durationMs ASC
+        """
+    )
+    fun rootSpanDurationsBetween(@Param("from") from: Long, @Param("to") to: Long): List<Long>
+
+    @Query(
+        """
+        SELECT COUNT(s)
+        FROM ObsSpan s
+        WHERE s.parentSpanId IS NULL
+          AND s.release = :release
+          AND s.startEpochMs >= :from
+          AND s.startEpochMs <= :to
+        """
+    )
+    fun countRootSpansByReleaseBetween(
+        @Param("release") release: String,
+        @Param("from") from: Long,
+        @Param("to") to: Long
+    ): Long
+
+    @Query(
+        """
+        SELECT s FROM ObsSpan s
+        WHERE s.parentSpanId IS NULL
+          AND s.startEpochMs >= :from
+          AND s.startEpochMs <= :to
+        ORDER BY s.durationMs DESC
+        """
+    )
+    fun findSlowestRootSpansBetween(
+        @Param("from") from: Long,
+        @Param("to") to: Long,
+        pageable: Pageable
+    ): List<ObsSpan>
 
     @Query(
         """

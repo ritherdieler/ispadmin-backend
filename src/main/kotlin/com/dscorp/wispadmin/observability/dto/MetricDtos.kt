@@ -35,6 +35,7 @@ data class RumMetricPointDto(
     val page: String?,
     val platform: String?,
     val metricName: String?,
+    val release: String? = null,
     val sampleCount: Long,
     val p50: Double,
     val p75: Double,
@@ -51,6 +52,7 @@ data class RumMetricPointDto(
 data class RumMetricAggregateDto(
     val page: String?,
     val metricName: String?,
+    val release: String? = null,
     val sampleCount: Long,
     val goodCount: Long,
     val needsImprovementCount: Long,
@@ -64,6 +66,34 @@ data class RumMetricAggregateDto(
     val p99: Double,
     val max: Double,
     val rating: String
+)
+
+data class EndpointDetailMetricsDto(
+    val route: String?,
+    val httpMethod: String?,
+    val totalRequests: Long,
+    val totalErrors: Long,
+    val errorRate: Double,
+    val avgMs: Double,
+    val p50Ms: Long,
+    val p95Ms: Long,
+    val p99Ms: Long,
+    val maxMs: Long,
+    val dbTimeMs: Long? = null,
+    val dbTimeRatio: Double? = null
+)
+
+data class EndpointDetailDto(
+    val route: String?,
+    val release: String?,
+    val from: LocalDateTime,
+    val to: LocalDateTime,
+    val metrics: EndpointDetailMetricsDto,
+    val timeSeries: List<EndpointMetricPointDto>,
+    val topQueries: List<DbQueryAggregateDto>,
+    val nPlusOne: List<NPlusOneCandidateDto>,
+    val issues: List<IssueSummaryDto>,
+    val sampleTraces: List<TraceSummaryDto>
 )
 
 data class SystemMetricPointDto(

@@ -27,11 +27,12 @@ class ObsSessionQueryService(
     fun listSessions(
         from: LocalDateTime,
         to: LocalDateTime,
+        release: String?,
         page: Int,
         size: Int
     ): PagedResponse<SessionSummaryDto> {
         val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 200))
-        val result = eventRepository.aggregateRecentSessions(from, to, pageable)
+        val result = eventRepository.aggregateRecentSessions(from, to, release?.takeIf { it.isNotBlank() }, pageable)
         val rows = result.content
         val sessionIds = rows.mapNotNull { it[0]?.toString() }
 

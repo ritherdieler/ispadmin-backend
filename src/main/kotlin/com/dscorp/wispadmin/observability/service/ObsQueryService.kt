@@ -21,6 +21,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class ObsQueryService(
@@ -37,6 +38,7 @@ class ObsQueryService(
         severity: String?,
         status: ObsIssueStatus?,
         environment: String?,
+        release: String?,
         from: LocalDateTime?,
         to: LocalDateTime?,
         text: String?,
@@ -53,6 +55,7 @@ class ObsQueryService(
             severity?.takeIf { it.isNotBlank() },
             status,
             environment?.takeIf { it.isNotBlank() },
+            release?.takeIf { it.isNotBlank() },
             from,
             to,
             text?.takeIf { it.isNotBlank() },
@@ -115,40 +118,43 @@ class ObsQueryService(
         return issueRepository.save(issue).toSummaryDto()
     }
 
-    fun overview(): OverviewStatsDto {
-        val now = LocalDateTime.now()
+    fun overview(from: LocalDateTime? = null, to: LocalDateTime? = null): OverviewStatsDto {
+        val zone = ZoneId.systemDefault()
+        val toDate = to ?: LocalDateTime.now()
+        val fromDate = from ?: toDate.minusHours(24)
+        val fromMs = fromDate.atZone(zone).toInstant().toEpochMilli()
+        val toMs = toDate.atZone(zone).toInstant().toEpochMilli()
+
         val byPlatform = issueRepository.countGroupedByPlatform().associate {
             (it[0]?.toString() ?: "unknown") to (it[1] as Number).toLong()
         }
         val bySeverity = issueRepository.countOpenGroupedBySeverity().associate {
             (it[0]?.toString() ?: "unknown") to (it[1] as Number).toLong()
         }
-        val byFeature = eventRepository.countGroupedByFeatureSince(now.minusHours(24), PageRequest.of(0, 10)).associate {
+        val byFeature = eventRepository.countGroupedByFeatureBetween(fromDate, toDate, PageRequest.of(0, 10)).associate {
             (it[0]?.toString() ?: "unknown") to (it[1] as Number).toLong()
         }
         val topIssues = issueRepository.findTopOpenIssues(PageRequest.of(0, 10)).map { it.toSummaryDto() }
 
-        val nowMs = System.currentTimeMillis()
-        val lastHourMs = nowMs - 3_600_000L
-        val rootAgg = spanRepository.aggregateRootSpansSince(lastHourMs).firstOrNull()
-        val tracesLastHour = (rootAgg?.get(0) as? Number)?.toLong() ?: 0L
+        val rootAgg = spanRepository.aggregateRootSpansBetween(fromMs, toMs, null).firstOrNull()
+        val tracesInRange = (rootAgg?.get(0) as? Number)?.toLong() ?: 0L
         val errorTraces = (rootAgg?.get(1) as? Number)?.toLong() ?: 0L
-        val errorTraceRate = if (tracesLastHour > 0) errorTraces.toDouble() / tracesLastHour else 0.0
-        val p95TraceDurationMs = percentile(spanRepository.rootSpanDurationsSince(lastHourMs), 0.95)
-        val slowRoots = spanRepository.findSlowestRootSpansSince(nowMs - 86_400_000L, PageRequest.of(0, 5))
+        val errorTraceRate = if (tracesInRange > 0) errorTraces.toDouble() / tracesInRange else 0.0
+        val p95TraceDurationMs = percentile(spanRepository.rootSpanDurationsBetween(fromMs, toMs), 0.95)
+        val slowRoots = spanRepository.findSlowestRootSpansBetween(fromMs, toMs, PageRequest.of(0, 5))
         val slowTraces = buildTraceSummaries(slowRoots)
 
         return OverviewStatsDto(
             openIssues = issueRepository.countByStatus(ObsIssueStatus.OPEN),
             resolvedIssues = issueRepository.countByStatus(ObsIssueStatus.RESOLVED),
             ignoredIssues = issueRepository.countByStatus(ObsIssueStatus.IGNORED),
-            eventsLast24h = eventRepository.countSince(now.minusHours(24)),
-            eventsLastHour = eventRepository.countSince(now.minusHours(1)),
+            eventsLast24h = eventRepository.countBetween(fromDate, toDate),
+            eventsLastHour = eventRepository.countBetween(toDate.minusHours(1), toDate),
             issuesByPlatform = byPlatform,
             openIssuesBySeverity = bySeverity,
             eventsByFeature = byFeature,
             topIssues = topIssues,
-            tracesLastHour = tracesLastHour,
+            tracesLastHour = tracesInRange,
             errorTraceRate = errorTraceRate,
             p95TraceDurationMs = p95TraceDurationMs,
             slowTraces = slowTraces

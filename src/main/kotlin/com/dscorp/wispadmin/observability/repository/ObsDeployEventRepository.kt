@@ -20,4 +20,20 @@ interface ObsDeployEventRepository : JpaRepository<ObsDeployEvent, Long> {
     fun findTop50ByOrderByDeployedAtDesc(): List<ObsDeployEvent>
 
     fun findTop50ByPlatformOrderByDeployedAtDesc(platform: String): List<ObsDeployEvent>
+
+    fun findFirstByReleaseOrderByDeployedAtDesc(release: String): ObsDeployEvent?
+
+    fun findFirstByPlatformAndDeployedAtLessThanOrderByDeployedAtDesc(
+        platform: String,
+        deployedAt: LocalDateTime
+    ): ObsDeployEvent?
+
+    fun findFirstByPlatformAndDeployedAtGreaterThanOrderByDeployedAtAsc(
+        platform: String,
+        deployedAt: LocalDateTime
+    ): ObsDeployEvent?
+
+    fun findFirstByDeployedAtLessThanOrderByDeployedAtDesc(deployedAt: LocalDateTime): ObsDeployEvent?
+
+    fun findFirstByDeployedAtGreaterThanOrderByDeployedAtAsc(deployedAt: LocalDateTime): ObsDeployEvent?
 }

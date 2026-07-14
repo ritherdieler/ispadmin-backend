@@ -36,13 +36,14 @@ class ObservabilityIssueController(
         @RequestParam(required = false) severity: String?,
         @RequestParam(required = false) status: ObsIssueStatus?,
         @RequestParam(required = false) environment: String?,
+        @RequestParam(required = false) release: String?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
         @RequestParam(required = false) text: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "25") size: Int
     ): PagedResponse<IssueSummaryDto> {
-        return queryService.searchIssues(platform, severity, status, environment, from, to, text, page, size)
+        return queryService.searchIssues(platform, severity, status, environment, release, from, to, text, page, size)
     }
 
     @GetMapping("/{id}")

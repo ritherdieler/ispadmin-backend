@@ -22,10 +22,10 @@ class ObsRumCollector(
 
     private val buckets = ConcurrentHashMap<BucketKey, Accumulator>()
 
-    fun record(page: String, platform: String, metricName: String, value: Double, rating: String?) {
+    fun record(page: String, platform: String, metricName: String, value: Double, rating: String?, release: String? = null) {
         if (!properties.enabled || !properties.rum.enabled) return
         val minute = System.currentTimeMillis() / 60000
-        val key = BucketKey(minute, page, platform, metricName)
+        val key = BucketKey(minute, page, platform, metricName, release)
         val accumulator = buckets.computeIfAbsent(key) { Accumulator(properties.rum.maxSamplesPerBucket) }
         accumulator.add(value, resolveRating(metricName, value, rating))
     }
@@ -45,6 +45,7 @@ class ObsRumCollector(
                     page = key.page.take(300),
                     platform = key.platform.take(40),
                     metricName = key.metricName.take(16),
+                    release = key.release?.take(120),
                     sampleCount = snapshot.count,
                     p50 = snapshot.percentile(50.0),
                     p75 = snapshot.percentile(75.0),
@@ -106,7 +107,8 @@ class ObsRumCollector(
         val minute: Long,
         val page: String,
         val platform: String,
-        val metricName: String
+        val metricName: String,
+        val release: String?
     )
 
     private class Accumulator(private val maxSamples: Int) {

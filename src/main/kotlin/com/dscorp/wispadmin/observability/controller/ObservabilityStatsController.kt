@@ -17,7 +17,14 @@ class ObservabilityStatsController(
 ) {
 
     @GetMapping("/overview")
-    fun overview(): OverviewStatsDto = queryService.overview()
+    fun overview(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?
+    ): OverviewStatsDto {
+        val toDate = to ?: LocalDateTime.now()
+        val fromDate = from ?: toDate.minusHours(24)
+        return queryService.overview(fromDate, toDate)
+    }
 
     @GetMapping("/events-timeseries")
     fun eventsTimeSeries(
