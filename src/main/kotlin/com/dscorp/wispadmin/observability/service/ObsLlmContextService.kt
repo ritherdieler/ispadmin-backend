@@ -145,6 +145,13 @@ class ObsLlmContextService(
         appendField(sb, "Severidad", event.severity)
         appendField(sb, "Plataforma", event.platform)
         appendField(sb, "Feature/Action", listOfNotNull(event.feature, event.action).joinToString(" / ").takeIf { it.isNotBlank() })
+        appendField(
+            sb,
+            "Workflow",
+            listOfNotNull(event.workflowName, event.workflowId?.let { "($it)" }, event.workflowStatus)
+                .joinToString(" ")
+                .takeIf { it.isNotBlank() }
+        )
         appendField(sb, "Timestamp", (event.eventTimestamp ?: event.createdAt)?.toString())
         appendField(sb, "Trace-Id (correlationId)", event.correlationId)
         appendField(sb, "Session-Id", event.sessionId)
@@ -366,7 +373,7 @@ class ObsLlmContextService(
     }
 
     private fun formatReplay(replay: ReplaySummaryDto): String {
-        return "Replay id=${replay.id} formato=${replay.format ?: "-"} dur=${replay.durationMs ?: 0L}ms size=${replay.sizeBytes ?: 0L}bytes"
+        return "Replay id=${replay.id} formato=${replay.format ?: "-"} workflow=${replay.workflowId ?: "-"} dur=${replay.durationMs ?: 0L}ms size=${replay.sizeBytes ?: 0L}bytes"
     }
 
     private fun findAlerts(issueId: Long): List<ObsAlertEvent> =

@@ -36,9 +36,10 @@ class ObservabilitySessionController(
     fun detail(
         @PathVariable sessionId: String,
         @RequestParam(required = false) feature: String?,
-        @RequestParam(required = false) action: String?
+        @RequestParam(required = false) action: String?,
+        @RequestParam(required = false) workflowId: String?
     ): ResponseEntity<SessionDetailDto> {
-        val session = sessionQueryService.getSession(sessionId, feature, action)
+        val session = sessionQueryService.getSession(sessionId, feature, action, workflowId)
             ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(session)
     }

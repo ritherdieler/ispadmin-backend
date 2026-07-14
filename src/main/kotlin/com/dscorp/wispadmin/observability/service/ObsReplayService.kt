@@ -29,7 +29,8 @@ class ObsReplayService(
         format: String?,
         durationMs: Long?,
         contentEncoding: String?,
-        data: ByteArray
+        data: ByteArray,
+        workflowId: String? = null
     ): ObsReplay {
         val now = LocalDateTime.now()
         val subDir = File(properties.replay.storageDir, now.format(dayFormatter))
@@ -42,6 +43,7 @@ class ObsReplayService(
 
         val replay = ObsReplay(
             sessionId = sessionId,
+            workflowId = workflowId?.takeIf { it.isNotBlank() }?.take(100),
             eventId = eventId,
             issueId = issueId,
             platform = platform,

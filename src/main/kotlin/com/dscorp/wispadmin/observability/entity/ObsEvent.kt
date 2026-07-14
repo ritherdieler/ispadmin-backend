@@ -20,7 +20,8 @@ import javax.persistence.Table
         Index(name = "idx_obs_event_correlation", columnList = "correlation_id"),
         Index(name = "idx_obs_event_session", columnList = "session_id"),
         Index(name = "idx_obs_event_feature", columnList = "feature"),
-        Index(name = "idx_obs_event_action", columnList = "action")
+        Index(name = "idx_obs_event_action", columnList = "action"),
+        Index(name = "idx_obs_event_workflow_id", columnList = "workflow_id")
     ]
 )
 data class ObsEvent(
@@ -48,6 +49,18 @@ data class ObsEvent(
 
     @Column(name = "action", length = 120)
     var action: String? = null,
+
+    @Column(name = "workflow_id", length = 100)
+    var workflowId: String? = null,
+
+    @Column(name = "workflow_name", length = 120)
+    var workflowName: String? = null,
+
+    @Column(name = "workflow_category", length = 80)
+    var workflowCategory: String? = null,
+
+    @Column(name = "workflow_status", length = 20)
+    var workflowStatus: String? = null,
 
     @Lob
     @Column(name = "message", columnDefinition = "TEXT")

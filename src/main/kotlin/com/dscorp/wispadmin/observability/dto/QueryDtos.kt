@@ -35,6 +35,10 @@ data class EventDto(
     val severity: String?,
     val feature: String?,
     val action: String?,
+    val workflowId: String?,
+    val workflowName: String?,
+    val workflowCategory: String?,
+    val workflowStatus: String?,
     val message: String?,
     val errorType: String?,
     val stacktrace: String?,
@@ -123,14 +127,38 @@ data class ReplaySummaryDto(
     val format: String?,
     val durationMs: Long?,
     val sizeBytes: Long?,
-    val createdAt: LocalDateTime?
+    val createdAt: LocalDateTime?,
+    val workflowId: String? = null
 )
 
 data class SessionDetailDto(
     val summary: SessionSummaryDto,
     val events: List<EventDto>,
     val traces: List<TraceSummaryDto>,
-    val replays: List<ReplaySummaryDto>
+    val replays: List<ReplaySummaryDto>,
+    val workflows: List<SessionWorkflowSummaryDto> = emptyList()
+)
+
+data class SessionWorkflowSummaryDto(
+    val workflowId: String,
+    val name: String?,
+    val category: String?,
+    val status: String?,
+    val firstSeen: LocalDateTime?,
+    val lastSeen: LocalDateTime?,
+    val eventCount: Long
+)
+
+data class WorkflowSummaryDto(
+    val workflowId: String,
+    val name: String?,
+    val category: String?,
+    val status: String?,
+    val platform: String?,
+    val sessionId: String?,
+    val firstSeen: LocalDateTime?,
+    val lastSeen: LocalDateTime?,
+    val eventCount: Long
 )
 
 data class TimeSeriesPointDto(
@@ -174,6 +202,10 @@ fun ObsEvent.toDto(rawJson: (String?) -> Any?, format: String? = null) = EventDt
     severity = severity,
     feature = feature,
     action = action,
+    workflowId = workflowId,
+    workflowName = workflowName,
+    workflowCategory = workflowCategory,
+    workflowStatus = workflowStatus,
     message = message,
     errorType = errorType,
     stacktrace = stacktrace,

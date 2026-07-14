@@ -57,47 +57,63 @@ class ObsIngestionService(
     fun persistEvent(event: ReportedEvent): Long? {
         val platform = event.platform.ifBlank { "unknown" }
         val severity = event.severity.ifBlank { "error" }
-        val fingerprint = fingerprintService.fingerprint(platform, event.errorType, event.stacktrace, event.message)
+        val eventType = event.eventType.ifBlank { "error" }
         val now = LocalDateTime.now()
         val occurredAt = event.timestamp?.let { toLocalDateTime(it) } ?: now
 
-        val existingIssue = issueRepository.findByFingerprint(fingerprint)
-        val isNewIssue = existingIssue == null
-        val wasReopened = existingIssue?.status == ObsIssueStatus.RESOLVED
+        val skipIssue = shouldSkipIssue(eventType, severity, event.errorType, event.stacktrace)
 
-        val issue = existingIssue?.also {
-            it.eventCount += 1
-            it.lastSeen = occurredAt
-            it.severity = severity
-            it.lastMessage = event.message?.take(4000)
-            it.lastEnvironment = event.environment
-            it.lastRelease = event.release
-            if (it.status == ObsIssueStatus.RESOLVED) it.status = ObsIssueStatus.OPEN
-        } ?: ObsIssue(
-            fingerprint = fingerprint,
-            title = buildTitle(event),
-            platform = platform,
-            severity = severity,
-            status = ObsIssueStatus.OPEN,
-            errorType = event.errorType?.take(300),
-            lastMessage = event.message?.take(4000),
-            lastEnvironment = event.environment,
-            lastRelease = event.release,
-            eventCount = 1,
-            firstSeen = occurredAt,
-            lastSeen = occurredAt
-        )
+        val savedIssue = if (skipIssue) {
+            null
+        } else {
+            val fingerprint = fingerprintService.fingerprint(platform, event.errorType, event.stacktrace, event.message)
+            val existingIssue = issueRepository.findByFingerprint(fingerprint)
+            val isNewIssue = existingIssue == null
+            val wasReopened = existingIssue?.status == ObsIssueStatus.RESOLVED
 
-        val savedIssue = issueRepository.save(issue)
+            val issue = existingIssue?.also {
+                it.eventCount += 1
+                it.lastSeen = occurredAt
+                it.severity = severity
+                it.lastMessage = event.message?.take(4000)
+                it.lastEnvironment = event.environment
+                it.lastRelease = event.release
+                if (it.status == ObsIssueStatus.RESOLVED) it.status = ObsIssueStatus.OPEN
+            } ?: ObsIssue(
+                fingerprint = fingerprint,
+                title = buildTitle(event),
+                platform = platform,
+                severity = severity,
+                status = ObsIssueStatus.OPEN,
+                errorType = event.errorType?.take(300),
+                lastMessage = event.message?.take(4000),
+                lastEnvironment = event.environment,
+                lastRelease = event.release,
+                eventCount = 1,
+                firstSeen = occurredAt,
+                lastSeen = occurredAt
+            )
+
+            val persisted = issueRepository.save(issue)
+            issueAlertHandler.onIssuePersisted(persisted, isNewIssue, wasReopened)
+            persisted
+        }
+
+        val fingerprint = savedIssue?.fingerprint
+            ?: fingerprintService.fingerprint(platform, event.errorType, event.stacktrace, event.message)
 
         val obsEvent = ObsEvent(
-            issueId = savedIssue.id,
+            issueId = savedIssue?.id,
             fingerprint = fingerprint,
-            eventType = event.eventType.ifBlank { "error" },
+            eventType = eventType,
             platform = platform,
             severity = severity,
             feature = tagString(event.tags, "feature")?.take(80),
             action = tagString(event.tags, "action")?.take(120),
+            workflowId = tagString(event.tags, "workflowId")?.take(100),
+            workflowName = tagString(event.tags, "workflowName")?.take(120),
+            workflowCategory = tagString(event.tags, "workflowCategory")?.take(80),
+            workflowStatus = tagString(event.tags, "workflowStatus")?.take(20),
             message = event.message,
             errorType = event.errorType?.take(300),
             stacktrace = event.stacktrace,
@@ -121,9 +137,26 @@ class ObsIngestionService(
         )
 
         val savedEvent = eventRepository.save(obsEvent)
-        livePublisher.publishEvent(savedIssue, savedEvent)
-        issueAlertHandler.onIssuePersisted(savedIssue, isNewIssue, wasReopened)
-        return savedIssue.id
+        if (savedIssue != null) {
+            livePublisher.publishEvent(savedIssue, savedEvent)
+        }
+        return savedIssue?.id
+    }
+
+    private fun shouldSkipIssue(
+        eventType: String,
+        severity: String,
+        errorType: String?,
+        stacktrace: String?
+    ): Boolean {
+        val informationalType = eventType.equals("workflow_start", ignoreCase = true) ||
+            eventType.equals("workflow_end", ignoreCase = true) ||
+            eventType.equals("log", ignoreCase = true)
+        val informationalSeverity = severity.equals("info", ignoreCase = true) ||
+            severity.equals("debug", ignoreCase = true)
+        return informationalType && informationalSeverity &&
+            errorType.isNullOrBlank() &&
+            stacktrace.isNullOrBlank()
     }
 
     private fun buildTitle(event: ReportedEvent): String {

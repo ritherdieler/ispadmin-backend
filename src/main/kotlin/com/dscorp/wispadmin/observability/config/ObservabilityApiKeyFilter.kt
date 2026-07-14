@@ -25,6 +25,21 @@ class ObservabilityApiKeyFilter(
         const val SESSION_HEADER = "X-Obs-Session"
         const val PLATFORM_ATTRIBUTE = "obsPlatform"
         const val SESSION_CLAIMS_ATTRIBUTE = "obsSessionClaims"
+
+        internal fun observabilityPath(request: HttpServletRequest): String {
+            val servletPath = request.servletPath?.takeIf { it.isNotBlank() }
+            val contextPath = request.contextPath.orEmpty()
+            val fromUri = request.requestURI
+                ?.takeIf { it.isNotBlank() }
+                ?.let { uri ->
+                    if (contextPath.isNotEmpty() && uri.startsWith(contextPath)) {
+                        uri.removePrefix(contextPath).ifBlank { "/" }
+                    } else {
+                        uri
+                    }
+                }
+            return (servletPath ?: fromUri ?: "").trimEnd('/')
+        }
     }
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
@@ -35,13 +50,14 @@ class ObservabilityApiKeyFilter(
     }
 
     private fun isTrackerWebhookPath(request: HttpServletRequest): Boolean {
-        val path = request.servletPath ?: request.requestURI ?: ""
-        return path.contains("/observability/tracker/") && path.trimEnd('/').endsWith("/webhook")
+        val path = observabilityPath(request)
+        return path.contains("/observability/tracker/") && path.endsWith("/webhook")
     }
 
     private fun isObservabilityWebSocketPath(request: HttpServletRequest): Boolean {
-        val path = request.servletPath ?: request.requestURI ?: ""
-        return path.contains("/ws/observability")
+        val path = observabilityPath(request)
+        val uri = request.requestURI ?: ""
+        return path.contains("/ws/observability") || uri.contains("/ws/observability")
     }
 
     override fun doFilterInternal(
@@ -81,7 +97,7 @@ class ObservabilityApiKeyFilter(
 
     private fun isTelemetryIngestPath(request: HttpServletRequest): Boolean {
         if (!"POST".equals(request.method, ignoreCase = true)) return false
-        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        val path = observabilityPath(request)
         return path.endsWith("/observability/events") ||
             path.endsWith("/observability/spans") ||
             path.endsWith("/observability/rum") ||
@@ -93,13 +109,16 @@ class ObservabilityApiKeyFilter(
 
     private fun isReleasesReadPath(request: HttpServletRequest): Boolean {
         if (!"GET".equals(request.method, ignoreCase = true)) return false
-        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        val path = observabilityPath(request)
         return path.endsWith("/observability/releases")
     }
 
     private fun isObservabilityPath(request: HttpServletRequest): Boolean {
-        val path = request.servletPath ?: request.requestURI ?: ""
-        return path.startsWith("/observability") || path.contains("/observability/")
+        val path = observabilityPath(request)
+        val uri = request.requestURI ?: ""
+        return path.startsWith("/observability") ||
+            path.contains("/observability/") ||
+            uri.contains("/observability/")
     }
 
     private fun writeUnauthorized(response: HttpServletResponse, message: String) {

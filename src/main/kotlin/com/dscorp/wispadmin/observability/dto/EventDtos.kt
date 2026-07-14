@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.observability.dto
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class EventIngestBatchRequest(
@@ -30,6 +31,8 @@ data class EventIngestRequest(
     val tags: Map<String, Any?>? = null,
     val context: Map<String, Any?>? = null,
     val replayId: Long? = null,
+    @field:JsonDeserialize(using = FlexibleEpochMillisDeserializer::class)
+    @param:JsonDeserialize(using = FlexibleEpochMillisDeserializer::class)
     val timestamp: Long? = null
 )
 

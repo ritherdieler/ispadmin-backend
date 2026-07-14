@@ -27,6 +27,7 @@ class ObservabilityReplayController(
     @PostMapping
     fun upload(
         @RequestParam("sessionId", required = false) sessionId: String?,
+        @RequestParam("workflowId", required = false) workflowId: String?,
         @RequestParam("eventId", required = false) eventId: Long?,
         @RequestParam("issueId", required = false) issueId: Long?,
         @RequestParam("platform", required = false) platform: String?,
@@ -62,13 +63,15 @@ class ObservabilityReplayController(
             format = format,
             durationMs = durationMs,
             contentEncoding = encoding,
-            data = data
+            data = data,
+            workflowId = workflowId
         )
 
         return ResponseEntity.status(HttpStatus.CREATED).body(
             mapOf(
                 "id" to replay.id,
                 "sessionId" to replay.sessionId,
+                "workflowId" to replay.workflowId,
                 "format" to replay.format,
                 "sizeBytes" to replay.sizeBytes,
                 "contentEncoding" to replay.contentEncoding

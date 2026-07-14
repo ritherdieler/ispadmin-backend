@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.observability.dto.SessionDetailDto
 import com.dscorp.wispadmin.observability.dto.SessionSummaryDto
 import com.dscorp.wispadmin.observability.dto.TraceSummaryDto
 import com.dscorp.wispadmin.observability.dto.toDto
+import com.dscorp.wispadmin.observability.entity.ObsEvent
 import com.dscorp.wispadmin.observability.entity.ObsSpan
 import com.dscorp.wispadmin.observability.repository.ObsEventRepository
 import com.dscorp.wispadmin.observability.repository.ObsReplayRepository
@@ -49,6 +50,11 @@ class ObsSessionQueryService(
         val content = rows.map { row ->
             val sessionId = row[0]?.toString()
             val lastEvent = sessionId?.let { eventRepository.findFirstBySessionIdOrderByCreatedAtDesc(it) }
+            val user = when {
+                sessionId == null -> null
+                else -> parseJson(lastEvent?.userJson)
+                    ?: resolveSessionUser(eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId))
+            }
             SessionSummaryDto(
                 sessionId = sessionId,
                 platform = row[1]?.toString(),
@@ -57,7 +63,7 @@ class ObsSessionQueryService(
                 hasReplay = sessionId != null && sessionId in withReplay,
                 firstSeen = toLocalDateTime(row[4]),
                 lastSeen = toLocalDateTime(row[3]),
-                user = lastEvent?.let { parseJson(it.userJson) }
+                user = user
             )
         }
 
@@ -73,21 +79,29 @@ class ObsSessionQueryService(
     fun getSession(
         sessionId: String,
         feature: String? = null,
-        action: String? = null
+        action: String? = null,
+        workflowId: String? = null
     ): SessionDetailDto? {
         val normalizedFeature = feature?.takeIf { it.isNotBlank() }
         val normalizedAction = action?.takeIf { it.isNotBlank() }
-        val events = if (normalizedFeature != null || normalizedAction != null) {
-            eventRepository.findSessionEventsFiltered(sessionId, normalizedFeature, normalizedAction)
+        val normalizedWorkflowId = workflowId?.takeIf { it.isNotBlank() }
+        val allEvents = eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
+        val events = if (normalizedFeature != null || normalizedAction != null || normalizedWorkflowId != null) {
+            eventRepository.findSessionEventsFiltered(
+                sessionId,
+                normalizedFeature,
+                normalizedAction,
+                normalizedWorkflowId
+            )
         } else {
-            eventRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
+            allEvents
         }
         val rootSpans = spanRepository.searchRootSpans(
             null, null, null, null, null, null, sessionId, null, PageRequest.of(0, 200)
         ).content
         val replayEntities = replayRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
 
-        if (events.isEmpty() && rootSpans.isEmpty() && replayEntities.isEmpty()) return null
+        if (allEvents.isEmpty() && rootSpans.isEmpty() && replayEntities.isEmpty()) return null
 
         val traces = buildTraceSummaries(rootSpans)
         val formatByReplayId = replayEntities.mapNotNull { r -> r.id?.let { it to r.format } }.toMap()
@@ -97,28 +111,30 @@ class ObsSessionQueryService(
                 format = it.format,
                 durationMs = it.durationMs,
                 sizeBytes = it.sizeBytes,
-                createdAt = it.createdAt
+                createdAt = it.createdAt,
+                workflowId = it.workflowId
             )
         }
 
-        val platform = events.firstOrNull()?.platform ?: rootSpans.firstOrNull()?.platform
-        val createdAts = events.mapNotNull { it.createdAt }
+        val platform = allEvents.firstOrNull()?.platform ?: rootSpans.firstOrNull()?.platform
+        val createdAts = allEvents.mapNotNull { it.createdAt }
         val summary = SessionSummaryDto(
             sessionId = sessionId,
             platform = platform,
-            eventCount = events.size.toLong(),
+            eventCount = allEvents.size.toLong(),
             traceCount = traces.size.toLong(),
             hasReplay = replays.isNotEmpty(),
             firstSeen = createdAts.minOrNull(),
             lastSeen = createdAts.maxOrNull(),
-            user = events.firstOrNull()?.let { parseJson(it.userJson) }
+            user = resolveSessionUser(allEvents)
         )
 
         return SessionDetailDto(
             summary = summary,
             events = events.map { it.toDto(::parseJson, it.replayId?.let { id -> formatByReplayId[id] }) },
             traces = traces,
-            replays = replays
+            replays = replays,
+            workflows = ObsWorkflowAggregation.fromEvents(allEvents)
         )
     }
 
@@ -152,6 +168,9 @@ class ObsSessionQueryService(
             )
         }
     }
+
+    private fun resolveSessionUser(eventsNewestFirst: List<ObsEvent>): Any? =
+        eventsNewestFirst.firstNotNullOfOrNull { parseJson(it.userJson) }
 
     private fun toLocalDateTime(value: Any?): LocalDateTime? = when (value) {
         is LocalDateTime -> value

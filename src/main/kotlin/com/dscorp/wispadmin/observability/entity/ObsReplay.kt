@@ -26,6 +26,9 @@ data class ObsReplay(
     @Column(name = "session_id", length = 100)
     var sessionId: String? = null,
 
+    @Column(name = "workflow_id", length = 100)
+    var workflowId: String? = null,
+
     @Column(name = "event_id")
     var eventId: Long? = null,
 
