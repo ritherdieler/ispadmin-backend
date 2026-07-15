@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionLog
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.util.*
 import java.time.LocalDateTime
 
@@ -209,5 +210,124 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         borneNumber: String,
         excludeSubscriptionId: Int?
     ): Boolean
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        INNER JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE p.paid = false
+        AND LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
+        """
+    )
+    fun findDebtorsByPlaceName(@Param("placeName") placeName: String): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        LEFT JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE p.paid = false
+        """
+    )
+    fun findAllDebtors(): List<Subscription>
+
+    @Query(
+        value = """
+        SELECT DISTINCT s.id
+        FROM subscription s
+        INNER JOIN place pl ON s.place_id = pl.id
+        INNER JOIN payment p ON p.subscription_id = s.id AND p.paid = false
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName)) AND sector.area IS NOT NULL
+        WHERE LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        """,
+        nativeQuery = true,
+    )
+    fun findDebtorIdsInsidePlacePolygon(@Param("placeName") placeName: String): List<Int>
+
+    @Query(
+        value = """
+        SELECT DISTINCT s.id
+        FROM subscription s
+        INNER JOIN place pl ON s.place_id = pl.id
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(pl.name)) AND sector.area IS NOT NULL
+        WHERE s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        """,
+        nativeQuery = true,
+    )
+    fun findAllDebtorIdsInsidePlacePolygons(): List<Int>
+
+    @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            pl.name,
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place pl ON s.place_id = pl.id
+        WHERE s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND TRIM(pl.name) != ''
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRows(
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        LEFT JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE s.id IN :ids
+          AND p.paid = false
+        """
+    )
+    fun findDebtorsByIds(@Param("ids") ids: Collection<Int>): List<Subscription>
 
 }

@@ -30,7 +30,77 @@ data class SmartMapClientDto(
     val pendingInvoiceQuantity: Int,
     val totalDebt: Double,
     val place: String?,
-    val installationType: String?
+    val installationType: String?,
+    val locationSource: String = "place_fallback",
+)
+
+data class SmartMapCollectionRouteStopDto(
+    val order: Int,
+    val clientId: Int,
+    val fullName: String,
+    val address: String?,
+    val place: String?,
+    val totalDebt: Double,
+    val location: GeoLocationDto,
+)
+
+data class SmartMapCollectionRouteDto(
+    val zoneName: String,
+    val startPoint: GeoLocationDto,
+    val usedCurrentLocation: Boolean = true,
+    val stops: List<SmartMapCollectionRouteStopDto>,
+    val path: List<GeoLocationDto>,
+    val totalDistanceMeters: Double,
+    val totalDebt: Double,
+    val stopCount: Int,
+    val excludedCount: Int,
+    val excludedReasons: Map<String, Int> = emptyMap(),
+    val collectorAccuracyMeters: Double? = null,
+    val sectorHasPolygon: Boolean = false,
+    val roadPath: List<GeoLocationDto>? = null,
+    val roadDistanceMeters: Double? = null,
+    val roadDurationSeconds: Double? = null,
+    val routingStatus: String? = null,
+    val geometryGeoJson: String? = null,
+    val routeType: String = "sector",
+    val sectorsIncluded: List<String> = emptyList(),
+)
+
+data class SmartMapCollectionPendingClientDto(
+    val clientId: Int,
+    val fullName: String,
+    val place: String?,
+    val totalDebt: Double,
+    val markedAt: String,
+)
+
+data class SmartMapCollectionPendingSummaryDto(
+    val clients: List<SmartMapCollectionPendingClientDto>,
+    val clientCount: Int,
+    val sectorCount: Int,
+    val totalDebt: Double,
+    val sectors: List<String>,
+    val debtPeriod: String = "LAST_1_MONTH",
+    val debtDateFrom: String? = null,
+    val debtDateTo: String? = null,
+    val periodLabel: String = "",
+)
+
+data class SmartMapRoadRouteDto(
+    val sectorName: String,
+    val origin: GeoLocationDto,
+    val destination: GeoLocationDto,
+    val path: List<GeoLocationDto>,
+    val distanceMeters: Double,
+    val durationSeconds: Double? = null,
+    val routingStatus: String,
+    val geometryGeoJson: String? = null,
+)
+
+data class SmartMapValidationErrorDto(
+    val code: String,
+    val message: String,
+    val sectorName: String,
 )
 
 data class SmartMapZoneDto(

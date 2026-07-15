@@ -3,6 +3,8 @@ package com.dscorp.wispadmin.wispadmin.logging
 import com.dscorp.wispadmin.wispadmin.config.HttpFailureContext
 import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapValidationErrorDto
+import com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
@@ -23,6 +25,19 @@ class GlobalExceptionHandler @Autowired constructor(
     private val loggingService: LoggingService,
     private val errorLogRepository: ErrorLogRepository
 ) : ResponseEntityExceptionHandler() {
+
+    @ExceptionHandler(SmartMapSectorValidationException::class)
+    fun handleSmartMapSectorValidation(
+        ex: SmartMapSectorValidationException,
+    ): ResponseEntity<SmartMapValidationErrorDto> {
+        return ResponseEntity.badRequest().body(
+            SmartMapValidationErrorDto(
+                code = ex.code,
+                message = ex.message ?: "Validacion de sector fallida.",
+                sectorName = ex.sectorName,
+            ),
+        )
+    }
 
     /**
      * Maneja cualquier excepción no controlada en la aplicación
@@ -93,6 +108,7 @@ class GlobalExceptionHandler @Autowired constructor(
             path.contains("/microtic") -> Modules.MICROTIC.name
             path.contains("/api/logs") -> Modules.LOG_VIEWER.name
             path.contains("/ticket") || path.contains("/assistance") -> Modules.ASSISTANCE_TICKET.name
+            path.contains("/smart-map") -> Modules.DASHBOARD.name
             else -> Modules.GENERAL.name
         }
     }
