@@ -148,12 +148,14 @@ class AssistanceTicketController(
     fun closeUnattendedTicket(
         @RequestParam("ticketId") ticketId: Int,
         @RequestParam("userId") userId: Int,
+        @RequestParam("status", required = false) status: AssistanceTicketStatus?,
     ): ResponseEntity<AssistanceTicketDto> {
         val assistanceTicket = repository.findById(ticketId).orElseThrow()
         val oldStatus = assistanceTicket.status.name
+        val targetStatus = status ?: AssistanceTicketStatus.CLOSED
 
         assistanceTicket.apply {
-            status = AssistanceTicketStatus.CLOSED
+            this.status = targetStatus
             closedAt = Date()
         }
         val mTicketDto: AssistanceTicketDto = repository.save(assistanceTicket).toDto()
@@ -166,7 +168,7 @@ class AssistanceTicketController(
 
         FcmMessage(
             title = "Ticket ${assistanceTicket.status.status}",
-            message = "El ticket ${assistanceTicket.id} de ${assistanceTicket.subscription?.getFullName()} se ha marcado como cerrado",
+            message = "El ticket ${assistanceTicket.id} de ${assistanceTicket.subscription?.getFullName()} se ha marcado como ${assistanceTicket.status.status.lowercase()}",
             topic = FcmConstants.ASSISTANCE_TICKET_ADMINS,
             data = mTicketDto.toJson(),
             type = FcmMessage.FcmMessageType.ASSISTANCE_TICKET,
@@ -177,7 +179,7 @@ class AssistanceTicketController(
             fcmTokenRepository.findById(it).ifPresent { customerToken ->
                 FcmMessage(
                     title = "Ticket ${assistanceTicket.status.status}",
-                    message = "Su ticket ${assistanceTicket.id} ha sido actualizado a cerrado",
+                    message = "Su ticket ${assistanceTicket.id} ha sido actualizado a ${assistanceTicket.status.status.lowercase()}",
                     customerToken = customerToken.token,
                     data = mTicketDto.toJson(),
                     type = FcmMessage.FcmMessageType.ASSISTANCE_TICKET,
