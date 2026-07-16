@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.PathVariable
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.http.HttpStatus
+
 @RestController
 @RequestMapping("/whatsapp")
 class WhatsAppController(
@@ -20,6 +23,32 @@ class WhatsAppController(
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
     private val whatsAppProperties: WhatsAppProperties
 ) {
+
+    @GetMapping("/webhook")
+    fun verifyWebhook(
+        @RequestParam("hub.mode") mode: String?,
+        @RequestParam("hub.verify_token") verifyToken: String?,
+        @RequestParam("hub.challenge") challenge: String?
+    ): ResponseEntity<String> {
+        if (
+            mode == "subscribe" &&
+            verifyToken == whatsAppProperties.webhookVerifyToken &&
+            !challenge.isNullOrBlank()
+        ) {
+            return ResponseEntity.ok(challenge)
+        }
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Invalid verify token")
+    }
+
+    @PostMapping("/webhook")
+    fun receiveWebhook(
+        @RequestBody payload: Map<String, Any?>
+    ): ResponseEntity<String> {
+        println("WhatsApp webhook received: $payload")
+        return ResponseEntity.ok("EVENT_RECEIVED")
+    }
+
     @GetMapping("/logs")
     fun getRecentLogs(): ResponseEntity<Any> {
         return ResponseEntity.ok(

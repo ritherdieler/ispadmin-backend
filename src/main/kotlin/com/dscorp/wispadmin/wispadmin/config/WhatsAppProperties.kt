@@ -14,6 +14,7 @@ class WhatsAppProperties {
     var paymentReminderTemplateName: String = ""
     var paymentReminderTemplateLanguage: String = "es_PE"
     var paymentReminderMode: String = "text"
+    var webhookVerifyToken: String = ""
 
     fun graphApiBaseUrl(): String {
         return "https://graph.facebook.com/$apiVersion"
