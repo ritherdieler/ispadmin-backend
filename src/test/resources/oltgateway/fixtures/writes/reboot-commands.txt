@@ -1,0 +1,3 @@
+interface gpon 0/1
+ont reboot 0 5
+quit

@@ -1,0 +1,31 @@
+# OLT Gateway — variables de entorno (ejemplo prod)
+
+```bash
+export OLT_GATEWAY_ENABLED=true
+export OLT_GATEWAY_MOCK=false
+export OLT_GATEWAY_API_KEY=change-me
+export OLT_GATEWAY_HOST=10.11.104.2
+export OLT_GATEWAY_PORT=22
+export OLT_GATEWAY_USER=olt-admin
+export OLT_GATEWAY_PASSWORD=change-me
+export OLT_GATEWAY_OLT_ID=gigafiber-ma5608t
+export OLT_GATEWAY_WRITES_ENABLED=false
+export OLT_GATEWAY_SYNC_INVENTORY_ENABLED=true
+export OLT_GATEWAY_SYNC_INVENTORY_INTERVAL_MS=600000
+export OLT_GATEWAY_SYNC_INVENTORY_INITIAL_DELAY_MS=30000
+export OLT_GATEWAY_SYNC_SIGNAL_ENABLED=true
+export OLT_GATEWAY_SYNC_SIGNAL_INTERVAL_MS=600000
+export OLT_GATEWAY_SYNC_SIGNAL_INITIAL_DELAY_MS=90000
+export OLT_GATEWAY_SYNC_SKIP_WHEN_WRITE_RUNNING=true
+
+# WispAdmin como cliente HTTP del gateway (sin inyección in-process)
+export OLT_SERVICE_PROVIDER=gateway
+export OLT_SERVICE_BASE_URL=http://127.0.0.1:8080/ispadmin/api/olt-gateway/
+export OLT_SERVICE_API_KEY=change-me
+```
+
+Requiere ruta de red a la OLT (LAN o VPN). Sin ruta, usar `OLT_GATEWAY_MOCK=true`.
+
+Writes CLI solo con `OLT_GATEWAY_WRITES_ENABLED=true` tras validación en lab.
+
+Documentación: `.agent-docs/olt-gateway-3layer.md` y `.agent-docs/olt-gateway-read-mvp.md`

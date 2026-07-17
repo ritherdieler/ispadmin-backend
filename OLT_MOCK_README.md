@@ -29,7 +29,8 @@ olt.service.api-key=8503d7e652ae44a79869f30bb473c75d
 1. **OltService (Interfaz)**: Define el contrato para todas las operaciones con la OLT
 2. **RealOltService**: Implementación real que hace llamadas HTTP a la OLT de producción
 3. **MockOltService**: Implementación mock que simula respuestas para desarrollo
-4. **OltServiceConfig**: Configuración de Spring que inyecta el servicio correcto según el ambiente
+4. **OltHttpClient**: Cliente HTTP que toma `olt.service.base-url` y `olt.service.api-key` desde `application-*.properties`
+5. **OltServiceConfig**: Configuración de Spring que inyecta el servicio correcto según el ambiente
 
 ### Operaciones Soportadas
 

@@ -31,9 +31,27 @@ En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
 | JARs DJL (host) | `/opt/gigafiber/tomcat/lib/*.jar` |
 | WAR en contenedor | `/usr/local/tomcat/webapps/ispadmin.war` |
 | Context path | `/ispadmin` |
+| Env secrets | `/opt/gigafiber/.env` vía `tomcat.env_file` en compose |
 | Tomcat Manager | `http://212.85.13.47:8080/manager` |
 
 Los JARs de PyTorch/DJL **no van dentro del WAR**. Se embeben en la imagen Docker vía `COPY lib/*.jar` en el Dockerfile.
+
+El servicio `tomcat` debe tener:
+
+```yaml
+env_file:
+  - /opt/gigafiber/.env
+```
+
+Sin eso, Spring no recibe `OBS_API_KEY_*`, WhatsApp, `OBS_SESSION_SECRET`, `MEILI_MASTER_KEY`, etc. (`application-prod.properties` usa `${OBS_API_KEY_DASHBOARD:}` y similares). El script `./scripts/deploy.sh --setup|--full` asegura el `env_file` en compose.
+
+**Importante:** recrear el contenedor Tomcat borra el WAR (no está en volumen). Tras `docker compose up -d tomcat` hay que volver a `./scripts/deploy.sh --war-only`.
+
+`WEB-INF/` ya no se versiona en el repo. La única fuente de verdad para properties del backend es `src/main/resources/application*.properties`; las variables ya externalizadas siguen llegando desde `/opt/gigafiber/.env`.
+
+También se necesita `SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/ispadmin?...` en `environment` (no `127.0.0.1`: dentro del contenedor MySQL no escucha en localhost).
+
+`MEILI_HOST=http://meilisearch:7700` debe estar en `.env` (mismo motivo).
 
 ---
 
@@ -185,9 +203,19 @@ ssh root@212.85.13.47 'docker logs tomcat9027 2>&1 | grep "Motor facial DJL list
 curl -s -o /dev/null -w "%{http_code}\n" \
   -X POST http://212.85.13.47:8080/ispadmin/api/face-data/photo/check \
   -F "photo=@ruta/foto.jpg"
+
+# Observabilidad: API keys cargadas (registro de release)
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -X POST https://api.gigafiberperu.cloud/ispadmin/observability/releases \
+  -H "X-Obs-Api-Key: $OBS_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"platform":"backend","release":"check","semver":"0.0.0","gitSha":"deadbee","notes":null}'
+# Esperado: 201 (o 4xx de validación de negocio, nunca 401 por API key)
 ```
 
 Spring Boot tarda en arrancar tras copiar el WAR. Si ves 404 al instante, espera ~1 minuto y reintenta.
+
+Si el registro de release del deploy imprime `Missing or invalid X-Obs-Api-Key`, el contenedor no tiene `env_file` apuntando a `/opt/gigafiber/.env`.
 
 ---
 

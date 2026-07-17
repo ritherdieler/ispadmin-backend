@@ -30,6 +30,8 @@ class PlatformAuthFilter(
         if ("OPTIONS".equals(request.method, ignoreCase = true)) return true
         val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
         if (path.startsWith("/observability") || path.contains("/observability/")) return true
+        if (path.startsWith("/api/olt-gateway") || path.contains("/api/olt-gateway/")) return true
+        if (isSwaggerPath(path)) return true
         if (path.contains("/ws")) return true
         return isPublicPath(path)
     }
@@ -48,6 +50,13 @@ class PlatformAuthFilter(
         if (path.endsWith("/fcm/save-token")) return true
         if (isAttendancePublicPath(path)) return true
         return false
+    }
+
+    private fun isSwaggerPath(path: String): Boolean {
+        if (path.startsWith("/swagger-ui") || path == "/swagger-ui.html") return true
+        if (path.startsWith("/v3/api-docs")) return true
+        if (path.startsWith("/webjars")) return true
+        return path.contains("/swagger-ui/") || path.contains("/v3/api-docs")
     }
 
     private fun isAttendancePublicPath(path: String): Boolean {

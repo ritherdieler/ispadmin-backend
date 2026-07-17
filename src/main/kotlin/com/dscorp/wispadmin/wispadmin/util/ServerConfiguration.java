@@ -1,10 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.util;
 
 import com.lyra.rest.client.ClientConfiguration;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
 import org.springframework.util.StringUtils;
 
 /**
@@ -14,11 +12,6 @@ import org.springframework.util.StringUtils;
  */
 @Configuration
 public class ServerConfiguration {
-    private final static String ENV_USERNAME = "SDK_SERVER_USERNAME";
-    private final static String ENV_PASSWORD = "SDK_SERVER_PASSWORD";
-    private final static String ENV_REST_API_SERVER_NAME = "SDK_REST_API_SERVER_NAME";
-    private final static String ENV_HASH_KEY = "SDK_HASH_KEY";
-
     @Value("${custom.username}")
     private String username;
 

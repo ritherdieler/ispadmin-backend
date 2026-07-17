@@ -272,6 +272,40 @@ else:
     compose_path.write_text("\\n".join(out) + "\\n")
     print("Added APP_RELEASE to docker-compose.yml")
 PY
+
+python3 - <<PY
+from pathlib import Path
+
+compose_path = Path("$DOCKER_COMPOSE_FILE")
+env_file_path = "$BACKEND_ENV_FILE"
+text = compose_path.read_text()
+
+if "env_file:" in text and env_file_path in text:
+    print("docker-compose already contains env_file")
+else:
+    lines = text.splitlines()
+    out = []
+    in_tomcat = False
+    inserted = False
+    for line in lines:
+        if line.rstrip() == "  tomcat:":
+            in_tomcat = True
+            out.append(line)
+            continue
+        if in_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
+            in_tomcat = False
+        if in_tomcat and not inserted and line.strip() == "restart: unless-stopped":
+            out.append(line)
+            out.append("    env_file:")
+            out.append(f"      - {env_file_path}")
+            inserted = True
+            continue
+        out.append(line)
+    if not inserted:
+        raise SystemExit("Could not insert env_file under tomcat")
+    compose_path.write_text("\\n".join(out) + "\\n")
+    print(f"Added env_file: {env_file_path}")
+PY
 EOF
 }
 

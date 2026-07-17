@@ -1,0 +1,10 @@
+In port 0/1 ,
+  The total of ONTs are: 3, online: 2, offline: 1
+  ---------------------------------------------------------------------------
+  F/S/P   ONT         SN         Control     Run      Config   Match    Protect
+          ID                     flag        state    state    state    side
+  ---------------------------------------------------------------------------
+  0/1/0     0   HWTC11E70E9A  active      online   success  match    no
+  0/1/0     1   ALCLFCA81B0E  active      online   success  match    no
+  0/1/1     0   ZTEG00000001  active      offline  initial  initial  no
+MA5608T#

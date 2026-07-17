@@ -1,6 +1,15 @@
 # wispAdministrator
 
+## Swagger
 
+Con el backend en local (`server.port=8080`, context-path `/ispadmin`):
+
+- Swagger UI: http://localhost:8080/ispadmin/swagger-ui.html
+- OpenAPI JSON: http://localhost:8080/ispadmin/v3/api-docs
+
+La UI no requiere Bearer. Los endpoints del OLT Gateway usan el header `X-Olt-Gateway-Key` (excepto `/health`).
+
+Más detalle: [`.agent-docs/swagger-openapi.md`](.agent-docs/swagger-openapi.md).
 
 ## Getting started
 

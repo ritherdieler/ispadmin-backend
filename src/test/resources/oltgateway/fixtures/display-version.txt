@@ -1,0 +1,5 @@
+  VERSION : MA5600V800R015C00
+  PATCH   : SPH106
+  PRODUCT : MA5608T
+  UPTIME  : 120 day(s), 5 hour(s), 32 minute(s), 10 second(s)
+MA5608T#

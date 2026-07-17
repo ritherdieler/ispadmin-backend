@@ -1,0 +1,121 @@
+{
+  "info": {
+    "name": "OLT Gateway Read-Only MVP",
+    "description": "Colección read-only del módulo olt-gateway (Huawei MA5608T).\n\nAuth: header X-Olt-Gateway-Key (excepto /health).\n\nOLT live (dev):\n- Usuario SSH: oltadmin (Reenter 4)\n- Env: OLT_GATEWAY_USER=oltadmin OLT_GATEWAY_PASSWORD=... OLT_GATEWAY_MOCK_ENABLED=false\n- Variables sn/slot/port/ontId de ejemplo son del mock; en live ajustar con datos reales de /onus o /onus/autofind.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/ispadmin"
+    },
+    {
+      "key": "apiKey",
+      "value": "dev-olt-gateway-key"
+    },
+    {
+      "key": "sn",
+      "value": "ZTEGDC47DF15"
+    },
+    {
+      "key": "slot",
+      "value": "1"
+    },
+    {
+      "key": "port",
+      "value": "0"
+    },
+    {
+      "key": "ontId",
+      "value": "5"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/olt-gateway/health"
+      }
+    },
+    {
+      "name": "OLT Info",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/olt/info"
+      }
+    },
+    {
+      "name": "ONUs Autofind (SmartOLT compat)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/onus/autofind"
+      }
+    },
+    {
+      "name": "ONU by SN (SmartOLT compat)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/onus/by-sn/{{sn}}"
+      }
+    },
+    {
+      "name": "ONUs Summary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/onus"
+      }
+    },
+    {
+      "name": "ONU Detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/onus/{{slot}}/{{port}}/{{ontId}}"
+      }
+    },
+    {
+      "name": "ONU Optical",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Olt-Gateway-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/olt-gateway/onus/{{slot}}/{{port}}/{{ontId}}/optical"
+      }
+    }
+  ]
+}
