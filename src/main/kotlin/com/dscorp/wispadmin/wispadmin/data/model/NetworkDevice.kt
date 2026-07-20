@@ -22,7 +22,13 @@ data class NetworkDevice(
 
     @Enumerated(EnumType.STRING)
     @Column(columnDefinition = "varchar(255) default 'FIBER_ROUTER'")
-    var networkDeviceType: NetworkDeviceType = NetworkDeviceType.FIBER_ROUTER
+    var networkDeviceType: NetworkDeviceType = NetworkDeviceType.FIBER_ROUTER,
+
+    @Column(name = "vlan_id")
+    var vlanId: Int? = null,
+
+    @Column(nullable = false)
+    var disabled: Boolean = false
     ) : NetworkDeviceConnection {
     enum class NetworkDeviceType {
         FIBER_ROUTER, CLOUD_CORE_ROUTER, WIRELESS_ROUTER, GENERIC
@@ -35,7 +41,9 @@ data class NetworkDevice(
             password = password,
             username = username,
             ipAddress = ipAddress,
-            networkDeviceType = networkDeviceType
+            networkDeviceType = networkDeviceType,
+            vlanId = vlanId,
+            disabled = disabled
         )
     }
 }

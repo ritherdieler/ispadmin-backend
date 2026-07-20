@@ -19,7 +19,7 @@ class FiberInstallationStrategy(
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
     
     companion object {
-        private const val DEFAULT_VLAN = "1"
+        private const val FALLBACK_VLAN = "1"
         private const val DEFAULT_ZONE = "Zone 1"
         private const val DEFAULT_ONU_MODE = "Routing"
         private const val DEFAULT_CUSTOM_PROFILE = "Generic_1"
@@ -46,7 +46,7 @@ class FiberInstallationStrategy(
                 board = onuRequest.board,
                 port = onuRequest.port,
                 sn = onuRequest.sn,
-                vlan = DEFAULT_VLAN,
+                vlan = resolveVlan(subscription),
                 onu_type = onuRequest.onu_type_name,
                 zone = DEFAULT_ZONE,
                 name = subscription.getFullName(),
@@ -84,6 +84,27 @@ class FiberInstallationStrategy(
             subscription.plan?.name ?: "",
             subscription.plan?.type ?: ""
         )
+    }
+
+    internal fun resolveVlan(subscription: Subscription): String {
+        val hostDevice = subscription.hostDevice
+            ?: throw IllegalStateException("La suscripción debe tener hostDevice asignado")
+
+        if (hostDevice.disabled) {
+            throw IllegalStateException(
+                "network_device id=${hostDevice.id} esta deshabilitado"
+            )
+        }
+
+        hostDevice.vlanId?.let { return it.toString() }
+
+        if (hostDevice.networkDeviceType == NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER) {
+            throw IllegalStateException(
+                "CLOUD_CORE_ROUTER id=${hostDevice.id} debe tener vlanId configurado"
+            )
+        }
+
+        return FALLBACK_VLAN
     }
 }
 

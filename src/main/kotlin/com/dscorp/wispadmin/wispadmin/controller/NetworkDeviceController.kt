@@ -40,5 +40,5 @@ class NetworkDeviceController(
 
     @GetMapping("coreTypes")
     fun getCoreTypes(): ResponseEntity<List<NetworkDeviceDto>> =
-        ResponseEntity.ok(repository.findByNetworkDeviceType(NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER).toDto())
+        ResponseEntity.ok(repository.findActiveCloudCoreRouters().toDto())
 }

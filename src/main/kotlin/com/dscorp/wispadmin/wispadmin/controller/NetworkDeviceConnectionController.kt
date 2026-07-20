@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceDto
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
 import com.dscorp.wispadmin.wispadmin.service.NetworkDeviceConnectionService
@@ -16,9 +15,7 @@ class NetworkDeviceConnectionController(
 
     @GetMapping("/cloud-core-routers")
     fun getCloudCoreRouters(): ResponseEntity<List<NetworkDeviceDto>> =
-        ResponseEntity.ok(
-            repository.findByNetworkDeviceType(NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER).map { it.toDto() }
-        )
+        ResponseEntity.ok(repository.findActiveCloudCoreRouters().map { it.toDto() })
 
     @GetMapping("/{deviceId}/interfaces")
     fun getDeviceInterfaces(@PathVariable deviceId: Int): ResponseEntity<Map<String, Any>> {

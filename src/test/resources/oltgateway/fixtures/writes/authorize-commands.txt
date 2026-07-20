@@ -1,0 +1,4 @@
+interface gpon 0/0
+ont add 2 5 sn-auth 4857544311E70E9A omci ont-lineprofile-id 10 ont-srvprofile-id 10 desc "cliente_demo"
+quit
+service-port vlan 100 gpon 0/0/2 ont 5 gemport 1 multi-service user-vlan 100 tag-transform translate

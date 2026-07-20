@@ -1,0 +1,16 @@
+  -----------------------------------------------------------------------------
+  F/S/P   ONT-ID   Description
+  -----------------------------------------------------------------------------
+  0/1/0   5        cliente_demo
+  Control flag      : active
+  Run state         : online
+  Config state      : success
+  Match state       : match
+  Description       : cliente_demo
+  Authentic type    : SN-auth
+  SN                : 4857544311E70E9A
+  Line profile ID   : 10
+  Line profile name : line-profile_10
+  Service profile ID: 10
+  Service profile name: srv-profile_10
+MA5608T#

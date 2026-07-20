@@ -1,0 +1,26 @@
+  -----------------------------------------------------------------------------
+  F/S/P                   : 0/1/7
+  ONT-ID                  : 1
+  Control flag            : active
+  Run state               : online
+  Config state            : failed
+  Match state             : match
+  DBA type                : SR
+  ONT distance(m)         : 3147
+  Authentic type          : SN-auth
+  SN                      : 5A544547DC47DF15 (ZTEG-DC47DF15)
+  Management mode         : OMCI
+  Description             : WALTHER MIGUEL NICHO
+  Last down cause         : dying-gasp
+  Last up time            : 2026-07-16 16:12:13-05:00
+  -----------------------------------------------------------------------------
+  Line profile ID      : 3
+  Line profile name    : Generic_1_V1
+  -----------------------------------------------------------------------------
+  Service profile ID   : 2
+  Service profile name : Generic_1_V1
+  -----------------------------------------------------------------------------
+  The number of required ONTs     : 1
+  -----------------------------------------------------------------------------
+
+MA5608T#
