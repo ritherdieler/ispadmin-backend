@@ -19,6 +19,8 @@ import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceCutManager
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceReactivationManager
+import com.dscorp.wispadmin.wispadmin.service.subscription.FiberSubscriptionProvisioningService
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionIpAllocationService
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage.FcmMessageType
@@ -52,7 +54,9 @@ class SubscriptionService(
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
-    private val cancelledOnuReuseService: CancelledOnuReuseService
+    private val cancelledOnuReuseService: CancelledOnuReuseService,
+    private val subscriptionIpAllocationService: SubscriptionIpAllocationService,
+    private val fiberSubscriptionProvisioningService: FiberSubscriptionProvisioningService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -149,9 +153,20 @@ class SubscriptionService(
         var onuSn: String? = null
 
         return try {
+            val napBox = resolveNapBoxForRegistration(newSubscription)
+            val hostDeviceId = fiberSubscriptionProvisioningService.resolveHostDeviceId(
+                requestHostDeviceId = newSubscription.hostDeviceId,
+                napBox = napBox
+            )
+            newSubscription.hostDeviceId = hostDeviceId
+
             subscriptionValidator.validateSubscriptionRequest(newSubscription)
 
-            val freeIp = getFreeIp()
+            if (newSubscription.installationType == InstallationType.FIBER) {
+                enrichFiberRegistrationRequest(newSubscription, napBox)
+            }
+
+            val freeIp = subscriptionIpAllocationService.allocateFreeIp(hostDeviceId)
             val subscriptionToSave = createSubscriptionEntity(newSubscription, freeIp)
 
             if (newSubscription.installationType == InstallationType.FIBER) {
@@ -202,6 +217,20 @@ class SubscriptionService(
             ex.printStackTrace()
             handleRegistrationError(ex, subscription, queueAdded, onuAuthorized, onuSn)
         }
+    }
+
+    private fun resolveNapBoxForRegistration(newSubscription: SubscriptionRequest): NapBox? {
+        val napBoxId = newSubscription.napBoxId ?: return null
+        return napBoxRepository.findById(napBoxId).orElse(null)
+    }
+
+    private fun enrichFiberRegistrationRequest(
+        newSubscription: SubscriptionRequest,
+        napBox: NapBox?
+    ) {
+        val onu = newSubscription.onu ?: return
+        val resolvedNapBox = napBox ?: return
+        newSubscription.onu = fiberSubscriptionProvisioningService.enrichOnuFromNapBox(onu, resolvedNapBox)
     }
 
     private fun createSubscriptionEntity(
@@ -335,7 +364,11 @@ class SubscriptionService(
         }
     }
 
-    fun getFreeIp(): Pair<String, IpPool> {
+    fun getFreeIp(hostDeviceId: Int? = null): Pair<String, IpPool> {
+        if (hostDeviceId != null && hostDeviceId > 0) {
+            return subscriptionIpAllocationService.allocateFreeIp(hostDeviceId)
+        }
+
         var availableIp = ""
         var pool: IpPool? = null
         val ipRange = 10..250
@@ -530,9 +563,9 @@ class SubscriptionService(
                 )
             )
 
-            println("‚úÖ Ubicaci√≥n actualizada para suscripci√≥n $subscriptionId: Lat ${location.latitude}, Lng ${location.longitude}")
+            println("‚ˇˇ Ubicaci√≥n actualizada para suscripci√≥n $subscriptionId: Lat ${location.latitude}, Lng ${location.longitude}")
         } catch (e: Exception) {
-            println("‚ùå Error al actualizar ubicaci√≥n para suscripci√≥n $subscriptionId: ${e.message}")
+            println("‚ˇˇ Error al actualizar ubicaci√≥n para suscripci√≥n $subscriptionId: ${e.message}")
             throw Exception("Error al actualizar la ubicaci√≥n: ${e.message}")
         }
     }

@@ -12,4 +12,9 @@ interface IpPoolRepository : JpaRepository<IpPool, Int> {
     @Query("SELECT ip FROM IpPool ip WHERE ip.isEligible = true")
     fun findAllEligiblePools(): List<IpPool>
 
+    @Query(
+        "SELECT ip FROM IpPool ip WHERE ip.isEligible = true AND ip.hostDevice.id = :hostDeviceId"
+    )
+    fun findEligiblePoolsByHostDeviceId(hostDeviceId: Int): List<IpPool>
+
 }

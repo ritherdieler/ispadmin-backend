@@ -16,6 +16,7 @@ data class NapBoxDto(
     val oltId: Int? = null,
     val oltBoard: Int? = null,
     val oltPort: Int? = null,
+    val hostDeviceId: Int? = null,
     val placeName: String?=null,
     val placeId: Int?=null,
 ) : Serializable

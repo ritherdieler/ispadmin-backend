@@ -21,7 +21,10 @@ data class NapBox(
 
     val oltId: Int? = null,
     val oltPort: Int? = null,
-    val oltBoard: Int? = null
+    val oltBoard: Int? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    val hostDevice: NetworkDevice? = null
 ) {
 
     fun toNapBoxWitPlaceDto() = NapBoxDto(
@@ -35,6 +38,7 @@ data class NapBox(
         oltId = oltId,
         oltPort = oltPort,
         oltBoard = oltBoard,
+        hostDeviceId = hostDevice?.id,
         placeName = place!!.name!!,
         placeId = place!!.id
     )
@@ -50,5 +54,6 @@ data class NapBox(
         oltId = oltId,
         oltPort = oltPort,
         oltBoard = oltBoard,
+        hostDeviceId = hostDevice?.id,
     )
 }
