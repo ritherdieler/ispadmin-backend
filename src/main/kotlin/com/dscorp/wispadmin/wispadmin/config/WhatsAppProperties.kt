@@ -11,10 +11,12 @@ class WhatsAppProperties {
     var phoneNumberId: String = ""
     var businessAccountId: String = ""
     var accessToken: String = ""
+        set(value) { field = value.trim() }
     var paymentReminderTemplateName: String = ""
     var paymentReminderTemplateLanguage: String = "es_PE"
     var paymentReminderMode: String = "text"
     var webhookVerifyToken: String = ""
+    var appSecret: String = ""
 
     fun graphApiBaseUrl(): String {
         return "https://graph.facebook.com/$apiVersion"

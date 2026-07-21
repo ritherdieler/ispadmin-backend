@@ -2,14 +2,18 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTestMessageRequest
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
+import com.dscorp.wispadmin.wispadmin.service.WhatsAppWebhookSignatureValidator
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppTestSendResponseDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
@@ -21,8 +25,11 @@ import org.springframework.http.HttpStatus
 class WhatsAppController(
     private val whatsAppService: WhatsAppService,
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
-    private val whatsAppProperties: WhatsAppProperties
+    private val whatsAppProperties: WhatsAppProperties,
+    private val webhookSignatureValidator: WhatsAppWebhookSignatureValidator
 ) {
+
+    private val log = LoggerFactory.getLogger(this::class.java)
 
     @GetMapping("/webhook")
     fun verifyWebhook(
@@ -35,17 +42,24 @@ class WhatsAppController(
             verifyToken == whatsAppProperties.webhookVerifyToken &&
             !challenge.isNullOrBlank()
         ) {
+            log.info("WhatsApp webhook verification succeeded")
             return ResponseEntity.ok(challenge)
         }
 
+        log.warn("WhatsApp webhook verification failed: invalid verify token or mode")
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Invalid verify token")
     }
 
     @PostMapping("/webhook")
     fun receiveWebhook(
-        @RequestBody payload: Map<String, Any?>
+        @RequestBody rawBody: String,
+        @RequestHeader(value = "X-Hub-Signature-256", required = false) signature: String?
     ): ResponseEntity<String> {
-        println("WhatsApp webhook received: $payload")
+        if (!webhookSignatureValidator.isValid(rawBody, signature)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Invalid signature")
+        }
+
+        log.info("WhatsApp webhook received: {}", rawBody.take(500))
         return ResponseEntity.ok("EVENT_RECEIVED")
     }
 
@@ -93,9 +107,9 @@ class WhatsAppController(
     @PostMapping("/test-template-message")
     fun sendTestTemplateMessage(
         @RequestBody request: WhatsAppTemplateTestMessageRequest
-    ): ResponseEntity<String> {
+    ): ResponseEntity<WhatsAppTestSendResponseDto> {
         return try {
-            whatsAppService.sendTemplateMessage(
+            val result = whatsAppService.sendTemplateMessageWithMetaResponse(
                 phoneNumber = request.phoneNumber,
                 templateName = whatsAppProperties.paymentReminderTemplateName,
                 languageCode = whatsAppProperties.paymentReminderTemplateLanguage,
@@ -106,15 +120,42 @@ class WhatsAppController(
                 )
             )
 
-            ResponseEntity.ok("Plantilla enviada correctamente por WhatsApp.")
+            ResponseEntity.ok(
+                WhatsAppTestSendResponseDto(
+                    success = true,
+                    message = "Plantilla enviada correctamente por WhatsApp.",
+                    recipient = result.recipient,
+                    senderPhoneNumberId = result.senderPhoneNumberId,
+                    metaResponse = result.metaResponse,
+                    deliveryHint = "Meta acepto el envio. Revisa WhatsApp del numero destino en el chat de GigaFiberPeru-Mensajes (+51 984 224 137). Si no llega, agrega el numero como destinatario de prueba en Meta Developer Console."
+                )
+            )
         } catch (e: IllegalArgumentException) {
             ResponseEntity
                 .badRequest()
-                .body("No se pudo enviar la plantilla por WhatsApp: ${e.message}")
+                .body(
+                    WhatsAppTestSendResponseDto(
+                        success = false,
+                        message = "No se pudo enviar la plantilla por WhatsApp: ${e.message}",
+                        recipient = null,
+                        senderPhoneNumberId = whatsAppProperties.phoneNumberId,
+                        metaResponse = "",
+                        deliveryHint = ""
+                    )
+                )
         } catch (e: Exception) {
             ResponseEntity
                 .status(500)
-                .body("No se pudo enviar la plantilla por WhatsApp: ${friendlyTemplateErrorMessage(e.message)}")
+                .body(
+                    WhatsAppTestSendResponseDto(
+                        success = false,
+                        message = "No se pudo enviar la plantilla por WhatsApp: ${friendlyTemplateErrorMessage(e.message)}",
+                        recipient = null,
+                        senderPhoneNumberId = whatsAppProperties.phoneNumberId,
+                        metaResponse = e.message ?: "",
+                        deliveryHint = ""
+                    )
+                )
         }
     }
 

@@ -1,29 +1,32 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
-import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
-import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
-import org.springframework.stereotype.Service
-import org.springframework.web.client.RestTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateLanguage
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
+import org.slf4j.LoggerFactory
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpStatusCodeException
+import org.springframework.web.client.RestTemplate
 
 @Service
 class WhatsAppService(
     private val whatsAppProperties: WhatsAppProperties
 ) {
 
+    private val log = LoggerFactory.getLogger(this::class.java)
+
     companion object {
         private val PAYMENT_REMINDER_PARAMETER_NAMES = listOf("customer_name", "amount", "billing_period")
     }
 
-    // Envia un mensaje de texto simple usando WhatsApp Cloud API.
     fun sendTextMessage(
         phoneNumber: String,
         message: String
@@ -32,37 +35,23 @@ class WhatsAppService(
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
 
-        val cleanPhoneNumber = normalizePhoneNumber(phoneNumber)
-
         val body = WhatsAppTextMessageBody(
-            to = cleanPhoneNumber,
+            to = normalizePhoneNumber(phoneNumber),
             text = WhatsAppTextContent(
                 preview_url = false,
                 body = message
             )
         )
 
-        val headers = HttpHeaders()
-        headers.contentType = MediaType.APPLICATION_JSON
-        headers.setBearerAuth(whatsAppProperties.accessToken)
-
-        val request = HttpEntity(body, headers)
-
-        val response = RestTemplate().postForEntity(
-            whatsAppProperties.messagesUrl(),
-            request,
-            String::class.java
-        )
-
-        return response.statusCode.is2xxSuccessful
+        return postToMeta(body).success
     }
 
-    fun sendTemplateMessage(
+    fun sendTemplateMessageWithMetaResponse(
         phoneNumber: String,
         templateName: String,
         languageCode: String,
         parameters: List<String>
-    ): Boolean {
+    ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
@@ -79,15 +68,11 @@ class WhatsAppService(
             throw IllegalArgumentException("La plantilla de recordatorio requiere ${PAYMENT_REMINDER_PARAMETER_NAMES.size} parametros.")
         }
 
-        val cleanPhoneNumber = normalizePhoneNumber(phoneNumber)
-
         val body = WhatsAppTemplateMessageBody(
-            to = cleanPhoneNumber,
+            to = normalizePhoneNumber(phoneNumber),
             template = WhatsAppTemplate(
                 name = templateName,
-                language = WhatsAppTemplateLanguage(
-                    code = languageCode
-                ),
+                language = WhatsAppTemplateLanguage(code = languageCode),
                 components = listOf(
                     WhatsAppTemplateComponent(
                         parameters = parameters.zip(PAYMENT_REMINDER_PARAMETER_NAMES).map { (value, name) ->
@@ -101,22 +86,59 @@ class WhatsAppService(
             )
         )
 
+        return postToMeta(body)
+    }
+
+    fun sendTemplateMessage(
+        phoneNumber: String,
+        templateName: String,
+        languageCode: String,
+        parameters: List<String>
+    ): Boolean {
+        return sendTemplateMessageWithMetaResponse(
+            phoneNumber = phoneNumber,
+            templateName = templateName,
+            languageCode = languageCode,
+            parameters = parameters
+        ).success
+    }
+
+    private fun postToMeta(body: Any): WhatsAppSendResult {
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
-        headers.setBearerAuth(whatsAppProperties.accessToken)
+        headers.setBearerAuth(whatsAppProperties.accessToken.trim())
 
         val request = HttpEntity(body, headers)
 
-        val response = RestTemplate().postForEntity(
-            whatsAppProperties.messagesUrl(),
-            request,
-            String::class.java
-        )
-
-        return response.statusCode.is2xxSuccessful
+        return try {
+            val response = RestTemplate().postForEntity(
+                whatsAppProperties.messagesUrl(),
+                request,
+                String::class.java
+            )
+            val responseBody = response.body ?: ""
+            log.info("WhatsApp Meta API response: status={} body={}", response.statusCode.value(), responseBody)
+            WhatsAppSendResult(
+                success = response.statusCode.is2xxSuccessful,
+                metaResponse = responseBody,
+                recipient = extractRecipient(body),
+                senderPhoneNumberId = whatsAppProperties.phoneNumberId
+            )
+        } catch (ex: HttpStatusCodeException) {
+            val metaError = ex.responseBodyAsString.ifBlank { ex.message ?: "Error desconocido de Meta" }
+            log.error("WhatsApp Meta API error: status={} body={}", ex.statusCode.value(), metaError)
+            throw Exception("Meta API ${ex.statusCode.value()}: $metaError")
+        }
     }
 
-    // Normaliza celulares peruanos al formato que Meta espera: 51999999999.
+    private fun extractRecipient(body: Any): String? {
+        return when (body) {
+            is WhatsAppTextMessageBody -> body.to
+            is WhatsAppTemplateMessageBody -> body.to
+            else -> null
+        }
+    }
+
     private fun normalizePhoneNumber(phoneNumber: String): String {
         val digits = phoneNumber.filter { it.isDigit() }
 
@@ -133,5 +155,3 @@ class WhatsAppService(
         return normalized
     }
 }
-
-
