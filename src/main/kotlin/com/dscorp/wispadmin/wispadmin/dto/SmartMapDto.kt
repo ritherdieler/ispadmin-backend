@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.dto
 
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 data class SmartMapSummaryDto(
     val clients: List<SmartMapClientDto>,
@@ -12,6 +13,7 @@ data class SmartMapSummaryDto(
     val commercialOpportunities: List<CommercialOpportunityDto> = emptyList(),
     val alerts: List<SmartMapAlertDto> = emptyList(),
     val rankings: SmartMapRankingsDto? = null,
+    val tickets: List<AssistanceTicketDto> = emptyList(),
 )
 
 data class SmartMapClientDto(
@@ -32,6 +34,7 @@ data class SmartMapClientDto(
     val place: String?,
     val installationType: String?,
     val locationSource: String = "place_fallback",
+    val facadePhotoUrl: String? = null,
 )
 
 data class SmartMapCollectionRouteStopDto(
@@ -42,6 +45,11 @@ data class SmartMapCollectionRouteStopDto(
     val place: String?,
     val totalDebt: Double,
     val location: GeoLocationDto,
+    val facadePhotoUrl: String? = null,
+    val visitStatus: String? = null,
+    val lastVisitAt: LocalDateTime? = null,
+    val lastVisitComment: String? = null,
+    val distanceFromCollectorMeters: Double? = null,
 )
 
 data class SmartMapCollectionRouteDto(
@@ -64,6 +72,22 @@ data class SmartMapCollectionRouteDto(
     val geometryGeoJson: String? = null,
     val routeType: String = "sector",
     val sectorsIncluded: List<String> = emptyList(),
+    val routeSegments: List<SmartMapCollectionRouteSegmentDto> = emptyList(),
+    val failedSegmentCount: Int = 0,
+)
+
+data class SmartMapCollectionRouteSegmentDto(
+    val fromOrder: Int,
+    val toOrder: Int,
+    val fromClientId: Int? = null,
+    val toClientId: Int? = null,
+    val fromLocation: GeoLocationDto,
+    val toLocation: GeoLocationDto,
+    val path: List<GeoLocationDto>,
+    val distanceMeters: Double,
+    val durationSeconds: Double? = null,
+    val routingStatus: String,
+    val fallbackReason: String? = null,
 )
 
 data class SmartMapCollectionPendingClientDto(
@@ -95,6 +119,81 @@ data class SmartMapRoadRouteDto(
     val durationSeconds: Double? = null,
     val routingStatus: String,
     val geometryGeoJson: String? = null,
+)
+
+data class SmartMapRoadRouteAlternativeDto(
+    val label: String,
+    val path: List<GeoLocationDto>,
+    val distanceMeters: Double,
+    val durationSeconds: Double? = null,
+    val routingStatus: String,
+    val geometryGeoJson: String? = null,
+)
+
+data class SmartMapRoadRouteAlternativesDto(
+    val origin: GeoLocationDto,
+    val destination: GeoLocationDto,
+    val alternatives: List<SmartMapRoadRouteAlternativeDto>,
+)
+
+data class SmartMapNavigationStepDto(
+    val instruction: String,
+    val maneuverType: String,
+    val modifier: String? = null,
+    val distanceMeters: Double,
+    val durationSeconds: Double? = null,
+    val location: GeoLocationDto,
+    val streetName: String? = null,
+)
+
+data class SmartMapNavigationRouteDto(
+    val origin: GeoLocationDto,
+    val destination: GeoLocationDto,
+    val path: List<GeoLocationDto>,
+    val distanceMeters: Double,
+    val durationSeconds: Double? = null,
+    val routingStatus: String,
+    val steps: List<SmartMapNavigationStepDto>,
+)
+
+data class CollectionVisitRequestDto(
+    val clientId: Int,
+    val status: String,
+    val comment: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val routeType: String = "sector",
+    val zoneName: String? = null,
+    val collectorUserId: Int? = null,
+)
+
+data class CollectionVisitLogDto(
+    val id: Int,
+    val subscriptionId: Int?,
+    val clientId: Int,
+    val routeType: String,
+    val zoneName: String?,
+    val collectorUserId: Int?,
+    val status: String,
+    val comment: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val visitedAt: LocalDateTime,
+)
+
+data class SmartMapCollectionRouteRecalculateRequestDto(
+    val place: String? = null,
+    val routeType: String = "sector",
+    val collectorLat: Double,
+    val collectorLng: Double,
+    val collectorAccuracyMeters: Double? = null,
+    val remainingClientIds: List<Int>,
+    val includeRoadGeometry: Boolean = false,
+    val debtPeriod: String? = null,
+    val debtDateFrom: LocalDate? = null,
+    val debtDateTo: LocalDate? = null,
+    /** Solo visitas registradas desde este instante cuentan para visitStatus. */
+    val routeSessionStartedAt: LocalDateTime? = null,
 )
 
 data class SmartMapValidationErrorDto(

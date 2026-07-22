@@ -6,16 +6,18 @@ import org.springframework.stereotype.Component
 @Component
 @ConfigurationProperties(prefix = "smartmap.routing")
 class SmartMapRoutingProperties {
-    var provider: String = "osrm"
-    var osrm: OsrmProperties = OsrmProperties()
+    var mapbox: MapboxProperties = MapboxProperties()
 
-    class OsrmProperties {
-        var baseUrl: String = "https://router.project-osrm.org"
+    class MapboxProperties {
+        var accessToken: String = ""
+        var baseUrl: String = "https://api.mapbox.com/directions/v5"
+        var profile: String = "mapbox/driving"
+        var language: String = "es"
         var timeoutMs: Long = 20_000
-        var maxChunkSize: Int = 18
+        var maxRetries: Int = 2
+        var maxWaypoints: Int = 25
         var maxConcurrent: Int = 2
         var batchDelayMs: Long = 350
-        var maxRetries: Int = 2
         var maxRenderPoints: Int = 4_000
     }
 }

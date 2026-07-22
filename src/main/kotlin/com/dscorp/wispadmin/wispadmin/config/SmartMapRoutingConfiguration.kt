@@ -12,9 +12,9 @@ class SmartMapRoutingConfiguration(
     private val routingProperties: SmartMapRoutingProperties,
 ) {
 
-    @Bean("osrmWebClient")
-    fun osrmWebClient(): WebClient {
-        val timeout = Duration.ofMillis(routingProperties.osrm.timeoutMs)
+    @Bean("mapboxWebClient")
+    fun mapboxWebClient(): WebClient {
+        val timeout = Duration.ofMillis(routingProperties.mapbox.timeoutMs)
         val httpClient = HttpClient.create()
             .responseTimeout(timeout)
 
