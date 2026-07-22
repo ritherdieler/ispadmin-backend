@@ -218,6 +218,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         INNER JOIN FETCH s.place pl
         LEFT JOIN FETCH s.plan
         WHERE p.paid = false
+        AND s.serviceStatus = 'ACTIVE'
         AND LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
         """
     )
@@ -230,6 +231,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH s.place pl
         LEFT JOIN FETCH s.plan
         WHERE p.paid = false
+        AND s.serviceStatus = 'ACTIVE'
         """
     )
     fun findAllDebtors(): List<Subscription>
@@ -242,6 +244,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         INNER JOIN payment p ON p.subscription_id = s.id AND p.paid = false
         INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName)) AND sector.area IS NOT NULL
         WHERE LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
+          AND s.service_status = 'ACTIVE'
           AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
@@ -269,7 +272,9 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         FROM subscription s
         INNER JOIN place pl ON s.place_id = pl.id
         INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(pl.name)) AND sector.area IS NOT NULL
-        WHERE s.location IS NOT NULL
+        INNER JOIN payment p ON p.subscription_id = s.id AND p.paid = false
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
           AND ST_Contains(
@@ -304,7 +309,8 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
             AND p.billing_date_datetime >= :dateFrom
             AND p.billing_date_datetime < :dateToExclusive
         INNER JOIN place pl ON s.place_id = pl.id
-        WHERE s.location IS NOT NULL
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
           AND TRIM(pl.name) != ''
@@ -326,8 +332,19 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH s.plan
         WHERE s.id IN :ids
           AND p.paid = false
+          AND s.serviceStatus = 'ACTIVE'
         """
     )
     fun findDebtorsByIds(@Param("ids") ids: Collection<Int>): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.place
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.payments
+        """
+    )
+    fun findAllWithRelationsForSmartMap(): List<Subscription>
 
 }

@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicketStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.dto.AssistanceTicketDto
 import com.dscorp.wispadmin.wispadmin.dto.GeoLocationDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapClientDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapKpisDto
@@ -20,6 +21,7 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapRankingsDto
 import com.dscorp.wispadmin.wispadmin.data.model.NapBox
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteStopDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionPendingClientDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionPendingSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCoverageCheckDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapNearestNapBoxDto
@@ -53,6 +55,7 @@ class SmartMapService(
     private val commercialOpportunityRepository: CommercialOpportunityRepository,
     private val napBoxRepository: NapBoxRepository,
     private val borneManagementService: BorneManagementService,
+    private val collectionVisitService: CollectionVisitService,
     @Value("\${smartmap.nearCoverageThresholdMeters:500}")
     private val nearCoverageThresholdMeters: Int,
 ) {
@@ -60,7 +63,7 @@ class SmartMapService(
     @Transactional(readOnly = true)
     @Cacheable(
         cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE],
-        key = "{#includeDebt,#includeTickets,#search,#serviceStatuses,#installationType,#place,#plan,#onlyWithDebt,#dateFrom,#dateTo,#dateScope}"
+        key = "{#includeDebt,#includeTickets,#search,#serviceStatuses,#installationType,#place,#plan,#onlyWithDebt,#dateFrom,#dateTo,#dateScope,#view}"
     )
     fun getSummary(
         includeDebt: Boolean = true,
@@ -73,8 +76,10 @@ class SmartMapService(
         onlyWithDebt: Boolean = false,
         dateFrom: LocalDate? = null,
         dateTo: LocalDate? = null,
-        dateScope: String = "subscriptions"
+        dateScope: String = "subscriptions",
+        view: String = "full",
     ): SmartMapSummaryDto {
+        val isLightView = view.equals("light", ignoreCase = true)
         val filterSubscriptionsByDate = dateScope != "tickets"
         val filterTicketsByDate = dateScope == "tickets"
         val hasClientFilters = hasClientFilters(
@@ -86,7 +91,7 @@ class SmartMapService(
             onlyWithDebt = onlyWithDebt
         )
 
-        val filteredSubscriptions = subscriptionRepository.findAll()
+        val filteredSubscriptions = subscriptionRepository.findAllWithRelationsForSmartMap()
             .filter {
                 it.matchesFilters(
                     search = search,
@@ -102,30 +107,57 @@ class SmartMapService(
         val clients = filteredSubscriptions.mapNotNull { it.toSmartMapClient(includeDebt) }
         val unlocatedClients = filteredSubscriptions.count { it.place != null && it.getBestLocation() == null }
 
-        val ticketsByZone = if (includeTickets) {
-            val visibleZones = if (hasClientFilters) {
-                place?.takeIf { it.isNotBlank() }?.let { setOf(normalizeZoneKey(it)) }
-                    ?: clients.map { normalizeZoneKey(it.place ?: DEFAULT_ZONE_NAME) }.toSet()
-            } else {
-                emptySet()
-            }
-
+        val openTicketEntities = if (includeTickets) {
             assistanceTicketRepository.findByStatusIn(
                 listOf(AssistanceTicketStatus.PENDING, AssistanceTicketStatus.ASSIGNED)
             )
-                .filter { ticket -> !hasClientFilters || visibleZones.contains(normalizeZoneKey(ticket.getZoneName())) }
+        } else {
+            emptyList()
+        }
+
+        val visibleTicketZones = if (includeTickets && hasClientFilters) {
+            place?.takeIf { it.isNotBlank() }?.let { setOf(normalizeZoneKey(it)) }
+                ?: clients.map { normalizeZoneKey(it.place ?: DEFAULT_ZONE_NAME) }.toSet()
+        } else {
+            emptySet()
+        }
+
+        val filteredOpenTickets = if (includeTickets) {
+            openTicketEntities
+                .filter { ticket -> !hasClientFilters || visibleTicketZones.contains(normalizeZoneKey(ticket.getZoneName())) }
                 .filter { ticket -> !filterTicketsByDate || ticket.matchesCreatedDate(dateFrom, dateTo) }
+        } else {
+            emptyList()
+        }
+
+        val ticketsByZone = if (includeTickets) {
+            filteredOpenTickets
                 .groupingBy { normalizeZoneKey(it.getZoneName()) }
                 .eachCount()
         } else {
             emptyMap()
         }
 
+        val ticketDtos = filteredOpenTickets.map { it.toSmartMapTicketDto() }
+
         val placeCoordinates = loadPlaceCoordinates()
         val placeAreas = loadPlaceAreas()
         val zoneDisplayNames = loadZoneDisplayNames()
-        val geographicPerformance = dashBoardService.getGeographicPerformanceData()
-        val cancellationsByZone = dashBoardService.getCancellationsByZone()
+        val geographicPerformance = if (isLightView) {
+            GeographicPerformanceResumeDto(
+                clientDensityByPlace = emptyMap(),
+                revenueByPlace = emptyMap(),
+                incidenceRateByPlace = emptyMap(),
+                growthRateByPlace = emptyMap(),
+            )
+        } else {
+            dashBoardService.getGeographicPerformanceData()
+        }
+        val cancellationsByZone = if (isLightView) {
+            emptyMap()
+        } else {
+            dashBoardService.getCancellationsByZone()
+        }
         val zones = buildZones(
             clients,
             ticketsByZone,
@@ -141,10 +173,10 @@ class SmartMapService(
         val totalDebt = if (includeDebt) clients.sumOf { it.totalDebt } else 0.0
 
         val coverageZones = coverageZoneRepository.findAll().map { it.toDto() }
-        val salesLeads = salesLeadMapRepository.findAll().map { it.toDto() }
-        val commercialOpportunities = commercialOpportunityRepository.findAll().map { it.toDto() }
-        val alerts = buildAlerts(zones, coverageZones)
-        val rankings = buildRankings(zones)
+        val salesLeads = if (isLightView) emptyList() else salesLeadMapRepository.findAll().map { it.toDto() }
+        val commercialOpportunities = if (isLightView) emptyList() else commercialOpportunityRepository.findAll().map { it.toDto() }
+        val alerts = if (isLightView) emptyList() else buildAlerts(zones, coverageZones)
+        val rankings = if (isLightView) null else buildRankings(zones)
 
         return SmartMapSummaryDto(
             clients = clients,
@@ -163,6 +195,7 @@ class SmartMapService(
             commercialOpportunities = commercialOpportunities,
             alerts = alerts,
             rankings = rankings,
+            tickets = ticketDtos,
         )
     }
 
@@ -274,6 +307,8 @@ class SmartMapService(
         collectorLatitude: Double,
         collectorLongitude: Double,
         collectorAccuracyMeters: Double? = null,
+        selectedClientIds: Set<Int>? = null,
+        visitSince: LocalDateTime? = null,
     ): SmartMapCollectionRouteDto {
         val normalizedPlace = place.trim()
         if (normalizedPlace.isEmpty()) {
@@ -297,25 +332,24 @@ class SmartMapService(
             subscriptions = sectorDebtors,
             sectorHasPolygon = sectorHasPolygon,
             insidePolygonIds = insidePolygonIds,
+            selectedClientIds = selectedClientIds,
         )
         val eligibleClients = eligibility.clients
         val excludedNoGps = eligibility.excludedNoGps
         val excludedOutsidePolygon = eligibility.excludedOutsidePolygon
         val excludedNoDebt = eligibility.excludedNoDebt
+        val excludedInactive = eligibility.excludedInactive
+        val excludedNotSelected = eligibility.excludedNotSelected
+        val excludedNotFound = eligibility.excludedNotFound
 
         val startPoint = GeoLocationDto(collectorLatitude, collectorLongitude)
         val optimizedStops = optimizeCollectionRoute(startPoint, eligibleClients)
-        val stops = optimizedStops.mapIndexed { index, client ->
-            SmartMapCollectionRouteStopDto(
-                order = index + 1,
-                clientId = client.id,
-                fullName = listOf(client.firstName, client.lastName).filter { it.isNotBlank() }.joinToString(" ").trim(),
-                address = client.address,
-                place = client.place,
-                totalDebt = client.totalDebt,
-                location = client.location,
-            )
-        }
+        val stops = buildCollectionRouteStops(
+            optimizedClients = optimizedStops,
+            collectorLatitude = collectorLatitude,
+            collectorLongitude = collectorLongitude,
+            visitSince = visitSince,
+        )
 
         val path = buildList {
             add(startPoint)
@@ -328,6 +362,9 @@ class SmartMapService(
         if (excludedNoGps > 0) excludedReasons["sin_gps_propio"] = excludedNoGps
         if (excludedOutsidePolygon > 0) excludedReasons["fuera_del_poligono"] = excludedOutsidePolygon
         if (excludedNoDebt > 0) excludedReasons["sin_deuda"] = excludedNoDebt
+        if (excludedInactive > 0) excludedReasons["no_activo"] = excludedInactive
+        if (excludedNotSelected > 0) excludedReasons["no_seleccionado"] = excludedNotSelected
+        if (excludedNotFound > 0) excludedReasons["no_encontrado"] = excludedNotFound
 
         return SmartMapCollectionRouteDto(
             zoneName = normalizedPlace,
@@ -338,7 +375,7 @@ class SmartMapService(
             totalDistanceMeters = totalDistanceMeters,
             totalDebt = totalDebt,
             stopCount = stops.size,
-            excludedCount = excludedNoGps + excludedOutsidePolygon + excludedNoDebt,
+            excludedCount = excludedNoGps + excludedOutsidePolygon + excludedNoDebt + excludedInactive + excludedNotSelected + excludedNotFound,
             excludedReasons = excludedReasons,
             collectorAccuracyMeters = collectorAccuracyMeters,
             sectorHasPolygon = sectorHasPolygon,
@@ -354,6 +391,8 @@ class SmartMapService(
         debtPeriod: String = "LAST_1_MONTH",
         debtDateFrom: LocalDate? = null,
         debtDateTo: LocalDate? = null,
+        selectedClientIds: Set<Int>? = null,
+        visitSince: LocalDateTime? = null,
     ): SmartMapCollectionRouteDto {
         val sweepFilter = resolveSweepDebtFilter(debtPeriod, debtDateFrom, debtDateTo)
         val periodLabel = buildSweepPeriodLabel(sweepFilter)
@@ -368,7 +407,7 @@ class SmartMapService(
             )
         }
 
-        val eligibleClients = resolveEligibleDebtorsForSweep(sweepFilter)
+        val eligibleClients = resolveEligibleDebtorsForSweep(sweepFilter, selectedClientIds)
         if (eligibleClients.isEmpty()) {
             return emptyCollectionRoute(
                 zoneName = "Barrido final ($periodLabel)",
@@ -392,17 +431,12 @@ class SmartMapService(
 
         val startPoint = GeoLocationDto(collectorLatitude, collectorLongitude)
         val optimizedStops = optimizeCollectionSweepRoute(startPoint, eligibleClients)
-        val stops = optimizedStops.mapIndexed { index, client ->
-            SmartMapCollectionRouteStopDto(
-                order = index + 1,
-                clientId = client.id,
-                fullName = listOf(client.firstName, client.lastName).filter { it.isNotBlank() }.joinToString(" ").trim(),
-                address = client.address,
-                place = client.place,
-                totalDebt = client.totalDebt,
-                location = client.location,
-            )
-        }
+        val stops = buildCollectionRouteStops(
+            optimizedClients = optimizedStops,
+            collectorLatitude = collectorLatitude,
+            collectorLongitude = collectorLongitude,
+            visitSince = visitSince,
+        )
 
         val path = buildList {
             add(startPoint)
@@ -418,12 +452,97 @@ class SmartMapService(
             totalDistanceMeters = routeDistanceMeters(path),
             totalDebt = stops.sumOf { it.totalDebt },
             stopCount = stops.size,
-            excludedCount = 0,
+            excludedCount = selectedClientIds?.let { ids -> (ids - eligibleClients.map { it.id }.toSet()).size } ?: 0,
+            excludedReasons = selectedClientIds?.let { ids ->
+                val excludedNotFound = (ids - eligibleClients.map { it.id }.toSet()).size
+                if (excludedNotFound > 0) mapOf("no_encontrado" to excludedNotFound) else emptyMap()
+            } ?: emptyMap(),
             collectorAccuracyMeters = collectorAccuracyMeters,
             sectorHasPolygon = false,
             routeType = "sweep",
             sectorsIncluded = sectorsIncluded,
         )
+    }
+
+    @Transactional(readOnly = true)
+    fun recalculateCollectionRoute(
+        place: String?,
+        routeType: String,
+        collectorLatitude: Double,
+        collectorLongitude: Double,
+        collectorAccuracyMeters: Double? = null,
+        remainingClientIds: List<Int>,
+        debtPeriod: String? = null,
+        debtDateFrom: LocalDate? = null,
+        debtDateTo: LocalDate? = null,
+        visitSince: LocalDateTime? = null,
+    ): SmartMapCollectionRouteDto {
+        val normalizedRouteType = routeType.trim().lowercase()
+        val selectedIds = remainingClientIds.filter { it > 0 }.toSet()
+        if (selectedIds.isEmpty()) {
+            return emptyCollectionRoute(
+                zoneName = place?.trim().orEmpty(),
+                collectorLatitude = collectorLatitude,
+                collectorLongitude = collectorLongitude,
+                collectorAccuracyMeters = collectorAccuracyMeters,
+                routeType = normalizedRouteType,
+            )
+        }
+
+        return if (normalizedRouteType == "sweep") {
+            buildCollectionSweepRoute(
+                collectorLatitude = collectorLatitude,
+                collectorLongitude = collectorLongitude,
+                collectorAccuracyMeters = collectorAccuracyMeters,
+                debtPeriod = debtPeriod ?: "LAST_1_MONTH",
+                debtDateFrom = debtDateFrom,
+                debtDateTo = debtDateTo,
+                selectedClientIds = selectedIds,
+                visitSince = visitSince,
+            )
+        } else {
+            buildCollectionRoute(
+                place = place?.trim().orEmpty(),
+                collectorLatitude = collectorLatitude,
+                collectorLongitude = collectorLongitude,
+                collectorAccuracyMeters = collectorAccuracyMeters,
+                selectedClientIds = selectedIds,
+                visitSince = visitSince,
+            )
+        }
+    }
+
+    private fun buildCollectionRouteStops(
+        optimizedClients: List<SmartMapClientDto>,
+        collectorLatitude: Double,
+        collectorLongitude: Double,
+        visitSince: LocalDateTime? = null,
+    ): List<SmartMapCollectionRouteStopDto> {
+        val clientIds = optimizedClients.map { it.id }
+        val latestVisits = collectionVisitService.getLatestVisitsForClients(clientIds, visitSince)
+
+        return optimizedClients.mapIndexed { index, client ->
+            val visitLog = latestVisits[client.id]
+            SmartMapCollectionRouteStopDto(
+                order = index + 1,
+                clientId = client.id,
+                fullName = listOf(client.firstName, client.lastName).filter { it.isNotBlank() }.joinToString(" ").trim(),
+                address = client.address,
+                place = client.place,
+                totalDebt = client.totalDebt,
+                location = client.location,
+                facadePhotoUrl = client.facadePhotoUrl,
+                visitStatus = CollectionVisitService.mapVisitStatus(visitLog?.status),
+                lastVisitAt = visitLog?.visitedAt,
+                lastVisitComment = visitLog?.comment,
+                distanceFromCollectorMeters = haversineMeters(
+                    collectorLatitude,
+                    collectorLongitude,
+                    client.location.latitude,
+                    client.location.longitude,
+                ),
+            )
+        }
     }
 
     @Transactional(readOnly = true)
@@ -441,7 +560,19 @@ class SmartMapService(
         val sectors = rows.map { it.placeName }.distinct().sorted()
 
         return SmartMapCollectionPendingSummaryDto(
-            clients = emptyList(),
+            clients = rows.map { row ->
+                SmartMapCollectionPendingClientDto(
+                    clientId = row.id,
+                    fullName = listOf(row.firstName, row.lastName)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                        .trim()
+                        .ifBlank { "Cliente ${row.id}" },
+                    place = row.placeName,
+                    totalDebt = row.totalDebt,
+                    markedAt = buildSweepPeriodLabel(sweepFilter),
+                )
+            },
             clientCount = rows.size,
             sectorCount = sectors.size,
             totalDebt = rows.sumOf { it.totalDebt },
@@ -533,8 +664,10 @@ class SmartMapService(
 
     private fun resolveEligibleDebtorsForSweep(
         filter: CollectionSweepDebtFilter,
+        selectedClientIds: Set<Int>? = null,
     ): List<SmartMapClientDto> {
         val eligibleRows = resolveSweepEligibleRows(filter)
+            .filter { row -> selectedClientIds == null || row.id in selectedClientIds }
         if (eligibleRows.isEmpty()) {
             return emptyList()
         }
@@ -599,18 +732,32 @@ class SmartMapService(
         val excludedNoGps: Int = 0,
         val excludedOutsidePolygon: Int = 0,
         val excludedNoDebt: Int = 0,
+        val excludedInactive: Int = 0,
+        val excludedNotSelected: Int = 0,
+        val excludedNotFound: Int = 0,
     )
 
     private fun evaluateCollectionEligibility(
         subscriptions: List<Subscription>,
         sectorHasPolygon: Boolean,
         insidePolygonIds: Set<Int>?,
+        selectedClientIds: Set<Int>? = null,
     ): CollectionEligibilityResult {
         var excludedNoGps = 0
         var excludedOutsidePolygon = 0
         var excludedNoDebt = 0
+        var excludedInactive = 0
+        var excludedNotSelected = 0
+        val loadedIds = subscriptions.mapNotNull { it.id }.toSet()
+        val excludedNotFound = selectedClientIds?.let { (it - loadedIds).size } ?: 0
 
         val clients = subscriptions.mapNotNull { subscription ->
+            val subscriptionId = subscription.id
+            if (selectedClientIds != null && subscriptionId !in selectedClientIds) {
+                excludedNotSelected += 1
+                return@mapNotNull null
+            }
+
             when (
                 val mapped = mapSubscriptionToEligibleClient(
                     subscription = subscription,
@@ -621,6 +768,7 @@ class SmartMapService(
                 null -> {
                     val pendingDebt = subscription.payments.filter { !it.paid }.sumOf { it.amountToPay }
                     when {
+                        subscription.serviceStatus != ServiceStatus.ACTIVE -> excludedInactive += 1
                         pendingDebt <= 0.0 -> excludedNoDebt += 1
                         !subscription.hasOwnGps() -> excludedNoGps += 1
                         sectorHasPolygon && subscription.id !in insidePolygonIds!! -> excludedOutsidePolygon += 1
@@ -636,6 +784,9 @@ class SmartMapService(
             excludedNoGps = excludedNoGps,
             excludedOutsidePolygon = excludedOutsidePolygon,
             excludedNoDebt = excludedNoDebt,
+            excludedInactive = excludedInactive,
+            excludedNotSelected = excludedNotSelected,
+            excludedNotFound = excludedNotFound,
         )
     }
 
@@ -652,6 +803,10 @@ class SmartMapService(
             subscription.payments.filter { !it.paid }.sumOf { it.amountToPay }
         }
         if (pendingDebt <= 0.0) {
+            return null
+        }
+
+        if (subscription.serviceStatus != ServiceStatus.ACTIVE) {
             return null
         }
 
@@ -1183,6 +1338,10 @@ class SmartMapService(
         debtDateFrom: LocalDate,
         debtDateTo: LocalDate,
     ): SmartMapClientDto? {
+        if (serviceStatus != ServiceStatus.ACTIVE) {
+            return null
+        }
+
         val location = getBestLocation() ?: return null
         val pendingPayments = payments.filter { payment ->
             payment.matchesSweepDebtRange(debtDateFrom, debtDateTo)
@@ -1212,6 +1371,7 @@ class SmartMapService(
             place = place?.name,
             installationType = installationType?.name,
             locationSource = if (hasOwnGps()) "client_gps" else "place_fallback",
+            facadePhotoUrl = facadePhotoUrl,
         )
     }
 
@@ -1240,6 +1400,7 @@ class SmartMapService(
             place = place?.name,
             installationType = installationType?.name,
             locationSource = if (hasOwnGps()) "client_gps" else "place_fallback",
+            facadePhotoUrl = facadePhotoUrl,
         )
     }
 
@@ -1555,4 +1716,32 @@ class SmartMapService(
             }
         }
     }
+}
+
+private fun AssistanceTicket.toSmartMapTicketDto(): AssistanceTicketDto {
+    val priorityLabel = when {
+        priority > 5 -> "Alta"
+        priority > 2 -> "Media"
+        else -> "Baja"
+    }
+    return AssistanceTicketDto(
+        id = id,
+        name = subscription?.getFullName() ?: externalCustomerName!!.uppercase(),
+        phone = phone,
+        category = category,
+        description = description,
+        status = status,
+        comments = comments,
+        priority = priorityLabel,
+        createdAt = createdAt,
+        scheduledAt = scheduledAt,
+        assignedAt = assignedAt,
+        resolvedAt = resolvedAt,
+        closedAt = closedAt,
+        assignedTo = if (responsible != null) "${responsible!!.name} ${responsible!!.lastName}" else "",
+        place = subscription?.place?.name ?: placeName,
+        address = subscription?.address,
+        sheetImageUrl = sheetImageUrl,
+        isExternalCustomer = isExternalCustomer,
+    )
 }

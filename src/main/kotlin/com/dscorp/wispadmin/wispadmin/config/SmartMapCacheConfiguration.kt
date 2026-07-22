@@ -22,7 +22,7 @@ class SmartMapCacheConfiguration {
         )
         cacheManager.setCaffeine(
             Caffeine.newBuilder()
-                .expireAfterWrite(60, TimeUnit.SECONDS)
+                .expireAfterWrite(120, TimeUnit.SECONDS)
                 .maximumSize(200)
         )
         return cacheManager

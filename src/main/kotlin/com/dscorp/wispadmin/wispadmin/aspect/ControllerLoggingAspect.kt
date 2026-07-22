@@ -38,7 +38,16 @@ class ControllerLoggingAspect {
         // Method is empty as this is just a Pointcut
     }
 
-    @Around("controllerPointcut()")
+    /**
+     * @Around rompe funciones suspend de Kotlin: proceed() devuelve COROUTINE_SUSPENDED
+     * y la respuesta HTTP queda vacia. Los metodos suspend se registran con Before/AfterReturning.
+     */
+    @Pointcut("execution(* *(.., kotlin.coroutines.Continuation+))")
+    fun kotlinSuspendMethodPointcut() {
+        // Method is empty as this is just a Pointcut
+    }
+
+    @Around("controllerPointcut() && !kotlinSuspendMethodPointcut()")
     @Throws(Throwable::class)
     fun logAround(joinPoint: ProceedingJoinPoint): Any? {
         val methodSignature = joinPoint.signature as MethodSignature
@@ -90,6 +99,52 @@ class ControllerLoggingAspect {
         }
         return result.toString().contains("<500,") || 
                result.toString().contains("<4") // Match 4xx status codes
+    }
+
+    @org.aspectj.lang.annotation.Before("controllerPointcut() && kotlinSuspendMethodPointcut()")
+    fun logSuspendBefore(joinPoint: JoinPoint) {
+        val methodSignature = joinPoint.signature as MethodSignature
+        val className = methodSignature.declaringType.simpleName
+        val methodName = methodSignature.name
+
+        if (shouldSkipLogging(className, methodName)) {
+            return
+        }
+
+        val requestId = getRequestId()
+        val params = buildParameterString(
+            methodSignature.parameterNames,
+            joinPoint.args,
+            methodSignature.method.parameters,
+        )
+        log.info("Controller [{}] - {}.{}({}): Method started (suspend)", requestId, className, methodName, params)
+    }
+
+    @org.aspectj.lang.annotation.AfterReturning(
+        pointcut = "controllerPointcut() && kotlinSuspendMethodPointcut()",
+        returning = "result",
+    )
+    fun logSuspendAfterReturning(joinPoint: JoinPoint, result: Any?) {
+        val methodSignature = joinPoint.signature as MethodSignature
+        val className = methodSignature.declaringType.simpleName
+        val methodName = methodSignature.name
+
+        if (shouldSkipLogging(className, methodName)) {
+            return
+        }
+
+        val requestId = getRequestId()
+        val resultStr = if (result != null) {
+            val resultString = truncateIfNeeded(result.toString())
+            if (isErrorResponseEntity(result)) {
+                "$ANSI_RED$resultString$ANSI_RESET"
+            } else {
+                resultString
+            }
+        } else {
+            "void"
+        }
+        log.info("Controller [{}] - {}.{}: Method completed (suspend). Result: {}", requestId, className, methodName, resultStr)
     }
 
     @AfterThrowing(pointcut = "controllerPointcut()", throwing = "exception")

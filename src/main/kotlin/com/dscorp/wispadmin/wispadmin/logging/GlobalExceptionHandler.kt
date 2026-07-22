@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapValidationErrorDto
 import com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException
+import com.dscorp.wispadmin.wispadmin.service.MapboxDirectionsException
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
@@ -35,6 +36,16 @@ class GlobalExceptionHandler @Autowired constructor(
                 code = ex.code,
                 message = ex.message ?: "Validacion de sector fallida.",
                 sectorName = ex.sectorName,
+            ),
+        )
+    }
+
+    @ExceptionHandler(MapboxDirectionsException::class)
+    fun handleMapboxDirections(ex: MapboxDirectionsException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+            mapOf(
+                "code" to "MAPBOX_DIRECTIONS_ERROR",
+                "message" to (ex.message ?: "Error al consultar Mapbox Directions"),
             ),
         )
     }
