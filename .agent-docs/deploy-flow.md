@@ -4,9 +4,9 @@ Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en 
 
 Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
 
-Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `633c7e1` → release `1.0.3+633c7e1` (2026-07-23). Detalle: [deploy-prod-backend-2026-07-23.md](./deploy-prod-backend-2026-07-23.md).
+Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `32a68e4` → release `1.0.3+32a68e4` (2026-07-23). Detalle CORS: [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md). Deploy previo `633c7e1`: [deploy-prod-backend-2026-07-23.md](./deploy-prod-backend-2026-07-23.md).
 
-Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md) — redeploy pendiente tras merge del fix.
+Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md) — **desplegado** en prod (`1.0.3+32a68e4`); GET 401 con Origin backoffice ya incluye `Access-Control-Allow-Origin`.
 
 ---
 
