@@ -365,6 +365,49 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     ): List<Array<Any>>
 
     @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            sector.name,
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName))
+            AND sector.area IS NOT NULL
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, sector.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRowsInsidePlacePolygon(
+        @Param("placeName") placeName: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
         """
         SELECT DISTINCT s FROM Subscription s
         INNER JOIN FETCH s.payments p

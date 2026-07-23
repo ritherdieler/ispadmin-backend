@@ -8,8 +8,13 @@ import com.dscorp.wispadmin.wispadmin.data.model.OpportunityEvaluationStatus
 import com.dscorp.wispadmin.wispadmin.data.model.OpportunityPriority
 import com.dscorp.wispadmin.wispadmin.data.model.SalesLeadMap
 import com.dscorp.wispadmin.wispadmin.data.model.SalesLeadStatus
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import javax.validation.constraints.Min
+import javax.validation.constraints.NotBlank
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CoverageZoneRequest(
+    @field:NotBlank
     val name: String,
     val coverageType: CoverageType = CoverageType.PARTIAL,
     val status: CoverageStatus = CoverageStatus.ACTIVE,
@@ -29,7 +34,9 @@ data class CoverageZoneRequest(
     )
 }
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class SalesLeadMapRequest(
+    @field:NotBlank
     val referenceName: String,
     val phone: String? = null,
     val sector: String? = null,
@@ -51,10 +58,13 @@ data class SalesLeadMapRequest(
     )
 }
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CommercialOpportunityRequest(
+    @field:NotBlank
     val zoneName: String,
     val priority: OpportunityPriority = OpportunityPriority.MEDIUM,
     val reason: String? = null,
+    @field:Min(0)
     val estimatedClients: Int = 0,
     val evaluationStatus: OpportunityEvaluationStatus = OpportunityEvaluationStatus.PENDING,
     val latitude: Double? = null,

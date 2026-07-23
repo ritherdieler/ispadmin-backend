@@ -1,20 +1,12 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.config.SmartMapCacheConfiguration
-import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.dto.CommercialOpportunityDto
 import com.dscorp.wispadmin.wispadmin.dto.CoverageZoneDto
 import com.dscorp.wispadmin.wispadmin.dto.SalesLeadMapDto
-import com.dscorp.wispadmin.wispadmin.dto.toDto
-import com.dscorp.wispadmin.wispadmin.extensions.toErrorLog
-import com.dscorp.wispadmin.wispadmin.repository.CommercialOpportunityRepository
-import com.dscorp.wispadmin.wispadmin.repository.CoverageZoneRepository
-import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
-import com.dscorp.wispadmin.wispadmin.repository.SalesLeadMapRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.CommercialOpportunityRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.CoverageZoneRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.SalesLeadMapRequest
-import org.springframework.cache.annotation.CacheEvict
+import com.dscorp.wispadmin.wispadmin.smartmap.SmartMapIntelligenceService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -25,238 +17,95 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import javax.validation.Valid
 
 @RestController
 @RequestMapping("/smart-map")
 class SmartMapIntelligenceController(
-    private val coverageZoneRepository: CoverageZoneRepository,
-    private val salesLeadMapRepository: SalesLeadMapRepository,
-    private val commercialOpportunityRepository: CommercialOpportunityRepository,
-    private val errorLogRepository: ErrorLogRepository,
+    private val smartMapIntelligenceService: SmartMapIntelligenceService,
 ) {
 
     @GetMapping("/coverage-zones")
-    fun getCoverageZones(): ResponseEntity<List<CoverageZoneDto>> {
-        return try {
-            ResponseEntity.ok(coverageZoneRepository.findAll().map { it.toDto() })
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(emptyList())
-        }
-    }
+    fun getCoverageZones(): ResponseEntity<List<CoverageZoneDto>> =
+        ResponseEntity.ok(smartMapIntelligenceService.listCoverageZones())
 
     @PostMapping("/coverage-zones")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun createCoverageZone(
-        @RequestBody request: CoverageZoneRequest,
+        @Valid @RequestBody request: CoverageZoneRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<CoverageZoneDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            ResponseEntity.ok(coverageZoneRepository.save(request.toEntity()).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<CoverageZoneDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.createCoverageZone(request, userType))
 
     @PutMapping("/coverage-zones/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun updateCoverageZone(
         @PathVariable id: Int,
-        @RequestBody request: CoverageZoneRequest,
+        @Valid @RequestBody request: CoverageZoneRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<CoverageZoneDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            val existing = coverageZoneRepository.findById(id).orElse(null)
-                ?: return ResponseEntity.notFound().build()
-            val updated = existing.copy(
-                name = request.name.trim(),
-                coverageType = request.coverageType,
-                status = request.status,
-                latitude = request.latitude,
-                longitude = request.longitude,
-                notes = request.notes?.trim(),
-                geometryGeoJson = request.geometryGeoJson?.trim()?.takeIf { it.isNotEmpty() },
-            )
-            ResponseEntity.ok(coverageZoneRepository.save(updated).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<CoverageZoneDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.updateCoverageZone(id, request, userType))
 
     @DeleteMapping("/coverage-zones/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun deleteCoverageZone(
         @PathVariable id: Int,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<Void> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).build()
-        return try {
-            if (!coverageZoneRepository.existsById(id)) {
-                return ResponseEntity.notFound().build()
-            }
-            coverageZoneRepository.deleteById(id)
-            ResponseEntity.ok().build()
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).build()
-        }
+        smartMapIntelligenceService.deleteCoverageZone(id, userType)
+        return ResponseEntity.ok().build()
     }
 
     @GetMapping("/sales-leads")
-    fun getSalesLeads(): ResponseEntity<List<SalesLeadMapDto>> {
-        return try {
-            ResponseEntity.ok(salesLeadMapRepository.findAll().map { it.toDto() })
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(emptyList())
-        }
-    }
+    fun getSalesLeads(): ResponseEntity<List<SalesLeadMapDto>> =
+        ResponseEntity.ok(smartMapIntelligenceService.listSalesLeads())
 
     @PostMapping("/sales-leads")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun createSalesLead(
-        @RequestBody request: SalesLeadMapRequest,
+        @Valid @RequestBody request: SalesLeadMapRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<SalesLeadMapDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            ResponseEntity.ok(salesLeadMapRepository.save(request.toEntity()).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<SalesLeadMapDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.createSalesLead(request, userType))
 
     @PutMapping("/sales-leads/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun updateSalesLead(
         @PathVariable id: Int,
-        @RequestBody request: SalesLeadMapRequest,
+        @Valid @RequestBody request: SalesLeadMapRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<SalesLeadMapDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            val existing = salesLeadMapRepository.findById(id).orElse(null)
-                ?: return ResponseEntity.notFound().build()
-            val updated = existing.copy(
-                referenceName = request.referenceName.trim(),
-                phone = request.phone?.trim(),
-                sector = request.sector?.trim(),
-                latitude = request.latitude,
-                longitude = request.longitude,
-                source = request.source?.trim(),
-                leadStatus = request.leadStatus,
-                notes = request.notes?.trim(),
-            )
-            ResponseEntity.ok(salesLeadMapRepository.save(updated).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<SalesLeadMapDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.updateSalesLead(id, request, userType))
 
     @DeleteMapping("/sales-leads/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun deleteSalesLead(
         @PathVariable id: Int,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<Void> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).build()
-        return try {
-            if (!salesLeadMapRepository.existsById(id)) {
-                return ResponseEntity.notFound().build()
-            }
-            salesLeadMapRepository.deleteById(id)
-            ResponseEntity.ok().build()
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).build()
-        }
+        smartMapIntelligenceService.deleteSalesLead(id, userType)
+        return ResponseEntity.ok().build()
     }
 
     @GetMapping("/commercial-opportunities")
-    fun getCommercialOpportunities(): ResponseEntity<List<CommercialOpportunityDto>> {
-        return try {
-            ResponseEntity.ok(commercialOpportunityRepository.findAll().map { it.toDto() })
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(emptyList())
-        }
-    }
+    fun getCommercialOpportunities(): ResponseEntity<List<CommercialOpportunityDto>> =
+        ResponseEntity.ok(smartMapIntelligenceService.listCommercialOpportunities())
 
     @PostMapping("/commercial-opportunities")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun createCommercialOpportunity(
-        @RequestBody request: CommercialOpportunityRequest,
+        @Valid @RequestBody request: CommercialOpportunityRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<CommercialOpportunityDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            ResponseEntity.ok(commercialOpportunityRepository.save(request.toEntity()).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<CommercialOpportunityDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.createCommercialOpportunity(request, userType))
 
     @PutMapping("/commercial-opportunities/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun updateCommercialOpportunity(
         @PathVariable id: Int,
-        @RequestBody request: CommercialOpportunityRequest,
+        @Valid @RequestBody request: CommercialOpportunityRequest,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<CommercialOpportunityDto> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).body(null)
-        return try {
-            val existing = commercialOpportunityRepository.findById(id).orElse(null)
-                ?: return ResponseEntity.notFound().build()
-            val updated = existing.copy(
-                zoneName = request.zoneName.trim(),
-                priority = request.priority,
-                reason = request.reason?.trim(),
-                estimatedClients = request.estimatedClients.coerceAtLeast(0),
-                evaluationStatus = request.evaluationStatus,
-                latitude = request.latitude,
-                longitude = request.longitude,
-                notes = request.notes?.trim(),
-            )
-            ResponseEntity.ok(commercialOpportunityRepository.save(updated).toDto())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(null)
-        }
-    }
+    ): ResponseEntity<CommercialOpportunityDto> =
+        ResponseEntity.ok(smartMapIntelligenceService.updateCommercialOpportunity(id, request, userType))
 
     @DeleteMapping("/commercial-opportunities/{id}")
-    @CacheEvict(cacheNames = [SmartMapCacheConfiguration.SMART_MAP_SUMMARY_CACHE, SmartMapCacheConfiguration.SMART_MAP_SUGGESTIONS_CACHE], allEntries = true)
     fun deleteCommercialOpportunity(
         @PathVariable id: Int,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<Void> {
-        if (!canManageIntelligence(userType)) return ResponseEntity.status(403).build()
-        return try {
-            if (!commercialOpportunityRepository.existsById(id)) {
-                return ResponseEntity.notFound().build()
-            }
-            commercialOpportunityRepository.deleteById(id)
-            ResponseEntity.ok().build()
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).build()
-        }
-    }
-
-    // Solo ADMIN y SALES pueden gestionar la inteligencia comercial territorial.
-    private fun canManageIntelligence(userType: String?): Boolean {
-        val normalized = userType?.trim()?.uppercase() ?: return true
-        return normalized in INTELLIGENCE_MANAGER_ROLES
-    }
-
-    companion object {
-        private val INTELLIGENCE_MANAGER_ROLES = setOf("ADMIN", "SALES")
+        smartMapIntelligenceService.deleteCommercialOpportunity(id, userType)
+        return ResponseEntity.ok().build()
     }
 }

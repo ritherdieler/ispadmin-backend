@@ -1,8 +1,13 @@
 package com.dscorp.wispadmin.wispadmin.dto
 
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import java.time.LocalDate
 import java.time.LocalDateTime
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.NotEmpty
+import javax.validation.constraints.NotNull
+import javax.validation.constraints.Positive
 
 data class SmartMapSummaryDto(
     val clients: List<SmartMapClientDto>,
@@ -108,6 +113,15 @@ data class SmartMapCollectionPendingSummaryDto(
     val debtDateFrom: String? = null,
     val debtDateTo: String? = null,
     val periodLabel: String = "",
+    val place: String? = null,
+)
+
+data class SmartMapCollectionPlaceDto(
+    val id: Int,
+    val name: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val areaGeoJson: String,
 )
 
 data class SmartMapRoadRouteDto(
@@ -146,6 +160,19 @@ data class SmartMapNavigationStepDto(
     val streetName: String? = null,
 )
 
+data class SmartMapVoiceInstructionDto(
+    val distanceAlongGeometry: Double,
+    val announcement: String,
+)
+
+data class SmartMapBannerInstructionDto(
+    val distanceAlongGeometry: Double,
+    val primaryText: String,
+    val secondaryText: String? = null,
+    val type: String? = null,
+    val modifier: String? = null,
+)
+
 data class SmartMapNavigationRouteDto(
     val origin: GeoLocationDto,
     val destination: GeoLocationDto,
@@ -154,10 +181,18 @@ data class SmartMapNavigationRouteDto(
     val durationSeconds: Double? = null,
     val routingStatus: String,
     val steps: List<SmartMapNavigationStepDto>,
+    val voiceInstructions: List<SmartMapVoiceInstructionDto> = emptyList(),
+    val bannerInstructions: List<SmartMapBannerInstructionDto> = emptyList(),
+    val congestion: List<String> = emptyList(),
+    val durationAnnotations: List<Double> = emptyList(),
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CollectionVisitRequestDto(
+    @field:NotNull
+    @field:Positive
     val clientId: Int,
+    @field:NotBlank
     val status: String,
     val comment: String? = null,
     val latitude: Double? = null,
@@ -181,18 +216,22 @@ data class CollectionVisitLogDto(
     val visitedAt: LocalDateTime,
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class SmartMapCollectionRouteRecalculateRequestDto(
     val place: String? = null,
     val routeType: String = "sector",
+    @field:NotNull
     val collectorLat: Double,
+    @field:NotNull
     val collectorLng: Double,
     val collectorAccuracyMeters: Double? = null,
+    @field:NotNull
+    @field:NotEmpty
     val remainingClientIds: List<Int>,
     val includeRoadGeometry: Boolean = false,
     val debtPeriod: String? = null,
     val debtDateFrom: LocalDate? = null,
     val debtDateTo: LocalDate? = null,
-    /** Solo visitas registradas desde este instante cuentan para visitStatus. */
     val routeSessionStartedAt: LocalDateTime? = null,
 )
 

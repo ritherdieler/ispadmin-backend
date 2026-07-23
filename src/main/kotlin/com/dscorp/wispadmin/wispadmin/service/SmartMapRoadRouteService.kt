@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.wispadmin.config.SmartMapRoutingProperties
 import com.dscorp.wispadmin.wispadmin.dto.GeoLocationDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapBannerInstructionDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteSegmentDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapNavigationRouteDto
@@ -8,12 +10,14 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapNavigationStepDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativesDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativeDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapVoiceInstructionDto
 import org.springframework.stereotype.Service
 
 @Service
 class SmartMapRoadRouteService(
     private val sectorValidationService: SectorValidationService,
     private val roadRoutingService: RoadRoutingService,
+    private val routingProperties: SmartMapRoutingProperties,
 ) {
 
     suspend fun buildRoadRoute(
@@ -54,8 +58,21 @@ class SmartMapRoadRouteService(
     suspend fun buildNavigationRoute(
         origin: GeoLocationDto,
         destination: GeoLocationDto,
+        destinationName: String? = null,
+        avoidManeuverRadius: Int? = null,
+        inMotion: Boolean = false,
     ): SmartMapNavigationRouteDto {
-        val result = roadRoutingService.fetchRouteWithSteps(origin, destination)
+        val resolvedAvoidRadius = when {
+            avoidManeuverRadius != null && avoidManeuverRadius > 0 -> avoidManeuverRadius
+            inMotion -> routingProperties.mapbox.avoidManeuverRadiusMeters
+            else -> null
+        }
+        val result = roadRoutingService.fetchRouteWithSteps(
+            from = origin,
+            to = destination,
+            destinationName = destinationName,
+            avoidManeuverRadiusMeters = resolvedAvoidRadius,
+        )
         return SmartMapNavigationRouteDto(
             origin = origin,
             destination = destination,
@@ -74,6 +91,23 @@ class SmartMapRoadRouteService(
                     streetName = step.streetName,
                 )
             },
+            voiceInstructions = result.voiceInstructions.map { instruction ->
+                SmartMapVoiceInstructionDto(
+                    distanceAlongGeometry = instruction.distanceAlongGeometry,
+                    announcement = instruction.announcement,
+                )
+            },
+            bannerInstructions = result.bannerInstructions.map { instruction ->
+                SmartMapBannerInstructionDto(
+                    distanceAlongGeometry = instruction.distanceAlongGeometry,
+                    primaryText = instruction.primaryText,
+                    secondaryText = instruction.secondaryText,
+                    type = instruction.type,
+                    modifier = instruction.modifier,
+                )
+            },
+            congestion = result.congestion,
+            durationAnnotations = result.durationAnnotations,
         )
     }
 
