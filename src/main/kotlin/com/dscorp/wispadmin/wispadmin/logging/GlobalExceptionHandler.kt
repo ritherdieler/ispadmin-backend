@@ -13,13 +13,16 @@ import com.dscorp.wispadmin.wispadmin.service.MapboxDirectionsException
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.multipart.MaxUploadSizeExceededException
+import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 import java.util.*
 import javax.servlet.http.HttpServletRequest
@@ -56,10 +59,57 @@ class GlobalExceptionHandler @Autowired constructor(
 
     @ExceptionHandler(MapboxDirectionsException::class)
     fun handleMapboxDirections(ex: MapboxDirectionsException): ResponseEntity<Map<String, String>> {
+        val detail = buildString {
+            append(ex.message ?: "Error al consultar Mapbox Directions")
+            val cause = ex.cause
+            if (cause != null) {
+                append(" | cause=")
+                append(cause.javaClass.simpleName)
+                append(": ")
+                append(cause.message)
+            }
+        }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
             mapOf(
                 "code" to "MAPBOX_DIRECTIONS_ERROR",
-                "message" to (ex.message ?: "Error al consultar Mapbox Directions"),
+                "message" to detail,
+            ),
+        )
+    }
+
+    @ExceptionHandler(IllegalArgumentException::class)
+    fun handleIllegalArgument(ex: IllegalArgumentException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.badRequest().body(
+            mapOf(
+                "code" to "BAD_REQUEST",
+                "message" to (ex.message ?: "Solicitud invalida"),
+            ),
+        )
+    }
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleResponseStatus(ex: ResponseStatusException): ResponseEntity<Map<String, Any?>> {
+        return ResponseEntity.status(ex.status).body(
+            mapOf(
+                "status" to ex.status.value(),
+                "error" to ex.status.reasonPhrase,
+                "message" to ex.reason,
+            ),
+        )
+    }
+
+    override fun handleMethodArgumentNotValid(
+        ex: MethodArgumentNotValidException,
+        headers: HttpHeaders,
+        status: HttpStatus,
+        request: WebRequest,
+    ): ResponseEntity<Any> {
+        val errors = ex.bindingResult.fieldErrors.associate { it.field to (it.defaultMessage ?: "invalido") }
+        return ResponseEntity.badRequest().body(
+            mapOf(
+                "code" to "VALIDATION_ERROR",
+                "message" to "Datos de entrada invalidos",
+                "errors" to errors,
             ),
         )
     }
@@ -197,4 +247,4 @@ class GlobalExceptionHandler @Autowired constructor(
             else -> Modules.GENERAL.name
         }
     }
-} 
+}

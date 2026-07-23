@@ -1,26 +1,26 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
-import com.dscorp.wispadmin.wispadmin.dto.GeoLocationDto
-import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteDto
-import com.dscorp.wispadmin.wispadmin.dto.SmartMapCoverageCheckDto
-import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionPendingSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.CollectionVisitLogDto
 import com.dscorp.wispadmin.wispadmin.dto.CollectionVisitRequestDto
+import com.dscorp.wispadmin.wispadmin.dto.GeoLocationDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionRouteRecalculateRequestDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionPendingSummaryDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCollectionPlaceDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCoverageCheckDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapNavigationRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativesDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapSuggestionDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapSummaryDto
-import com.dscorp.wispadmin.wispadmin.extensions.toErrorLog
-import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.service.CollectionVisitService
-import com.dscorp.wispadmin.wispadmin.service.SectorValidationService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapRoadRouteService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapService
+import com.dscorp.wispadmin.wispadmin.smartmap.SmartMapAccessPolicy
+import kotlinx.coroutines.runBlocking
 import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -28,9 +28,10 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDate
 import java.time.LocalDateTime
-import kotlinx.coroutines.runBlocking
+import javax.validation.Valid
 
 @RestController
 @RequestMapping("/smart-map")
@@ -38,8 +39,6 @@ class SmartMapController(
     private val smartMapService: SmartMapService,
     private val smartMapRoadRouteService: SmartMapRoadRouteService,
     private val collectionVisitService: CollectionVisitService,
-    private val sectorValidationService: SectorValidationService,
-    private val errorLogRepository: ErrorLogRepository,
 ) {
 
     @GetMapping("/summary")
@@ -58,42 +57,27 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "subscriptions") dateScope: String,
         @RequestParam(required = false, defaultValue = "full") view: String,
     ): ResponseEntity<SmartMapSummaryDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            val effectiveIncludeDebt = includeDebt && normalizedType !in DEBT_RESTRICTED_ROLES
-            val effectiveIncludeTickets = includeTickets && normalizedType !in TICKET_RESTRICTED_ROLES
-            ResponseEntity.ok(
-                smartMapService.getSummary(
-                    includeDebt = effectiveIncludeDebt,
-                    includeTickets = effectiveIncludeTickets,
-                    search = search,
-                    serviceStatuses = serviceStatuses,
-                    installationType = installationType,
-                    place = place,
-                    plan = plan,
-                    onlyWithDebt = onlyWithDebt,
-                    dateFrom = dateFrom,
-                    dateTo = dateTo,
-                    dateScope = dateScope,
-                    view = view,
-                ),
-            )
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
-        }
+        return ResponseEntity.ok(
+            smartMapService.getSummary(
+                includeDebt = includeDebt && SmartMapAccessPolicy.canViewDebt(userType),
+                includeTickets = includeTickets && SmartMapAccessPolicy.canViewTickets(userType),
+                search = search,
+                serviceStatuses = serviceStatuses,
+                installationType = installationType,
+                place = place,
+                plan = plan,
+                onlyWithDebt = onlyWithDebt,
+                dateFrom = dateFrom,
+                dateTo = dateTo,
+                dateScope = dateScope,
+                view = view,
+            ),
+        )
     }
 
     @GetMapping("/suggestions")
-    fun getSuggestions(): ResponseEntity<List<SmartMapSuggestionDto>> {
-        return try {
-            ResponseEntity.ok(smartMapService.getSuggestions())
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            ResponseEntity.status(500).body(emptyList())
-        }
-    }
+    fun getSuggestions(): ResponseEntity<List<SmartMapSuggestionDto>> =
+        ResponseEntity.ok(smartMapService.getSuggestions())
 
     @GetMapping("/road-route")
     fun getRoadRoute(
@@ -102,15 +86,13 @@ class SmartMapController(
         @RequestParam originLongitude: Double,
         @RequestParam destinationLatitude: Double,
         @RequestParam destinationLongitude: Double,
-    ): ResponseEntity<SmartMapRoadRouteDto> {
-        return ResponseEntity.ok(
-            runBlocking {
-                smartMapRoadRouteService.buildRoadRoute(
-                    sector = sector,
-                    origin = GeoLocationDto(originLatitude, originLongitude),
-                    destination = GeoLocationDto(destinationLatitude, destinationLongitude),
-                )
-            },
+    ): ResponseEntity<SmartMapRoadRouteDto> = runBlocking {
+        ResponseEntity.ok(
+            smartMapRoadRouteService.buildRoadRoute(
+                sector = sector,
+                origin = GeoLocationDto(originLatitude, originLongitude),
+                destination = GeoLocationDto(destinationLatitude, destinationLongitude),
+            ),
         )
     }
 
@@ -121,15 +103,13 @@ class SmartMapController(
         @RequestParam destLat: Double,
         @RequestParam destLng: Double,
         @RequestParam(required = false, defaultValue = "3") count: Int,
-    ): ResponseEntity<SmartMapRoadRouteAlternativesDto> {
-        return ResponseEntity.ok(
-            runBlocking {
-                smartMapRoadRouteService.buildRoadRouteAlternatives(
-                    origin = GeoLocationDto(originLat, originLng),
-                    destination = GeoLocationDto(destLat, destLng),
-                    count = count,
-                )
-            },
+    ): ResponseEntity<SmartMapRoadRouteAlternativesDto> = runBlocking {
+        ResponseEntity.ok(
+            smartMapRoadRouteService.buildRoadRouteAlternatives(
+                origin = GeoLocationDto(originLat, originLng),
+                destination = GeoLocationDto(destLat, destLng),
+                count = count,
+            ),
         )
     }
 
@@ -139,79 +119,57 @@ class SmartMapController(
         @RequestParam originLng: Double,
         @RequestParam destLat: Double,
         @RequestParam destLng: Double,
-    ): ResponseEntity<SmartMapNavigationRouteDto> {
-        return ResponseEntity.ok(
-            runBlocking {
-                smartMapRoadRouteService.buildNavigationRoute(
-                    origin = GeoLocationDto(originLat, originLng),
-                    destination = GeoLocationDto(destLat, destLng),
-                )
-            },
+        @RequestParam(required = false) destinationName: String?,
+        @RequestParam(required = false) avoidManeuverRadius: Int?,
+        @RequestParam(required = false, defaultValue = "false") inMotion: Boolean,
+    ): ResponseEntity<SmartMapNavigationRouteDto> = runBlocking {
+        ResponseEntity.ok(
+            smartMapRoadRouteService.buildNavigationRoute(
+                origin = GeoLocationDto(originLat, originLng),
+                destination = GeoLocationDto(destLat, destLng),
+                destinationName = destinationName,
+                avoidManeuverRadius = avoidManeuverRadius,
+                inMotion = inMotion,
+            ),
         )
     }
 
     @PostMapping("/collection-route/recalculate")
     fun recalculateCollectionRoute(
-        @RequestBody request: SmartMapCollectionRouteRecalculateRequestDto,
+        @Valid @RequestBody request: SmartMapCollectionRouteRecalculateRequestDto,
         @RequestParam(required = false) userType: String?,
-    ): ResponseEntity<SmartMapCollectionRouteDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(null)
-            }
+    ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
+        requireDebtAccess(userType)
 
-            val route = smartMapService.recalculateCollectionRoute(
-                place = request.place,
-                routeType = request.routeType,
-                collectorLatitude = request.collectorLat,
-                collectorLongitude = request.collectorLng,
-                collectorAccuracyMeters = request.collectorAccuracyMeters,
-                remainingClientIds = request.remainingClientIds,
-                debtPeriod = request.debtPeriod,
-                debtDateFrom = request.debtDateFrom,
-                debtDateTo = request.debtDateTo,
-                visitSince = request.routeSessionStartedAt,
-            )
+        val route = smartMapService.recalculateCollectionRoute(
+            place = request.place,
+            routeType = request.routeType,
+            collectorLatitude = request.collectorLat,
+            collectorLongitude = request.collectorLng,
+            collectorAccuracyMeters = request.collectorAccuracyMeters,
+            remainingClientIds = request.remainingClientIds,
+            debtPeriod = request.debtPeriod,
+            debtDateFrom = request.debtDateFrom,
+            debtDateTo = request.debtDateTo,
+            visitSince = request.routeSessionStartedAt,
+        )
 
-            val enrichedRoute = if (request.includeRoadGeometry && route.stopCount > 0) {
-                runBlocking { smartMapRoadRouteService.enrichCollectionRoute(route) }
-            } else {
-                route
-            }
-
-            ResponseEntity.ok(enrichedRoute)
-        } catch (e: IllegalArgumentException) {
-            ResponseEntity.status(400).body(null)
-        } catch (e: Exception) {
-            if (e is com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException) {
-                throw e
-            }
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
+        val enrichedRoute = if (request.includeRoadGeometry && route.stopCount > 0) {
+            smartMapRoadRouteService.enrichCollectionRoute(route)
+        } else {
+            route
         }
+
+        ResponseEntity.ok(enrichedRoute)
     }
 
     @PostMapping("/collection-visit")
     fun registerCollectionVisit(
-        @RequestBody request: CollectionVisitRequestDto,
+        @Valid @RequestBody request: CollectionVisitRequestDto,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<CollectionVisitLogDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(null)
-            }
-
-            ResponseEntity.ok(collectionVisitService.registerVisit(request))
-        } catch (e: IllegalArgumentException) {
-            ResponseEntity.status(400).body(null)
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
-        }
+        requireDebtAccess(userType)
+        return ResponseEntity.ok(collectionVisitService.registerVisit(request))
     }
 
     @GetMapping("/collection-visit/recent")
@@ -219,18 +177,8 @@ class SmartMapController(
         @RequestParam clientId: Int,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<List<CollectionVisitLogDto>> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(emptyList())
-            }
-
-            ResponseEntity.ok(collectionVisitService.getRecentVisits(clientId))
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(emptyList())
-        }
+        requireDebtAccess(userType)
+        return ResponseEntity.ok(collectionVisitService.getRecentVisits(clientId))
     }
 
     @GetMapping("/collection-route")
@@ -243,37 +191,25 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "false") includeRoadGeometry: Boolean,
         @RequestParam(required = false) selectedClientIds: String?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) routeSessionStartedAt: LocalDateTime?,
-    ): ResponseEntity<SmartMapCollectionRouteDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(null)
-            }
+    ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
+        requireDebtAccess(userType)
 
-            val route = smartMapService.buildCollectionRoute(
-                place = place,
-                collectorLatitude = collectorLatitude,
-                collectorLongitude = collectorLongitude,
-                collectorAccuracyMeters = collectorAccuracyMeters,
-                selectedClientIds = parseSelectedClientIds(selectedClientIds),
-                visitSince = routeSessionStartedAt,
-            )
+        val route = smartMapService.buildCollectionRoute(
+            place = place,
+            collectorLatitude = collectorLatitude,
+            collectorLongitude = collectorLongitude,
+            collectorAccuracyMeters = collectorAccuracyMeters,
+            selectedClientIds = parseSelectedClientIds(selectedClientIds),
+            visitSince = routeSessionStartedAt,
+        )
 
-            val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
-                runBlocking { smartMapRoadRouteService.enrichCollectionRoute(route) }
-            } else {
-                route
-            }
-
-            ResponseEntity.ok(enrichedRoute)
-        } catch (e: Exception) {
-            if (e is com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException) {
-                throw e
-            }
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
+        val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
+            smartMapRoadRouteService.enrichCollectionRoute(route)
+        } else {
+            route
         }
+
+        ResponseEntity.ok(enrichedRoute)
     }
 
     @GetMapping("/collection-sweep-route")
@@ -284,45 +220,33 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "LAST_1_MONTH") debtPeriod: String,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateFrom: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateTo: LocalDate?,
+        @RequestParam(required = false) place: String?,
         @RequestParam(required = false) userType: String?,
         @RequestParam(required = false, defaultValue = "false") includeRoadGeometry: Boolean,
         @RequestParam(required = false) selectedClientIds: String?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) routeSessionStartedAt: LocalDateTime?,
-    ): ResponseEntity<SmartMapCollectionRouteDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(null)
-            }
+    ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
+        requireDebtAccess(userType)
 
-            val route = smartMapService.buildCollectionSweepRoute(
-                collectorLatitude = collectorLatitude,
-                collectorLongitude = collectorLongitude,
-                collectorAccuracyMeters = collectorAccuracyMeters,
-                debtPeriod = debtPeriod,
-                debtDateFrom = debtDateFrom,
-                debtDateTo = debtDateTo,
-                selectedClientIds = parseSelectedClientIds(selectedClientIds),
-                visitSince = routeSessionStartedAt,
-            )
+        val route = smartMapService.buildCollectionSweepRoute(
+            collectorLatitude = collectorLatitude,
+            collectorLongitude = collectorLongitude,
+            collectorAccuracyMeters = collectorAccuracyMeters,
+            debtPeriod = debtPeriod,
+            debtDateFrom = debtDateFrom,
+            debtDateTo = debtDateTo,
+            selectedClientIds = parseSelectedClientIds(selectedClientIds),
+            visitSince = routeSessionStartedAt,
+            place = place,
+        )
 
-            val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
-                runBlocking { smartMapRoadRouteService.enrichCollectionRoute(route) }
-            } else {
-                route
-            }
-
-            ResponseEntity.ok(enrichedRoute)
-        } catch (e: IllegalArgumentException) {
-            ResponseEntity.status(400).body(null)
-        } catch (e: Exception) {
-            if (e is com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException) {
-                throw e
-            }
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
+        val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
+            smartMapRoadRouteService.enrichCollectionRoute(route)
+        } else {
+            route
         }
+
+        ResponseEntity.ok(enrichedRoute)
     }
 
     @GetMapping("/collection-pending")
@@ -330,28 +254,26 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "LAST_1_MONTH") debtPeriod: String,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateFrom: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateTo: LocalDate?,
+        @RequestParam(required = false) place: String?,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<SmartMapCollectionPendingSummaryDto> {
-        return try {
-            val normalizedType = userType?.trim()?.uppercase()
-            if (normalizedType in DEBT_RESTRICTED_ROLES) {
-                return ResponseEntity.status(403).body(null)
-            }
+        requireDebtAccess(userType)
+        return ResponseEntity.ok(
+            smartMapService.getCollectionSweepPreview(
+                debtPeriod = debtPeriod,
+                debtDateFrom = debtDateFrom,
+                debtDateTo = debtDateTo,
+                place = place,
+            ),
+        )
+    }
 
-            ResponseEntity.ok(
-                smartMapService.getCollectionSweepPreview(
-                    debtPeriod = debtPeriod,
-                    debtDateFrom = debtDateFrom,
-                    debtDateTo = debtDateTo,
-                ),
-            )
-        } catch (e: IllegalArgumentException) {
-            ResponseEntity.status(400).body(null)
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
-        }
+    @GetMapping("/collection-places")
+    fun listCollectionPlaces(
+        @RequestParam(required = false) userType: String?,
+    ): ResponseEntity<List<SmartMapCollectionPlaceDto>> {
+        requireDebtAccess(userType)
+        return ResponseEntity.ok(smartMapService.listCollectionPlaces())
     }
 
     @GetMapping("/coverage-check")
@@ -359,26 +281,22 @@ class SmartMapController(
         @RequestParam latitude: Double,
         @RequestParam longitude: Double,
         @RequestParam(required = false) assignedPlace: String?,
-    ): ResponseEntity<SmartMapCoverageCheckDto> {
-        return try {
-            ResponseEntity.ok(
-                smartMapService.checkCoverageAtLocation(
-                    latitude = latitude,
-                    longitude = longitude,
-                    assignedPlace = assignedPlace,
-                ),
-            )
-        } catch (e: Exception) {
-            errorLogRepository.save(e.toErrorLog(Modules.DASHBOARD))
-            e.printStackTrace()
-            ResponseEntity.status(500).body(null)
+    ): ResponseEntity<SmartMapCoverageCheckDto> =
+        ResponseEntity.ok(
+            smartMapService.checkCoverageAtLocation(
+                latitude = latitude,
+                longitude = longitude,
+                assignedPlace = assignedPlace,
+            ),
+        )
+
+    private fun requireDebtAccess(userType: String?) {
+        if (!SmartMapAccessPolicy.canViewDebt(userType)) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN)
         }
     }
 
     companion object {
-        private val DEBT_RESTRICTED_ROLES = setOf("TECHNICIAN", "SALES")
-        private val TICKET_RESTRICTED_ROLES = setOf("ACCOUNTANT", "SALES")
-
         private fun parseSelectedClientIds(rawIds: String?): Set<Int>? {
             val ids = rawIds
                 ?.split(",")

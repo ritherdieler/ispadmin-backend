@@ -69,4 +69,15 @@ interface PlaceRepository : JpaRepository<Place, Int> {
     )
     fun findNormalizedNamesWithPolygon(): List<String>
 
+    @Query(
+        """
+        SELECT p FROM Place p
+        WHERE p.area IS NOT NULL
+          AND p.name IS NOT NULL
+          AND TRIM(p.name) <> ''
+        ORDER BY LOWER(TRIM(p.name)) ASC
+        """
+    )
+    fun findAllWithPolygonOrderedByName(): List<Place>
+
 }
