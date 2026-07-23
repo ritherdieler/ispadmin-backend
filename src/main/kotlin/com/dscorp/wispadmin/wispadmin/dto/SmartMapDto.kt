@@ -55,6 +55,14 @@ data class SmartMapCollectionRouteStopDto(
     val lastVisitAt: LocalDateTime? = null,
     val lastVisitComment: String? = null,
     val distanceFromCollectorMeters: Double? = null,
+    val recentVisitComments: List<CollectionVisitCommentDto> = emptyList(),
+)
+
+data class CollectionVisitCommentDto(
+    val visitedAt: LocalDateTime,
+    val status: String,
+    val comment: String,
+    val collectorUserId: Int? = null,
 )
 
 data class SmartMapCollectionRouteDto(
@@ -114,6 +122,7 @@ data class SmartMapCollectionPendingSummaryDto(
     val debtDateTo: String? = null,
     val periodLabel: String = "",
     val place: String? = null,
+    val omittedNonRealLocationCount: Int = 0,
 )
 
 data class SmartMapCollectionPlaceDto(
@@ -233,6 +242,7 @@ data class SmartMapCollectionRouteRecalculateRequestDto(
     val debtDateFrom: LocalDate? = null,
     val debtDateTo: LocalDate? = null,
     val routeSessionStartedAt: LocalDateTime? = null,
+    val selectionPolygonGeoJson: String? = null,
 )
 
 data class SmartMapValidationErrorDto(

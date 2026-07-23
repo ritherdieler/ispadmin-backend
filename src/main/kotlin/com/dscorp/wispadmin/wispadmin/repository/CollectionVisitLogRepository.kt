@@ -15,6 +15,36 @@ interface CollectionVisitLogRepository : JpaRepository<CollectionVisitLog, Int> 
         SELECT v FROM CollectionVisitLog v
         WHERE v.clientId IN :clientIds
           AND v.visitedAt >= :since
+          AND v.comment IS NOT NULL
+          AND TRIM(v.comment) <> ''
+        ORDER BY v.visitedAt DESC
+        """,
+    )
+    fun findCommentsByClientIdsSince(
+        @Param("clientIds") clientIds: Collection<Int>,
+        @Param("since") since: LocalDateTime,
+    ): List<CollectionVisitLog>
+
+    @Query(
+        """
+        SELECT v FROM CollectionVisitLog v
+        WHERE v.clientId = :clientId
+          AND v.visitedAt >= :since
+          AND v.comment IS NOT NULL
+          AND TRIM(v.comment) <> ''
+        ORDER BY v.visitedAt DESC
+        """,
+    )
+    fun findCommentsByClientIdSince(
+        @Param("clientId") clientId: Int,
+        @Param("since") since: LocalDateTime,
+    ): List<CollectionVisitLog>
+
+    @Query(
+        """
+        SELECT v FROM CollectionVisitLog v
+        WHERE v.clientId IN :clientIds
+          AND v.visitedAt >= :since
         ORDER BY v.visitedAt DESC
         """,
     )

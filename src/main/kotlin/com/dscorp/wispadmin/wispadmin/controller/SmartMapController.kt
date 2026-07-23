@@ -152,6 +152,7 @@ class SmartMapController(
             debtDateFrom = request.debtDateFrom,
             debtDateTo = request.debtDateTo,
             visitSince = request.routeSessionStartedAt,
+            selectionPolygonGeoJson = request.selectionPolygonGeoJson,
         )
 
         val enrichedRoute = if (request.includeRoadGeometry && route.stopCount > 0) {
@@ -176,9 +177,11 @@ class SmartMapController(
     fun getRecentCollectionVisits(
         @RequestParam clientId: Int,
         @RequestParam(required = false) userType: String?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) since: LocalDateTime?,
     ): ResponseEntity<List<CollectionVisitLogDto>> {
         requireDebtAccess(userType)
-        return ResponseEntity.ok(collectionVisitService.getRecentVisits(clientId))
+        val effectiveSince = since ?: collectionVisitService.defaultCommentLookbackSince()
+        return ResponseEntity.ok(collectionVisitService.getRecentVisits(clientId, effectiveSince))
     }
 
     @GetMapping("/collection-route")
@@ -221,6 +224,7 @@ class SmartMapController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateFrom: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateTo: LocalDate?,
         @RequestParam(required = false) place: String?,
+        @RequestParam(required = false) selectionPolygonGeoJson: String?,
         @RequestParam(required = false) userType: String?,
         @RequestParam(required = false, defaultValue = "false") includeRoadGeometry: Boolean,
         @RequestParam(required = false) selectedClientIds: String?,
@@ -238,6 +242,7 @@ class SmartMapController(
             selectedClientIds = parseSelectedClientIds(selectedClientIds),
             visitSince = routeSessionStartedAt,
             place = place,
+            selectionPolygonGeoJson = selectionPolygonGeoJson,
         )
 
         val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
@@ -255,6 +260,7 @@ class SmartMapController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateFrom: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) debtDateTo: LocalDate?,
         @RequestParam(required = false) place: String?,
+        @RequestParam(required = false) selectionPolygonGeoJson: String?,
         @RequestParam(required = false) userType: String?,
     ): ResponseEntity<SmartMapCollectionPendingSummaryDto> {
         requireDebtAccess(userType)
@@ -264,6 +270,7 @@ class SmartMapController(
                 debtDateFrom = debtDateFrom,
                 debtDateTo = debtDateTo,
                 place = place,
+                selectionPolygonGeoJson = selectionPolygonGeoJson,
             ),
         )
     }

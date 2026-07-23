@@ -288,6 +288,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
           AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
           AND ST_Contains(
                 ST_SRID(sector.area, 4326),
                 ST_GeomFromText(
@@ -317,6 +321,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
           AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
           AND ST_Contains(
                 ST_SRID(sector.area, 4326),
                 ST_GeomFromText(
@@ -353,6 +361,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
           AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
           AND TRIM(pl.name) != ''
         GROUP BY s.id, s.first_name, s.last_name, s.business_name, pl.name
         HAVING SUM(p.amount_to_pay) > 0
@@ -383,6 +395,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
           AND s.location IS NOT NULL
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
           AND ST_Contains(
                 ST_SRID(sector.area, 4326),
                 ST_GeomFromText(
@@ -403,6 +419,157 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun findSweepEligibleDebtorRowsInsidePlacePolygon(
         @Param("placeName") placeName: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT COUNT(*)
+        FROM (
+            SELECT s.id
+            FROM subscription s
+            INNER JOIN payment p ON p.subscription_id = s.id
+                AND p.paid = false
+                AND p.billing_date_datetime >= :dateFrom
+                AND p.billing_date_datetime < :dateToExclusive
+            INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName))
+                AND sector.area IS NOT NULL
+            WHERE s.service_status = 'ACTIVE'
+              AND s.location IS NOT NULL
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+              AND ST_Contains(
+                    ST_SRID(sector.area, 4326),
+                    ST_GeomFromText(
+                        CONCAT(
+                            'POINT(',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                            ' ',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                            ')'
+                        ),
+                        4326
+                    )
+              )
+            GROUP BY s.id
+            HAVING SUM(p.amount_to_pay) > 0
+        ) omitted
+        """,
+        nativeQuery = true,
+    )
+    fun countSweepDefaultLocationDebtorsInsidePlacePolygon(
+        @Param("placeName") placeName: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): Long
+
+    @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            COALESCE(NULLIF(TRIM(pl.name), ''), 'Sin sector'),
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        LEFT JOIN place pl ON s.place_id = pl.id
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND ST_Contains(
+                ST_GeomFromText(:selectionPolygonWkt, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRowsInsideSelectionPolygon(
+        @Param("selectionPolygonWkt") selectionPolygonWkt: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT COUNT(*)
+        FROM (
+            SELECT s.id
+            FROM subscription s
+            INNER JOIN payment p ON p.subscription_id = s.id
+                AND p.paid = false
+                AND p.billing_date_datetime >= :dateFrom
+                AND p.billing_date_datetime < :dateToExclusive
+            LEFT JOIN place pl ON s.place_id = pl.id
+            WHERE s.service_status = 'ACTIVE'
+              AND s.location IS NOT NULL
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+              AND ST_Contains(
+                    ST_GeomFromText(:selectionPolygonWkt, 4326),
+                    ST_GeomFromText(
+                        CONCAT(
+                            'POINT(',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                            ' ',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                            ')'
+                        ),
+                        4326
+                    )
+              )
+            GROUP BY s.id
+            HAVING SUM(p.amount_to_pay) > 0
+        ) omitted
+        """,
+        nativeQuery = true,
+    )
+    fun countSweepDefaultLocationDebtorsInsideSelectionPolygon(
+        @Param("selectionPolygonWkt") selectionPolygonWkt: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): Long
+
+    @Query(
+        value = """
+        SELECT s.id, pl.name
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place pl ON s.place_id = pl.id
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+          AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          AND TRIM(pl.name) != ''
+        GROUP BY s.id, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepDefaultLocationDebtorIdsWithPlace(
         @Param("dateFrom") dateFrom: LocalDateTime,
         @Param("dateToExclusive") dateToExclusive: LocalDateTime,
     ): List<Array<Any>>

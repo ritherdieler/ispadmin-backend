@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.CollectionVisitLog
+import com.dscorp.wispadmin.wispadmin.dto.CollectionVisitCommentDto
 import com.dscorp.wispadmin.wispadmin.dto.CollectionVisitLogDto
 import com.dscorp.wispadmin.wispadmin.dto.CollectionVisitRequestDto
 import com.dscorp.wispadmin.wispadmin.repository.CollectionVisitLogRepository
@@ -39,11 +40,36 @@ class CollectionVisitService(
     }
 
     @Transactional(readOnly = true)
-    fun getRecentVisits(clientId: Int): List<CollectionVisitLogDto> {
+    fun getRecentVisits(clientId: Int, since: LocalDateTime? = null): List<CollectionVisitLogDto> {
+        val effectiveSince = since ?: defaultCommentLookbackSince()
         return collectionVisitLogRepository
-            .findTop20ByClientIdOrderByVisitedAtDesc(clientId)
+            .findCommentsByClientIdSince(clientId, effectiveSince)
             .map { it.toDto() }
     }
+
+    @Transactional(readOnly = true)
+    fun getRecentCommentsForClients(
+        clientIds: Collection<Int>,
+        since: LocalDateTime,
+    ): Map<Int, List<CollectionVisitCommentDto>> {
+        if (clientIds.isEmpty()) {
+            return emptyMap()
+        }
+
+        val logs = collectionVisitLogRepository.findCommentsByClientIdsSince(clientIds, since)
+        val grouped = linkedMapOf<Int, MutableList<CollectionVisitCommentDto>>()
+        logs.forEach { log ->
+            val comment = log.comment?.trim().orEmpty()
+            if (comment.isEmpty()) {
+                return@forEach
+            }
+            grouped.getOrPut(log.clientId) { mutableListOf() }.add(log.toCommentDto())
+        }
+        return grouped
+    }
+
+    fun defaultCommentLookbackSince(now: LocalDateTime = LocalDateTime.now()): LocalDateTime =
+        now.minusMonths(VISIT_COMMENT_LOOKBACK_MONTHS.toLong())
 
     /**
      * Devuelve la visita mas reciente por cliente desde [since].
@@ -98,7 +124,17 @@ class CollectionVisitService(
         )
     }
 
+    private fun CollectionVisitLog.toCommentDto(): CollectionVisitCommentDto {
+        return CollectionVisitCommentDto(
+            visitedAt = visitedAt,
+            status = status,
+            comment = comment?.trim().orEmpty(),
+            collectorUserId = collectorUserId,
+        )
+    }
+
     companion object {
+        const val VISIT_COMMENT_LOOKBACK_MONTHS = 2
         private val VALID_STATUSES = setOf("visited", "no_payment", "not_found", "skipped")
         private val COMMENT_REQUIRED_STATUSES = setOf("no_payment", "not_found")
 
