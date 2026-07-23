@@ -30,4 +30,43 @@ interface PlaceRepository : JpaRepository<Place, Int> {
         @Param("longitude") longitude: Double
     ): Place?
 
+    @Query(
+        """
+        SELECT *
+        FROM place p
+        WHERE LOWER(TRIM(p.name)) = LOWER(TRIM(:placeName))
+        AND p.area IS NOT NULL
+        AND ST_Contains(
+            ST_SRID(p.area, 4326),
+            ST_GeomFromText(
+                CONCAT('POINT(', :longitude, ' ', :latitude, ')'),
+                4326
+            )
+        )
+        LIMIT 1
+        """,
+        nativeQuery = true
+    )
+    fun findPlaceContainingPointInNamedPlace(
+        @Param("placeName") placeName: String,
+        @Param("latitude") latitude: Double,
+        @Param("longitude") longitude: Double,
+    ): Place?
+
+    @Query(
+        """
+        SELECT p FROM Place p
+        WHERE LOWER(TRIM(p.name)) = LOWER(TRIM(:placeName))
+        """
+    )
+    fun findByNormalizedName(@Param("placeName") placeName: String): List<Place>
+
+    @Query(
+        """
+        SELECT LOWER(TRIM(p.name)) FROM Place p
+        WHERE p.area IS NOT NULL
+        """
+    )
+    fun findNormalizedNamesWithPolygon(): List<String>
+
 }

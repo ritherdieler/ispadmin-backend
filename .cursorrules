@@ -1,0 +1,6 @@
+# Reglas Estrictas de Contexto para el Proyecto
+Siempre que analices mi código o generes nuevas funciones, lee y aplica de forma obligatoria las directrices avanzadas definidas en las siguientes habilidades locales:
+- .skills/kotlin-backend/SKILL.md
+- .skills/performance/SKILL.md
+- .skills/testing/SKILL.md
+- .skills/security/SKILL.md

@@ -7,6 +7,9 @@ import com.dscorp.wispadmin.observability.port.ReportedEvent
 import com.dscorp.wispadmin.wispadmin.config.HttpFailureContext
 import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapValidationErrorDto
+import com.dscorp.wispadmin.wispadmin.exception.SmartMapSectorValidationException
+import com.dscorp.wispadmin.wispadmin.service.MapboxDirectionsException
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
@@ -37,6 +40,29 @@ class GlobalExceptionHandler @Autowired constructor(
 
     @Value("\${spring.servlet.multipart.max-file-size:8MB}")
     private lateinit var maxFileSize: String
+
+    @ExceptionHandler(SmartMapSectorValidationException::class)
+    fun handleSmartMapSectorValidation(
+        ex: SmartMapSectorValidationException,
+    ): ResponseEntity<SmartMapValidationErrorDto> {
+        return ResponseEntity.badRequest().body(
+            SmartMapValidationErrorDto(
+                code = ex.code,
+                message = ex.message ?: "Validacion de sector fallida.",
+                sectorName = ex.sectorName,
+            ),
+        )
+    }
+
+    @ExceptionHandler(MapboxDirectionsException::class)
+    fun handleMapboxDirections(ex: MapboxDirectionsException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+            mapOf(
+                "code" to "MAPBOX_DIRECTIONS_ERROR",
+                "message" to (ex.message ?: "Error al consultar Mapbox Directions"),
+            ),
+        )
+    }
 
     @ExceptionHandler(MaxUploadSizeExceededException::class)
     fun handleMaxUploadSizeExceeded(
@@ -167,6 +193,7 @@ class GlobalExceptionHandler @Autowired constructor(
             path.contains("/microtic") -> Modules.MICROTIC.name
             path.contains("/api/logs") -> Modules.LOG_VIEWER.name
             path.contains("/ticket") || path.contains("/assistance") -> Modules.ASSISTANCE_TICKET.name
+            path.contains("/smart-map") -> Modules.DASHBOARD.name
             else -> Modules.GENERAL.name
         }
     }

@@ -44,5 +44,7 @@ build/
 /scripts/
 
 /data/
+/data/observability/replays/
 /backups/
 .cursor/
+/.cursor/

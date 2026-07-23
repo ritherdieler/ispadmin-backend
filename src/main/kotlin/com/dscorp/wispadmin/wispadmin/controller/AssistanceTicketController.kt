@@ -344,7 +344,7 @@ private fun AssistanceTicket.toDto(): AssistanceTicketDto = AssistanceTicketDto(
     resolvedAt = resolvedAt,
     closedAt = closedAt,
     assignedTo = if (responsible != null) "${responsible!!.name} ${responsible!!.lastName}" else "",
-    place = subscription?.place?.name,
+    place = subscription?.place?.name ?: placeName,
     address = subscription?.address,
     sheetImageUrl = sheetImageUrl,
     isExternalCustomer = isExternalCustomer

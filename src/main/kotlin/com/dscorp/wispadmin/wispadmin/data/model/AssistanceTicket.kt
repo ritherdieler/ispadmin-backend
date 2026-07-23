@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.data.model
 
+import org.hibernate.annotations.NotFound
+import org.hibernate.annotations.NotFoundAction
 import java.util.*
 import javax.persistence.*
 
@@ -27,6 +29,7 @@ data class AssistanceTicket(
 
     @ManyToOne
     @JoinColumn(name = "subscription_id")
+    @NotFound(action = NotFoundAction.IGNORE)
     val subscription: Subscription? = null,
 
     @OneToOne
