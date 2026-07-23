@@ -410,25 +410,57 @@ check_version_not_registered() {
 
 update_release_env() {
   echo "Ensuring APP_RELEASE=$RELEASE_VERSION in $BACKEND_ENV_FILE ..."
+  local mapbox_token="${MAPBOX_ACCESS_TOKEN:-}"
   run_ssh "bash -s" <<EOF
 set -euo pipefail
 ENV_FILE='$BACKEND_ENV_FILE'
 VALUE='$RELEASE_VERSION'
+MAPBOX_TOKEN='$mapbox_token'
 touch "\$ENV_FILE"
+changed=0
+
 if grep -q '^APP_RELEASE=' "\$ENV_FILE"; then
   current="\$(grep '^APP_RELEASE=' "\$ENV_FILE" | head -1 | cut -d= -f2-)"
-  if [[ "\$current" == "\$VALUE" ]]; then
-    echo "APP_RELEASE ya está en \$VALUE"
-    exit 0
+  if [[ "\$current" != "\$VALUE" ]]; then
+    cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+    sed -i "s#^APP_RELEASE=.*#APP_RELEASE=\$VALUE#" "\$ENV_FILE"
+    changed=1
   fi
-  cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
-  sed -i "s#^APP_RELEASE=.*#APP_RELEASE=\$VALUE#" "\$ENV_FILE"
 else
   cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
   printf '\nAPP_RELEASE=%s\n' "\$VALUE" >> "\$ENV_FILE"
+  changed=1
 fi
-echo "Recreando Tomcat para cargar APP_RELEASE..."
-cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat
+
+if [[ -n "\$MAPBOX_TOKEN" ]]; then
+  if grep -q '^MAPBOX_ACCESS_TOKEN=' "\$ENV_FILE"; then
+    current_mapbox="\$(grep '^MAPBOX_ACCESS_TOKEN=' "\$ENV_FILE" | head -1 | cut -d= -f2-)"
+    if [[ "\$current_mapbox" != "\$MAPBOX_TOKEN" ]]; then
+      if [[ "\$changed" -eq 0 ]]; then
+        cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+      fi
+      sed -i "s#^MAPBOX_ACCESS_TOKEN=.*#MAPBOX_ACCESS_TOKEN=\$MAPBOX_TOKEN#" "\$ENV_FILE"
+      changed=1
+    fi
+  else
+    if [[ "\$changed" -eq 0 ]]; then
+      cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+    fi
+    printf '\nMAPBOX_ACCESS_TOKEN=%s\n' "\$MAPBOX_TOKEN" >> "\$ENV_FILE"
+    changed=1
+  fi
+else
+  if ! grep -q '^MAPBOX_ACCESS_TOKEN=' "\$ENV_FILE"; then
+    echo "WARNING: MAPBOX_ACCESS_TOKEN no está en \$ENV_FILE; las rutas Smart Map usarán líneas rectas (fallback)" >&2
+  fi
+fi
+
+if [[ "\$changed" -eq 1 ]]; then
+  echo "Recreando Tomcat para cargar variables de entorno..."
+  cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat
+else
+  echo "Variables de entorno sin cambios"
+fi
 EOF
 }
 
