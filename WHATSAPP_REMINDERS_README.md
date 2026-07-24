@@ -2,6 +2,68 @@
 
 Guia operativa para probar y usar los recordatorios de pago por WhatsApp en el backend de WispAdmin.
 
+## Produccion HTTPS
+
+**URL base en produccion**: `https://api.gigafiberperu.cloud/ispadmin`
+
+Todos los endpoints descritos en este README se invocan sobre esa URL en produccion.
+Variables de entorno requeridas: ver `scripts/docker/env.prod.example`.
+Arquitectura y decisiones: ver `.agent-docs/whatsapp-production-https-webhook.md`.
+
+## Webhook
+
+### Registrar en Meta Console
+
+1. Meta for Developers > WhatsApp > Configuration > Webhook
+2. Callback URL: `https://api.gigafiberperu.cloud/ispadmin/whatsapp/webhook`
+3. Verify Token: valor de `WHATSAPP_WEBHOOK_VERIFY_TOKEN` (configurado en el VPS)
+4. Campo a suscribir: `messages`
+
+### Verificacion manual del webhook
+
+```bash
+curl "https://api.gigafiberperu.cloud/ispadmin/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=TU_TOKEN&hub.challenge=TEST123"
+# Debe devolver: TEST123
+```
+
+### Eventos procesados
+
+- `statuses`: actualiza estado de entrega (`sent`, `delivered`, `read`, `failed`) en `whatsapp_message_log`
+- `messages` (texto): identifica al cliente por telefono, persiste en `whatsapp_inbound_message` y envia auto-respuesta contextual
+- `messages` (no-texto): persiste con tipo `UNSUPPORTED`, sin respuesta
+
+## Mensajes entrantes
+
+### Ultimos mensajes recibidos
+
+```http
+GET /ispadmin/whatsapp/inbound-messages
+```
+
+### Historial por cliente
+
+```http
+GET /ispadmin/whatsapp/inbound-messages/subscription/{subscriptionId}
+```
+
+### Auto-respuesta v1
+
+- Cliente identificado + deuda pendiente → resumen con monto total y cantidad de facturas
+- Cliente identificado sin deuda → mensaje de confirmacion
+- Cliente no identificado → mensaje generico de soporte GigaFiber
+- Mensajes no-texto → se ignoran (registrado como `UNSUPPORTED`)
+
+## Estados de entrega via webhook
+
+Los estados se actualizan automaticamente en `whatsapp_message_log` cuando Meta notifica:
+
+| Estado | Significado |
+|---|---|
+| `sent` | Meta acepto el mensaje |
+| `delivered` | El dispositivo del destinatario recibio el mensaje |
+| `read` | El destinatario leyo el mensaje |
+| `failed` | Error de entrega (ver `errorMessage` para detalle) |
+
 ## Configuracion local
 
 El token de WhatsApp no debe guardarse en Git. Para desarrollo local debe estar en:

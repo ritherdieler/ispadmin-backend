@@ -1,29 +1,19 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.data.model.AppVersion
-import com.dscorp.wispadmin.wispadmin.repository.AppVersionRepository
-import org.springframework.beans.factory.annotation.Autowired
+import com.dscorp.wispadmin.wispadmin.dto.AppVersionResponseDto
+import com.dscorp.wispadmin.wispadmin.service.AppVersionService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-
 @RestController
 @RequestMapping("/app")
-class AppVersionController @Autowired constructor(
-    private val appVersionRepository: AppVersionRepository
+class AppVersionController(
+    private val appVersionService: AppVersionService
 ) {
     @GetMapping("check_version")
-    fun getLastVersion(): ResponseEntity<AppVersion> {
-        return try {
-            val appVersion = appVersionRepository.findAll().first()
-            ResponseEntity.ok(appVersion)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            ResponseEntity.notFound().build()
-        }
-    }
+    fun getLastVersion(): ResponseEntity<AppVersionResponseDto> =
+        appVersionService.getLastVersion()?.let { ResponseEntity.ok(it) }
+            ?: ResponseEntity.notFound().build()
 }
-
-

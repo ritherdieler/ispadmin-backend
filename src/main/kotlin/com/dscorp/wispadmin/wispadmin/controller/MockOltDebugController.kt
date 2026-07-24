@@ -2,14 +2,13 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.data.model.util.BaseResponse
 import com.dscorp.wispadmin.wispadmin.service.MockOltService
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/debug/olt")
-class MockOltDebugController @Autowired constructor(
+class MockOltDebugController(
     private val mockOltService: MockOltService
 ) {
 

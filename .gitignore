@@ -1,4 +1,5 @@
 HELP.md
+.DS_Store
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -33,7 +34,17 @@ build/
 .vscode/
 /logs/
 /catalina.base_IS_UNDEFINED/
+/scripts/deploy.config.local
 /src/main/resources/firebase_service_account.json
 /src/main/resources/firebase_service_account_dev.json
 /src/main/resources/firebase_service_account_prod.json
+/.agent-docs/
 /src/main/resources/application-local.properties
+
+/scripts/
+
+/data/
+/data/observability/replays/
+/backups/
+.cursor/
+/.cursor/

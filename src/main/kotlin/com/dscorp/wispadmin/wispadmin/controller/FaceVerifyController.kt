@@ -4,7 +4,9 @@ import com.dscorp.wispadmin.wispadmin.requestbody.IdentifyFaceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.OfflineAttendanceSyncBody
 import com.dscorp.wispadmin.wispadmin.requestbody.PasswordAttendanceBody
 import com.dscorp.wispadmin.wispadmin.requestbody.VerifyFaceBody
+import com.dscorp.wispadmin.wispadmin.response.ChallengeStartResponse
 import com.dscorp.wispadmin.wispadmin.response.VerifyFaceResponse
+import com.dscorp.wispadmin.wispadmin.service.FaceChallengeService
 import com.dscorp.wispadmin.wispadmin.service.FaceVerifyService
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -20,8 +22,15 @@ import org.springframework.web.multipart.MultipartFile
 @RequestMapping("/api/face")
 @CrossOrigin(origins = ["http://localhost:5173"])
 class FaceVerifyController(
-    private val faceVerifyService: FaceVerifyService
+    private val faceVerifyService: FaceVerifyService,
+    private val faceChallengeService: FaceChallengeService
 ) {
+    // Nivel B: el frontend pide un reto de un solo uso al abrir la sesion de marcacion.
+    @PostMapping("/challenge/start")
+    fun startChallenge(): ResponseEntity<ChallengeStartResponse> {
+        return ResponseEntity.ok(faceChallengeService.start())
+    }
+
     @PostMapping("/identify")
     fun identify(@RequestBody body: IdentifyFaceBody): ResponseEntity<VerifyFaceResponse> {
         return ResponseEntity.ok(faceVerifyService.identify(body))
@@ -29,8 +38,11 @@ class FaceVerifyController(
 
     // Identifica rostro desde foto; el backend genera el descriptor con DJL.
     @PostMapping("/identify/photo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    fun identifyPhoto(@RequestParam("photo") photo: MultipartFile): ResponseEntity<VerifyFaceResponse> {
-        return ResponseEntity.ok(faceVerifyService.identifyFromPhoto(photo))
+    fun identifyPhoto(
+        @RequestParam("photo") photo: MultipartFile,
+        @RequestParam("challengeToken", required = false) challengeToken: String?
+    ): ResponseEntity<VerifyFaceResponse> {
+        return ResponseEntity.ok(faceVerifyService.identifyFromPhoto(photo, challengeToken))
     }
 
     @PostMapping("/verify")
@@ -43,9 +55,11 @@ class FaceVerifyController(
     fun verifyPhoto(
         @RequestParam("photo") photo: MultipartFile,
         @RequestParam("action") action: VerifyFaceBody.Action,
-        @RequestParam("occurredAtMillis", required = false) occurredAtMillis: Long?
+        @RequestParam("occurredAtMillis", required = false) occurredAtMillis: Long?,
+        @RequestParam("challengeToken", required = false) challengeToken: String?,
+        @RequestParam("attendanceStatus", required = false) attendanceStatus: String?
     ): ResponseEntity<VerifyFaceResponse> {
-        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action, occurredAtMillis))
+        return ResponseEntity.ok(faceVerifyService.verifyAndMarkFromPhoto(photo, action, occurredAtMillis, challengeToken, attendanceStatus))
     }
 
     // Fallback de asistencia: valida credenciales y registra entrada/salida sin depender de la camara.

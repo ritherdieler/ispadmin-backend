@@ -9,12 +9,12 @@ import ai.djl.repository.zoo.Criteria
 import ai.djl.repository.zoo.ZooModel
 import ai.djl.training.util.ProgressBar
 import ai.djl.translate.TranslateException
+import com.dscorp.wispadmin.wispadmin.config.FaceEmbeddingProperties
+import com.dscorp.wispadmin.wispadmin.util.FaceModelFileResolver
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.IOException
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
@@ -24,11 +24,10 @@ import kotlin.math.roundToInt
 
 @Service
 class FacePhotoDescriptorService(
-    @Value("\${face.login.djl-model-path:C:/ispadmin/models/face_feature.zip}")
-    private val djlModelPath: String,
-    @Value("\${face.login.djl-model-name:face_feature}")
-    private val djlModelName: String,
-    private val facePhotoPreprocessorService: FacePhotoPreprocessorService
+    private val facePhotoPreprocessorService: FacePhotoPreprocessorService,
+    private val faceModelFileResolver: FaceModelFileResolver,
+    private val faceEmbeddingProperties: FaceEmbeddingProperties,
+    private val faceLivenessService: FaceLivenessService
 ) {
     private val logger = LoggerFactory.getLogger(FacePhotoDescriptorService::class.java)
     private val modelLock = Any()
@@ -64,6 +63,12 @@ class FacePhotoDescriptorService(
             return null
         }
 
+        val liveness = faceLivenessService.evaluate(photoBytes)
+        if (!liveness.live) {
+            logger.info("Descriptor facial rechazado por liveness pasivo: {}", liveness.reason)
+            return null
+        }
+
         return try {
             val croppedFaceBytes = facePhotoPreprocessorService.extractSingleFace(photoBytes)
             if (croppedFaceBytes == null) {
@@ -94,6 +99,12 @@ class FacePhotoDescriptorService(
     // Se compara primero el rostro detectado, luego recortes centrados y al final la imagen completa.
     fun generateDescriptorCandidates(photoBytes: ByteArray): List<List<Double>> {
         if (photoBytes.isEmpty()) {
+            return emptyList()
+        }
+
+        val liveness = faceLivenessService.evaluate(photoBytes)
+        if (!liveness.live) {
+            logger.info("Descriptores candidatos rechazados por liveness pasivo: {}", liveness.reason)
             return emptyList()
         }
 
@@ -137,10 +148,8 @@ class FacePhotoDescriptorService(
             if (imageWidth <= 0 || imageHeight <= 0) return emptyList()
 
             listOf(
-                CenterCropSpec(widthRatio = 0.82, heightRatio = 0.92, centerYRatio = 0.48),
-                CenterCropSpec(widthRatio = 0.68, heightRatio = 0.82, centerYRatio = 0.44),
-                CenterCropSpec(widthRatio = 0.96, heightRatio = 0.96, centerYRatio = 0.50)
-            ).mapNotNull { spec ->
+                FacePreprocessConstants.CENTER_CROP_SPECS
+            ).flatten().mapNotNull { spec ->
                 createCenteredCrop(image, imageWidth, imageHeight, spec)
             }
         } catch (e: Exception) {
@@ -154,7 +163,7 @@ class FacePhotoDescriptorService(
         image: Image,
         imageWidth: Int,
         imageHeight: Int,
-        spec: CenterCropSpec
+        spec: FacePreprocessConstants.CenterCropSpec
     ): ByteArray? {
         val cropWidth = max(1, (imageWidth * spec.widthRatio).roundToInt())
         val cropHeight = max(1, (imageHeight * spec.heightRatio).roundToInt())
@@ -174,12 +183,6 @@ class FacePhotoDescriptorService(
             output.toByteArray()
         }
     }
-
-    private data class CenterCropSpec(
-        val widthRatio: Double,
-        val heightRatio: Double,
-        val centerYRatio: Double
-    )
 
     // Ejecuta el extractor DJL sobre la imagen preparada y devuelve el vector numerico.
     private fun generateDescriptorFromBytes(imageBytes: ByteArray): List<Double>? {
@@ -210,23 +213,38 @@ class FacePhotoDescriptorService(
         }
     }
 
-    // Configura DJL con el traductor oficial de extraccion de caracteristicas de imagen.
+    // Configura DJL segun el motor elegido. Por defecto usa el modelo PyTorch actual;
+    // si face.embedding.engine=OnnxRuntime carga un modelo ArcFace/InsightFace con su traductor.
     private fun loadModel(): ZooModel<Image, FloatArray> {
         val modelFile = resolveLocalModelFile()
-        val normalize = listOf(
-            127.5f / 255.0f,
-            127.5f / 255.0f,
-            127.5f / 255.0f,
-            128.0f / 255.0f,
-            128.0f / 255.0f,
-            128.0f / 255.0f
-        ).joinToString(",")
+
+        if (faceEmbeddingProperties.engine.equals("OnnxRuntime", ignoreCase = true)) {
+            logger.info("Cargando modelo facial ONNX (ArcFace) desde {}.", faceEmbeddingProperties.modelPath)
+            val (mean, std) = parseNormalize(faceEmbeddingProperties.normalize)
+            val criteria = Criteria.builder()
+                .setTypes(Image::class.java, FloatArray::class.java)
+                .optModelUrls(modelFile.toURI().toString())
+                .optModelName(faceEmbeddingProperties.modelName)
+                .optTranslator(
+                    ArcFaceFeatureTranslator(
+                        inputSize = faceEmbeddingProperties.inputSize,
+                        mean = mean,
+                        std = std,
+                        l2Normalize = faceEmbeddingProperties.l2Normalize
+                    )
+                )
+                .optEngine("OnnxRuntime")
+                .optProgress(ProgressBar())
+                .build()
+
+            return criteria.loadModel()
+        }
 
         val criteria = Criteria.builder()
             .setTypes(Image::class.java, FloatArray::class.java)
             .optModelUrls(modelFile.toURI().toString())
-            .optModelName(djlModelName)
-            .optArgument("normalize", normalize)
+            .optModelName(faceEmbeddingProperties.modelName)
+            .optArgument("normalize", faceEmbeddingProperties.normalize)
             .optTranslatorFactory(ImageFeatureExtractorFactory())
             .optEngine("PyTorch")
             .optProgress(ProgressBar())
@@ -235,15 +253,22 @@ class FacePhotoDescriptorService(
         return criteria.loadModel()
     }
 
-    // Valida que el zip del modelo exista localmente antes de pedirle a DJL que lo cargue.
-    private fun resolveLocalModelFile(): File {
-        val modelFile = File(djlModelPath)
-        if (!modelFile.exists() || !modelFile.isFile) {
-            throw IllegalStateException(
-                "No se encontro el modelo facial DJL en $djlModelPath. " +
-                    "Coloca face_feature.zip en esa ruta antes de iniciar el backend."
+    // Convierte la cadena "m,m,m,s,s,s" (fracciones de 255) en arreglos de media y desviacion.
+    private fun parseNormalize(raw: String): Pair<FloatArray, FloatArray> {
+        val values = raw.split(",").mapNotNull { it.trim().toFloatOrNull() }
+        if (values.size < 6) {
+            return Pair(
+                floatArrayOf(0.5f, 0.5f, 0.5f),
+                floatArrayOf(0.5f, 0.5f, 0.5f)
             )
         }
-        return modelFile
+        return Pair(
+            floatArrayOf(values[0], values[1], values[2]),
+            floatArrayOf(values[3], values[4], values[5])
+        )
     }
+
+    // Valida que el modelo exista localmente antes de pedirle a DJL que lo cargue.
+    private fun resolveLocalModelFile() =
+        faceModelFileResolver.resolve(faceEmbeddingProperties.modelPath, faceEmbeddingProperties.modelName)
 }

@@ -10,10 +10,12 @@ interface NetworkDeviceRepository : JpaRepository<NetworkDevice, Int> {
     
     fun findByName(name: String): NetworkDevice?
 
-    //find all except CLOUD_CORE_ROUTER type
     @Query("SELECT n FROM NetworkDevice n WHERE n.networkDeviceType = 'GENERIC'")
     fun findGenericNetworkDevices(): List<NetworkDevice>
 
     @Query("SELECT n FROM NetworkDevice n WHERE n.networkDeviceType = 'WIRELESS_ROUTER' OR n.networkDeviceType = 'FIBER_ROUTER'")
     fun findWirelessAndFiberDevices(): List<NetworkDevice>
+
+    @Query("SELECT n FROM NetworkDevice n WHERE n.networkDeviceType = 'CLOUD_CORE_ROUTER' AND n.disabled = false")
+    fun findActiveCloudCoreRouters(): List<NetworkDevice>
 }

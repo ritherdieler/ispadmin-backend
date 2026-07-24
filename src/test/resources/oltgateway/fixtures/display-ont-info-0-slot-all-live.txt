@@ -1,0 +1,17 @@
+In frame 0 slot 1,
+  The total of ONTs are: 8, online: 6, offline: 2
+  ---------------------------------------------------------------------------
+  F/S/P   ONT         SN         Control     Run      Config   Match    Protect
+          ID                     flag        state    state    state    side
+  ---------------------------------------------------------------------------
+  0/ 1/4    2  4857544315F5B806  active      online   normal   match    no
+  0/ 1/4    3  56534F4C00322A16  active      online   failed   match    no
+  0/ 1/4    5  56534F4C0031F356  active      offline  initial  initial  no
+  0/ 1/7    1  5A544547DC47DF15  active      online   normal   match    no
+  0/1/0     0  HWTC11E70E9A      active      online   success  match    no
+  ---------------------------------------------------------------------------
+  F/S/P   ONT-ID   Description
+  ---------------------------------------------------------------------------
+  0/ 1/7       1   WALTHER MIGUEL NICHO QUISPE_zone_Zone 1_authd_20260716
+  0/ 1/4       2   Some customer name here
+MA5608T#

@@ -1,0 +1,134 @@
+﻿
+PROPUESTA DE MEJORA
+Mapa inteligente de cobertura y ventas
+Modulo estrategico para visualizar clientes, deuda, incidencias, cobertura y oportunidades comerciales por zona
+Dirigido a
+Gerencia / Administracion / Area de Sistemas
+Empresa
+Servicio de Internet y Telecable en Irrigacion Santa Rosa y zonas aledanas
+Objetivo
+Convertir la informacion operativa del sistema en decisiones comerciales y tecnicas por ubicacion
+Version
+Propuesta inicial - Junio 2026
+Recomendacion ejecutiva
+Implementar un mapa inteligente que use la base de datos actual para identificar donde vender, donde expandir fibra y donde resolver problemas recurrentes. La mejora puede iniciar como un modulo interno para gerencia, secretaria, soporte y ventas, sin reemplazar el sistema actual.
+
+
+T0. IMPLEMENTAR LA BUSQUEDA DE COBERTURA POR POLIGONOS DE LOS LUGARES
+
+
+
+
+
+T1. Resumen ejecutivo
+La empresa ya registra clientes, planes, pagos, deudas, tickets, lugares y tipos de instalacion. Sin embargo, gran parte de esa informacion se revisa en listas o pantallas administrativas. El mapa inteligente propone convertir esos datos en una vista geografica para tomar decisiones rapidas: donde hay mas clientes activos, donde se concentran las incidencias, que zonas tienen mayor deuda, que sectores no tienen cobertura y donde existen oportunidades de nuevos clientes.
+El valor principal de la propuesta es que el sistema deje de ser solo una herramienta de registro y pase a funcionar como una herramienta de crecimiento. Con esta mejora, la empresa podria priorizar instalaciones, enfocar ventas por zona, reducir tiempos de atencion y planificar mejor la expansion de fibra o telecable.
+2. Problema actual que resuelve
+La informacion de clientes, deuda e incidencias existe, pero no se interpreta facilmente por ubicacion.
+Las decisiones de expansion suelen depender de experiencia del personal o reportes manuales, no de una vista territorial consolidada.
+Las zonas con mayor cantidad de tickets pueden pasar desapercibidas hasta que el problema crece.
+Ventas no siempre sabe donde conviene buscar nuevos clientes o donde ya existe demanda cercana.
+Gerencia no tiene una vista rapida para comparar zonas rentables, zonas con problemas y zonas con oportunidad.
+3. Funcionalidad propuesta
+El modulo mostraria un mapa interactivo conectado a la base de datos existente. Cada punto o zona del mapa representaria informacion operativa y comercial. La vista permitiria filtrar por tipo de informacion y tomar acciones desde el mismo mapa.
+Componente
+Funcion
+Clientes activos
+Ver en mapa donde estan ubicados los clientes activos, por tipo de servicio: fibra, inalambrico o TV cable.
+Zonas con mas incidencias
+Agrupar tickets por sector para detectar fallas repetidas, saturacion, cortes o equipos problematicos.
+Zonas con deuda
+Identificar sectores con mayor deuda acumulada para priorizar cobranza, visitas o comunicacion preventiva.
+Zonas sin cobertura
+Marcar sectores donde aun no llega fibra o telecable para evaluar expansion tecnica.
+Oportunidades de venta
+Detectar posibles clientes cercanos a zonas con infraestructura existente para campanas comerciales.
+Filtros operativos
+Filtrar por servicio, estado del cliente, deuda, tickets, fecha de instalacion, plan o zona.
+Acciones rapidas
+Abrir detalle del cliente, ticket, deuda o ubicacion directamente desde el mapa.
+4. Impacto esperado para la empresa
+Nota sobre porcentajes
+Los porcentajes son estimaciones iniciales para sustentar la propuesta. Deben validarse en un piloto de 30 a 60 dias usando indicadores reales: ventas por zona, tickets por sector, deuda vencida y tiempos de atencion.
+Area
+Impacto estimado
+Como aporta
+Ventas por zona
++10% a +20%
+Mejor enfoque comercial al saber donde hay clientes cercanos, demanda acumulada o zonas con cobertura disponible.
+Expansion de fibra
+15% a 30% mejor priorizacion
+Permite decidir primero por sectores con mayor densidad de clientes o potencial de contratacion.
+Tiempo de diagnostico
+-20% a -35%
+Al visualizar tickets agrupados, soporte identifica sectores problematicos sin revisar caso por caso.
+Gestion de cobranza
++10% a +18%
+La cobranza puede enfocarse en zonas con mayor deuda y organizar rutas o comunicacion segmentada.
+Retencion de clientes
+-5% a -12% en cancelaciones evitables
+Detectar sectores con incidencias recurrentes ayuda a intervenir antes de que el cliente se cancele.
+Productividad administrativa
+-15% a -25%
+Reduce consultas manuales y cruces de informacion entre clientes, tickets y pagos.
+5. Uso de la base de datos existente
+La propuesta no requiere iniciar una base de datos nueva. Se puede construir sobre la informacion existente del sistema, agregando solo campos o tablas auxiliares si hacen falta para mejorar precision geografica.
+Fuente de datos
+Uso dentro del mapa
+subscription
+Clientes, direccion, estado, tipo de instalacion, plan y ubicacion relacionada.
+payment
+Deuda, pagos, pendientes, recaudacion por sector y comportamiento de pago.
+assistance_ticket
+Incidencias, categoria, estado, fecha, prioridad y zona afectada.
+place
+Zonas, areas de cobertura y delimitacion geografica si ya existe poligono.
+plan
+Tipo de servicio, precio y clasificacion comercial.
+Tablas auxiliares nuevas
+Solo si se requiere: oportunidades, zonas sin cobertura, puntos de interes o leads comerciales.
+6. Que lograria la empresa
+Vender con mejor precision: La empresa podria identificar sectores donde ya existe infraestructura cercana y lanzar campanas focalizadas en lugar de vender de forma general.
+Expandir con menos riesgo: Antes de invertir en fibra, se podria revisar densidad de clientes, deuda, incidencias y potencial de crecimiento por zona.
+Mejorar la calidad del servicio: Las zonas con tickets frecuentes quedarian visibles. Esto permite atacar causas repetidas y no solo atender casos aislados.
+Reducir perdida de clientes: Si una zona presenta muchas fallas o cancelaciones, el sistema alertaria para actuar antes de que mas clientes se retiren.
+Dar informacion clara a gerencia: La gerencia tendria una vista ejecutiva para decidir donde vender, donde cobrar, donde invertir y donde mejorar soporte.
+7. Implementacion recomendada
+Fase
+Modulo
+Resultado
+Tiempo estimado
+Fase 1
+Mapa base
+Mostrar clientes activos, tipo de servicio y estado por ubicacion.
+2 a 3 semanas
+Fase 2
+Capas operativas
+Agregar deuda, tickets, incidencias y filtros por zona.
+2 a 4 semanas
+Fase 3
+Oportunidades comerciales
+Registrar leads, zonas sin cobertura y posibles expansiones.
+3 a 5 semanas
+Fase 4
+Indicadores y alertas
+KPIs por zona: deuda, incidencias, crecimiento, cancelaciones y ventas.
+3 a 4 semanas
+8. Consideraciones tecnicas y riesgos
+Calidad de direcciones: Si algunos clientes no tienen coordenadas exactas, sera necesario georreferenciarlos progresivamente.
+Privacidad: El mapa debe ser de uso interno y con permisos por rol. No todos los usuarios deben ver deuda o datos sensibles.
+Datos incompletos: La primera version puede trabajar con los datos disponibles y mejorar precision con uso real.
+Rendimiento: Se recomienda cargar datos por filtros, zona o rango para evitar consultas pesadas en moviles.
+9. Indicadores para medir el exito
+Nuevos clientes por zona antes y despues del modulo.
+Cantidad de tickets por zona y reduccion de reincidencias.
+Monto de deuda vencida recuperada por sector.
+Tiempo promedio para decidir expansion o instalacion en una zona.
+Cancelaciones por zona antes y despues de acciones preventivas.
+Uso del modulo por gerencia, ventas, secretaria y soporte.
+10. Conclusion
+El mapa inteligente de cobertura y ventas es una mejora de alto impacto porque aprovecha informacion que la empresa ya tiene, pero la convierte en decisiones visibles por zona. Su valor no esta solo en mostrar un mapa, sino en conectar operacion, cobranza, soporte y ventas en una sola vista.
+La recomendacion es iniciar con un piloto interno enfocado en clientes activos, incidencias y deuda por zona. Si el piloto confirma los indicadores esperados, el modulo puede evolucionar hacia una herramienta de expansion comercial para decidir donde invertir, donde vender y donde mejorar servicio.
+Decision sugerida
+Aprobar una fase piloto de 30 a 60 dias con datos actuales, empezando por mapa de clientes activos, zonas con deuda y tickets por sector. Luego medir impacto real antes de ampliar el modulo.
+

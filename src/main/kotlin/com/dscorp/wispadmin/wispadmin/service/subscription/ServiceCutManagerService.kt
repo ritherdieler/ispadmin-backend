@@ -12,7 +12,9 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
+import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -24,7 +26,8 @@ class ServiceCutManagerService(
     private val mikrotikService: IMikroTikService,
     private val subscriptionValidator: ISubscriptionValidator,
     private val errorLogRepository: ErrorLogRepository,
-    private val scheduledTaskLogService: ScheduledTaskLogService
+    private val scheduledTaskLogService: ScheduledTaskLogService,
+    private val eventPublisher: ApplicationEventPublisher
 ) : IServiceCutManager {
     
     private val logger = LoggerFactory.getLogger(ServiceCutManagerService::class.java)
@@ -135,6 +138,7 @@ class ServiceCutManagerService(
                                lastCutOffDate = LocalDate.now()
                            }
                            val result =  subscriptionRepository.save(updatedSubscription)
+                           eventPublisher.publishEvent(SubscriptionChangedEvent(result.id!!))
                             createdCount++
                         } catch (e: Exception) {
                             if (e.message?.contains("already have such entry", ignoreCase = true) == true) {

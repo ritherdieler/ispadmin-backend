@@ -1,7 +1,10 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.wispadmin.config.FaceEmbeddingProperties
+import com.dscorp.wispadmin.wispadmin.config.FaceRecognitionProperties
 import com.dscorp.wispadmin.wispadmin.data.model.Attendance
 import com.dscorp.wispadmin.wispadmin.data.model.Face_data
+import com.dscorp.wispadmin.wispadmin.data.model.Face_data.FaceAngle
 import com.dscorp.wispadmin.wispadmin.data.model.User
 import com.dscorp.wispadmin.wispadmin.repository.AttendanceRepository
 import com.dscorp.wispadmin.wispadmin.repository.FaceDataRepository
@@ -17,6 +20,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+import com.dscorp.wispadmin.wispadmin.util.FaceEmbeddingMath
 import com.dscorp.wispadmin.wispadmin.util.PasswordHashUtil
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -32,7 +36,11 @@ class FaceVerifyService(
     private val userRepository: UserRepository,
     private val facePhotoDescriptorService: FacePhotoDescriptorService,
     private val facePhotoQualityService: FacePhotoQualityService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val faceRecognitionProperties: FaceRecognitionProperties,
+    private val faceEmbeddingProperties: FaceEmbeddingProperties,
+    private val faceRecognitionMetricsLogger: FaceRecognitionMetricsLogger,
+    private val faceChallengeService: FaceChallengeService
 ) {
     private val logger = LoggerFactory.getLogger(FaceVerifyService::class.java)
     private val faceCacheLock = Any()
@@ -44,14 +52,10 @@ class FaceVerifyService(
     private var faceEmbeddingCacheLoadedAt: Long = 0
 
     companion object {
-        private const val THRESHOLD = 0.48
-        private const val EUCLIDEAN_MIN_MARGIN = 0.06
-        private const val LOGIN_PHOTO_SIMILARITY_THRESHOLD = 0.80
-        private const val COSINE_MIN_MARGIN = 0.04
-        private const val FACE_CACHE_TTL_MS = 60_000L
         private const val FACE_REVALIDATION_MONTHS = 6
         private const val CHECK_IN_LIMIT_HOUR = 8
-        private const val CHECK_IN_LIMIT_MINUTE = 15
+        private const val CHECK_IN_LIMIT_MINUTE = 30
+        private const val CHECK_IN_TOLERANCE_MINUTES = 20
         private const val CHECK_OUT_LIMIT_HOUR = 18
         private const val CHECK_OUT_LIMIT_MINUTE = 0
     }
@@ -64,7 +68,10 @@ class FaceVerifyService(
             )
         }
 
-        val match = findBestMatch(body.descriptor)
+        val match = findBestMatch(
+            descriptor = body.descriptor,
+            threshold = faceRecognitionProperties.matching.euclideanThreshold,
+        )
             ?: return VerifyFaceResponse(
                 matched = false,
                 message = "Rostro no reconocido."
@@ -86,7 +93,7 @@ class FaceVerifyService(
     }
 
     // Identifica un rostro desde foto usando DJL, sin depender del descriptor enviado por el navegador.
-    fun identifyFromPhoto(photo: MultipartFile): VerifyFaceResponse {
+    fun identifyFromPhoto(photo: MultipartFile, challengeToken: String? = null): VerifyFaceResponse {
         if (photo.isEmpty) {
             return VerifyFaceResponse(
                 matched = false,
@@ -94,36 +101,55 @@ class FaceVerifyService(
             )
         }
 
+        // La identificacion no crea registros, por eso solo valida el reto sin consumirlo (gating opcional).
+        if (faceChallengeService.requireForIdentify() && !faceChallengeService.isValid(challengeToken)) {
+            return challengeRequiredResponse()
+        }
+
+        val flow = "attendance-identify-photo-djl"
+        val startedAt = System.currentTimeMillis()
         val photoBytes = photo.bytes
-        if (!facePhotoQualityService.hasUsableFaceCandidate(photoBytes)) {
+        val quality = facePhotoQualityService.evaluate(photoBytes)
+        if (!quality.valid) {
+            logPhotoOutcome(flow, false, "NO_CLEAR_FACE", null, null, null, false, photoBytes.size, quality, startedAt)
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se detecto un rostro claro."
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
+            logPhotoOutcome(flow, false, "NO_DESCRIPTOR", null, null, null, false, photoBytes.size, quality, startedAt)
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
-            threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
-            source = "attendance-identify-photo-djl",
-            metric = FaceComparisonMetric.COSINE_SIMILARITY
-        ) ?: return VerifyFaceResponse(
-            matched = false,
-            message = "Rostro no reconocido."
+        val photoMatch = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
+            threshold = faceRecognitionProperties.matching.photoSimilarityThreshold,
+            source = flow,
+            metric = embeddingMetric(),
+            probeQuality = quality.qualityScore
         )
+        if (photoMatch == null) {
+            logPhotoOutcome(flow, false, "NOT_RECOGNIZED", null, null, primaryDescriptor.size, false, photoBytes.size, quality, startedAt)
+            return VerifyFaceResponse(
+                matched = false,
+                message = "Rostro no reconocido."
+            )
+        }
 
+        val match = photoMatch.match
         if (isFaceExpired(match.faceCreatedAt)) {
+            logPhotoOutcome(flow, false, "EXPIRED", match.user.id, match.score, primaryDescriptor.size, photoMatch.usedFallback, photoBytes.size, quality, startedAt)
             return expiredFaceResponse(match)
         }
 
+        logPhotoOutcome(flow, true, "OK", match.user.id, match.score, primaryDescriptor.size, photoMatch.usedFallback, photoBytes.size, quality, startedAt)
         return VerifyFaceResponse(
             matched = true,
             userId = match.user.id,
@@ -143,7 +169,10 @@ class FaceVerifyService(
             )
         }
 
-        val match = findBestMatch(body.descriptor)
+        val match = findBestMatch(
+            descriptor = body.descriptor,
+            threshold = faceRecognitionProperties.matching.euclideanThreshold,
+        )
             ?: return VerifyFaceResponse(
                 matched = false,
                 message = "Rostro no reconocido."
@@ -208,7 +237,9 @@ class FaceVerifyService(
     fun verifyAndMarkFromPhoto(
         photo: MultipartFile,
         action: VerifyFaceBody.Action,
-        occurredAtMillis: Long? = null
+        occurredAtMillis: Long? = null,
+        challengeToken: String? = null,
+        attendanceStatus: String? = null
     ): VerifyFaceResponse {
         if (photo.isEmpty) {
             return VerifyFaceResponse(
@@ -217,40 +248,60 @@ class FaceVerifyService(
             )
         }
 
+        // La marcacion crea asistencia: el reto de un solo uso se consume aqui para impedir replay/bypass.
+        if (faceChallengeService.requireForVerify() && !faceChallengeService.consume(challengeToken)) {
+            logger.info("Marcacion rechazada: reto activo invalido o ausente. action={}", action)
+            return challengeRequiredResponse()
+        }
+
+        val flow = "attendance-verify-photo-djl"
+        val startedAt = System.currentTimeMillis()
         val photoBytes = photo.bytes
-        if (!facePhotoQualityService.hasUsableFaceCandidate(photoBytes)) {
+        val quality = facePhotoQualityService.evaluate(photoBytes)
+        if (!quality.valid) {
+            logPhotoOutcome(flow, false, "NO_CLEAR_FACE", null, null, null, false, photoBytes.size, quality, startedAt)
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se detecto un rostro claro."
             )
         }
 
-        val descriptors = generateFastPhotoDescriptors(photoBytes)
-        if (descriptors.isEmpty()) {
+        val primaryDescriptor = facePhotoDescriptorService.generateDescriptor(photoBytes)
+        if (primaryDescriptor == null) {
+            logPhotoOutcome(flow, false, "NO_DESCRIPTOR", null, null, null, false, photoBytes.size, quality, startedAt)
             return VerifyFaceResponse(
                 matched = false,
                 message = "No se pudo generar descriptor facial."
             )
         }
 
-        val match = findBestMatchFromCandidates(
-            descriptors = descriptors,
-            threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
-            source = "attendance-verify-photo-djl",
-            metric = FaceComparisonMetric.COSINE_SIMILARITY
-        ) ?: return VerifyFaceResponse(
-            matched = false,
-            message = "Rostro no reconocido."
+        val photoMatch = findBestMatchWithFallbackCandidates(
+            primaryDescriptor = primaryDescriptor,
+            photoBytes = photoBytes,
+            threshold = faceRecognitionProperties.matching.photoSimilarityThreshold,
+            source = flow,
+            metric = embeddingMetric(),
+            probeQuality = quality.qualityScore
         )
+        if (photoMatch == null) {
+            logPhotoOutcome(flow, false, "NOT_RECOGNIZED", null, null, primaryDescriptor.size, false, photoBytes.size, quality, startedAt)
+            return VerifyFaceResponse(
+                matched = false,
+                message = "Rostro no reconocido."
+            )
+        }
 
+        val match = photoMatch.match
         if (isFaceExpired(match.faceCreatedAt)) {
+            logPhotoOutcome(flow, false, "EXPIRED", match.user.id, match.score, primaryDescriptor.size, photoMatch.usedFallback, photoBytes.size, quality, startedAt)
             return expiredFaceResponse(match)
         }
 
+        logPhotoOutcome(flow, true, "OK", match.user.id, match.score, primaryDescriptor.size, photoMatch.usedFallback, photoBytes.size, quality, startedAt)
         val occurredAt = occurredAtMillis?.let { Date(it) } ?: Date()
 
         return when (action) {
-            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user, occurredAt)
+            VerifyFaceBody.Action.CHECK_IN -> registerCheckIn(match.user.id, match.userName, match.user, occurredAt, attendanceStatus = attendanceStatus)
             VerifyFaceBody.Action.CHECK_OUT -> registerCheckOut(match.user.id, match.userName, match.user, occurredAt)
         }
     }
@@ -342,93 +393,264 @@ class FaceVerifyService(
 
     private fun findBestMatch(
         descriptor: List<Double>,
-        threshold: Double = THRESHOLD,
+        threshold: Double,
         source: String = "face-verify",
-        metric: FaceComparisonMetric = FaceComparisonMetric.EUCLIDEAN_DISTANCE
+        metric: FaceComparisonMetric = FaceComparisonMetric.EUCLIDEAN_DISTANCE,
+        probeQuality: Double? = null
     ): FaceMatch? {
+        val startedAt = System.currentTimeMillis()
+        val minMargin = configuredMinMargin(metric)
         val saved = getStoredFaceEmbeddings()
         if (saved.isEmpty()) {
             logger.info("Login facial: no existen registros en face_data para comparar.")
+            logMatchMetric(source, metric, threshold, minMargin, "REJECTED", "NO_EMBEDDINGS", descriptor.size, 0, 0, emptyList(), startedAt)
             return null
         }
 
-        var bestScore = if (metric == FaceComparisonMetric.EUCLIDEAN_DISTANCE) Double.MAX_VALUE else -1.0
-        var secondBestScore = bestScore
-        var bestFaceRef: StoredFaceEmbedding? = null
+        val userScores = mutableMapOf<Int, UserFaceScore>()
 
-        for (fd in saved) {
-            val stored = fd.embedding
-            if (stored.size != descriptor.size) continue
+        for (faceRef in saved) {
+            if (faceRef.embedding.size != descriptor.size) continue
 
-            val score = compareFaceDescriptors(stored, descriptor, metric)
-            val isBetter = when (metric) {
-                FaceComparisonMetric.EUCLIDEAN_DISTANCE -> score < bestScore
-                FaceComparisonMetric.COSINE_SIMILARITY -> score > bestScore
+            val rawScore = compareFaceDescriptors(faceRef.embedding, descriptor, metric)
+            val score = applyProbeQualityWeight(rawScore, metric, probeQuality)
+            val currentBest = userScores[faceRef.userId]
+            val isBetterUserScore = when (metric) {
+                FaceComparisonMetric.EUCLIDEAN_DISTANCE ->
+                    currentBest == null || score < currentBest.bestScore
+                FaceComparisonMetric.COSINE_SIMILARITY ->
+                    currentBest == null || score > currentBest.bestScore
             }
 
-            if (isBetter) {
-                secondBestScore = bestScore
-                bestScore = score
-                bestFaceRef = fd
-            } else if (isSecondBest(score, secondBestScore, metric)) {
-                secondBestScore = score
+            if (isBetterUserScore) {
+                userScores[faceRef.userId] = UserFaceScore(
+                    userId = faceRef.userId,
+                    bestScore = score,
+                    bestFaceRef = faceRef
+                )
             }
         }
 
-        logger.debug(
-            "Login facial [{}]: mejor resultado={}, segundo resultado={}, umbral={}, metrica={}, descriptorSize={}, faceDataId={}, userId={}",
-            source,
-            bestScore,
-            secondBestScore,
-            threshold,
-            metric,
-            descriptor.size,
-            bestFaceRef?.id,
-            bestFaceRef?.userId
-        )
+        if (userScores.isEmpty()) {
+            logMatchMetric(source, metric, threshold, minMargin, "REJECTED", "DIMENSION_MISMATCH", descriptor.size, 0, saved.size, emptyList(), startedAt)
+            return null
+        }
+
+        val rankedUsers = userScores.values.sortedWith { left, right ->
+            when (metric) {
+                FaceComparisonMetric.EUCLIDEAN_DISTANCE -> left.bestScore.compareTo(right.bestScore)
+                FaceComparisonMetric.COSINE_SIMILARITY -> right.bestScore.compareTo(left.bestScore)
+            }
+        }
+
+        val bestUser = rankedUsers.first()
+        val secondBestScore = rankedUsers.getOrNull(1)?.bestScore
+            ?: if (metric == FaceComparisonMetric.EUCLIDEAN_DISTANCE) Double.MAX_VALUE else -1.0
 
         val matchesThreshold = when (metric) {
-            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> bestScore <= threshold
-            FaceComparisonMetric.COSINE_SIMILARITY -> bestScore >= threshold
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> bestUser.bestScore <= threshold
+            FaceComparisonMetric.COSINE_SIMILARITY -> bestUser.bestScore >= threshold
+        }
+        val marginOk = hasSafeMatchMargin(bestUser.bestScore, secondBestScore, metric)
+
+        val reason = when {
+            !matchesThreshold -> "BELOW_THRESHOLD"
+            !marginOk -> "LOW_MARGIN"
+            else -> "OK"
         }
 
-        if (bestFaceRef == null || !matchesThreshold || !hasSafeMatchMargin(bestScore, secondBestScore, metric)) {
+        if (!matchesThreshold || !marginOk) {
             logger.info(
                 "Login facial [{}]: match rechazado por baja confianza. best={}, second={}, threshold={}, metric={}",
                 source,
-                bestScore,
+                bestUser.bestScore,
                 secondBestScore,
                 threshold,
                 metric
             )
+            logMatchMetric(source, metric, threshold, minMargin, "REJECTED", reason, descriptor.size, rankedUsers.size, saved.size, rankedUsers, startedAt)
             return null
         }
 
-        val user = userRepository.findById(bestFaceRef.userId).orElse(null) ?: return null
-        return FaceMatch(user, "${user.name ?: ""} ${user.lastName ?: ""}".trim(), bestFaceRef.createdAt)
+        val user = userRepository.findById(bestUser.userId).orElse(null)
+        if (user == null) {
+            logMatchMetric(source, metric, threshold, minMargin, "REJECTED", "USER_NOT_FOUND", descriptor.size, rankedUsers.size, saved.size, rankedUsers, startedAt)
+            return null
+        }
+
+        logMatchMetric(source, metric, threshold, minMargin, "MATCHED", "OK", descriptor.size, rankedUsers.size, saved.size, rankedUsers, startedAt)
+        val bestFaceRef = bestUser.bestFaceRef
+        return FaceMatch(
+            user,
+            "${user.name ?: ""} ${user.lastName ?: ""}".trim(),
+            bestFaceRef.createdAt,
+            bestFaceRef.angle,
+            bestUser.bestScore
+        )
     }
+
+    // Construye y emite el registro estructurado de una decision de matching.
+    private fun logMatchMetric(
+        source: String,
+        metric: FaceComparisonMetric,
+        threshold: Double,
+        minMargin: Double,
+        decision: String,
+        reason: String,
+        descriptorSize: Int,
+        datasetUsers: Int,
+        datasetEmbeddings: Int,
+        rankedUsers: List<UserFaceScore>,
+        startedAt: Long
+    ) {
+        val topN = faceRecognitionMetricsLogger.rankedTopN()
+        val ranked = rankedUsers.take(topN).map { it.toCandidateMetric() }
+        val best = ranked.firstOrNull()
+        val second = ranked.getOrNull(1)
+        val margin = if (best != null && second != null) {
+            when (metric) {
+                FaceComparisonMetric.EUCLIDEAN_DISTANCE -> second.score - best.score
+                FaceComparisonMetric.COSINE_SIMILARITY -> best.score - second.score
+            }
+        } else {
+            null
+        }
+
+        faceRecognitionMetricsLogger.logMatch(
+            FaceMatchMetricRecord(
+                source = source,
+                metric = metric.name,
+                threshold = threshold,
+                minMargin = minMargin,
+                decision = decision,
+                reason = reason,
+                descriptorSize = descriptorSize,
+                datasetUsers = datasetUsers,
+                datasetEmbeddings = datasetEmbeddings,
+                best = best,
+                second = second,
+                margin = margin,
+                ranked = ranked,
+                elapsedMs = System.currentTimeMillis() - startedAt
+            )
+        )
+    }
+
+    private fun logPhotoOutcome(
+        flow: String,
+        matched: Boolean,
+        reason: String,
+        userId: Int?,
+        score: Double?,
+        descriptorSize: Int?,
+        usedFallback: Boolean,
+        photoBytes: Int,
+        quality: FacePhotoQualityService.QualityResult,
+        startedAt: Long
+    ) {
+        faceRecognitionMetricsLogger.logPhotoOutcome(
+            FacePhotoOutcomeRecord(
+                flow = flow,
+                matched = matched,
+                reason = reason,
+                userId = userId,
+                score = score,
+                metric = embeddingMetric().name,
+                threshold = faceRecognitionProperties.matching.photoSimilarityThreshold,
+                descriptorSize = descriptorSize,
+                usedFallback = usedFallback,
+                photoBytes = photoBytes,
+                quality = FaceQualityMetric(
+                    valid = quality.valid,
+                    width = quality.width,
+                    height = quality.height,
+                    brightness = quality.brightness,
+                    skinRatio = quality.skinRatio,
+                    edgeRatio = quality.edgeRatio
+                ),
+                elapsedMs = System.currentTimeMillis() - startedAt
+            )
+        )
+    }
+
+    private fun configuredMinMargin(metric: FaceComparisonMetric): Double = when (metric) {
+        FaceComparisonMetric.EUCLIDEAN_DISTANCE -> faceRecognitionProperties.matching.euclideanMinMargin
+        FaceComparisonMetric.COSINE_SIMILARITY -> faceRecognitionProperties.matching.photoMinMargin
+    }
+
+    private fun UserFaceScore.toCandidateMetric(): FaceCandidateMetric = FaceCandidateMetric(
+        userId = userId,
+        score = bestScore,
+        angle = bestFaceRef.angle.name,
+        faceDataId = bestFaceRef.id
+    )
 
     // Prueba varios descriptores de una misma foto y conserva el match mas confiable.
     private fun findBestMatchFromCandidates(
         descriptors: List<List<Double>>,
         threshold: Double,
         source: String,
-        metric: FaceComparisonMetric
+        metric: FaceComparisonMetric,
+        probeQuality: Double? = null
     ): FaceMatch? {
+        var bestCandidateMatch: FaceMatch? = null
+
         for ((index, descriptor) in descriptors.withIndex()) {
             val match = findBestMatch(
                 descriptor = descriptor,
                 threshold = threshold,
                 source = "$source-candidate-$index",
-                metric = metric
+                metric = metric,
+                probeQuality = probeQuality
             )
-            if (match != null) {
-                return match
+
+            if (match != null && isBetterMatch(match, bestCandidateMatch, metric)) {
+                bestCandidateMatch = match
             }
         }
 
-        return null
+        return bestCandidateMatch
     }
+
+    // Camino rapido para marcacion: primero intenta con un solo descriptor.
+    // Solo si no hay match confiable usa recortes/candidatos como respaldo.
+    private fun findBestMatchWithFallbackCandidates(
+        primaryDescriptor: List<Double>,
+        photoBytes: ByteArray,
+        threshold: Double,
+        source: String,
+        metric: FaceComparisonMetric,
+        probeQuality: Double? = null
+    ): PhotoMatch? {
+        findBestMatch(
+            descriptor = primaryDescriptor,
+            threshold = threshold,
+            source = "$source-primary",
+            metric = metric,
+            probeQuality = probeQuality
+        )?.let { return PhotoMatch(it, usedFallback = false) }
+
+        val fallbackDescriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+            .filterNot { it == primaryDescriptor }
+
+        if (fallbackDescriptors.isEmpty()) return null
+
+        return findBestMatchFromCandidates(
+            descriptors = fallbackDescriptors,
+            threshold = threshold,
+            source = "$source-fallback",
+            metric = metric,
+            probeQuality = probeQuality
+        )?.let { PhotoMatch(it, usedFallback = true) }
+    }
+
+    // Metrica configurada para los embeddings generados por foto (DJL / ArcFace).
+    private fun embeddingMetric(): FaceComparisonMetric =
+        if (faceEmbeddingProperties.metric.equals("EUCLIDEAN_DISTANCE", ignoreCase = true)) {
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE
+        } else {
+            FaceComparisonMetric.COSINE_SIMILARITY
+        }
 
     // Limpia el cache cuando se registra o actualiza un rostro para que el login use el embedding nuevo al instante.
     fun clearFaceEmbeddingCache() {
@@ -438,22 +660,23 @@ class FaceVerifyService(
         }
     }
 
-    // Mantiene los embeddings ya parseados por un tiempo corto para no leer y convertir toda la tabla en cada login.
+    // Mantiene todos los embeddings parseados por un tiempo corto, incluyendo los angulos FRONT, LEFT y RIGHT.
     private fun getStoredFaceEmbeddings(): List<StoredFaceEmbedding> {
         val now = System.currentTimeMillis()
         val cached = faceEmbeddingCache
-        if (cached.isNotEmpty() && now - faceEmbeddingCacheLoadedAt < FACE_CACHE_TTL_MS) {
+        if (cached.isNotEmpty() && now - faceEmbeddingCacheLoadedAt < faceRecognitionProperties.matching.cacheTtlMs) {
             return cached
         }
 
         return synchronized(faceCacheLock) {
             val current = System.currentTimeMillis()
             val synchronizedCache = faceEmbeddingCache
-            if (synchronizedCache.isNotEmpty() && current - faceEmbeddingCacheLoadedAt < FACE_CACHE_TTL_MS) {
+            if (synchronizedCache.isNotEmpty() && current - faceEmbeddingCacheLoadedAt < faceRecognitionProperties.matching.cacheTtlMs) {
                 synchronizedCache
             } else {
                 faceDataRepository.findAll()
                     .mapNotNull { faceData -> faceData.toStoredEmbedding() }
+                    .let { augmentWithMasterEmbeddings(it) }
                     .also { parsed ->
                         faceEmbeddingCache = parsed
                         faceEmbeddingCacheLoadedAt = current
@@ -462,14 +685,69 @@ class FaceVerifyService(
         }
     }
 
-    // Convierte el JSON guardado en face_data.face_embedding a una lista numerica lista para comparar.
+    private fun augmentWithMasterEmbeddings(embeddings: List<StoredFaceEmbedding>): List<StoredFaceEmbedding> {
+        val byUser = embeddings.groupBy { it.userId }
+        val virtualMasters = mutableListOf<StoredFaceEmbedding>()
+
+        for ((userId, userEmbeddings) in byUser) {
+            if (userEmbeddings.any { it.angle == FaceAngle.MASTER }) continue
+
+            val angleEmbeddings = userEmbeddings.filter {
+                it.angle == FaceAngle.FRONT || it.angle == FaceAngle.LEFT || it.angle == FaceAngle.RIGHT
+            }
+            if (angleEmbeddings.size < 2) continue
+
+            val master = FaceEmbeddingMath.averageL2Normalized(angleEmbeddings.map { it.embedding }) ?: continue
+            val reference = angleEmbeddings.minByOrNull { it.createdAt.time } ?: angleEmbeddings.first()
+
+            virtualMasters.add(
+                StoredFaceEmbedding(
+                    id = -reference.id,
+                    embedding = master,
+                    userId = userId,
+                    createdAt = reference.createdAt,
+                    angle = FaceAngle.MASTER
+                )
+            )
+        }
+
+        return embeddings + virtualMasters
+    }
+
     private fun Face_data.toStoredEmbedding(): StoredFaceEmbedding? {
         val embedding = parseEmbedding(faceEmbedding) ?: return null
         return StoredFaceEmbedding(
             id = id,
             embedding = embedding,
             userId = user.id,
-            createdAt = createdAt
+            createdAt = createdAt,
+            angle = angle
+        )
+    }
+
+    private fun applyProbeQualityWeight(
+        score: Double,
+        metric: FaceComparisonMetric,
+        probeQuality: Double?
+    ): Double {
+        if (probeQuality == null || !faceRecognitionProperties.matching.qualityWeightedMatching) {
+            return score
+        }
+
+        val weight = faceRecognitionProperties.matching.qualityWeightMin +
+            ((1.0 - faceRecognitionProperties.matching.qualityWeightMin) * probeQuality.coerceIn(0.0, 1.0))
+
+        return when (metric) {
+            FaceComparisonMetric.COSINE_SIMILARITY -> score * weight
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> score / weight.coerceAtLeast(0.01)
+        }
+    }
+
+    private fun challengeRequiredResponse(): VerifyFaceResponse {
+        return VerifyFaceResponse(
+            matched = false,
+            message = "Reto de seguridad requerido. Repite el giro de cabeza para marcar.",
+            challengeRequired = true
         )
     }
 
@@ -491,7 +769,8 @@ class FaceVerifyService(
         user: User,
         occurredAt: Date = Date(),
         method: String = "FACIAL",
-        offlineId: String? = null
+        offlineId: String? = null,
+        attendanceStatus: String? = null
     ): VerifyFaceResponse {
         val (dayStart, dayEnd) = dayRange(occurredAt)
         val previous = attendanceRepository.findTopByUser_IdAndCheckInBetweenOrderByCheckInDesc(
@@ -522,7 +801,7 @@ class FaceVerifyService(
             )
         }
 
-        val status = if (isLate(occurredAt)) "TARDANZA" else "OK"
+        val status = attendanceStatus?.trim()?.takeIf { it.isNotEmpty() } ?: if (isLate(occurredAt)) "TARDANZA" else "OK"
         val attendance = Attendance(
             id = 0,
             checkIn = occurredAt,
@@ -663,13 +942,22 @@ class FaceVerifyService(
         }
     }
 
-    // Usa primero un descriptor principal para que la asistencia responda rapido.
-    // Si ese camino no genera descriptor, recien usa los recortes alternativos como respaldo.
+    // Usa el descriptor principal y tambien recortes alternativos para mejorar la identificacion
+    // cuando el rostro no queda perfectamente centrado en la marcacion.
     private fun generateFastPhotoDescriptors(photoBytes: ByteArray): List<List<Double>> {
+        val descriptors = mutableListOf<List<Double>>()
+
         facePhotoDescriptorService.generateDescriptor(photoBytes)?.let { descriptor ->
-            return listOf(descriptor)
+            descriptors.add(descriptor)
         }
-        return facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
+
+        facePhotoDescriptorService.generateDescriptorCandidates(photoBytes).forEach { candidate ->
+            if (descriptors.none { it == candidate }) {
+                descriptors.add(candidate)
+            }
+        }
+
+        return descriptors
     }
 
     private fun isSecondBest(score: Double, secondBestScore: Double, metric: FaceComparisonMetric): Boolean {
@@ -683,9 +971,18 @@ class FaceVerifyService(
     private fun hasSafeMatchMargin(bestScore: Double, secondBestScore: Double, metric: FaceComparisonMetric): Boolean {
         return when (metric) {
             FaceComparisonMetric.EUCLIDEAN_DISTANCE ->
-                secondBestScore == Double.MAX_VALUE || secondBestScore - bestScore >= EUCLIDEAN_MIN_MARGIN
+                secondBestScore == Double.MAX_VALUE || secondBestScore - bestScore >= faceRecognitionProperties.matching.euclideanMinMargin
             FaceComparisonMetric.COSINE_SIMILARITY ->
-                secondBestScore == -1.0 || bestScore - secondBestScore >= COSINE_MIN_MARGIN
+                secondBestScore == -1.0 || bestScore - secondBestScore >= faceRecognitionProperties.matching.photoMinMargin
+        }
+    }
+
+    private fun isBetterMatch(candidate: FaceMatch, current: FaceMatch?, metric: FaceComparisonMetric): Boolean {
+        if (current == null) return true
+
+        return when (metric) {
+            FaceComparisonMetric.EUCLIDEAN_DISTANCE -> candidate.score < current.score
+            FaceComparisonMetric.COSINE_SIMILARITY -> candidate.score > current.score
         }
     }
 
@@ -712,6 +1009,7 @@ class FaceVerifyService(
             set(Calendar.MINUTE, CHECK_IN_LIMIT_MINUTE)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            add(Calendar.MINUTE, CHECK_IN_TOLERANCE_MINUTES)
         }
         return date.after(limit.time)
     }
@@ -735,14 +1033,28 @@ class FaceVerifyService(
     private data class FaceMatch(
         val user: User,
         val userName: String,
-        val faceCreatedAt: Date
+        val faceCreatedAt: Date,
+        val angle: FaceAngle,
+        val score: Double
+    )
+
+    private data class PhotoMatch(
+        val match: FaceMatch,
+        val usedFallback: Boolean
     )
 
     private data class StoredFaceEmbedding(
         val id: Int,
         val embedding: List<Double>,
         val userId: Int,
-        val createdAt: Date
+        val createdAt: Date,
+        val angle: FaceAngle
+    )
+
+    private data class UserFaceScore(
+        val userId: Int,
+        val bestScore: Double,
+        val bestFaceRef: StoredFaceEmbedding
     )
 
     private enum class FaceComparisonMetric {
@@ -757,13 +1069,13 @@ class FaceVerifyService(
 
         val match = findBestMatch(
             descriptor = descriptor,
-            threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
+            threshold = faceRecognitionProperties.matching.photoSimilarityThreshold,
             source = "login-photo-djl",
             metric = FaceComparisonMetric.COSINE_SIMILARITY
         ) ?: return null
 
         if (isFaceExpired(match.faceCreatedAt)) {
-            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}", match.user.id)
+            logger.info("Login facial por foto: rostro reconocido, pero el registro facial esta vencido. userId={}, angle={}", match.user.id, match.angle)
             return null
         }
         return  match.user
@@ -776,16 +1088,18 @@ class FaceVerifyService(
         }
 
         val photoBytes = photo.bytes
-        if (!facePhotoQualityService.hasUsableFaceCandidate(photoBytes)) {
+        val quality = facePhotoQualityService.evaluate(photoBytes)
+        if (!quality.valid) {
             return null
         }
 
         val descriptors = facePhotoDescriptorService.generateDescriptorCandidates(photoBytes)
         return findBestMatchFromCandidates(
             descriptors = descriptors,
-            threshold = LOGIN_PHOTO_SIMILARITY_THRESHOLD,
+            threshold = faceRecognitionProperties.matching.photoSimilarityThreshold,
             source = "login-photo-djl",
-            metric = FaceComparisonMetric.COSINE_SIMILARITY
+            metric = FaceComparisonMetric.COSINE_SIMILARITY,
+            probeQuality = quality.qualityScore
         )?.user
     }
 }

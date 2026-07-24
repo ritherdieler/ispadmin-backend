@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.wispadmin.config.BorneManagementProperties
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
@@ -61,7 +62,8 @@ sealed class BorneValidationResult {
 @Service
 class BorneManagementService(
     private val subscriptionRepository: SubscriptionRepository,
-    private val napBoxRepository: NapBoxRepository
+    private val napBoxRepository: NapBoxRepository,
+    private val borneManagementProperties: BorneManagementProperties
 ) {
     private val logger = LoggerFactory.getLogger(BorneManagementService::class.java)
     
@@ -74,10 +76,19 @@ class BorneManagementService(
      * Obtiene los bornes disponibles para una NAP Box específica
      */
     fun getAvailableBornes(napBoxId: Int): List<String> {
-        val occupiedBornes = subscriptionRepository
-            .findBorneNumbersByNapBoxIdAndServiceStatus(napBoxId, ServiceStatus.ACTIVE)
-        
+        val occupiedBornes = subscriptionRepository.findBorneNumbersByNapBoxId(napBoxId)
         return VALID_BORNE_NUMBERS.filter { !occupiedBornes.contains(it) }
+    }
+
+    private fun getActiveBornesCount(napBoxId: Int): Int {
+        return subscriptionRepository
+            .findBorneNumbersByNapBoxIdAndServiceStatus(napBoxId, ServiceStatus.ACTIVE)
+            .distinct()
+            .size
+    }
+
+    private fun isNapAtActiveCapacity(napBoxId: Int): Boolean {
+        return getActiveBornesCount(napBoxId) >= MAX_BORNES_PER_NAP
     }
     
     /**
@@ -100,25 +111,51 @@ class BorneManagementService(
         val napBox = subscription.napBox
         requireNotNull(napBox) { "NAP Box es requerido para instalaciones de fibra" }
         
-        // Si no se especifica borne, asignar automáticamente
-        val borneToAssign = borneNumber ?: getAvailableBornes(napBox.id!!).firstOrNull()
-        
-        if (borneToAssign == null) {
+        val napBoxId = napBox.id!!
+
+        if (!borneManagementProperties.capacityCheckEnabled && isNapAtActiveCapacity(napBoxId)) {
+            logger.warn("Bypass cupo bornes: registro sin borne por cupo activo en NAP ${napBox.code}")
+            return null
+        }
+
+        if (borneManagementProperties.capacityCheckEnabled && isNapAtActiveCapacity(napBoxId)) {
             throw NoAvailableBornesException(
                 "No hay bornes disponibles en la NAP Box ${napBox.code}. " +
                 "Todos los $MAX_BORNES_PER_NAP bornes están ocupados por suscripciones activas.",
-                napBox.id!!,
+                napBoxId,
                 napBox.code
             )
         }
-        
-        require(borneToAssign in VALID_BORNE_NUMBERS) { 
-            "Número de borne inválido. Debe estar entre 1 y $MAX_BORNES_PER_NAP" 
+
+        val borneToAssign = borneNumber ?: getAvailableBornes(napBoxId).firstOrNull()
+
+        if (borneToAssign == null) {
+            if (!borneManagementProperties.capacityCheckEnabled) {
+                logger.warn("Bypass cupo bornes: registro sin borne en NAP ${napBox.code}")
+                return null
+            }
+            throw NoAvailableBornesException(
+                "No hay bornes disponibles en la NAP Box ${napBox.code}. " +
+                "Todos los $MAX_BORNES_PER_NAP bornes están ocupados por suscripciones activas.",
+                napBoxId,
+                napBox.code
+            )
         }
-        
-        // Validar que no haya conflictos de constraint único
-        validateBorneAssignment(napBox.id!!, borneToAssign, subscription.id)
-        
+
+        require(borneToAssign in VALID_BORNE_NUMBERS) {
+            "Número de borne inválido. Debe estar entre 1 y $MAX_BORNES_PER_NAP"
+        }
+
+        if (hasDbBorneConflict(napBoxId, borneToAssign, subscription.id)) {
+            if (!borneManagementProperties.capacityCheckEnabled) {
+                logger.warn(
+                    "Bypass cupo bornes: registro sin borne por conflicto uk_napbox_borne en NAP ${napBox.code} borne $borneToAssign"
+                )
+                return null
+            }
+            validateBorneAssignment(napBoxId, borneToAssign, subscription.id)
+        }
+
         return borneToAssign
     }
     
@@ -167,7 +204,13 @@ class BorneManagementService(
         } else {
             val availableBornes = getAvailableBornes(napBoxId)
             
-            if (availableBornes.isEmpty()) {
+            if (availableBornes.isEmpty() || isNapAtActiveCapacity(napBoxId)) {
+                if (!borneManagementProperties.capacityCheckEnabled) {
+                    logger.warn(
+                        "Bypass cupo bornes: reactivacion con borne original $originalBorne en NAP ${napBox.code}"
+                    )
+                    return BorneValidationResult.Valid(originalBorne)
+                }
                 BorneValidationResult.NoBornesAvailable(
                     napBoxId = napBoxId,
                     napBoxCode = napBox.code,
@@ -228,13 +271,23 @@ class BorneManagementService(
      * Verifica si existe un conflicto de constraint único para NAP Box y borne
      */
     fun checkBorneConstraintViolation(napBoxId: Int, borneNumber: String, excludeSubscriptionId: Int? = null): Boolean {
-        return subscriptionRepository.existsByNapBoxIdAndBorneNumberAndServiceStatus(
-            napBoxId, borneNumber, ServiceStatus.ACTIVE
-        ).also { exists ->
+        return hasDbBorneConflict(napBoxId, borneNumber, excludeSubscriptionId).also { exists ->
             if (exists) {
                 logger.warn("Constraint violation detected: NAP Box $napBoxId, Borne $borneNumber already exists")
             }
         }
+    }
+
+    private fun hasDbBorneConflict(
+        napBoxId: Int,
+        borneNumber: String,
+        excludeSubscriptionId: Int? = null
+    ): Boolean {
+        return subscriptionRepository.existsByNapBoxIdAndBorneNumberExcludingSubscriptionId(
+            napBoxId,
+            borneNumber,
+            excludeSubscriptionId
+        )
     }
     
     /**

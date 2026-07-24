@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration
 @ConfigurationProperties(prefix = "whatsapp")
 class WhatsAppProperties {
 
-    var apiVersion: String =""
+    var apiVersion: String = ""
     var phoneNumberId: String = ""
     var businessAccountId: String = ""
     var accessToken: String = ""
@@ -33,6 +33,10 @@ class WhatsAppProperties {
                 phoneNumberId.isNotBlank() &&
                 businessAccountId.isNotBlank() &&
                 accessToken.isNotBlank()
+    }
+
+    fun isWebhookConfigured(): Boolean {
+        return webhookVerifyToken.isNotBlank() && appSecret.isNotBlank()
     }
 }
 

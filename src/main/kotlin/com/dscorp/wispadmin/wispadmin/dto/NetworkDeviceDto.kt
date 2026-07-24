@@ -13,5 +13,7 @@ data class NetworkDeviceDto(
     override val password: String? = null,
     override val username: String? = null,
     override val ipAddress: String? = null,
-    val networkDeviceType: NetworkDevice.NetworkDeviceType? = null
+    val networkDeviceType: NetworkDevice.NetworkDeviceType? = null,
+    val vlanId: Int? = null,
+    val disabled: Boolean = false
 ) : Serializable, NetworkDeviceConnection

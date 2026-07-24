@@ -20,6 +20,13 @@ data class WhatsAppMessageLog(
 
     var status: String = "PENDING",
 
+    @Column(length = 500)
+    var metaMessageId: String? = null,
+
+    var deliveryStatus: String? = null,
+
+    var deliveryStatusAt: LocalDateTime? = null,
+
     @Column(length = 1000)
     var message: String? = null,
 

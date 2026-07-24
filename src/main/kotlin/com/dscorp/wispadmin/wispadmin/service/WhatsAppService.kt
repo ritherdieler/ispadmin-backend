@@ -19,15 +19,17 @@ import org.springframework.web.client.RestTemplate
 
 @Service
 class WhatsAppService(
-    private val whatsAppProperties: WhatsAppProperties
+    private val whatsAppProperties: WhatsAppProperties,
+    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
 ) {
 
     private val log = LoggerFactory.getLogger(this::class.java)
+    private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
 
     fun sendTextMessage(
         phoneNumber: String,
         message: String
-    ): Boolean {
+    ): String? {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
@@ -40,7 +42,7 @@ class WhatsAppService(
             )
         )
 
-        return postToMeta(body).success
+        return if (postToMeta(body).success) body.to else null
     }
 
     fun sendTemplateMessageWithMetaResponse(
@@ -108,7 +110,7 @@ class WhatsAppService(
         val request = HttpEntity(body, headers)
 
         return try {
-            val response = RestTemplate().postForEntity(
+            val response = restTemplate.postForEntity(
                 whatsAppProperties.messagesUrl(),
                 request,
                 String::class.java
@@ -136,7 +138,7 @@ class WhatsAppService(
         }
     }
 
-    private fun normalizePhoneNumber(phoneNumber: String): String {
+    fun normalizePhoneNumber(phoneNumber: String): String {
         val digits = phoneNumber.filter { it.isDigit() }
 
         val normalized = when {

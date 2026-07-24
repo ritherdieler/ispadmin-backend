@@ -1,0 +1,24 @@
+Optical power precision(dBm)           : -
+  Vendor name                            : -
+  Vendor rev                             : -
+  Vendor PN                              : -
+  Vendor SN                              : -
+  Date Code                              : -
+  Rx optical power(dBm)                  : -20.40
+  Rx power current warning threshold(dBm): [-,-]
+  Rx power current alarm threshold(dBm)  : [-,-]
+  Tx optical power(dBm)                  : 2.17
+  Tx power current warning threshold(dBm): [-,-]
+  Tx power current alarm threshold(dBm)  : [-,-]
+  Laser bias current(mA)                 : 10
+  Tx bias current warning threshold(mA)  : [-,-]
+  Tx bias current alarm threshold(mA)    : [-,-]
+  Temperature(C)                         : 37
+  Temperature warning threshold(C)       : [-,-]
+  Temperature alarm threshold(C)         : [-,-]
+  Voltage(V)                             : 3.220
+  Supply voltage warning threshold(V)    : [-,-]
+  Supply voltage alarm threshold(V)      : [-,-]
+  OLT Rx ONT optical power(dBm)          : -24.95
+  CATV Rx optical power(dBm)             : -
+  

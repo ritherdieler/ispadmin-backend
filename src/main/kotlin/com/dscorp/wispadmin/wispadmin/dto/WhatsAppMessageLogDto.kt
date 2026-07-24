@@ -10,6 +10,9 @@ data class WhatsAppMessageLogDto(
     val phone: String?,
     val messageType: String,
     val status: String,
+    val metaMessageId: String?,
+    val deliveryStatus: String?,
+    val deliveryStatusAt: LocalDateTime?,
     val errorMessage: String?,
     val createdAt: LocalDateTime
 )
@@ -22,6 +25,9 @@ fun WhatsAppMessageLog.toDto(): WhatsAppMessageLogDto {
         phone = phone,
         messageType = messageType,
         status = status,
+        metaMessageId = metaMessageId,
+        deliveryStatus = deliveryStatus,
+        deliveryStatusAt = deliveryStatusAt,
         errorMessage = errorMessage,
         createdAt = createdAt
     )

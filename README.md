@@ -223,6 +223,8 @@ src/main/kotlin/com/dscorp/wispadmin/
 
 ## Documentación relacionada
 
+- `.agent-docs/arquitectura-red-dual-mikrotik.md` - Arquitectura de red dual Mikrotik (VLAN 1 / VLAN 100, MK1/MK2, integración ispAdmin)
+- `.agent-docs/checklist-mk2-vlan1-sfp-sfpplus3.md` - Checklist cutover VLAN 1 en MK2 puerto `sfp-sfpplus3`
 - `MIKROTIK_MOCK_README.md` - Configuración de mock/real para MikroTik en desarrollo
 - `OLT_MOCK_README.md` - Configuración de mock para OLT
 

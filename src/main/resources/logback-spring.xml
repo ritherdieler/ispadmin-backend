@@ -56,6 +56,20 @@
         </rollingPolicy>
     </appender>
 
+    <!-- Face recognition metrics: structured JSON lines for later precision analysis -->
+    <appender name="FACE_METRICS_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${LOG_FILE}-face-metrics.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${LOG_FILE}-face-metrics-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
     <!-- Root logger configuration -->
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
@@ -70,17 +84,6 @@
         <appender-ref ref="ERROR_FILE" />
     </logger>
 
-    <!-- Main application class - silence completely -->
-    <logger name="com.dscorp.wispadmin.wispadmin.WispAdminApplicationKt" level="OFF" />
-
-    <!-- Spring Boot loggers - Set to OFF to completely silence them -->
-    <logger name="org.springframework" level="OFF" />
-    <logger name="org.hibernate" level="OFF" />
-    <logger name="org.apache.catalina" level="OFF" />
-    <logger name="org.apache.coyote" level="OFF" />
-    <logger name="org.apache.tomcat" level="OFF" />
-    <logger name="org.springframework.web.servlet.DispatcherServlet" level="OFF" />
-    
     <!-- Request and controller specific loggers -->
     <logger name="com.dscorp.wispadmin.wispadmin.config.RequestLoggingInterceptor" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE" />
@@ -106,5 +109,10 @@
     <logger name="ERROR_LOGGER" level="ERROR" additivity="false">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="ERROR_FILE" />
+    </logger>
+
+    <!-- Structured face recognition metrics: isolated file, one JSON record per line -->
+    <logger name="FACE_RECOGNITION_METRICS" level="INFO" additivity="false">
+        <appender-ref ref="FACE_METRICS_FILE" />
     </logger>
 </configuration> 

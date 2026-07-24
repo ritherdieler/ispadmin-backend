@@ -28,7 +28,9 @@ fun NetworkDevice.toDto() = NetworkDeviceDto(
     password = password,
     username = username,
     ipAddress = ipAddress,
-    networkDeviceType = networkDeviceType
+    networkDeviceType = networkDeviceType,
+    vlanId = vlanId,
+    disabled = disabled
 )
 
 fun List<NetworkDevice>.toDto() = map {
@@ -38,7 +40,9 @@ fun List<NetworkDevice>.toDto() = map {
         password = it.password,
         username = it.username,
         ipAddress = it.ipAddress,
-        networkDeviceType = it.networkDeviceType
+        networkDeviceType = it.networkDeviceType,
+        vlanId = it.vlanId,
+        disabled = it.disabled
     )
 }
 

@@ -30,7 +30,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
 import java.util.concurrent.CompletableFuture
-import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 import java.time.LocalDateTime
 @Service
 class SubscriptionService(
@@ -55,13 +54,34 @@ class SubscriptionService(
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
-    private val applicationEventPublisher: ApplicationEventPublisher
+    private val applicationEventPublisher: ApplicationEventPublisher,
+    private val cancelledOnuReuseService: CancelledOnuReuseService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
     fun createSubscriptionsSimpleQueue(): CompletableFuture<QueueCreationStats> {
         return queueManager.createSubscriptionsSimpleQueue()
     }
+
+    @Transactional(readOnly = true)
+    fun findAllForListing(): List<Subscription> {
+        val subscriptions = repository.findAllWithCoreRelations()
+        if (subscriptions.isEmpty()) return subscriptions
+
+        val paymentsBySubscriptionId = paymentRepository
+            .findBySubscriptionIdInFetchResponsible(subscriptions.mapNotNull { it.id })
+            .groupBy { it.subscription?.id }
+
+        subscriptions.forEach { subscription ->
+            subscription.payments = paymentsBySubscriptionId[subscription.id].orEmpty().toMutableSet()
+        }
+
+        return subscriptions
+    }
+
+    @Transactional(readOnly = true)
+    fun getAllSubscriptionsForList(): List<SubscriptionDto> =
+        findAllForListing().map { it.toDto() }
 
     fun changeNapBox(request: MoveOnuRequest): Subscription {
         val subscription = repository.findById(request.subscriptionId).get()
@@ -113,11 +133,11 @@ class SubscriptionService(
                 queueManager.recreateQueueForSubscription(connection, subscription)
             }
 
-            onuService.authorizeOnuInSmartOltWidthPostMethod(authorizationRequest)
+            cancelledOnuReuseService.authorizeWithCancelledReuse(authorizationRequest)
 
             return subscription
         } catch (e: Exception) {
-            throw Exception("No se pudo migrar el servicio")
+            throw Exception("No se pudo migrar el servicio: ${e.message}", e)
         }
 
     }
@@ -476,6 +496,10 @@ class SubscriptionService(
     fun cancelService(idSubscription: Int, onSuccess: (subscription: Subscription) -> Unit) {
         val subscription = repository.findById(idSubscription).get()
 
+        if (subscription.serviceStatus == ServiceStatus.CANCELLED) {
+            return
+        }
+
         borneManagementService.releaseBorne(subscription)
 
         repository.cancelService(
@@ -508,7 +532,7 @@ class SubscriptionService(
                     subscription = subscription,
                     actionType = SubscriptionActionType.UPDATE_LOCATION,
                     planName = subscription.plan?.name,
-                    planPrince = subscription.plan?.price ?: 0.0,
+                    planPrice = subscription.plan?.price ?: 0.0,
                     planId = subscription.plan?.id
                 )
             )

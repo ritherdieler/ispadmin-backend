@@ -1,6 +1,11 @@
 package com.dscorp.wispadmin.wispadmin.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.dscorp.wispadmin.observability.config.CorrelationIdFilter
+import com.dscorp.wispadmin.observability.config.TraceContextFilter
+import com.dscorp.wispadmin.observability.port.ObservabilityReporter
+import com.dscorp.wispadmin.observability.port.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.logging.GlobalExceptionHandler
 import com.dscorp.wispadmin.wispadmin.logging.StackTraceSummarizer
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
@@ -17,7 +22,8 @@ import javax.servlet.http.HttpServletResponse
 
 @Component
 class RequestLoggingInterceptor @Autowired constructor(
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val observabilityReporter: ObservabilityReporter? = null
 ) : HandlerInterceptor {
 
     private val log = LoggerFactory.getLogger(this::class.java)
@@ -108,6 +114,46 @@ class RequestLoggingInterceptor @Autowired constructor(
 
         val json = objectMapper.writeValueAsString(payload)
         log.error("[HTTP_FAILURE] {}", json)
+
+        reportToObservability(request, uri, method, status, duration, errorMsg, stackSummary)
+    }
+
+    private fun reportToObservability(
+        request: HttpServletRequest,
+        uri: String,
+        method: String,
+        status: Int,
+        duration: Long,
+        errorMsg: String,
+        stackSummary: String
+    ) {
+        val reporter = observabilityReporter ?: return
+        if (request.getAttribute(GlobalExceptionHandler.ATTR_OBS_REPORTED) == true) return
+        if (uri.contains("/observability")) return
+        try {
+            val correlationId = request.getAttribute(CorrelationIdFilter.ATTRIBUTE) as? String
+                ?: request.getHeader(CorrelationIdFilter.HEADER)
+            val sessionId = request.getAttribute(TraceContextFilter.ATTRIBUTE_SESSION) as? String
+                ?: request.getHeader(TraceContextFilter.HEADER_SESSION)
+            reporter.report(
+                ReportedEvent(
+                    eventType = "http_error",
+                    platform = "backend",
+                    severity = if (status >= 500) "error" else "warning",
+                    message = errorMsg.ifBlank { "HTTP $status $method $uri" },
+                    errorType = "HTTP_$status",
+                    stacktrace = stackSummary.ifBlank { null },
+                    correlationId = correlationId,
+                    sessionId = sessionId,
+                    url = uri,
+                    httpMethod = method,
+                    httpStatus = status,
+                    durationMs = duration,
+                    userAgent = request.getHeader("User-Agent")
+                )
+            )
+        } catch (_: Exception) {
+        }
     }
 
     private fun summarizeStackFromResponseBody(resBody: String): String {

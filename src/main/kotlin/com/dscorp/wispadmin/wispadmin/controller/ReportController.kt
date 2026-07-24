@@ -2,11 +2,11 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.dto.DownloadDocumentDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
-import com.dscorp.wispadmin.wispadmin.extensions.getFirstDayOfMonthInMillis
-import com.dscorp.wispadmin.wispadmin.extensions.getLastDayOfMonthInMillis
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import com.dscorp.wispadmin.wispadmin.service.ReportService
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -14,51 +14,40 @@ import org.springframework.web.bind.annotation.RestController
 import java.io.ByteArrayOutputStream
 import java.util.*
 
-
 @RestController
 @RequestMapping("/report")
-class ReportController {
+class ReportController(
+    private val reportService: ReportService
+) {
 
+    private fun monthRange(monthsAgo: Long): Pair<LocalDateTime, LocalDateTime> {
+        val zone = ZoneId.of("America/Lima")
+        val targetMonth = LocalDate.now(zone).minusMonths(monthsAgo)
 
-    @Autowired
-    lateinit var reportService: ReportService
+        val startDate = targetMonth.withDayOfMonth(1).atStartOfDay()
+        val endDate = targetMonth.plusMonths(1).withDayOfMonth(1).atStartOfDay()
+
+        return startDate to endDate
+    }
 
     @GetMapping("/canceled-current-month")
     fun getCancelledSubscriptionFromLastMonth(): ResponseEntity<DownloadDocumentDto> {
-        return try {
-            val firstDayOfMonthInMillis =
-                Calendar.getInstance().getFirstDayOfMonthInMillis()
-            val lastDayOfMonthInMillis =
-                Calendar.getInstance().getLastDayOfMonthInMillis()
-            val result =
-                reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
-                    .map { it.toDto() }
+        val (startDate, endDate) = monthRange(monthsAgo = 0)
+        val result = reportService.getCancelledSubscriptionsBetweenTwoDates(startDate, endDate)
+            .map { it.toDto() }
 
-            val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_actual")
-            ResponseEntity.ok().body(response)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return ResponseEntity.status(500).body(null)
-        }
+        val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_actual")
+        return ResponseEntity.ok().body(response)
     }
 
     @GetMapping("/canceled-past-month")
     fun getCancelledSubscriptionsFromPastMont(): ResponseEntity<DownloadDocumentDto> {
-        return try {
-            val firstDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getFirstDayOfMonthInMillis()
-            val lastDayOfMonthInMillis =
-                Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.getLastDayOfMonthInMillis()
-            val result =
-                reportService.getCancelledSubscriptionsBetweenTwoDates(firstDayOfMonthInMillis, lastDayOfMonthInMillis)
-                    .map { it.toDto() }
+        val (startDate, endDate) = monthRange(monthsAgo = 1)
+        val result = reportService.getCancelledSubscriptionsBetweenTwoDates(startDate, endDate)
+            .map { it.toDto() }
 
-            val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_pasado")
-            ResponseEntity.ok().body(response)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return ResponseEntity.status(500).body(null)
-        }
+        val response = createGenericSubscriptionDocument(result, "suscripciones_canceladas_mes_pasado")
+        return ResponseEntity.ok().body(response)
     }
 }
 
@@ -67,11 +56,9 @@ private fun createGenericSubscriptionDocument(
     subscriptions: List<SubscriptionDto>,
     documentName: String
 ): DownloadDocumentDto {
-    // Crear el archivo de Excel utilizando Apache POI
     val workbook = XSSFWorkbook()
     val sheet = workbook.createSheet(documentName)
 
-    // Crear la primera fila con los encabezados
     val headerRow = sheet.createRow(0)
     headerRow.createCell(0).setCellValue("DNI")
     headerRow.createCell(1).setCellValue("Nombres")
@@ -79,7 +66,6 @@ private fun createGenericSubscriptionDocument(
     headerRow.createCell(3).setCellValue("Telefono")
     headerRow.createCell(4).setCellValue("Direccion")
 
-    // Llenar las filas restantes con los datos de los pagos
     var rowNum = 1
     for (subscription in subscriptions) {
         val row = sheet.createRow(rowNum++)
@@ -90,15 +76,12 @@ private fun createGenericSubscriptionDocument(
         row.createCell(4).setCellValue("${subscription.place?.name} - ${subscription.address}")
     }
 
-    // Guardar el libro de Excel en un objeto ByteArrayOutputStream
     val stream = ByteArrayOutputStream()
     workbook.write(stream)
 
-    // Crear la respuesta HTTP con los datos del archivo de Excel
     val bytes = stream.toByteArray()
 
     val bytesToBase64 = Base64.getEncoder().encodeToString(bytes)
-
 
     return DownloadDocumentDto(name = documentName, type = "xlsx", base64 = bytesToBase64)
 }

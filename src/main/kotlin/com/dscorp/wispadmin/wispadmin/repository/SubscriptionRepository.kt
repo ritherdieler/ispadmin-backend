@@ -12,6 +12,26 @@ import java.util.*
 import java.time.LocalDateTime
 
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.place
+        LEFT JOIN FETCH s.napBox nb
+        LEFT JOIN FETCH nb.mufa
+        LEFT JOIN FETCH s.hostDevice
+        LEFT JOIN FETCH s.technician
+        LEFT JOIN FETCH s.fiberOnu
+        LEFT JOIN FETCH s.ipPool
+        LEFT JOIN FETCH s.cpe
+        LEFT JOIN FETCH s.coupon
+        LEFT JOIN FETCH s.additionalDevices
+        ORDER BY s.id
+        """
+    )
+    fun findAllWithCoreRelations(): List<Subscription>
+
     @Query("SELECT distinct s FROM Subscription s inner join  s.payments p WHERE p.paid = false ")
     fun getDebtors(): List<Subscription>
 
@@ -57,10 +77,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     fun countByServiceStatus(serviceStatus: ServiceStatus): Long
 
     //get debtors from last month
-    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime < ?2")
     fun getDebtorsFromLastMonth(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
-    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime <= ?2")
+    @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime < ?2")
     fun getCancelledServicesFromDateInterval(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     @Query("SELECT distinct s FROM Subscription s WHERE s.isPaymentCommit = true")
@@ -99,13 +119,20 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         endDate: LocalDateTime
     ): List<Subscription>
 
-    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime < ?2")
     fun findQuantityByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): Int
 
-    @Query("SELECT s FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime <= ?2")
+    @Query("SELECT s FROM Subscription s WHERE s.cancellationDateDatetime >= ?1 AND s.cancellationDateDatetime < ?2")
     fun findSubscriptionsByCancellationDate(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>
 
     fun findByPlanId(planId: Int): List<Subscription>
+
+    @Query("""
+        SELECT s FROM Subscription s
+        WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = :normalizedPhone
+        OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = CONCAT('51', :normalizedPhone)
+    """)
+    fun findByNormalizedPhone(normalizedPhone: String): List<Subscription>
 
     @Modifying
     @Query(
@@ -194,6 +221,381 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         napBoxId: Int, 
         status: ServiceStatus
     ): List<String>
+
+    @Query("SELECT s.borneNumber FROM Subscription s WHERE s.napBox.id = :napBoxId AND s.borneNumber IS NOT NULL")
+    fun findBorneNumbersByNapBoxId(napBoxId: Int): List<String>
+
+    @Query(
+        """
+        SELECT COUNT(s) > 0 FROM Subscription s
+        WHERE s.napBox.id = :napBoxId AND s.borneNumber = :borneNumber
+        AND (:excludeSubscriptionId IS NULL OR s.id <> :excludeSubscriptionId)
+        """
+    )
+    fun existsByNapBoxIdAndBorneNumberExcludingSubscriptionId(
+        napBoxId: Int,
+        borneNumber: String,
+        excludeSubscriptionId: Int?
+    ): Boolean
+
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        WHERE s.serviceStatus = 'CANCELLED'
+        AND s.fiberOnu IS NOT NULL
+        AND (
+            UPPER(s.fiberOnu.sn) = UPPER(:sn)
+            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+        )
+        """
+    )
+    fun findCancelledByFiberOnuSn(sn: String, suffix: String): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        INNER JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE p.paid = false
+        AND s.serviceStatus = 'ACTIVE'
+        AND LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
+        """
+    )
+    fun findDebtorsByPlaceName(@Param("placeName") placeName: String): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        LEFT JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE p.paid = false
+        AND s.serviceStatus = 'ACTIVE'
+        """
+    )
+    fun findAllDebtors(): List<Subscription>
+
+    @Query(
+        value = """
+        SELECT DISTINCT s.id
+        FROM subscription s
+        INNER JOIN place pl ON s.place_id = pl.id
+        INNER JOIN payment p ON p.subscription_id = s.id AND p.paid = false
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName)) AND sector.area IS NOT NULL
+        WHERE LOWER(TRIM(pl.name)) = LOWER(TRIM(:placeName))
+          AND s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        """,
+        nativeQuery = true,
+    )
+    fun findDebtorIdsInsidePlacePolygon(@Param("placeName") placeName: String): List<Int>
+
+    @Query(
+        value = """
+        SELECT DISTINCT s.id
+        FROM subscription s
+        INNER JOIN place pl ON s.place_id = pl.id
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(pl.name)) AND sector.area IS NOT NULL
+        INNER JOIN payment p ON p.subscription_id = s.id AND p.paid = false
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        """,
+        nativeQuery = true,
+    )
+    fun findAllDebtorIdsInsidePlacePolygons(): List<Int>
+
+    @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            pl.name,
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place pl ON s.place_id = pl.id
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND TRIM(pl.name) != ''
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRows(
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            sector.name,
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName))
+            AND sector.area IS NOT NULL
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND ST_Contains(
+                ST_SRID(sector.area, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, sector.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRowsInsidePlacePolygon(
+        @Param("placeName") placeName: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT COUNT(*)
+        FROM (
+            SELECT s.id
+            FROM subscription s
+            INNER JOIN payment p ON p.subscription_id = s.id
+                AND p.paid = false
+                AND p.billing_date_datetime >= :dateFrom
+                AND p.billing_date_datetime < :dateToExclusive
+            INNER JOIN place sector ON LOWER(TRIM(sector.name)) = LOWER(TRIM(:placeName))
+                AND sector.area IS NOT NULL
+            WHERE s.service_status = 'ACTIVE'
+              AND s.location IS NOT NULL
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+              AND ST_Contains(
+                    ST_SRID(sector.area, 4326),
+                    ST_GeomFromText(
+                        CONCAT(
+                            'POINT(',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                            ' ',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                            ')'
+                        ),
+                        4326
+                    )
+              )
+            GROUP BY s.id
+            HAVING SUM(p.amount_to_pay) > 0
+        ) omitted
+        """,
+        nativeQuery = true,
+    )
+    fun countSweepDefaultLocationDebtorsInsidePlacePolygon(
+        @Param("placeName") placeName: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): Long
+
+    @Query(
+        value = """
+        SELECT
+            s.id,
+            COALESCE(NULLIF(TRIM(s.first_name), ''), s.business_name, ''),
+            COALESCE(s.last_name, ''),
+            COALESCE(NULLIF(TRIM(pl.name), ''), 'Sin sector'),
+            SUM(p.amount_to_pay)
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        LEFT JOIN place pl ON s.place_id = pl.id
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)) != 0
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)) != 0
+          AND NOT (
+            ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+            AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          )
+          AND ST_Contains(
+                ST_GeomFromText(:selectionPolygonWkt, 4326),
+                ST_GeomFromText(
+                    CONCAT(
+                        'POINT(',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                        ' ',
+                        JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                        ')'
+                    ),
+                    4326
+                )
+          )
+        GROUP BY s.id, s.first_name, s.last_name, s.business_name, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepEligibleDebtorRowsInsideSelectionPolygon(
+        @Param("selectionPolygonWkt") selectionPolygonWkt: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT COUNT(*)
+        FROM (
+            SELECT s.id
+            FROM subscription s
+            INNER JOIN payment p ON p.subscription_id = s.id
+                AND p.paid = false
+                AND p.billing_date_datetime >= :dateFrom
+                AND p.billing_date_datetime < :dateToExclusive
+            LEFT JOIN place pl ON s.place_id = pl.id
+            WHERE s.service_status = 'ACTIVE'
+              AND s.location IS NOT NULL
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+              AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+              AND ST_Contains(
+                    ST_GeomFromText(:selectionPolygonWkt, 4326),
+                    ST_GeomFromText(
+                        CONCAT(
+                            'POINT(',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')),
+                            ' ',
+                            JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')),
+                            ')'
+                        ),
+                        4326
+                    )
+              )
+            GROUP BY s.id
+            HAVING SUM(p.amount_to_pay) > 0
+        ) omitted
+        """,
+        nativeQuery = true,
+    )
+    fun countSweepDefaultLocationDebtorsInsideSelectionPolygon(
+        @Param("selectionPolygonWkt") selectionPolygonWkt: String,
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): Long
+
+    @Query(
+        value = """
+        SELECT s.id, pl.name
+        FROM subscription s
+        INNER JOIN payment p ON p.subscription_id = s.id
+            AND p.paid = false
+            AND p.billing_date_datetime >= :dateFrom
+            AND p.billing_date_datetime < :dateToExclusive
+        INNER JOIN place pl ON s.place_id = pl.id
+        WHERE s.service_status = 'ACTIVE'
+          AND s.location IS NOT NULL
+          AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.latitude')) AS DECIMAL(12, 8)), 6) = -11.233708
+          AND ROUND(CAST(JSON_UNQUOTE(JSON_EXTRACT(s.location, '$.longitude')) AS DECIMAL(12, 8)), 6) = -77.376278
+          AND TRIM(pl.name) != ''
+        GROUP BY s.id, pl.name
+        HAVING SUM(p.amount_to_pay) > 0
+        """,
+        nativeQuery = true,
+    )
+    fun findSweepDefaultLocationDebtorIdsWithPlace(
+        @Param("dateFrom") dateFrom: LocalDateTime,
+        @Param("dateToExclusive") dateToExclusive: LocalDateTime,
+    ): List<Array<Any>>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        INNER JOIN FETCH s.payments p
+        LEFT JOIN FETCH s.place pl
+        LEFT JOIN FETCH s.plan
+        WHERE s.id IN :ids
+          AND p.paid = false
+          AND s.serviceStatus = 'ACTIVE'
+        """
+    )
+    fun findDebtorsByIds(@Param("ids") ids: Collection<Int>): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.place
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.payments
+        """
+    )
+    fun findAllWithRelationsForSmartMap(): List<Subscription>
 
     @Query(
         value = """

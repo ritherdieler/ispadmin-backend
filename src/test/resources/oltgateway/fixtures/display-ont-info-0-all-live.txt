@@ -1,0 +1,22 @@
+In frame 0,
+  ---------------------------------------------------------------------------
+  F/S/P   ONT         SN         Control     Run      Config   Match    Protect
+          ID                     flag        state    state    state    side
+  ---------------------------------------------------------------------------
+  0/ 0/0    0  56534F4C0086F6E9  active      online   normal   match    no
+  0/ 0/0    1  56534F4C00872399  active      online   normal   match    no
+  0/ 0/0    2  56534F4C0086C999  active      online   normal   match    no
+  0/ 1/0    1  4857544315F604E6  active      online   normal   match    no
+  0/ 1/0    2  54504C472A561D98  active      online   normal   mismatch no
+  0/ 1/0    3  54504C472A562A40  active      online   normal   mismatch no
+  ---------------------------------------------------------------------------
+  F/S/P   ONT-ID   Description
+  ---------------------------------------------------------------------------
+  0/ 0/0       0   ABRAHAM_MAGENCIO_USURIAGA_zone_Zone_1_authd_20250823
+  0/ 0/0       1   CALA_ORDINOLA_zone_Zone_1_authd_20250929
+  0/ 0/0       2   JUAN RAMIREZ MUNOZ_zone_Zone 1_descr_Nueve
+                   migracion_authd_20251117
+  0/ 1/0       1   Leydi Aguirre Rojas_zone_Zone 1_authd_20260116
+  0/ 1/0       2   JEINERALVARADO
+  0/ 1/0       3   MARIA-HURTADO
+MA5608T#

@@ -2,12 +2,10 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
-import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.dto.PlanDto
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
-import org.springframework.beans.factory.annotation.Autowired
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -15,60 +13,39 @@ import java.util.concurrent.CompletableFuture
 
 @RestController
 @RequestMapping("/plan")
-class PlanController {
-    private val logger = LoggerFactory.getLogger(PlanController::class.java)
+class PlanController(
+    private val repository: PlanRepository,
+    private val subscriptionRepository: SubscriptionRepository
+) {
 
-    val objectErrorResponse: ResponseEntity<Plan> = ResponseEntity.status(500).body(null)
-    val listObjectErrorResponse: ResponseEntity<List<Plan>> = ResponseEntity.status(500).body(null)
-    val listDtoErrorResponse: ResponseEntity<List<PlanDto>> = ResponseEntity.status(500).body(null)
-
-    @Autowired
-    lateinit var repository: PlanRepository
-
-    @Autowired
-    lateinit var subscriptionRepository: SubscriptionRepository
-
-    @PostMapping
-    fun registerPlan(@RequestBody newPlan: Plan): ResponseEntity<Plan> {
-        return try {
-            val plan = repository.save(newPlan)
-            if (plan != null) ResponseEntity.status(200).body(plan)
-            else objectErrorResponse
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
-        }
+    companion object {
+        private val logger = LoggerFactory.getLogger(PlanController::class.java)
     }
 
+    @PostMapping
+    fun registerPlan(@RequestBody newPlan: Plan): ResponseEntity<Plan> =
+        ResponseEntity.ok(repository.save(newPlan))
 
     @PutMapping
     fun updatePlan(@RequestBody plan: Plan): ResponseEntity<Plan> {
-        return try {
-            val planToUpdate = repository.findById(plan.id).get().apply {
-                this.name = plan.name
-                this.price = plan.price
-                this.uploadSpeed = plan.uploadSpeed
-                this.downloadSpeed = plan.downloadSpeed
-            }
-
-            val subscriptions = subscriptionRepository.findByPlanId(planToUpdate.id)
-
-            updatePlansInMikrotikInADifferentThread(subscriptions, planToUpdate)
-
-            val updatedPlan = repository.save(planToUpdate)
-            ResponseEntity.status(200).body(updatedPlan)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
-            ResponseEntity.status(500).body(null)
+        val planToUpdate = repository.findById(plan.id).get().apply {
+            this.name = plan.name
+            this.price = plan.price
+            this.uploadSpeed = plan.uploadSpeed
+            this.downloadSpeed = plan.downloadSpeed
         }
+
+        val subscriptions = subscriptionRepository.findByPlanId(planToUpdate.id)
+
+        updatePlansInMikrotikInADifferentThread(subscriptions, planToUpdate)
+
+        return ResponseEntity.ok(repository.save(planToUpdate))
     }
 
     private fun updatePlansInMikrotikInADifferentThread(
         subscriptions: List<Subscription>,
         planToUpdate: Plan
     ) {
-
         val withoutHostDevice = subscriptions.filter { it.hostDevice == null }
         if (withoutHostDevice.isNotEmpty()) {
             logger.warn("Suscripciones sin hostDevice: {}", withoutHostDevice.map { it.id })
@@ -79,12 +56,11 @@ class PlanController {
             logger.warn("Suscripciones con hostDevice.id nulo: {}", withNullHostId.map { it.id })
         }
 
-        // Agrupar solo suscripciones con hostDevice y id válido
         val groupedHostDevice = subscriptions
             .filter { it.hostDevice?.id != null }
             .groupBy { it.hostDevice!!.id!! }
 
-        CompletableFuture.runAsync { // Ejecuta la tarea programada en un hilo separado
+        CompletableFuture.runAsync {
             groupedHostDevice.forEach { id, subs ->
                 subs.first().hostDevice?.executeCommand { apiConnection ->
                     subs.forEach {
@@ -103,89 +79,54 @@ class PlanController {
         }
     }
 
-
     @GetMapping
-    fun getPlanList(): ResponseEntity<List<Plan>> {
-        return try {
-            val planList = repository.findAll().filter { it.isActive }.sortedBy { it.type }
-            if (planList != null) ResponseEntity.status(200).body(planList)
-            else listObjectErrorResponse
-        } catch (e: Exception) {
-            e.printStackTrace()
-            listObjectErrorResponse
-        }
-    }
+    fun getPlanList(): ResponseEntity<List<Plan>> =
+        ResponseEntity.ok(repository.findAll().filter { it.isActive }.sortedBy { it.type })
 
     @GetMapping("/all")
     fun getAllPlans(): ResponseEntity<List<PlanDto>> {
-        return try {
-            val planList = repository.findAll().sortedBy { it.type }
-            val activeSubscriptions = subscriptionRepository.findActiveSubscriptions()
-            
-            // Contar suscripciones activas por plan
-            val subscriptionCountByPlan = activeSubscriptions
-                .filter { it.plan != null }
-                .groupBy { it.plan!!.id }
-                .mapValues { it.value.size }
-            
-            val planDtoList = planList.map { plan ->
-                plan.toDto(subscriptionCountByPlan[plan.id] ?: 0)
-            }
-            
-            ResponseEntity.status(200).body(planDtoList)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            listDtoErrorResponse
+        val planList = repository.findAll().sortedBy { it.type }
+        val activeSubscriptions = subscriptionRepository.findActiveSubscriptions()
+
+        val subscriptionCountByPlan = activeSubscriptions
+            .filter { it.plan != null }
+            .groupBy { it.plan!!.id }
+            .mapValues { it.value.size }
+
+        val planDtoList = planList.map { plan ->
+            plan.toDto(subscriptionCountByPlan[plan.id] ?: 0)
         }
+
+        return ResponseEntity.ok(planDtoList)
     }
 
     @DeleteMapping("/{id}")
     fun deletePlan(@PathVariable id: Int): ResponseEntity<Plan> {
-        return try {
-            val planToDelete = repository.findById(id)
-            if (planToDelete.isPresent) {
-                val plan = planToDelete.get()
-                plan.isActive = false
-                val deletedPlan = repository.save(plan)
-                ResponseEntity.status(200).body(deletedPlan)
-            } else {
-                ResponseEntity.status(404).body(null)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
+        val planToDelete = repository.findById(id)
+        return if (planToDelete.isPresent) {
+            val plan = planToDelete.get()
+            plan.isActive = false
+            ResponseEntity.ok(repository.save(plan))
+        } else {
+            ResponseEntity.notFound().build()
         }
     }
 
     @PutMapping("/{id}/activate")
     fun activatePlan(@PathVariable id: Int): ResponseEntity<Plan> {
-        return try {
-            val plan = repository.findById(id).orElseThrow { RuntimeException("Plan no encontrado") }
-            plan.isActive = true
-            val updatedPlan = repository.save(plan)
-            ResponseEntity.status(200).body(updatedPlan)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
-        }
+        val plan = repository.findById(id).orElseThrow { RuntimeException("Plan no encontrado") }
+        plan.isActive = true
+        return ResponseEntity.ok(repository.save(plan))
     }
 
     @PutMapping("/{id}/deactivate")
     fun deactivatePlan(@PathVariable id: Int): ResponseEntity<Plan> {
-        return try {
-            val plan = repository.findById(id).orElseThrow { RuntimeException("Plan no encontrado") }
-            plan.isActive = false
-            val updatedPlan = repository.save(plan)
-            ResponseEntity.status(200).body(updatedPlan)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            objectErrorResponse
-        }
+        val plan = repository.findById(id).orElseThrow { RuntimeException("Plan no encontrado") }
+        plan.isActive = false
+        return ResponseEntity.ok(repository.save(plan))
     }
-
 }
 
-// Extensión para convertir Plan a PlanDto con conteo de suscripciones
 fun Plan.toDto(activeSubscriptionsCount: Int = 0): PlanDto = PlanDto(
     id = this.id,
     name = this.name,

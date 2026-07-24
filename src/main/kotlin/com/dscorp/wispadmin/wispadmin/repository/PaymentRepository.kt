@@ -122,14 +122,16 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
-        INNER JOIN subscription s ON p.subscription_id = s.id
         WHERE p.paid = false
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun calculateTotalToCollectForCurrentMonth(): Double
+    fun calculateTotalToCollectBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
 
     @Query(
@@ -137,36 +139,44 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SELECT COALESCE(SUM(p.discount_amount), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.payment_date_datetime >= :startDate
+          AND p.payment_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalDiscountsForCurrentMonth(): Double
+    fun getTotalDiscountsBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
-        INNER JOIN subscription s ON p.subscription_id = s.id
-        WHERE p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+        WHERE p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getGrossRevenueForCurrentMonth(): Double
+    fun getGrossRevenueBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
     @Query(
         value = """
         SELECT COALESCE(SUM(p.amount_paid), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.billing_date_datetime >= CAST(DATE_FORMAT(CURRENT_DATE() - INTERVAL 1 MONTH, '%Y-%m-01 00:00:00') AS DATETIME)
-          AND p.billing_date_datetime < CAST(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01 00:00:00') AS DATETIME)
+          AND p.payment_date_datetime >= :startDate
+          AND p.payment_date_datetime < :endDate
         """,
         nativeQuery = true
     )
-    fun getTotalRaisedForCurrentMonth(): Double
+    fun getTotalRaisedBetween(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Double
 
 
     @Query(
@@ -186,7 +196,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 //    )
 
 
-    @Query("SELECT p from Payment p where p.billingDateDatetime between :startDate and :endDate")
+    @Query("SELECT p from Payment p where p.billingDateDatetime >= :startDate and p.billingDateDatetime < :endDate")
     fun getLasMonthsPaymentMethodStatics(startDate: LocalDateTime, endDate: LocalDateTime): List<Payment>
     
     /**
@@ -202,7 +212,8 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SUM(CASE WHEN p.paid = true THEN 1 ELSE 0 END) as paidPayments,
         SUM(CASE WHEN p.paid = true AND p.method IN ('Plin', 'Yape', 'Transferencia') THEN 1 ELSE 0 END) as digitalPayments
     FROM payment p 
-    WHERE p.billing_date_datetime BETWEEN :startDate AND :endDate
+    WHERE p.billing_date_datetime >= :startDate
+      AND p.billing_date_datetime < :endDate
     GROUP BY MONTH(p.billing_date_datetime), YEAR(p.billing_date_datetime), p.method
     ORDER BY year DESC, month DESC
 """, nativeQuery = true)
@@ -213,8 +224,18 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     fun findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId: Int): List<Payment>
 
+    fun findBySubscriptionIdIn(subscriptionIds: Collection<Int>): List<Payment>
+
+    @Query("SELECT p FROM Payment p LEFT JOIN FETCH p.responsible WHERE p.subscription.id IN :ids")
+    fun findBySubscriptionIdInFetchResponsible(@Param("ids") ids: Collection<Int>): List<Payment>
+
     fun existsBySubscriptionIdAndBillingDateDatetimeBetween(subscriptionId: Int, startDate: LocalDateTime, endDate: LocalDateTime): Boolean
 
+    fun existsBySubscriptionIdAndBillingDateDatetimeGreaterThanEqualAndBillingDateDatetimeLessThan(
+        subscriptionId: Int,
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Boolean
     //metodo para verificar si existen pagos con la misma fecha de facturacion
     fun existsByBillingDateDatetimeAndSubscriptionId(billingDateDatetime: LocalDateTime, subscriptionId: Int): Boolean
 
@@ -225,18 +246,17 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     @Query(
         value = """
-            SELECT 
-                SUM(p.amount_to_pay) AS totalCharged,
-                UNIX_TIMESTAMP(DATE(MIN(p.billing_date_datetime))) * 1000 AS billingDate
-            FROM payment p
-            WHERE p.billing_date_datetime IS NOT NULL
-            GROUP BY DATE(p.billing_date_datetime)
-            ORDER BY DATE(p.billing_date_datetime) DESC
-            LIMIT 6
-        """,
+        SELECT
+            COALESCE(SUM(p.amount_to_pay), 0) AS totalCharged,
+            DATE_FORMAT(MIN(p.billing_date_datetime), '%Y-%m-01') AS billingMonth
+        FROM payment p
+        WHERE p.billing_date_datetime IS NOT NULL
+        GROUP BY YEAR(p.billing_date_datetime), MONTH(p.billing_date_datetime)
+        ORDER BY YEAR(p.billing_date_datetime) DESC, MONTH(p.billing_date_datetime) DESC
+        LIMIT 6
+    """,
         nativeQuery = true
     )
     fun getTop6GrossRevenueHistory(): List<Map<String, Any>>
-
 
 }

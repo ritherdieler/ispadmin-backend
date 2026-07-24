@@ -8,7 +8,9 @@ data class NetworkDeviceRequest(
     var password: String? = null,
     var username: String? = null,
     var ipAddress: String? = null,
-    var networkDeviceType: NetworkDevice.NetworkDeviceType? = null
+    var networkDeviceType: NetworkDevice.NetworkDeviceType? = null,
+    var vlanId: Int? = null,
+    var disabled: Boolean = false
 ) {
     fun toModel(): NetworkDevice = NetworkDevice(
         id = id,
@@ -16,6 +18,8 @@ data class NetworkDeviceRequest(
         password = password,
         username = username,
         ipAddress = ipAddress,
-        networkDeviceType = networkDeviceType?: NetworkDevice.NetworkDeviceType.FIBER_ROUTER
+        networkDeviceType = networkDeviceType?: NetworkDevice.NetworkDeviceType.FIBER_ROUTER,
+        vlanId = vlanId,
+        disabled = disabled
     )
 }

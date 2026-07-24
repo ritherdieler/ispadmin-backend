@@ -4,7 +4,6 @@ import com.dscorp.wispadmin.wispadmin.requestbody.AppManagementRequest
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmConstants
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage
 import com.google.firebase.messaging.FirebaseMessaging
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -19,7 +18,7 @@ enum class ManagementAction {
 
 @RestController
 @RequestMapping("/management")
-class AppManagementController @Autowired constructor(
+class AppManagementController(
     private val fcm: FirebaseMessaging,
 ) {
     @PostMapping("app_force_logout")

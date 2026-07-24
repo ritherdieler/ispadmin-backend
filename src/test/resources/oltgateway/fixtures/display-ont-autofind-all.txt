@@ -1,0 +1,24 @@
+Number of autofind ONTs: 2
+
+  F/S/P                  : 0/0/2
+  Ont SN                 : 4857544311E70E9A
+  Password               :
+  Loid                   :
+  Checkcode              :
+  VendorID               : HWTC
+  Ont Version            : V3R017C10S120
+  Ont SoftwareVersion    : V3R017C10S120
+  Ont EquipmentID        : HG8245H
+  Ont autofind time      : 2024-06-15 10:30:22+08:00
+
+  F/S/P                  : 0/1/0
+  Ont SN                 : ALCLFCA81B0E
+  Password               :
+  Loid                   :
+  Checkcode              :
+  VendorID               : ALCL
+  Ont Version            : 3FE46606BGCB41
+  Ont SoftwareVersion    : 3FE46606BGCB41
+  Ont EquipmentID        : G-140W-C
+  Ont autofind time      : 2024-06-15 11:02:01+08:00
+MA5608T#

@@ -1,7 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.data.model
 
-import com.dscorp.wispadmin.wispadmin.controller.toDto
-import com.google.gson.Gson
 import java.util.*
 import javax.persistence.*
 
@@ -29,8 +27,10 @@ data class SubscriptionLog(
     val actionType: SubscriptionActionType,
 
     val planName:String? = null,
-    val planPrince: Double? = null,
+    val planPrice: Double? = null,
     val planId : Int? = null,
+    @Column(name = "responsible_id")
+    val responsibleId: String? = null,
 
 //    @Lob
 //    @Column(length = 3000)

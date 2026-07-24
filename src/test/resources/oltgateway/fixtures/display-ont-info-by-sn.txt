@@ -1,0 +1,29 @@
+  -----------------------------------------------------------------------------
+  F/S/P   ONT-ID   Description
+  -----------------------------------------------------------------------------
+  0/1/0   5        cliente_demo
+  Control flag      : active
+  Run state         : online
+  Config state      : success
+  Match state       : match
+  Protect side      : no
+  Description       : cliente_demo
+  Last up time      : 2024-06-10 08:15:33+08:00
+  Last down time    : -
+  Last down cause   : -
+  Last dying gasp time: -
+  Distance(m)       : 1234
+  Authentic type    : SN-auth
+  SN                : 4857544311E70E9A
+  Management mode   : OMCI
+  Ont interframe space negotiation option: disable
+  Last record time  : 2024-06-10 08:15:33+08:00
+  Ont type          : ONT
+  Ont model         : HG8245H
+  Ont version       : V3R017C10S120
+  Ont softversion   : V3R017C10S120
+  Line profile ID   : 10
+  Line profile name : line-profile_10
+  Service profile ID: 10
+  Service profile name: srv-profile_10
+MA5608T#
