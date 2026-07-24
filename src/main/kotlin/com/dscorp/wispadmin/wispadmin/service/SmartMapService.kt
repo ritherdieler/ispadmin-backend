@@ -28,6 +28,7 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapCoverageCheckDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapNearestNapBoxDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapSuggestionDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelMode
 import com.dscorp.wispadmin.wispadmin.repository.AssistanceTicketRepository
 import com.dscorp.wispadmin.wispadmin.repository.CommercialOpportunityRepository
 import com.dscorp.wispadmin.wispadmin.repository.CoverageZoneRepository
@@ -314,14 +315,15 @@ class SmartMapService(
         collectorAccuracyMeters: Double? = null,
         selectedClientIds: Set<Int>? = null,
         visitSince: LocalDateTime? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapCollectionRouteDto {
         val normalizedPlace = place.trim()
         if (normalizedPlace.isEmpty()) {
-            return emptyCollectionRoute(normalizedPlace, collectorLatitude, collectorLongitude, collectorAccuracyMeters)
+            return emptyCollectionRoute(normalizedPlace, collectorLatitude, collectorLongitude, collectorAccuracyMeters, travelMode = travelMode)
         }
 
         if (!isWithinPeruBounds(collectorLatitude, collectorLongitude)) {
-            return emptyCollectionRoute(normalizedPlace, collectorLatitude, collectorLongitude, collectorAccuracyMeters)
+            return emptyCollectionRoute(normalizedPlace, collectorLatitude, collectorLongitude, collectorAccuracyMeters, travelMode = travelMode)
         }
 
         val sectorPlace = placeRepository.findByNormalizedName(normalizedPlace).firstOrNull()
@@ -352,6 +354,7 @@ class SmartMapService(
         val optimizedStops = optimizeStopsWithMatrixOrFallback(
             startPoint = startPoint,
             clients = eligibleClients,
+            travelMode = travelMode,
             fallback = { optimizeCollectionRoute(startPoint, eligibleClients) },
         )
         val stops = buildCollectionRouteStops(
@@ -391,6 +394,7 @@ class SmartMapService(
             collectorAccuracyMeters = collectorAccuracyMeters,
             sectorHasPolygon = sectorHasPolygon,
             routeType = "sector",
+            travelMode = travelMode.toApiValue(),
         )
     }
 
@@ -406,6 +410,7 @@ class SmartMapService(
         visitSince: LocalDateTime? = null,
         place: String? = null,
         selectionPolygonGeoJson: String? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapCollectionRouteDto {
         val sweepFilter = resolveSweepDebtFilter(debtPeriod, debtDateFrom, debtDateTo)
         val periodLabel = buildSweepPeriodLabel(sweepFilter)
@@ -474,6 +479,7 @@ class SmartMapService(
         val optimizedStops = optimizeStopsWithMatrixOrFallback(
             startPoint = startPoint,
             clients = eligibleClients,
+            travelMode = travelMode,
             fallback = { optimizeCollectionSweepRoute(startPoint, eligibleClients) },
         )
         val stops = buildCollectionRouteStops(
@@ -521,6 +527,7 @@ class SmartMapService(
             sectorHasPolygon = normalizedPlace != null && placeHasPolygon(normalizedPlace),
             routeType = "sweep",
             sectorsIncluded = sectorsIncluded,
+            travelMode = travelMode.toApiValue(),
         )
     }
 
@@ -537,6 +544,7 @@ class SmartMapService(
         debtDateTo: LocalDate? = null,
         visitSince: LocalDateTime? = null,
         selectionPolygonGeoJson: String? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapCollectionRouteDto {
         val normalizedRouteType = routeType.trim().lowercase()
         val selectedIds = remainingClientIds.filter { it > 0 }.toSet()
@@ -547,6 +555,7 @@ class SmartMapService(
                 collectorLongitude = collectorLongitude,
                 collectorAccuracyMeters = collectorAccuracyMeters,
                 routeType = normalizedRouteType,
+                travelMode = travelMode,
             )
         }
 
@@ -562,6 +571,7 @@ class SmartMapService(
                 visitSince = visitSince,
                 place = place,
                 selectionPolygonGeoJson = selectionPolygonGeoJson,
+                travelMode = travelMode,
             )
         } else {
             buildCollectionRoute(
@@ -571,6 +581,7 @@ class SmartMapService(
                 collectorAccuracyMeters = collectorAccuracyMeters,
                 selectedClientIds = selectedIds,
                 visitSince = visitSince,
+                travelMode = travelMode,
             )
         }
     }
@@ -986,6 +997,7 @@ class SmartMapService(
         collectorAccuracyMeters: Double?,
         routeType: String = "sector",
         sectorsIncluded: List<String> = emptyList(),
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapCollectionRouteDto {
         val startPoint = GeoLocationDto(collectorLatitude, collectorLongitude)
         return SmartMapCollectionRouteDto(
@@ -1001,12 +1013,14 @@ class SmartMapService(
             collectorAccuracyMeters = collectorAccuracyMeters,
             routeType = routeType,
             sectorsIncluded = sectorsIncluded,
+            travelMode = travelMode.toApiValue(),
         )
     }
 
     private fun optimizeStopsWithMatrixOrFallback(
         startPoint: GeoLocationDto,
         clients: List<SmartMapClientDto>,
+        travelMode: CollectionTravelMode,
         fallback: () -> List<SmartMapClientDto>,
     ): List<SmartMapClientDto> {
         if (clients.isEmpty()) {
@@ -1021,6 +1035,7 @@ class SmartMapService(
                 roadRoutingService.orderByNearestDuration(
                     origin = startPoint,
                     destinations = clients.map { it.location },
+                    travelMode = travelMode,
                 )
             }
             if (orderedIndexes.size != clients.size) {

@@ -17,6 +17,7 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapSummaryDto
 import com.dscorp.wispadmin.wispadmin.service.CollectionVisitService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapRoadRouteService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapService
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelMode
 import com.dscorp.wispadmin.wispadmin.smartmap.SmartMapAccessPolicy
 import kotlinx.coroutines.runBlocking
 import org.springframework.format.annotation.DateTimeFormat
@@ -86,12 +87,15 @@ class SmartMapController(
         @RequestParam originLongitude: Double,
         @RequestParam destinationLatitude: Double,
         @RequestParam destinationLongitude: Double,
+        @RequestParam(required = false, defaultValue = "vehicle") travelMode: String,
     ): ResponseEntity<SmartMapRoadRouteDto> = runBlocking {
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(travelMode)
         ResponseEntity.ok(
             smartMapRoadRouteService.buildRoadRoute(
                 sector = sector,
                 origin = GeoLocationDto(originLatitude, originLongitude),
                 destination = GeoLocationDto(destinationLatitude, destinationLongitude),
+                travelMode = resolvedTravelMode,
             ),
         )
     }
@@ -103,12 +107,15 @@ class SmartMapController(
         @RequestParam destLat: Double,
         @RequestParam destLng: Double,
         @RequestParam(required = false, defaultValue = "3") count: Int,
+        @RequestParam(required = false, defaultValue = "vehicle") travelMode: String,
     ): ResponseEntity<SmartMapRoadRouteAlternativesDto> = runBlocking {
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(travelMode)
         ResponseEntity.ok(
             smartMapRoadRouteService.buildRoadRouteAlternatives(
                 origin = GeoLocationDto(originLat, originLng),
                 destination = GeoLocationDto(destLat, destLng),
                 count = count,
+                travelMode = resolvedTravelMode,
             ),
         )
     }
@@ -122,7 +129,9 @@ class SmartMapController(
         @RequestParam(required = false) destinationName: String?,
         @RequestParam(required = false) avoidManeuverRadius: Int?,
         @RequestParam(required = false, defaultValue = "false") inMotion: Boolean,
+        @RequestParam(required = false, defaultValue = "vehicle") travelMode: String,
     ): ResponseEntity<SmartMapNavigationRouteDto> = runBlocking {
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(travelMode)
         ResponseEntity.ok(
             smartMapRoadRouteService.buildNavigationRoute(
                 origin = GeoLocationDto(originLat, originLng),
@@ -130,6 +139,7 @@ class SmartMapController(
                 destinationName = destinationName,
                 avoidManeuverRadius = avoidManeuverRadius,
                 inMotion = inMotion,
+                travelMode = resolvedTravelMode,
             ),
         )
     }
@@ -141,6 +151,7 @@ class SmartMapController(
     ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
         requireDebtAccess(userType)
 
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(request.travelMode)
         val route = smartMapService.recalculateCollectionRoute(
             place = request.place,
             routeType = request.routeType,
@@ -153,6 +164,7 @@ class SmartMapController(
             debtDateTo = request.debtDateTo,
             visitSince = request.routeSessionStartedAt,
             selectionPolygonGeoJson = request.selectionPolygonGeoJson,
+            travelMode = resolvedTravelMode,
         )
 
         val enrichedRoute = if (request.includeRoadGeometry && route.stopCount > 0) {
@@ -194,8 +206,10 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "false") includeRoadGeometry: Boolean,
         @RequestParam(required = false) selectedClientIds: String?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) routeSessionStartedAt: LocalDateTime?,
+        @RequestParam(required = false, defaultValue = "vehicle") travelMode: String,
     ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
         requireDebtAccess(userType)
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(travelMode)
 
         val route = smartMapService.buildCollectionRoute(
             place = place,
@@ -204,6 +218,7 @@ class SmartMapController(
             collectorAccuracyMeters = collectorAccuracyMeters,
             selectedClientIds = parseSelectedClientIds(selectedClientIds),
             visitSince = routeSessionStartedAt,
+            travelMode = resolvedTravelMode,
         )
 
         val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {
@@ -229,8 +244,10 @@ class SmartMapController(
         @RequestParam(required = false, defaultValue = "false") includeRoadGeometry: Boolean,
         @RequestParam(required = false) selectedClientIds: String?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) routeSessionStartedAt: LocalDateTime?,
+        @RequestParam(required = false, defaultValue = "vehicle") travelMode: String,
     ): ResponseEntity<SmartMapCollectionRouteDto> = runBlocking {
         requireDebtAccess(userType)
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(travelMode)
 
         val route = smartMapService.buildCollectionSweepRoute(
             collectorLatitude = collectorLatitude,
@@ -243,6 +260,7 @@ class SmartMapController(
             visitSince = routeSessionStartedAt,
             place = place,
             selectionPolygonGeoJson = selectionPolygonGeoJson,
+            travelMode = resolvedTravelMode,
         )
 
         val enrichedRoute = if (includeRoadGeometry && route.stopCount > 0) {

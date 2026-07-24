@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.SmartMapRoutingProperties
 import com.dscorp.wispadmin.wispadmin.dto.GeoLocationDto
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelMode
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelModeRouting
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -78,7 +80,10 @@ class RoadRoutingService(
     private val webClient: WebClient,
     private val routingProperties: SmartMapRoutingProperties,
 ) {
-    suspend fun fetchRoute(waypoints: List<GeoLocationDto>): RoadRouteResult = withContext(Dispatchers.IO) {
+    suspend fun fetchRoute(
+        waypoints: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
+    ): RoadRouteResult = withContext(Dispatchers.IO) {
         if (waypoints.size < 2) {
             return@withContext RoadRouteResult(
                 path = waypoints,
@@ -90,14 +95,17 @@ class RoadRoutingService(
 
         if (waypoints.size <= routingProperties.mapbox.maxWaypoints) {
             return@withContext mapRouteToRoadRouteResult(
-                fetchPrimaryRoute(waypoints, steps = false),
+                fetchPrimaryRoute(waypoints, steps = false, travelMode = travelMode),
             )
         }
 
-        fetchRouteChunked(waypoints)
+        fetchRouteChunked(waypoints, travelMode)
     }
 
-    suspend fun fetchRouteBySegments(waypoints: List<GeoLocationDto>): RoadRouteResult = withContext(Dispatchers.IO) {
+    suspend fun fetchRouteBySegments(
+        waypoints: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
+    ): RoadRouteResult = withContext(Dispatchers.IO) {
         if (waypoints.size < 2) {
             return@withContext RoadRouteResult(
                 path = waypoints,
@@ -127,7 +135,7 @@ class RoadRoutingService(
                 val batchEnd = minOf(batchStart + routingProperties.mapbox.maxConcurrent, segmentPairs.size)
                 val batch = segmentPairs.subList(batchStart, batchEnd)
                 val results = batch.map { pair ->
-                    async { fetchValidatedStreetSegment(pair) }
+                    async { fetchValidatedStreetSegment(pair, travelMode) }
                 }.awaitAll()
 
                 results.forEach { segment ->
@@ -165,12 +173,14 @@ class RoadRoutingService(
         from: GeoLocationDto,
         to: GeoLocationDto,
         count: Int = 3,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): List<RoadRouteResult> = withContext(Dispatchers.IO) {
         val safeCount = count.coerceIn(1, 3)
         val response = fetchMapboxDirections(
             waypoints = listOf(from, to),
             steps = false,
             alternatives = true,
+            travelMode = travelMode,
         )
 
         val routes = response.routes.orEmpty()
@@ -189,6 +199,7 @@ class RoadRoutingService(
         to: GeoLocationDto,
         destinationName: String? = null,
         avoidManeuverRadiusMeters: Int? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): NavigationRouteResult = withContext(Dispatchers.IO) {
         val normalizedDestinationName = destinationName?.trim()?.takeIf { it.isNotEmpty() }
         val waypointNames = if (normalizedDestinationName != null) {
@@ -201,6 +212,7 @@ class RoadRoutingService(
             steps = true,
             waypointNames = waypointNames,
             avoidManeuverRadiusMeters = avoidManeuverRadiusMeters,
+            travelMode = travelMode,
         )
         mapRouteToNavigationResult(route)
     }
@@ -208,6 +220,7 @@ class RoadRoutingService(
     suspend fun orderByNearestDuration(
         origin: GeoLocationDto,
         destinations: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): List<Int> = withContext(Dispatchers.IO) {
         if (destinations.isEmpty()) {
             return@withContext emptyList()
@@ -224,6 +237,7 @@ class RoadRoutingService(
             val durations = fetchDurationsFromOrigin(
                 origin = current,
                 destinations = remaining.map { destinations[it] },
+                travelMode = travelMode,
             )
             val nearestLocalIndex = durations.indices.minByOrNull { index ->
                 durations[index] ?: Double.POSITIVE_INFINITY
@@ -244,6 +258,7 @@ class RoadRoutingService(
     private suspend fun fetchDurationsFromOrigin(
         origin: GeoLocationDto,
         destinations: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode,
     ): List<Double?> {
         if (destinations.isEmpty()) {
             return emptyList()
@@ -261,7 +276,7 @@ class RoadRoutingService(
 
             val end = minOf(offset + maxDestinationsPerRequest, destinations.size)
             val batch = destinations.subList(offset, end)
-            val batchDurations = fetchMatrixDurations(origin, batch)
+            val batchDurations = fetchMatrixDurations(origin, batch, travelMode)
             for (index in batchDurations.indices) {
                 durations[offset + index] = batchDurations[index]
             }
@@ -274,6 +289,7 @@ class RoadRoutingService(
     private suspend fun fetchMatrixDurations(
         origin: GeoLocationDto,
         destinations: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode,
     ): List<Double?> {
         require(destinations.isNotEmpty()) { "Se requiere al menos un destino para Matrix" }
 
@@ -290,13 +306,17 @@ class RoadRoutingService(
         val mapbox = routingProperties.mapbox
         val coordinatePath = coordinates.joinToString(";") { "${it.longitude},${it.latitude}" }
         val baseUrl = mapbox.matrixBaseUrl.trimEnd('/')
+        val profile = CollectionTravelModeRouting.resolveMapboxProfile(
+            travelMode,
+            mapbox.profile,
+        )
         val query = buildString {
             append("annotations=duration")
             append("&sources=0")
             append("&destinations=").append(destinationIndexes)
             append("&access_token=").append(accessToken)
         }
-        val url = "$baseUrl/${mapbox.profile}/$coordinatePath?$query"
+        val url = "$baseUrl/$profile/$coordinatePath?$query"
 
         repeat(mapbox.maxRetries) { attempt ->
             try {
@@ -343,7 +363,10 @@ class RoadRoutingService(
         throw MapboxDirectionsException("Mapbox Matrix no respondio tras reintentos")
     }
 
-    private suspend fun fetchValidatedStreetSegment(pair: IndexedRoutePair): RoadRouteSegmentResult {
+    private suspend fun fetchValidatedStreetSegment(
+        pair: IndexedRoutePair,
+        travelMode: CollectionTravelMode,
+    ): RoadRouteSegmentResult {
         val directDistance = haversineMeters(
             pair.from.latitude,
             pair.from.longitude,
@@ -362,7 +385,7 @@ class RoadRoutingService(
         )
 
         return try {
-            val route = fetchPrimaryRoute(listOf(pair.from, pair.to), steps = false)
+            val route = fetchPrimaryRoute(listOf(pair.from, pair.to), steps = false, travelMode = travelMode)
             val result = mapRouteToRoadRouteResult(route)
 
             if (result.path.size < 2) {
@@ -391,7 +414,10 @@ class RoadRoutingService(
         }
     }
 
-    private suspend fun fetchRouteChunked(waypoints: List<GeoLocationDto>): RoadRouteResult = withContext(Dispatchers.IO) {
+    private suspend fun fetchRouteChunked(
+        waypoints: List<GeoLocationDto>,
+        travelMode: CollectionTravelMode,
+    ): RoadRouteResult = withContext(Dispatchers.IO) {
         val chunks = splitWaypointsIntoChunks(waypoints, routingProperties.mapbox.maxWaypoints)
         val mergedPath = mutableListOf<GeoLocationDto>()
         var totalDistance = 0.0
@@ -409,7 +435,7 @@ class RoadRoutingService(
                 val batch = chunks.subList(batchStart, batchEnd)
                 val results = batch.map { chunk ->
                     async {
-                        mapRouteToRoadRouteResult(fetchPrimaryRoute(chunk, steps = false))
+                        mapRouteToRoadRouteResult(fetchPrimaryRoute(chunk, steps = false, travelMode = travelMode))
                     }
                 }.awaitAll()
 
@@ -441,6 +467,7 @@ class RoadRoutingService(
         alternatives: Boolean = false,
         waypointNames: List<String>? = null,
         avoidManeuverRadiusMeters: Int? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): MapboxDirectionsRoute {
         val response = fetchMapboxDirections(
             waypoints = waypoints,
@@ -448,6 +475,7 @@ class RoadRoutingService(
             alternatives = alternatives,
             waypointNames = waypointNames,
             avoidManeuverRadiusMeters = avoidManeuverRadiusMeters,
+            travelMode = travelMode,
         )
         return response.routes?.firstOrNull()
             ?: throw MapboxDirectionsException("Mapbox no devolvio ninguna ruta")
@@ -459,6 +487,7 @@ class RoadRoutingService(
         alternatives: Boolean = false,
         waypointNames: List<String>? = null,
         avoidManeuverRadiusMeters: Int? = null,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): MapboxDirectionsResponse {
         require(waypoints.size >= 2) { "Se requieren al menos 2 waypoints" }
         require(waypoints.size <= routingProperties.mapbox.maxWaypoints) {
@@ -479,6 +508,7 @@ class RoadRoutingService(
                     accessToken = accessToken,
                     waypointNames = waypointNames,
                     avoidManeuverRadiusMeters = avoidManeuverRadiusMeters,
+                    travelMode = travelMode,
                 )
                 if (!response.code.isNullOrBlank() && !response.code.equals("Ok", ignoreCase = true)) {
                     throw MapboxDirectionsException("Mapbox respondio code=${response.code}")
@@ -517,19 +547,24 @@ class RoadRoutingService(
         accessToken: String,
         waypointNames: List<String>?,
         avoidManeuverRadiusMeters: Int?,
+        travelMode: CollectionTravelMode,
     ): MapboxDirectionsResponse {
         val mapbox = routingProperties.mapbox
         val coordinatePath = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
         val baseUrl = mapbox.baseUrl.trimEnd('/')
-        val approachesValue = List(waypoints.size) { mapbox.approaches.trim().ifBlank { "curb" } }
-            .joinToString(";")
+        val profile = CollectionTravelModeRouting.resolveMapboxProfile(travelMode, mapbox.profile)
+        val annotations = CollectionTravelModeRouting.resolveDirectionsAnnotations(travelMode, mapbox.annotations)
         val query = buildString {
             append("geometries=geojson")
             append("&overview=full")
             append("&steps=").append(steps)
             append("&language=").append(encodeQuery(mapbox.language))
-            append("&approaches=").append(encodeQuery(approachesValue))
-            append("&annotations=").append(encodeQuery(mapbox.annotations))
+            if (CollectionTravelModeRouting.shouldUseCurbApproaches(travelMode)) {
+                val approachesValue = List(waypoints.size) { mapbox.approaches.trim().ifBlank { "curb" } }
+                    .joinToString(";")
+                append("&approaches=").append(encodeQuery(approachesValue))
+            }
+            append("&annotations=").append(encodeQuery(annotations))
             if (steps) {
                 append("&voice_instructions=true")
                 append("&banner_instructions=true")
@@ -542,13 +577,17 @@ class RoadRoutingService(
             if (alternatives) {
                 append("&alternatives=true")
             }
-            if (avoidManeuverRadiusMeters != null && avoidManeuverRadiusMeters > 0) {
+            if (
+                travelMode == CollectionTravelMode.VEHICLE
+                && avoidManeuverRadiusMeters != null
+                && avoidManeuverRadiusMeters > 0
+            ) {
                 val radius = avoidManeuverRadiusMeters.coerceIn(1, 1000)
                 append("&avoid_maneuver_radius=").append(radius)
             }
             append("&access_token=").append(accessToken)
         }
-        val url = "$baseUrl/${mapbox.profile}/$coordinatePath?$query"
+        val url = "$baseUrl/$profile/$coordinatePath?$query"
 
         return webClient.get()
             .uri(URI.create(url))

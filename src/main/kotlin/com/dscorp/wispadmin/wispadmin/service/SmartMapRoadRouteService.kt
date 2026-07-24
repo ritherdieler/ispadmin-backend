@@ -11,6 +11,8 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativesDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativeDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapVoiceInstructionDto
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelMode
+import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelModeRouting
 import org.springframework.stereotype.Service
 
 @Service
@@ -24,9 +26,10 @@ class SmartMapRoadRouteService(
         sector: String,
         origin: GeoLocationDto,
         destination: GeoLocationDto,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapRoadRouteDto {
         sectorValidationService.requirePointsInsideSector(sector, origin, destination)
-        val result = roadRoutingService.fetchRoute(listOf(origin, destination))
+        val result = roadRoutingService.fetchRoute(listOf(origin, destination), travelMode)
         return result.toDto(sector, origin, destination)
     }
 
@@ -34,8 +37,9 @@ class SmartMapRoadRouteService(
         origin: GeoLocationDto,
         destination: GeoLocationDto,
         count: Int = 3,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapRoadRouteAlternativesDto {
-        val results = roadRoutingService.fetchRouteAlternatives(origin, destination, count)
+        val results = roadRoutingService.fetchRouteAlternatives(origin, destination, count, travelMode)
         val labels = listOf("Ruta principal", "Alternativa 2", "Alternativa 3")
         val alternatives = results.mapIndexed { index, result ->
             SmartMapRoadRouteAlternativeDto(
@@ -61,17 +65,20 @@ class SmartMapRoadRouteService(
         destinationName: String? = null,
         avoidManeuverRadius: Int? = null,
         inMotion: Boolean = false,
+        travelMode: CollectionTravelMode = CollectionTravelMode.VEHICLE,
     ): SmartMapNavigationRouteDto {
-        val resolvedAvoidRadius = when {
-            avoidManeuverRadius != null && avoidManeuverRadius > 0 -> avoidManeuverRadius
-            inMotion -> routingProperties.mapbox.avoidManeuverRadiusMeters
-            else -> null
-        }
+        val resolvedAvoidRadius = CollectionTravelModeRouting.resolveAvoidManeuverRadiusMeters(
+            travelMode = travelMode,
+            requestedRadius = avoidManeuverRadius,
+            configuredDefaultRadius = routingProperties.mapbox.avoidManeuverRadiusMeters,
+            inMotion = inMotion,
+        )
         val result = roadRoutingService.fetchRouteWithSteps(
             from = origin,
             to = destination,
             destinationName = destinationName,
             avoidManeuverRadiusMeters = resolvedAvoidRadius,
+            travelMode = travelMode,
         )
         return SmartMapNavigationRouteDto(
             origin = origin,
@@ -116,7 +123,8 @@ class SmartMapRoadRouteService(
             return route
         }
 
-        val result = roadRoutingService.fetchRouteBySegments(route.path)
+        val travelMode = CollectionTravelMode.fromApiValue(route.travelMode)
+        val result = roadRoutingService.fetchRouteBySegments(route.path, travelMode)
         return route.copy(
             roadPath = result.path,
             roadDistanceMeters = result.distanceMeters,

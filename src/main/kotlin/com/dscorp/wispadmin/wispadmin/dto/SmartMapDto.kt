@@ -87,6 +87,7 @@ data class SmartMapCollectionRouteDto(
     val sectorsIncluded: List<String> = emptyList(),
     val routeSegments: List<SmartMapCollectionRouteSegmentDto> = emptyList(),
     val failedSegmentCount: Int = 0,
+    val travelMode: String = "vehicle",
 )
 
 data class SmartMapCollectionRouteSegmentDto(
@@ -243,6 +244,7 @@ data class SmartMapCollectionRouteRecalculateRequestDto(
     val debtDateTo: LocalDate? = null,
     val routeSessionStartedAt: LocalDateTime? = null,
     val selectionPolygonGeoJson: String? = null,
+    val travelMode: String = "vehicle",
 )
 
 data class SmartMapValidationErrorDto(
