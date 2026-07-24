@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -22,10 +23,6 @@ class WhatsAppService(
 ) {
 
     private val log = LoggerFactory.getLogger(this::class.java)
-
-    companion object {
-        private val PAYMENT_REMINDER_PARAMETER_NAMES = listOf("customer_name", "amount", "billing_period")
-    }
 
     fun sendTextMessage(
         phoneNumber: String,
@@ -50,7 +47,7 @@ class WhatsAppService(
         phoneNumber: String,
         templateName: String,
         languageCode: String,
-        parameters: List<String>
+        parameters: List<NamedTemplateParameter>
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
@@ -64,8 +61,8 @@ class WhatsAppService(
             throw IllegalArgumentException("El idioma de la plantilla de WhatsApp no esta configurado.")
         }
 
-        if (parameters.size != PAYMENT_REMINDER_PARAMETER_NAMES.size) {
-            throw IllegalArgumentException("La plantilla de recordatorio requiere ${PAYMENT_REMINDER_PARAMETER_NAMES.size} parametros.")
+        if (parameters.isEmpty()) {
+            throw IllegalArgumentException("La plantilla de WhatsApp requiere al menos un parametro.")
         }
 
         val body = WhatsAppTemplateMessageBody(
@@ -75,10 +72,10 @@ class WhatsAppService(
                 language = WhatsAppTemplateLanguage(code = languageCode),
                 components = listOf(
                     WhatsAppTemplateComponent(
-                        parameters = parameters.zip(PAYMENT_REMINDER_PARAMETER_NAMES).map { (value, name) ->
+                        parameters = parameters.map { param ->
                             WhatsAppTemplateParameter(
-                                parameter_name = name,
-                                text = value
+                                parameter_name = param.parameterName,
+                                text = param.text
                             )
                         }
                     )
@@ -93,7 +90,7 @@ class WhatsAppService(
         phoneNumber: String,
         templateName: String,
         languageCode: String,
-        parameters: List<String>
+        parameters: List<NamedTemplateParameter>
     ): Boolean {
         return sendTemplateMessageWithMetaResponse(
             phoneNumber = phoneNumber,

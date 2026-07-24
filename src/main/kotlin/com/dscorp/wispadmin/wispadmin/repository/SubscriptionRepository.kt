@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionLog
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.util.*
 import java.time.LocalDateTime
 
@@ -193,5 +194,68 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         napBoxId: Int, 
         status: ServiceStatus
     ): List<String>
+
+    @Query(
+        value = """
+        SELECT s.*
+        FROM subscription s
+        WHERE s.service_status = 'CUT_OFF'
+          AND s.phone IS NOT NULL
+          AND s.phone <> ''
+          AND (
+              (
+                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 9
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '9%'
+              )
+              OR
+              (
+                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 11
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '519%'
+              )
+          )
+        ORDER BY s.id ASC
+        LIMIT :limit
+    """,
+        nativeQuery = true
+    )
+    fun findCutOffCandidates(@Param("limit") limit: Int): List<Subscription>
+
+    @Query(
+        value = """
+        SELECT
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            s.subscription_date_datetime
+        FROM subscription s
+        WHERE s.service_status = 'ACTIVE'
+          AND s.subscription_date_datetime IS NOT NULL
+          AND s.subscription_date_datetime >= :since
+        """ + WhatsAppCandidateSql.PERUVIAN_PHONE_FILTER + """
+        ORDER BY s.subscription_date_datetime DESC, s.id DESC
+        LIMIT :limit
+    """,
+        nativeQuery = true
+    )
+    fun findWelcomeCandidateRows(
+        @Param("since") since: LocalDateTime,
+        @Param("limit") limit: Int
+    ): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            s.service_status
+        FROM subscription s
+        WHERE s.id = :subscriptionId
+        """,
+        nativeQuery = true
+    )
+    fun findWhatsAppSubscriptionRowById(@Param("subscriptionId") subscriptionId: Int): List<Array<Any>>
 
 }

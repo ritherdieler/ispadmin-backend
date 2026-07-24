@@ -17,6 +17,8 @@ class WhatsAppProperties {
     var paymentReminderMode: String = "text"
     var webhookVerifyToken: String = ""
     var appSecret: String = ""
+    var backoffice: WhatsAppBackofficeProperties = WhatsAppBackofficeProperties()
+    var welcomeOnRegistration: WhatsAppWelcomeOnRegistrationProperties = WhatsAppWelcomeOnRegistrationProperties()
 
     fun graphApiBaseUrl(): String {
         return "https://graph.facebook.com/$apiVersion"
@@ -32,4 +34,13 @@ class WhatsAppProperties {
                 businessAccountId.isNotBlank() &&
                 accessToken.isNotBlank()
     }
+}
+
+class WhatsAppBackofficeProperties {
+    var validationPaidDays: Int = 7
+    var welcomeInstalledDays: Int = 30
+}
+
+class WhatsAppWelcomeOnRegistrationProperties {
+    var enabled: Boolean = false
 }

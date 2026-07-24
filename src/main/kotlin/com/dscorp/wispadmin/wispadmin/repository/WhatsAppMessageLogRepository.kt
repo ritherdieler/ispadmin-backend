@@ -14,6 +14,20 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         endDate: LocalDateTime
     ): Boolean
 
+    fun existsBySubscriptionIdAndMessageTypeAndStatusAndCreatedAtBetween(
+        subscriptionId: Int,
+        messageType: String,
+        status: String,
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): Boolean
+
+    fun existsBySubscriptionIdAndMessageTypeAndStatus(
+        subscriptionId: Int,
+        messageType: String,
+        status: String
+    ): Boolean
+
     fun findTop50ByOrderByCreatedAtDesc(): List<WhatsAppMessageLog>
 
     fun findByPaymentIdOrderByCreatedAtDesc(paymentId: Int): List<WhatsAppMessageLog>

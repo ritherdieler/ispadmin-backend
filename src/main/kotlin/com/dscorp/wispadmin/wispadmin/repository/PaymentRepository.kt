@@ -14,8 +14,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         endDate: LocalDateTime
     ): List<Payment>
 
-    // Busca facturas pendientes con telefono de cliente disponible.
-    // Se usa para enviar recordatorios de pago por WhatsApp de forma controlada.
+    // Facturas pendientes aptas para recordatorio manual desde backoffice.
     @Query(
         value = """
         SELECT p.*
@@ -35,29 +34,89 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
                   AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '519%'
               )
           )
-          AND NOT EXISTS (
-              SELECT 1
-              FROM whatsapp_message_log w
-              WHERE w.payment_id = p.id
-                AND w.message_type = 'PAYMENT_REMINDER'
-                AND w.status = 'SENT'
-                AND DATE(w.created_at) = CURRENT_DATE
-          )
         ORDER BY p.billing_date_datetime ASC, p.id ASC
         LIMIT :limit
     """,
         nativeQuery = true
     )
-    fun findPendingPaymentsWithPhone(
+    fun findReminderCandidatePayments(
         @Param("limit") limit: Int
     ): List<Payment>
 
-    // Busca facturas pendientes dentro de un periodo de cobranza.
-    // La validacion de telefono y logs se mantiene en el servicio para poder auditar omitidos.
-    fun findByPaidFalseAndBillingDateDatetimeGreaterThanEqualAndBillingDateDatetimeLessThanOrderByBillingDateDatetimeAscIdAsc(
-        startDate: LocalDateTime,
-        endDate: LocalDateTime
-    ): List<Payment>
+    @Query(
+        value = """
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime
+        FROM payment p
+        INNER JOIN subscription s ON s.id = p.subscription_id
+        WHERE p.paid = true
+          AND p.payment_date_datetime IS NOT NULL
+          AND p.payment_date_datetime >= :since
+        """ + WhatsAppCandidateSql.PERUVIAN_PHONE_FILTER + """
+        ORDER BY p.payment_date_datetime DESC, p.id DESC
+        LIMIT :limit
+    """,
+        nativeQuery = true
+    )
+    fun findValidationCandidatePaymentRows(
+        @Param("since") since: LocalDateTime,
+        @Param("limit") limit: Int
+    ): List<Array<Any>>
+
+    @Query(
+        """
+        SELECT p FROM Payment p
+        WHERE p.subscription.id = :subscriptionId
+          AND p.paid = false
+        ORDER BY p.billingDateDatetime ASC
+        """
+    )
+    fun findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(subscriptionId: Int): List<Payment>
+
+    @Query(
+        value = """
+        SELECT
+            p.id AS payment_id,
+            p.amount_to_pay,
+            p.billing_date_datetime
+        FROM payment p
+        WHERE p.subscription_id = :subscriptionId
+          AND p.paid = false
+        ORDER BY p.billing_date_datetime ASC
+        LIMIT 1
+        """,
+        nativeQuery = true
+    )
+    fun findOldestUnpaidPaymentRow(@Param("subscriptionId") subscriptionId: Int): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime,
+            p.paid
+        FROM payment p
+        INNER JOIN subscription s ON s.id = p.subscription_id
+        WHERE p.id = :paymentId
+        """,
+        nativeQuery = true
+    )
+    fun findWhatsAppPaymentRowById(@Param("paymentId") paymentId: Int): List<Array<Any>>
 
     @Query(
         value = """

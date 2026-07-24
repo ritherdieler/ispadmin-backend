@@ -34,7 +34,7 @@ class Payment(
     @ManyToOne @JoinColumn(name = "subscription_id")
     var subscription: Subscription? = null,
     //user who made the payment
-    @ManyToOne @JoinColumn(name = "responsible_user_id")
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "responsible_user_id")
     var responsible: User? = null,
     var isPaymentCommit: Boolean? = false,
     @Column(name = "payment_commitment_date_datetime")

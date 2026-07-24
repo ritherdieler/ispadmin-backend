@@ -23,7 +23,9 @@ import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.Installati
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage.FcmMessageType
 import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionRegisteredEvent
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -52,7 +54,8 @@ class SubscriptionService(
     private val serviceReactivationManager: IServiceReactivationManager,
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
-    private val installationStrategyFactory: InstallationStrategyFactory
+    private val installationStrategyFactory: InstallationStrategyFactory,
+    private val applicationEventPublisher: ApplicationEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -174,6 +177,10 @@ class SubscriptionService(
 
             newSubscription.installationOrderId?.let { orderId ->
                 processInstallationOrderCompletion(orderId, subscription)
+            }
+
+            subscription.id?.let { subscriptionId ->
+                applicationEventPublisher.publishEvent(SubscriptionRegisteredEvent(subscriptionId))
             }
 
             onSuccess(subscription.copy(plan = plan))
