@@ -19,6 +19,11 @@ class WhatsAppProperties {
     var appSecret: String = ""
     var backoffice: WhatsAppBackofficeProperties = WhatsAppBackofficeProperties()
     var welcomeOnRegistration: WhatsAppWelcomeOnRegistrationProperties = WhatsAppWelcomeOnRegistrationProperties()
+    var mediaStorageDir: String = "./data/whatsapp/media"
+
+    fun businessAccountUrl(): String {
+        return "${graphApiBaseUrl()}/$businessAccountId"
+    }
 
     fun graphApiBaseUrl(): String {
         return "https://graph.facebook.com/$apiVersion"

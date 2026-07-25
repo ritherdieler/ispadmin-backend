@@ -48,6 +48,8 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             anyNullable(),
             anyNullable(),
+            anyNullable(),
+            anyNullable(),
             anyNullable()
         )
 
@@ -150,7 +152,9 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             anyNullable(),
             org.mockito.ArgumentMatchers.eq(42),
-            welcomeContextCaptor.capture()
+            welcomeContextCaptor.capture(),
+            anyNullable(),
+            anyNullable()
         )
 
         val welcomeContext = welcomeContextCaptor.value
@@ -193,7 +197,9 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             anyNullable(),
             org.mockito.ArgumentMatchers.eq(43),
-            welcomeContextCaptor.capture()
+            welcomeContextCaptor.capture(),
+            anyNullable(),
+            anyNullable()
         )
 
         val welcomeContext = welcomeContextCaptor.value
@@ -236,7 +242,9 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             anyNullable(),
             org.mockito.ArgumentMatchers.eq(44),
-            welcomeContextCaptor.capture()
+            welcomeContextCaptor.capture(),
+            anyNullable(),
+            anyNullable()
         )
 
         val welcomeContext = welcomeContextCaptor.value

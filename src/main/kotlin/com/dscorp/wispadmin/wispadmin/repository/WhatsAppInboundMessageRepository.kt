@@ -11,5 +11,15 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     fun findTop50ByOrderByCreatedAtDesc(): List<WhatsAppInboundMessage>
 
+    fun findTop500ByOrderByCreatedAtDesc(): List<WhatsAppInboundMessage>
+
     fun findBySubscriptionIdOrderByCreatedAtDesc(subscriptionId: Int): List<WhatsAppInboundMessage>
+
+    fun findByCreatedAtBetween(from: java.time.LocalDateTime, to: java.time.LocalDateTime): List<WhatsAppInboundMessage>
+
+    fun findByPhoneOrderByCreatedAtAsc(phone: String): List<WhatsAppInboundMessage>
+
+    fun findTop1ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppInboundMessage>
+
+    fun findByPhoneAndReadAtIsNull(phone: String): List<WhatsAppInboundMessage>
 }

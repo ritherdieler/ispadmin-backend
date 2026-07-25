@@ -30,7 +30,23 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findTop50ByOrderByCreatedAtDesc(): List<WhatsAppMessageLog>
 
+    fun findTop500ByOrderByCreatedAtDesc(): List<WhatsAppMessageLog>
+
+    fun findByPhoneOrderByCreatedAtAsc(phone: String): List<WhatsAppMessageLog>
+
+    fun findTop10ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppMessageLog>
+
     fun findByPaymentIdOrderByCreatedAtDesc(paymentId: Int): List<WhatsAppMessageLog>
 
     fun findByMetaMessageId(metaMessageId: String): WhatsAppMessageLog?
+
+    fun findByCampaignId(campaignId: String): List<WhatsAppMessageLog>
+
+    fun findByCreatedAtBetween(start: LocalDateTime, end: LocalDateTime): List<WhatsAppMessageLog>
+
+    fun findByMessageTypeAndCreatedAtBetween(
+        messageType: String,
+        start: LocalDateTime,
+        end: LocalDateTime
+    ): List<WhatsAppMessageLog>
 }

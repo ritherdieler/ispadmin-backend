@@ -10,6 +10,7 @@ import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
+import com.dscorp.wispadmin.wispadmin.service.WhatsAppServiceCutNoticeService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
@@ -27,7 +28,8 @@ class ServiceCutManagerService(
     private val subscriptionValidator: ISubscriptionValidator,
     private val errorLogRepository: ErrorLogRepository,
     private val scheduledTaskLogService: ScheduledTaskLogService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val whatsAppServiceCutNoticeService: WhatsAppServiceCutNoticeService
 ) : IServiceCutManager {
     
     private val logger = LoggerFactory.getLogger(ServiceCutManagerService::class.java)
@@ -41,6 +43,9 @@ class ServiceCutManagerService(
     override fun cutInternetService(): CutServiceSummaryDto {
         val debtors = subscriptionRepository.findSubscriptionsWithUnpaidAndAutoCutFlagActivePayments()
         val cancelledSubscriptions = subscriptionRepository.findCancelledSubscriptions()
+
+        val candidatesForWhatsApp = debtors.filter { it.installationType != InstallationType.ONLY_TV_FIBER }
+        whatsAppServiceCutNoticeService.sendCutNoticesForCandidates(candidatesForWhatsApp)
 
         clearAddressListAndFirewallRule()
         

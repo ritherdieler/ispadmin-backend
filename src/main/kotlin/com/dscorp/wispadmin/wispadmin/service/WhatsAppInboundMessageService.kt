@@ -1,75 +1,80 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayload
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 @Service
 class WhatsAppInboundMessageService(
     private val inboundMessageRepository: WhatsAppInboundMessageRepository,
-    private val subscriptionRepository: SubscriptionRepository,
-    private val whatsAppService: WhatsAppService
+    private val conversationService: WhatsAppConversationService,
+    private val mediaDownloadService: WhatsAppMediaDownloadService,
+    private val whatsAppService: WhatsAppService,
+    private val messageLogRepository: WhatsAppMessageLogRepository
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppInboundMessageService::class.java)
 
-    fun processInboundMessage(
-        metaMessageId: String,
-        phone: String,
-        messageType: String,
-        messageText: String?
-    ) {
+    fun processInboundMessage(payload: WhatsAppInboundPayload) {
+        val replyToLogId = conversationService.resolveReplyToLogId(payload.contextMessageId)
+        val mediaStoredPath = payload.mediaId?.let {
+            mediaDownloadService.downloadAndStore(it, payload.mediaMimeType)
+        }
+
         val saved = inboundMessageRepository.save(
             WhatsAppInboundMessage(
-                metaMessageId = metaMessageId,
-                phone = phone,
-                messageText = messageText,
-                messageType = messageType,
+                metaMessageId = payload.metaMessageId,
+                phone = payload.phone,
+                messageText = payload.messageText,
+                messageType = payload.messageType,
+                buttonReplyId = payload.buttonReplyId,
+                buttonReplyTitle = payload.buttonReplyTitle,
+                mediaId = payload.mediaId,
+                mediaMimeType = payload.mediaMimeType,
+                mediaStoredPath = mediaStoredPath,
+                contextMessageId = payload.contextMessageId,
+                replyToLogId = replyToLogId,
                 processed = false,
                 replySent = false
             )
         )
 
-        if (messageType != "text") {
-            inboundMessageRepository.save(saved.copy(processed = true, messageType = "UNSUPPORTED"))
-            return
-        }
+        val subscription = conversationService.findSubscriptionByPhone(payload.phone)
 
-        val subscription = findSubscriptionByPhone(phone)
-
-        val replyText = if (subscription != null) {
-            val name = subscription.getFullName().trim()
-            val pendingPayments = subscription.payments.filter { !it.paid }
-            if (pendingPayments.isNotEmpty()) {
-                val total = pendingPayments.sumOf { it.amountToPay }
-                val count = pendingPayments.size
-                val word = if (count == 1) "factura" else "facturas"
-                "Hola $name, soy el asistente de GigaFiber Peru.\n\n" +
-                "Tiene $count $word pendiente(s) por un total de S/ ${"%.2f".format(total)}.\n\n" +
-                "Para gestionar su pago comuniquese con nuestro equipo de atencion al cliente. Gracias."
-            } else {
-                "Hola $name, soy el asistente de GigaFiber Peru.\n\n" +
-                "No encontramos facturas pendientes en su cuenta.\n\n" +
-                "Si necesita ayuda comuniquese con nuestro equipo de atencion al cliente. Gracias."
+        val (replySent, errorMsg) = when (payload.messageType) {
+            "text" -> {
+                val result = conversationService.sendAutoReplyWithButtons(payload.phone, subscription)
+                if (result.success) {
+                    persistAutoReplyLog(
+                        phone = payload.phone,
+                        subscriptionId = subscription?.id,
+                        message = result.messageText,
+                        metaMessageId = result.metaMessageId
+                    )
+                }
+                Pair(result.success, if (result.success) null else "No se pudo enviar respuesta interactiva.")
             }
-        } else {
-            "Hola, soy el asistente de GigaFiber Peru.\n\n" +
-            "Recibimos su mensaje. Para atencion personalizada comuniquese con nosotros " +
-            "por nuestros canales de atencion al cliente.\n\n" +
-            "Gracias por contactarnos."
-        }
-
-        var replySent = false
-        var errorMsg: String? = null
-
-        try {
-            whatsAppService.sendTextMessage(phoneNumber = phone, message = replyText)
-            replySent = true
-        } catch (e: Exception) {
-            log.warn("Inbound: no se pudo responder al mensaje $metaMessageId: ${e.message}")
-            errorMsg = e.message?.take(1000)
+            "button_reply" -> {
+                val text = conversationService.handleButtonReply(
+                    phone = payload.phone,
+                    buttonReplyId = payload.buttonReplyId,
+                    subscription = subscription
+                )
+                sendTextReply(payload.phone, text, subscription?.id)
+            }
+            "image", "document" -> sendTextReply(
+                payload.phone,
+                "Recibimos su comprobante. Nuestro equipo lo revisara a la brevedad. Gracias.",
+                subscription?.id
+            )
+            else -> Pair(false, null)
         }
 
         inboundMessageRepository.save(
@@ -82,13 +87,48 @@ class WhatsAppInboundMessageService(
         )
     }
 
-    private fun findSubscriptionByPhone(phone: String): com.dscorp.wispadmin.wispadmin.data.model.Subscription? {
-        val digits = phone.filter { it.isDigit() }
-        val normalized = when {
-            digits.length == 11 && digits.startsWith("51") -> digits.substring(2)
-            digits.length == 9 && digits.startsWith("9") -> digits
-            else -> digits
+    private fun sendTextReply(
+        phone: String,
+        text: String,
+        subscriptionId: Int?
+    ): Pair<Boolean, String?> {
+        return try {
+            val result = whatsAppService.sendTextMessage(phoneNumber = phone, message = text)
+            if (result.success) {
+                persistAutoReplyLog(
+                    phone = phone,
+                    subscriptionId = subscriptionId,
+                    message = text,
+                    metaMessageId = result.metaMessageId
+                )
+                Pair(true, null)
+            } else {
+                Pair(false, result.metaResponse.take(1000).ifBlank { "No se pudo enviar respuesta." })
+            }
+        } catch (e: Exception) {
+            log.warn("Inbound: no se pudo responder al telefono $phone: ${e.message}")
+            Pair(false, e.message?.take(1000))
         }
-        return subscriptionRepository.findByNormalizedPhone(normalized).firstOrNull()
+    }
+
+    private fun persistAutoReplyLog(
+        phone: String,
+        subscriptionId: Int?,
+        message: String,
+        metaMessageId: String?
+    ) {
+        val now = LocalDateTime.now()
+        messageLogRepository.save(
+            WhatsAppMessageLog(
+                subscriptionId = subscriptionId,
+                phone = phone,
+                messageType = WhatsAppConversationService.MESSAGE_TYPE_AUTO_REPLY,
+                status = "SENT",
+                metaMessageId = metaMessageId,
+                message = message,
+                sentAt = now,
+                createdAt = now
+            )
+        )
     }
 }

@@ -248,6 +248,18 @@ Ejemplos de `SKIPPED`:
 GET /ispadmin/whatsapp/logs
 ```
 
+Filtros opcionales (hub backoffice): `templateCode`, `status`, `deliveryStatus`, `dateFrom`, `dateTo`, `phone`, `limit`.
+
+### Export CSV
+
+```http
+GET /ispadmin/whatsapp/logs/export
+GET /ispadmin/whatsapp/analytics/campaigns/export
+GET /ispadmin/whatsapp/inbound-messages/export
+```
+
+Los exports de campañas incluyen `conversionAmount` (atribución de pagos en ventana configurable).
+
 ### Logs por pago
 
 ```http
@@ -274,6 +286,25 @@ createdAt
 ```
 
 No se expone el cuerpo completo del mensaje desde estos endpoints.
+
+## Hub backoffice y metricas
+
+Endpoints adicionales para el hub en `ispadmin-backoffice` (ver `.agent-docs/whatsapp-meta-cloud-api.md`):
+
+| Endpoint | Descripcion |
+|----------|-------------|
+| `GET /whatsapp/analytics/overview` | Embudo enviados → pagos con conversion 7d |
+| `GET /whatsapp/analytics/campaigns` | Campañas por `campaignId` |
+| `GET /whatsapp/analytics/conversion` | Atribucion por plantilla |
+| `GET /whatsapp/analytics/meta/templates` | Clicks Meta (`template_analytics`) |
+| `GET /whatsapp/account/health` | Calidad, plantillas pausadas, alertas operativas |
+| `POST /whatsapp/templates/sync` | Sincroniza IDs Meta para analytics |
+
+Mensajes entrantes:
+
+```http
+GET /ispadmin/whatsapp/inbound-messages?phone&search&dateFrom&dateTo&limit
+```
 
 ## Pendiente para plantillas Meta
 

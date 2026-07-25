@@ -27,6 +27,31 @@ data class WhatsAppMessageLog(
 
     var deliveryStatusAt: LocalDateTime? = null,
 
+    var sentAt: LocalDateTime? = null,
+
+    var deliveredAt: LocalDateTime? = null,
+
+    var readAt: LocalDateTime? = null,
+
+    var failedAt: LocalDateTime? = null,
+
+    @Column(length = 255)
+    var conversationId: String? = null,
+
+    @Column(length = 64)
+    var conversationCategory: String? = null,
+
+    var billable: Boolean? = null,
+
+    @Column(length = 32)
+    var pricingModel: String? = null,
+
+    @Column(length = 64)
+    var campaignId: String? = null,
+
+    @Column(length = 128)
+    var operatorUsername: String? = null,
+
     @Column(length = 1000)
     var message: String? = null,
 

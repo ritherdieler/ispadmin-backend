@@ -34,8 +34,30 @@ data class WhatsAppInboundMessage(
 
     var replySent: Boolean = false,
 
+    @Column(length = 128)
+    var buttonReplyId: String? = null,
+
+    @Column(length = 512)
+    var buttonReplyTitle: String? = null,
+
+    @Column(length = 255)
+    var mediaId: String? = null,
+
+    @Column(length = 128)
+    var mediaMimeType: String? = null,
+
+    @Column(length = 1024)
+    var mediaStoredPath: String? = null,
+
+    @Column(length = 255)
+    var contextMessageId: String? = null,
+
+    var replyToLogId: Int? = null,
+
     @Column(length = 1000)
     var errorMessage: String? = null,
+
+    var readAt: LocalDateTime? = null,
 
     var createdAt: LocalDateTime = LocalDateTime.now()
 )

@@ -1,6 +1,13 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveAction
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveActionButton
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveButton
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveContent
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveReplyBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveText
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMarkReadBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateLanguage
@@ -9,6 +16,7 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -29,7 +37,7 @@ class WhatsAppService(
     fun sendTextMessage(
         phoneNumber: String,
         message: String
-    ): String? {
+    ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
@@ -42,7 +50,7 @@ class WhatsAppService(
             )
         )
 
-        return if (postToMeta(body).success) body.to else null
+        return postToMeta(body)
     }
 
     fun sendTemplateMessageWithMetaResponse(
@@ -102,6 +110,47 @@ class WhatsAppService(
         ).success
     }
 
+    data class InteractiveButtonOption(
+        val id: String,
+        val title: String
+    )
+
+    fun sendInteractiveReplyButtons(
+        phoneNumber: String,
+        bodyText: String,
+        buttons: List<InteractiveButtonOption>
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val normalized = normalizePhoneNumber(phoneNumber)
+        val body = WhatsAppInteractiveReplyBody(
+            to = normalized,
+            interactive = WhatsAppInteractiveContent(
+                body = WhatsAppInteractiveText(text = bodyText),
+                action = WhatsAppInteractiveAction(
+                    buttons = buttons.take(3).map { option ->
+                        WhatsAppInteractiveActionButton(
+                            reply = WhatsAppInteractiveButton(
+                                id = option.id,
+                                title = option.title.take(20)
+                            )
+                        )
+                    }
+                )
+            )
+        )
+        return postToMeta(body)
+    }
+
+    fun markMessageAsRead(metaMessageId: String): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val body = WhatsAppMarkReadBody(message_id = metaMessageId)
+        return postToMeta(body)
+    }
+
     private fun postToMeta(body: Any): WhatsAppSendResult {
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
@@ -120,6 +169,7 @@ class WhatsAppService(
             WhatsAppSendResult(
                 success = response.statusCode.is2xxSuccessful,
                 metaResponse = responseBody,
+                metaMessageId = WhatsAppMetaResponseParser.extractMessageId(responseBody),
                 recipient = extractRecipient(body),
                 senderPhoneNumberId = whatsAppProperties.phoneNumberId
             )
@@ -134,6 +184,7 @@ class WhatsAppService(
         return when (body) {
             is WhatsAppTextMessageBody -> body.to
             is WhatsAppTemplateMessageBody -> body.to
+            is WhatsAppInteractiveReplyBody -> body.to
             else -> null
         }
     }

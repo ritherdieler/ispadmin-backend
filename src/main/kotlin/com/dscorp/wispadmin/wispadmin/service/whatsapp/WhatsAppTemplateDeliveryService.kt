@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 @Service
 class WhatsAppTemplateDeliveryService(
@@ -21,7 +22,9 @@ class WhatsAppTemplateDeliveryService(
         oldestUnpaidPayment: Payment? = null,
         paymentId: Int? = null,
         subscriptionId: Int? = null,
-        welcomeContext: WelcomeTemplateContext? = null
+        welcomeContext: WelcomeTemplateContext? = null,
+        campaignId: String? = null,
+        operatorUsername: String? = null
     ) {
         val parameters = TemplateParameterResolver.resolve(
             definition = definition,
@@ -33,7 +36,7 @@ class WhatsAppTemplateDeliveryService(
         val previewMessage = buildPreviewMessage(definition, parameters)
 
         try {
-            whatsAppService.sendTemplateMessage(
+            val result = whatsAppService.sendTemplateMessageWithMetaResponse(
                 phoneNumber = phone,
                 templateName = definition.metaName,
                 languageCode = definition.language,
@@ -46,7 +49,10 @@ class WhatsAppTemplateDeliveryService(
                 messageType = definition.messageType,
                 message = previewMessage,
                 status = STATUS_SENT,
-                errorMessage = null
+                errorMessage = null,
+                metaMessageId = result.metaMessageId,
+                campaignId = campaignId,
+                operatorUsername = operatorUsername
             )
         } catch (e: Exception) {
             val friendlyError = WhatsAppMessageErrors.toFriendlyMessage(e.message)
@@ -57,7 +63,10 @@ class WhatsAppTemplateDeliveryService(
                 messageType = definition.messageType,
                 message = previewMessage,
                 status = STATUS_FAILED,
-                errorMessage = friendlyError
+                errorMessage = friendlyError,
+                metaMessageId = null,
+                campaignId = campaignId,
+                operatorUsername = operatorUsername
             )
             throw Exception(friendlyError, e)
         }
@@ -70,8 +79,12 @@ class WhatsAppTemplateDeliveryService(
         messageType: String,
         message: String,
         status: String,
-        errorMessage: String?
+        errorMessage: String?,
+        metaMessageId: String? = null,
+        campaignId: String? = null,
+        operatorUsername: String? = null
     ) {
+        val now = LocalDateTime.now()
         whatsAppMessageLogRepository.save(
             WhatsAppMessageLog(
                 paymentId = paymentId,
@@ -80,7 +93,11 @@ class WhatsAppTemplateDeliveryService(
                 messageType = messageType,
                 status = status,
                 message = message,
-                errorMessage = errorMessage
+                errorMessage = errorMessage,
+                metaMessageId = metaMessageId,
+                sentAt = if (status == STATUS_SENT) now else null,
+                campaignId = campaignId,
+                operatorUsername = operatorUsername
             )
         )
     }

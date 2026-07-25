@@ -9,7 +9,31 @@ data class WhatsAppTemplateOptionDto(
     val showAmount: Boolean,
     val showBillingDate: Boolean,
     val showPaymentDate: Boolean,
-    val showInstallationDate: Boolean
+    val showInstallationDate: Boolean,
+    val manualSendEnabled: Boolean = false,
+    val metaStatus: String? = null,
+    val metaQuality: String? = null,
+    val category: String? = null
+)
+
+data class WhatsAppInvalidPhoneCandidateDto(
+    val subscriptionId: Int,
+    val targetId: Int,
+    val targetType: String,
+    val clientName: String,
+    val phone: String?,
+    val reason: String
+)
+
+data class WhatsAppMessageCandidatesTotalsDto(
+    val valid: Int,
+    val invalid: Int
+)
+
+data class WhatsAppMessageCandidatesResponseDto(
+    val candidates: List<WhatsAppMessageCandidateDto>,
+    val invalidPhones: List<WhatsAppInvalidPhoneCandidateDto>,
+    val totals: WhatsAppMessageCandidatesTotalsDto
 )
 
 data class WhatsAppMessageCandidateDto(

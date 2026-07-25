@@ -601,7 +601,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         value = """
         SELECT s.*
         FROM subscription s
-        WHERE s.service_status = 'CUT_OFF'
+        WHERE s.is_service_cut_off = true
           AND s.phone IS NOT NULL
           AND s.phone <> ''
           AND (

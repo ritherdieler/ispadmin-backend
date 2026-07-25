@@ -4,6 +4,9 @@ import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppWebhookEvent
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppWebhookEventRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayloadParser
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -21,7 +24,9 @@ class WhatsAppWebhookService(
     private val whatsAppProperties: WhatsAppProperties,
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
     private val whatsAppWebhookEventRepository: WhatsAppWebhookEventRepository,
-    private val whatsAppInboundMessageService: WhatsAppInboundMessageService
+    private val whatsAppInboundMessageService: WhatsAppInboundMessageService,
+    private val accountEventService: WhatsAppAccountEventService,
+    private val serviceWindowService: WhatsAppServiceWindowService
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppWebhookService::class.java)
@@ -67,18 +72,29 @@ class WhatsAppWebhookService(
 
         root.path("entry").forEach { entry ->
             entry.path("changes").forEach { change ->
-                if (change.path("field").asText(null) != "messages") return@forEach
-
+                val field = change.path("field").asText(null) ?: return@forEach
                 val value = change.path("value")
 
-                value.path("statuses").forEach { status ->
-                    processStatusEvent(status)
-                }
-
-                value.path("messages").forEach { message ->
-                    processMessageEvent(message)
+                when (field) {
+                    "messages" -> processMessagesField(value)
+                    "message_template_status_update",
+                    "message_template_quality_update",
+                    "account_alerts",
+                    "template_category_update",
+                    "phone_number_quality_update" -> accountEventService.recordManagementEvent(field, value)
+                    else -> log.debug("Webhook: campo no manejado {}", field)
                 }
             }
+        }
+    }
+
+    private fun processMessagesField(value: JsonNode) {
+        value.path("statuses").forEach { status ->
+            processStatusEvent(status)
+        }
+
+        value.path("messages").forEach { message ->
+            processMessageEvent(message)
         }
     }
 
@@ -99,20 +115,48 @@ class WhatsAppWebhookService(
         )
 
         val messageLog = whatsAppMessageLogRepository.findByMetaMessageId(wamid) ?: return
+        val statusAt = parseWebhookTimestamp(timestamp) ?: LocalDateTime.now()
         messageLog.deliveryStatus = deliveryStatus
-        messageLog.deliveryStatusAt = parseWebhookTimestamp(timestamp) ?: LocalDateTime.now()
-        if (deliveryStatus == "failed") {
-            val errorTitle = status.path("errors").path(0).path("title").asText(null)
-            if (!errorTitle.isNullOrBlank()) {
-                messageLog.errorMessage = errorTitle.take(1000)
+        messageLog.deliveryStatusAt = statusAt
+
+        when (deliveryStatus) {
+            "sent" -> messageLog.sentAt = messageLog.sentAt ?: statusAt
+            "delivered" -> messageLog.deliveredAt = statusAt
+            "read" -> messageLog.readAt = statusAt
+            "failed" -> {
+                messageLog.failedAt = statusAt
+                val errorTitle = status.path("errors").path(0).path("title").asText(null)
+                if (!errorTitle.isNullOrBlank()) {
+                    messageLog.errorMessage = errorTitle.take(1000)
+                }
             }
         }
+
+        val conversation = status.path("conversation")
+        if (!conversation.isMissingNode) {
+            messageLog.conversationId = conversation.path("id").asText(messageLog.conversationId)
+            messageLog.conversationCategory = conversation.path("origin").path("type")
+                .asText(messageLog.conversationCategory)
+        }
+
+        val pricing = status.path("pricing")
+        if (!pricing.isMissingNode) {
+            if (pricing.has("billable")) {
+                messageLog.billable = pricing.path("billable").asBoolean(false)
+            }
+            messageLog.pricingModel = pricing.path("pricing_model").asText(messageLog.pricingModel)
+            val category = pricing.path("category").asText(null)
+            if (!category.isNullOrBlank()) {
+                messageLog.conversationCategory = category
+            }
+        }
+
         whatsAppMessageLogRepository.save(messageLog)
     }
 
     private fun processMessageEvent(message: JsonNode) {
-        val wamid = message.path("id").asText(null) ?: return
-        val eventKey = "message:$wamid"
+        val payload = WhatsAppInboundPayloadParser.parse(message) ?: return
+        val eventKey = "message:${payload.metaMessageId}"
 
         if (whatsAppWebhookEventRepository.existsByEventKey(eventKey)) return
 
@@ -124,20 +168,9 @@ class WhatsAppWebhookService(
             )
         )
 
-        val phone = message.path("from").asText(null) ?: return
-        val messageType = message.path("type").asText("text")
+        serviceWindowService.recordInbound(payload.phone)
 
-        val messageText = when (messageType) {
-            "text" -> message.path("text").path("body").asText(null)
-            else -> null
-        }
-
-        whatsAppInboundMessageService.processInboundMessage(
-            metaMessageId = wamid,
-            phone = phone,
-            messageType = messageType,
-            messageText = messageText
-        )
+        whatsAppInboundMessageService.processInboundMessage(payload)
     }
 
     private fun parseWebhookTimestamp(timestamp: String): LocalDateTime? {
