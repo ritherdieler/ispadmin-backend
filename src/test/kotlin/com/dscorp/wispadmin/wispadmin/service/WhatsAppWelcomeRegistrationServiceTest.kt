@@ -8,15 +8,18 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WelcomeTemplateContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
+import java.time.LocalDateTime
 
 class WhatsAppWelcomeRegistrationServiceTest {
 
@@ -41,6 +44,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNonNull(),
             anyNonNull(),
             anyNonNull(),
+            anyNullable(),
             anyNullable(),
             anyNullable(),
             anyNullable(),
@@ -92,7 +96,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             )
         ).thenReturn(false)
         `when`(subscriptionRepository.findWhatsAppSubscriptionRowById(42)).thenReturn(
-            listOf(subscriptionRow(subscriptionId = 42, phone = "123456789"))
+            listOf(subscriptionRow(subscriptionId = 42, phone = "123456789", installationType = "FIBER"))
         )
 
         service.sendWelcomeIfApplicable(42)
@@ -110,7 +114,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
     }
 
     @Test
-    fun `delivers welcome when subscription has valid phone and no prior sent log`() {
+    fun `delivers fiber welcome when subscription has valid phone and no prior sent log`() {
         val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
         `when`(
             whatsAppMessageLogRepository.existsBySubscriptionIdAndMessageTypeAndStatus(
@@ -120,21 +124,151 @@ class WhatsAppWelcomeRegistrationServiceTest {
             )
         ).thenReturn(false)
         `when`(subscriptionRepository.findWhatsAppSubscriptionRowById(42)).thenReturn(
-            listOf(subscriptionRow(subscriptionId = 42, phone = "987654321"))
+            listOf(
+                subscriptionRow(
+                    subscriptionId = 42,
+                    phone = "987654321",
+                    installationType = "FIBER",
+                    planName = "F200",
+                    planPrice = 80.0,
+                    downloadSpeed = 200000,
+                    uploadSpeed = 200000
+                )
+            )
         )
 
         service.sendWelcomeIfApplicable(42)
 
         assertEquals(1, deliverTemplateInvocations)
+
+        val welcomeContextCaptor = ArgumentCaptor.forClass(WelcomeTemplateContext::class.java)
+        verify(templateDeliveryService).deliverTemplate(
+            anyNonNull(),
+            anyNonNull(),
+            anyNonNull(),
+            anyNullable(),
+            anyNullable(),
+            anyNullable(),
+            org.mockito.ArgumentMatchers.eq(42),
+            welcomeContextCaptor.capture()
+        )
+
+        val welcomeContext = welcomeContextCaptor.value
+        assertEquals("Internet 100% Fibra Optica", welcomeContext.serviceTitle)
+        assertEquals("200 Mbps de bajada y 200 Mbps de subida", welcomeContext.serviceDetails)
+        assertEquals("F200", welcomeContext.planName)
+        assertEquals("80.00", welcomeContext.planPrice)
     }
 
-    private fun subscriptionRow(subscriptionId: Int, phone: String): Array<Any> {
+    @Test
+    fun `delivers tv welcome context for only tv fiber`() {
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
+        `when`(
+            whatsAppMessageLogRepository.existsBySubscriptionIdAndMessageTypeAndStatus(
+                43,
+                definition.messageType,
+                WhatsAppTemplateDeliveryService.STATUS_SENT
+            )
+        ).thenReturn(false)
+        `when`(subscriptionRepository.findWhatsAppSubscriptionRowById(43)).thenReturn(
+            listOf(
+                subscriptionRow(
+                    subscriptionId = 43,
+                    phone = "987654321",
+                    installationType = "ONLY_TV_FIBER",
+                    planName = "TV Full HD",
+                    planPrice = 30.0
+                )
+            )
+        )
+
+        service.sendWelcomeIfApplicable(43)
+
+        val welcomeContextCaptor = ArgumentCaptor.forClass(WelcomeTemplateContext::class.java)
+        verify(templateDeliveryService).deliverTemplate(
+            anyNonNull(),
+            anyNonNull(),
+            anyNonNull(),
+            anyNullable(),
+            anyNullable(),
+            anyNullable(),
+            org.mockito.ArgumentMatchers.eq(43),
+            welcomeContextCaptor.capture()
+        )
+
+        val welcomeContext = welcomeContextCaptor.value
+        assertEquals("TV Cable", welcomeContext.serviceTitle)
+        assertEquals("Full HD + SD y mas de 90 canales", welcomeContext.serviceDetails)
+        assertEquals("TV Full HD", welcomeContext.planName)
+        assertEquals("30.00", welcomeContext.planPrice)
+    }
+
+    @Test
+    fun `delivers wireless welcome context`() {
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
+        `when`(
+            whatsAppMessageLogRepository.existsBySubscriptionIdAndMessageTypeAndStatus(
+                44,
+                definition.messageType,
+                WhatsAppTemplateDeliveryService.STATUS_SENT
+            )
+        ).thenReturn(false)
+        `when`(subscriptionRepository.findWhatsAppSubscriptionRowById(44)).thenReturn(
+            listOf(
+                subscriptionRow(
+                    subscriptionId = 44,
+                    phone = "987654321",
+                    installationType = "WIRELESS",
+                    planName = "Dedicado 50M",
+                    planPrice = 150.0
+                )
+            )
+        )
+
+        service.sendWelcomeIfApplicable(44)
+
+        val welcomeContextCaptor = ArgumentCaptor.forClass(WelcomeTemplateContext::class.java)
+        verify(templateDeliveryService).deliverTemplate(
+            anyNonNull(),
+            anyNonNull(),
+            anyNonNull(),
+            anyNullable(),
+            anyNullable(),
+            anyNullable(),
+            org.mockito.ArgumentMatchers.eq(44),
+            welcomeContextCaptor.capture()
+        )
+
+        val welcomeContext = welcomeContextCaptor.value
+        assertEquals("Enlace Dedicado Inalambrico", welcomeContext.serviceTitle)
+        assertEquals("Alta disponibilidad para tu ubicacion", welcomeContext.serviceDetails)
+        assertEquals("Dedicado 50M", welcomeContext.planName)
+        assertEquals("150.00", welcomeContext.planPrice)
+    }
+
+    private fun subscriptionRow(
+        subscriptionId: Int,
+        phone: String,
+        installationType: String = "FIBER",
+        planName: String = "F50",
+        planPrice: Double = 50.0,
+        subscriptionPrice: Double = planPrice,
+        downloadSpeed: Int = 50000,
+        uploadSpeed: Int = 50000
+    ): Array<Any> {
         return arrayOf(
             subscriptionId,
             "Juan",
             "Perez",
             phone,
-            ServiceStatus.ACTIVE.name
+            ServiceStatus.ACTIVE.name,
+            installationType,
+            subscriptionPrice,
+            LocalDateTime.of(2026, 7, 15, 10, 0),
+            planName,
+            planPrice,
+            downloadSpeed,
+            uploadSpeed
         )
     }
 

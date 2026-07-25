@@ -20,13 +20,15 @@ class WhatsAppTemplateDeliveryService(
         payment: Payment? = null,
         oldestUnpaidPayment: Payment? = null,
         paymentId: Int? = null,
-        subscriptionId: Int? = null
+        subscriptionId: Int? = null,
+        welcomeContext: WelcomeTemplateContext? = null
     ) {
         val parameters = TemplateParameterResolver.resolve(
             definition = definition,
             subscription = subscription,
             payment = payment,
-            oldestUnpaidPayment = oldestUnpaidPayment
+            oldestUnpaidPayment = oldestUnpaidPayment,
+            welcomeContext = welcomeContext
         )
         val previewMessage = buildPreviewMessage(definition, parameters)
 

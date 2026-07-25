@@ -652,8 +652,16 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
             s.first_name,
             s.last_name,
             s.phone,
-            s.service_status
+            s.service_status,
+            s.installation_type,
+            s.price,
+            s.subscription_date_datetime,
+            p.name,
+            p.price,
+            p.download_speed,
+            p.upload_speed
         FROM subscription s
+        LEFT JOIN plan p ON p.id = s.plan_id
         WHERE s.id = :subscriptionId
         """,
         nativeQuery = true

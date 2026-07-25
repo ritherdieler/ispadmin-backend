@@ -42,6 +42,24 @@ class WhatsAppTemplateCatalogTest {
     }
 
     @Test
+    fun `welcome template parameters follow Meta order`() {
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
+
+        assertEquals(
+            listOf(
+                "customer_name",
+                "service_title",
+                "service_details",
+                "plan_name",
+                "plan_price",
+                "payment_day",
+                "payment_info"
+            ),
+            definition.parameters.map { it.metaParameterName }
+        )
+    }
+
+    @Test
     fun `invalid template code throws`() {
         assertThrows(IllegalArgumentException::class.java) {
             WhatsAppTemplateCatalog.getByCodeString("UNKNOWN_TEMPLATE")
@@ -121,15 +139,40 @@ class TemplateParameterResolverTest {
     }
 
     @Test
-    fun `welcome template only resolves customer name`() {
-        val parameters = TemplateParameterResolver.resolve(
-            definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER),
-            subscription = subscription
+    fun `welcome template resolves all variables with welcome context`() {
+        val welcomeContext = WelcomeTemplateContext(
+            serviceTitle = "TV Cable",
+            serviceDetails = "Full HD + SD y mas de 90 canales",
+            planName = "TV Full HD",
+            planPrice = "30.00",
+            paymentDay = "15",
+            paymentInfo = WelcomeServiceCopy.PAYMENT_INFO
         )
 
-        assertEquals(1, parameters.size)
-        assertEquals("customer_name", parameters[0].parameterName)
+        val parameters = TemplateParameterResolver.resolve(
+            definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER),
+            subscription = subscription,
+            welcomeContext = welcomeContext
+        )
+
+        assertEquals(7, parameters.size)
         assertEquals("Juan Perez", parameters[0].text)
+        assertEquals("TV Cable", parameters[1].text)
+        assertEquals("Full HD + SD y mas de 90 canales", parameters[2].text)
+        assertEquals("TV Full HD", parameters[3].text)
+        assertEquals("30.00", parameters[4].text)
+        assertEquals("15", parameters[5].text)
+        assertEquals(WelcomeServiceCopy.PAYMENT_INFO, parameters[6].text)
+    }
+
+    @Test
+    fun `welcome template requires welcome context`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            TemplateParameterResolver.resolve(
+                definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER),
+                subscription = subscription
+            )
+        }
     }
 
     @Test

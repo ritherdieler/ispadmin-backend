@@ -4,7 +4,8 @@ import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianPhoneValidator
-import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppSubscriptionRowMapper.subscriptionFromRow
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppSubscriptionRowMapper.welcomeSubscriptionFromRow
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WelcomeVariableMapper
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
@@ -45,7 +46,7 @@ class WhatsAppWelcomeRegistrationService(
             return
         }
 
-        val subscription = subscriptionFromRow(row)
+        val subscription = welcomeSubscriptionFromRow(row)
         val phone = subscription.phone
 
         if (phone.isNullOrBlank()) {
@@ -58,11 +59,13 @@ class WhatsAppWelcomeRegistrationService(
         }
 
         try {
+            val welcomeContext = WelcomeVariableMapper.buildContext(subscription)
             templateDeliveryService.deliverTemplate(
                 definition = definition,
                 subscription = subscription,
                 phone = phone,
-                subscriptionId = subscriptionId
+                subscriptionId = subscriptionId,
+                welcomeContext = welcomeContext
             )
             log.info("Bienvenida WhatsApp enviada para suscripcion {} al telefono {}", subscriptionId, phone)
         } catch (e: Exception) {

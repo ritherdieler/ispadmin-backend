@@ -17,12 +17,13 @@ object TemplateParameterResolver {
         definition: WhatsAppTemplateDefinition,
         subscription: Subscription,
         payment: Payment? = null,
-        oldestUnpaidPayment: Payment? = null
+        oldestUnpaidPayment: Payment? = null,
+        welcomeContext: WelcomeTemplateContext? = null
     ): List<NamedTemplateParameter> {
         return definition.parameters.map { param ->
             NamedTemplateParameter(
                 parameterName = param.metaParameterName,
-                text = resolveValue(param.source, subscription, payment, oldestUnpaidPayment)
+                text = resolveValue(param.source, subscription, payment, oldestUnpaidPayment, welcomeContext)
             )
         }
     }
@@ -31,7 +32,8 @@ object TemplateParameterResolver {
         source: TemplateParameterSource,
         subscription: Subscription,
         payment: Payment?,
-        oldestUnpaidPayment: Payment?
+        oldestUnpaidPayment: Payment?,
+        welcomeContext: WelcomeTemplateContext?
     ): String {
         return when (source) {
             TemplateParameterSource.CLIENT_NAME -> subscription.getFullName()
@@ -51,7 +53,24 @@ object TemplateParameterResolver {
                 requirePayment(oldestUnpaidPayment).amountToPay.toString()
             TemplateParameterSource.OLDEST_UNPAID_BILLING_PERIOD ->
                 requirePayment(oldestUnpaidPayment).billingDateDatetime.format(DATE_FORMAT)
+            TemplateParameterSource.SERVICE_TITLE ->
+                requireWelcomeContext(welcomeContext).serviceTitle
+            TemplateParameterSource.SERVICE_DETAILS ->
+                requireWelcomeContext(welcomeContext).serviceDetails
+            TemplateParameterSource.PLAN_NAME ->
+                requireWelcomeContext(welcomeContext).planName
+            TemplateParameterSource.PLAN_PRICE ->
+                requireWelcomeContext(welcomeContext).planPrice
+            TemplateParameterSource.PAYMENT_DAY ->
+                requireWelcomeContext(welcomeContext).paymentDay
+            TemplateParameterSource.PAYMENT_INFO ->
+                requireWelcomeContext(welcomeContext).paymentInfo
         }
+    }
+
+    private fun requireWelcomeContext(welcomeContext: WelcomeTemplateContext?): WelcomeTemplateContext {
+        return welcomeContext
+            ?: throw IllegalArgumentException("No se encontro el contexto de bienvenida requerido para la plantilla.")
     }
 
     private fun requirePayment(payment: Payment?): Payment {

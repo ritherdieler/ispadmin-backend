@@ -19,7 +19,13 @@ enum class TemplateParameterSource {
     BILLING_PERIOD,
     PAYMENT_DATE,
     OLDEST_UNPAID_AMOUNT,
-    OLDEST_UNPAID_BILLING_PERIOD
+    OLDEST_UNPAID_BILLING_PERIOD,
+    SERVICE_TITLE,
+    SERVICE_DETAILS,
+    PLAN_NAME,
+    PLAN_PRICE,
+    PAYMENT_DAY,
+    PAYMENT_INFO
 }
 
 data class WhatsAppTemplateParameterDef(
@@ -85,7 +91,13 @@ object WhatsAppTemplateCatalog {
             description = "Clientes activos con instalacion reciente",
             targetType = WhatsAppTargetType.SUBSCRIPTION,
             parameters = listOf(
-                WhatsAppTemplateParameterDef("customer_name", TemplateParameterSource.CLIENT_NAME)
+                WhatsAppTemplateParameterDef("customer_name", TemplateParameterSource.CLIENT_NAME),
+                WhatsAppTemplateParameterDef("service_title", TemplateParameterSource.SERVICE_TITLE),
+                WhatsAppTemplateParameterDef("service_details", TemplateParameterSource.SERVICE_DETAILS),
+                WhatsAppTemplateParameterDef("plan_name", TemplateParameterSource.PLAN_NAME),
+                WhatsAppTemplateParameterDef("plan_price", TemplateParameterSource.PLAN_PRICE),
+                WhatsAppTemplateParameterDef("payment_day", TemplateParameterSource.PAYMENT_DAY),
+                WhatsAppTemplateParameterDef("payment_info", TemplateParameterSource.PAYMENT_INFO)
             )
         )
     )
