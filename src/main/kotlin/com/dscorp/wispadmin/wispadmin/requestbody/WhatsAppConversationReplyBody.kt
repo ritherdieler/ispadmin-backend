@@ -1,5 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.requestbody
 
-data class WhatsAppConversationReplyBody(
-    val text: String
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
+
+data class WhatsAppConversationReplyBody @JsonCreator constructor(
+    @JsonProperty("text") val text: String = ""
 )
