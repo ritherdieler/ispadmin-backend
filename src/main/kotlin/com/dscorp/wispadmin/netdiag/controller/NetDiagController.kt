@@ -5,10 +5,16 @@ import com.dscorp.wispadmin.netdiag.dto.AlertIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
 import com.dscorp.wispadmin.netdiag.dto.NetDiagHealthResponseDto
+import com.dscorp.wispadmin.netdiag.dto.SyslogIngestRequestDto
+import com.dscorp.wispadmin.netdiag.dto.SyslogIngestResponseDto
+import com.dscorp.wispadmin.netdiag.dto.TrapIngestRequestDto
+import com.dscorp.wispadmin.netdiag.dto.TrapIngestResponseDto
 import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
 import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
+import com.dscorp.wispadmin.netdiag.service.NetDiagSnmpTrapIngestService
+import com.dscorp.wispadmin.netdiag.service.SyslogIngestAdapter
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -30,7 +36,9 @@ class NetDiagController(
     private val incidentQueryService: NetDiagIncidentQueryService,
     private val llmContextService: NetDiagLlmContextService,
     private val alertEvaluator: AlertEvaluator,
-    private val signalExtractor: AlertSignalExtractor
+    private val signalExtractor: AlertSignalExtractor,
+    private val trapIngestService: NetDiagSnmpTrapIngestService,
+    private val syslogIngestAdapter: SyslogIngestAdapter
 ) {
 
     @GetMapping("/health")
@@ -110,6 +118,25 @@ class NetDiagController(
         )
         val result = alertEvaluator.evaluateIngest(request.targetId, listOf(signal))
         return AlertIngestResponseDto(
+            decisions = result.decisions,
+            openedIncidentIds = result.openedIncidentIds,
+            suppressed = result.suppressed
+        )
+    }
+
+    @PostMapping("/traps/ingest")
+    @Operation(summary = "Ingest SNMP trap (HTTP bridge o relay)")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun ingestTrap(@RequestBody request: TrapIngestRequestDto): TrapIngestResponseDto {
+        return trapIngestService.ingest(request)
+    }
+
+    @PostMapping("/syslog/ingest")
+    @Operation(summary = "Ingest syslog MikroTik (loop-protect / link / temp / PPP)")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun ingestSyslog(@RequestBody request: SyslogIngestRequestDto): SyslogIngestResponseDto {
+        val result = syslogIngestAdapter.ingest(request.targetId, request.message)
+        return SyslogIngestResponseDto(
             decisions = result.decisions,
             openedIncidentIds = result.openedIncidentIds,
             suppressed = result.suppressed

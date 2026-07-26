@@ -102,4 +102,5 @@ net.diag.whatsapp.language-code=es
 ./mvnw test -Dtest='*NetDiag*,*AlertEvaluator*,*AlertSignal*,*WhatsAppOps*,*MikrotikPoll*,*RouterOsUptime*'
 ```
 
-No se implementa Fase 1.5 (netwatch/traps/syslog/optical) ni R4–R5.
+Fase 1.5 (netwatch/traps/syslog/optical): ver [netdiag-fase1.5.md](./netdiag-fase1.5.md) y [netdiag-mikrotik-ros7.md](./netdiag-mikrotik-ros7.md).  
+R4–R5 (wispadmin REST) sigue fuera de alcance.

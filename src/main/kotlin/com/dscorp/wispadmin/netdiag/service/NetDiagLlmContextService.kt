@@ -3,7 +3,9 @@ package com.dscorp.wispadmin.netdiag.service
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTrapEventRepository
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -14,6 +16,7 @@ class NetDiagLlmContextService(
     private val incidentRepository: NetDiagIncidentRepository,
     private val incidentEventRepository: NetDiagIncidentEventRepository,
     private val probeRunRepository: NetDiagProbeRunRepository,
+    private val trapEventRepository: NetDiagTrapEventRepository,
     private val objectMapper: ObjectMapper
 ) {
 
@@ -25,6 +28,10 @@ class NetDiagLlmContextService(
         val latestProbe = targetId?.let {
             probeRunRepository.findTopByTargetIdOrderByStartedAtDesc(it).orElse(null)
         }
+        val probeNode = latestProbe?.payload?.let { parseJson(it) }
+        val recentTraps = targetId?.let {
+            trapEventRepository.findTop20ByTargetIdOrderByReceivedAtDesc(it)
+        }.orEmpty()
 
         val sb = StringBuilder()
         sb.append("# Contexto para diagnóstico NOC con LLM\n\n")
@@ -67,6 +74,15 @@ class NetDiagLlmContextService(
             sb.append("\n")
         }
 
+        sb.append("## Health snapshot\n\n")
+        appendJsonSection(sb, probeNode?.get("health"))
+
+        sb.append("## Netwatch snapshot\n\n")
+        appendJsonSection(sb, probeNode?.get("netwatch"))
+
+        sb.append("## Optical snapshot\n\n")
+        appendJsonSection(sb, probeNode?.get("optical"))
+
         sb.append("## Último probe_run\n\n")
         if (latestProbe == null) {
             sb.append("_No hay probe_run para el target._\n\n")
@@ -80,6 +96,21 @@ class NetDiagLlmContextService(
             sb.append("\n```json\n")
             sb.append(latestProbe.payload ?: "{}")
             sb.append("\n```\n\n")
+        }
+
+        sb.append("## SNMP traps recientes\n\n")
+        if (recentTraps.isEmpty()) {
+            sb.append("_Sin traps recientes._\n\n")
+        } else {
+            recentTraps.forEach { trap ->
+                sb.append("- `").append(trap.receivedAt).append("` ")
+                    .append(trap.reasonCode).append(" type=")
+                    .append(trap.trapType ?: "-")
+                    .append(" component=")
+                    .append(trap.component ?: "-")
+                    .append("\n")
+            }
+            sb.append("\n")
         }
 
         return sb.toString()
@@ -96,6 +127,10 @@ class NetDiagLlmContextService(
         val probePayload: Any? = latestProbe?.payload?.let { raw ->
             runCatching { objectMapper.readTree(raw) }.getOrDefault(raw)
         }
+        val probeNode = latestProbe?.payload?.let { parseJson(it) }
+        val recentTraps = targetId?.let {
+            trapEventRepository.findTop20ByTargetIdOrderByReceivedAtDesc(it)
+        }.orEmpty()
 
         return linkedMapOf(
             "incidentId" to incident.id,
@@ -118,6 +153,19 @@ class NetDiagLlmContextService(
                     "createdAt" to event.createdAt.toString()
                 )
             },
+            "healthSnapshot" to jsonValue(probeNode?.get("health")),
+            "netwatchSnapshot" to jsonValue(probeNode?.get("netwatch")),
+            "opticalSnapshot" to jsonValue(probeNode?.get("optical")),
+            "recentTraps" to recentTraps.map { trap ->
+                linkedMapOf(
+                    "id" to trap.id,
+                    "reasonCode" to trap.reasonCode,
+                    "trapType" to trap.trapType,
+                    "component" to trap.component,
+                    "sourceHost" to trap.sourceHost,
+                    "receivedAt" to trap.receivedAt.toString()
+                )
+            },
             "latestProbe" to latestProbe?.let { probe ->
                 linkedMapOf(
                     "id" to probe.id,
@@ -130,6 +178,25 @@ class NetDiagLlmContextService(
                 )
             }
         )
+    }
+
+    private fun parseJson(raw: String): JsonNode? {
+        return runCatching { objectMapper.readTree(raw) }.getOrNull()
+    }
+
+    private fun jsonValue(node: JsonNode?): Any? {
+        if (node == null || node.isMissingNode || node.isNull) return null
+        return objectMapper.convertValue(node, Any::class.java)
+    }
+
+    private fun appendJsonSection(sb: StringBuilder, node: JsonNode?) {
+        if (node == null || node.isMissingNode || node.isNull) {
+            sb.append("_Sin datos._\n\n")
+            return
+        }
+        sb.append("```json\n")
+        sb.append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node))
+        sb.append("\n```\n\n")
     }
 
     private fun appendField(sb: StringBuilder, label: String, value: String?) {

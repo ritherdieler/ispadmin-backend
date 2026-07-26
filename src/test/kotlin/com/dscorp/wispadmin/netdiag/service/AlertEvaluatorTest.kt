@@ -49,6 +49,8 @@ class AlertEvaluatorTest {
     fun setup() {
         every { targetRepository.findById(2L) } returns Optional.of(child)
         every { targetRepository.findById(1L) } returns Optional.of(parent)
+        every { incidentRepository.findByTarget_IdAndStatus(2L, "OPEN") } returns emptyList()
+        every { incidentRepository.findByTarget_IdAndStatus(1L, "OPEN") } returns emptyList()
         every { alertDecisionRepository.save(any()) } answers {
             firstArg<NetDiagAlertDecision>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
         }

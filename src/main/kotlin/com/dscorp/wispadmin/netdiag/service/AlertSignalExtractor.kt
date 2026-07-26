@@ -93,6 +93,49 @@ class AlertSignalExtractor(
             )
         }
 
+        snapshot.netwatch.forEach { probe ->
+            if (probe.status == "down") {
+                signals += signal(
+                    targetId = targetId,
+                    reasonCode = "UPSTREAM_PROBE_FAIL",
+                    severity = "P0",
+                    title = "Upstream probe fail: ${probe.name}",
+                    component = probe.name,
+                    details = "host=${probe.host};type=${probe.type};comment=${probe.comment}"
+                )
+            }
+        }
+
+        snapshot.optical.forEach { optic ->
+            val rx = optic.rxPowerDbm
+            if (rx != null && rx < properties.optical.rxLowDbm) {
+                signals += signal(
+                    targetId = targetId,
+                    reasonCode = "OPTICAL_RX_LOW",
+                    severity = "P0",
+                    title = "Optical RX low: ${optic.interfaceName}",
+                    component = optic.interfaceName,
+                    details = "rxPowerDbm=$rx;threshold=${properties.optical.rxLowDbm}"
+                )
+            }
+            val tx = optic.txPowerDbm
+            val txFault = when {
+                optic.sfpPresent == true && tx == null -> true
+                tx != null && tx < properties.optical.txFaultDbm -> true
+                else -> false
+            }
+            if (txFault) {
+                signals += signal(
+                    targetId = targetId,
+                    reasonCode = "OPTICAL_TX_FAULT",
+                    severity = "P0",
+                    title = "Optical TX fault: ${optic.interfaceName}",
+                    component = optic.interfaceName,
+                    details = "txPowerDbm=$tx;threshold=${properties.optical.txFaultDbm};sfpPresent=${optic.sfpPresent}"
+                )
+            }
+        }
+
         return signals
     }
 

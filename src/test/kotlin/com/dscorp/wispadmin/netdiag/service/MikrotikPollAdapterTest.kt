@@ -27,11 +27,15 @@ class MikrotikPollAdapterTest {
     private val deviceDirectory = mockk<NetDiagDeviceDirectoryPort>()
     private val probeRunRepository = mockk<NetDiagProbeRunRepository>()
     private val objectMapper = ObjectMapper()
+    private val netwatchAdapter = MikrotikNetwatchAdapter()
+    private val opticalAdapter = MikrotikOpticalAdapter()
     private val adapter = MikrotikPollAdapter(
         mikrotikClient = mikrotikClient,
         deviceDirectory = deviceDirectory,
         probeRunRepository = probeRunRepository,
-        objectMapper = objectMapper
+        objectMapper = objectMapper,
+        netwatchAdapter = netwatchAdapter,
+        opticalAdapter = opticalAdapter
     )
 
     private val target = NetDiagTarget(
@@ -80,6 +84,9 @@ class MikrotikPollAdapterTest {
         every { session.print("/system/resource") } returns listOf(
             mapOf("uptime" to "1d2h3m4s", "cpu-load" to "12", "version" to "7.23.2 (stable)")
         )
+        every { session.print("/tool/netwatch") } returns listOf(
+            mapOf("name" to "upstream-http", "host" to "1.1.1.1", "status" to "up", "type" to "http-get")
+        )
         val saved = slot<NetDiagProbeRun>()
         every { probeRunRepository.save(capture(saved)) } answers { firstArg() }
 
@@ -90,6 +97,7 @@ class MikrotikPollAdapterTest {
         assertTrue(result.payload!!.contains("ether1"))
         assertTrue(result.payload!!.contains("gre-tunnel1"))
         assertTrue(result.payload!!.contains("voltage"))
+        assertTrue(result.payload!!.contains("upstream-http"))
         assertEquals("SUCCESS", saved.captured.status)
         assertNotNull(saved.captured.finishedAt)
         assertNotNull(saved.captured.latencyMs)

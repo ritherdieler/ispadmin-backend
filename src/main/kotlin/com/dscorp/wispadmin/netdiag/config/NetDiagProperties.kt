@@ -17,6 +17,12 @@ class NetDiagProperties {
 
     val whatsapp: WhatsAppProperties = WhatsAppProperties()
 
+    val optical: OpticalProperties = OpticalProperties()
+
+    val snmp: SnmpProperties = SnmpProperties()
+
+    val syslog: SyslogProperties = SyslogProperties()
+
     class PollProperties {
         var concurrency: Int = 4
         var jitterMs: Int = 5000
@@ -41,6 +47,27 @@ class NetDiagProperties {
         var nocPhone: String = ""
         var templateName: String = "noc_alert_v1"
         var languageCode: String = "es"
+    }
+
+    class OpticalProperties {
+        var rxLowDbm: Double = -14.0
+        var txFaultDbm: Double = -40.0
+    }
+
+    class SnmpProperties {
+        val trap: TrapProperties = TrapProperties()
+    }
+
+    class TrapProperties {
+        var udpEnabled: Boolean = false
+        var udpPort: Int = 1620
+    }
+
+    class SyslogProperties {
+        var udpEnabled: Boolean = false
+        var udpPort: Int = 5514
+        var pppMassThreshold: Int = 20
+        var pppMassWindowSeconds: Int = 60
     }
 
     fun isValidApiKey(key: String?): Boolean {

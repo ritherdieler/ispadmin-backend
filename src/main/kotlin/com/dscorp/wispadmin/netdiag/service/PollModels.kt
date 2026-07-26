@@ -17,7 +17,9 @@ data class PollSnapshot(
     val resource: ResourceSnapshot?,
     val criticalInterfaces: List<String>,
     val expectedFirmware: String?,
-    val previousUptimeSeconds: Long?
+    val previousUptimeSeconds: Long?,
+    val netwatch: List<NetwatchSnapshot> = emptyList(),
+    val optical: List<OpticalSnapshot> = emptyList()
 )
 
 data class InterfaceSnapshot(
@@ -44,6 +46,23 @@ data class ResourceSnapshot(
     val version: String?
 )
 
+data class NetwatchSnapshot(
+    val name: String,
+    val host: String,
+    val status: String,
+    val type: String?,
+    val since: String?,
+    val comment: String?
+)
+
+data class OpticalSnapshot(
+    val interfaceName: String,
+    val rxPowerDbm: Double?,
+    val txPowerDbm: Double?,
+    val temperatureC: Double?,
+    val sfpPresent: Boolean?
+)
+
 data class AlertSignal(
     val reasonCode: String,
     val severity: String,
@@ -61,5 +80,22 @@ data class AlertEvaluationResult(
 data class TargetMonitorConfig(
     val criticalInterfaces: List<String> = emptyList(),
     val expectedFirmware: String? = null,
-    val cpuThreshold: Int? = null
+    val cpuThreshold: Int? = null,
+    val netwatchNames: List<String> = emptyList(),
+    val opticalInterfaces: List<String> = emptyList()
+)
+
+data class SyslogClassification(
+    val reasonCode: String,
+    val severity: String,
+    val title: String,
+    val component: String,
+    val details: String? = null
+)
+
+data class ParsedSnmpTrap(
+    val sourceHost: String?,
+    val trapType: String?,
+    val oid: String?,
+    val raw: String
 )

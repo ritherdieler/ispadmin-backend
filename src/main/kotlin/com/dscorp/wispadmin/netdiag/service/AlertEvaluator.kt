@@ -52,7 +52,7 @@ class AlertEvaluator(
 
         signals.forEach { signal ->
             if (targetId != null) {
-                val ancestor = correlationEngine.findSuppressingAncestorIncident(targetId)
+                val ancestor = correlationEngine.findSuppressingAncestorIncident(targetId, signal.reasonCode)
                 if (ancestor != null) {
                     incidentEventRepository.save(
                         NetDiagIncidentEvent(

@@ -10,6 +10,8 @@ import com.dscorp.wispadmin.netdiag.service.AlertSignal
 import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
+import com.dscorp.wispadmin.netdiag.service.NetDiagSnmpTrapIngestService
+import com.dscorp.wispadmin.netdiag.service.SyslogIngestAdapter
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -31,6 +33,8 @@ class NetDiagControllerTest {
     private val llmContextService = mockk<NetDiagLlmContextService>()
     private val alertEvaluator = mockk<AlertEvaluator>()
     private val signalExtractor = mockk<AlertSignalExtractor>()
+    private val trapIngestService = mockk<NetDiagSnmpTrapIngestService>()
+    private val syslogIngestAdapter = mockk<SyslogIngestAdapter>()
     private val objectMapper = ObjectMapper()
 
     private val mockMvc: MockMvc = MockMvcBuilders
@@ -39,7 +43,9 @@ class NetDiagControllerTest {
                 incidentQueryService,
                 llmContextService,
                 alertEvaluator,
-                signalExtractor
+                signalExtractor,
+                trapIngestService,
+                syslogIngestAdapter
             )
         )
         .setControllerAdvice(NetDiagExceptionHandler())

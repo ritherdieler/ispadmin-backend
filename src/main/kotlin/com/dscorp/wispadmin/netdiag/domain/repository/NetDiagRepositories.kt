@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagNotificationLog
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagProbeRun
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTrapEvent
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -52,3 +53,8 @@ interface NetDiagNotificationLogRepository : JpaRepository<NetDiagNotificationLo
 
 @Repository
 interface NetDiagAuditLogRepository : JpaRepository<NetDiagAuditLog, Long>
+
+@Repository
+interface NetDiagTrapEventRepository : JpaRepository<NetDiagTrapEvent, Long> {
+    fun findTop20ByTargetIdOrderByReceivedAtDesc(targetId: Long): List<NetDiagTrapEvent>
+}

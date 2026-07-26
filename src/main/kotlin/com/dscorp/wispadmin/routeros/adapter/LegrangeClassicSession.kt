@@ -12,6 +12,17 @@ class LegrangeClassicSession(
         return connection.execute(command)
     }
 
+    override fun call(path: String, args: Map<String, String>): List<Map<String, String>> {
+        val base = normalizePath(path).removeSuffix("/print")
+        val payload = args.entries.joinToString(" ") { (key, value) -> "$key=$value" }
+        val command = if (payload.isBlank()) {
+            "/$base"
+        } else {
+            "/$base $payload"
+        }
+        return connection.execute(command)
+    }
+
     override fun add(path: String, args: Map<String, String>) {
         connection.execute(buildMutationCommand(path, "add", args))
     }

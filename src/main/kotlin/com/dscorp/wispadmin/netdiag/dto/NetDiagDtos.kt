@@ -63,3 +63,33 @@ data class AlertIngestResponseDto(
     val suppressed: Boolean
 )
 
+class TrapIngestRequestDto {
+    var targetId: Long? = null
+    var trapType: String? = null
+    var specificType: String? = null
+    var sourceHost: String? = null
+    var oid: String? = null
+    var varBinds: String? = null
+    var component: String? = null
+    var raw: String? = null
+}
+
+data class TrapIngestResponseDto(
+    val decisions: List<String>,
+    val openedIncidentIds: List<Long>,
+    val suppressed: Boolean,
+    val trapEventId: Long?,
+    val reasonCode: String
+)
+
+class SyslogIngestRequestDto {
+    var targetId: Long? = null
+    var message: String = ""
+}
+
+data class SyslogIngestResponseDto(
+    val decisions: List<String>,
+    val openedIncidentIds: List<Long>,
+    val suppressed: Boolean
+)
+

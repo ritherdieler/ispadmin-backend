@@ -7,12 +7,14 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTrapEventRepository
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
@@ -23,12 +25,19 @@ class NetDiagLlmContextServiceTest {
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
     private val probeRunRepository = mockk<NetDiagProbeRunRepository>()
+    private val trapEventRepository = mockk<NetDiagTrapEventRepository>()
     private val service = NetDiagLlmContextService(
         incidentRepository = incidentRepository,
         incidentEventRepository = incidentEventRepository,
         probeRunRepository = probeRunRepository,
+        trapEventRepository = trapEventRepository,
         objectMapper = ObjectMapper()
     )
+
+    @BeforeEach
+    fun stubTraps() {
+        every { trapEventRepository.findTop20ByTargetIdOrderByReceivedAtDesc(any()) } returns emptyList()
+    }
 
     private val target = NetDiagTarget(id = 1L, name = "MK1", deviceRefId = 7L)
     private val incident = NetDiagIncident(
@@ -60,7 +69,7 @@ class NetDiagLlmContextServiceTest {
                 target = target,
                 status = "SUCCESS",
                 startedAt = Instant.parse("2026-07-26T14:59:00Z"),
-                payload = """{"interfaces":[{"name":"ether1","running":false}]}"""
+                payload = """{"interfaces":[{"name":"ether1","running":false}],"health":[{"name":"voltage","value":"24"}],"netwatch":[{"name":"upstream-http","status":"down"}],"optical":[{"interfaceName":"sfp-sfpplus1","rxPowerDbm":-12.0}]}"""
             )
         )
 
@@ -70,19 +79,34 @@ class NetDiagLlmContextServiceTest {
         assertTrue(markdown.contains("OPENED"))
         assertTrue(markdown.contains("ether1"))
         assertTrue(markdown.contains("Causa raíz probable"))
+        assertTrue(markdown.contains("Netwatch snapshot"))
+        assertTrue(markdown.contains("upstream-http"))
+        assertTrue(markdown.contains("Optical snapshot"))
+        assertTrue(markdown.contains("Health snapshot"))
     }
 
     @Test
     fun `buildDiagnosticJson retorna mapa estructurado`() {
         every { incidentRepository.findById(42L) } returns Optional.of(incident)
         every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(42L) } returns emptyList()
-        every { probeRunRepository.findTopByTargetIdOrderByStartedAtDesc(1L) } returns Optional.empty()
+        every { probeRunRepository.findTopByTargetIdOrderByStartedAtDesc(1L) } returns Optional.of(
+            NetDiagProbeRun(
+                id = 9L,
+                target = target,
+                status = "SUCCESS",
+                startedAt = Instant.parse("2026-07-26T14:59:00Z"),
+                payload = """{"health":[{"name":"voltage","value":"24"}],"netwatch":[{"name":"upstream-http","status":"up"}],"optical":[]}"""
+            )
+        )
 
         val json = service.buildDiagnosticJson(42L)
 
         assertEquals(42L, json["incidentId"])
         assertEquals("LINK_DOWN", json["reasonCode"])
         assertEquals("OPEN", json["status"])
+        assertTrue(json.containsKey("netwatchSnapshot"))
+        assertTrue(json.containsKey("opticalSnapshot"))
+        assertTrue(json.containsKey("healthSnapshot"))
     }
 
     @Test

@@ -31,6 +31,12 @@ class RouterOs7RestSession(
         return parseRows(responseBody)
     }
 
+    override fun call(path: String, args: Map<String, String>): List<Map<String, String>> {
+        val body = objectMapper.writeValueAsString(args)
+        val responseBody = execute("POST", RouterOsRestPathMapper.resourcePath(path), body)
+        return parseRows(responseBody)
+    }
+
     override fun add(path: String, args: Map<String, String>) {
         val body = objectMapper.writeValueAsString(args)
         execute("PUT", RouterOsRestPathMapper.resourcePath(path), body)

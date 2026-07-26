@@ -25,7 +25,9 @@ class MikrotikPollAdapter(
     @Qualifier("netDiagMikrotikClient") private val mikrotikClient: MikrotikClient,
     private val deviceDirectory: NetDiagDeviceDirectoryPort,
     private val probeRunRepository: NetDiagProbeRunRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val netwatchAdapter: MikrotikNetwatchAdapter,
+    private val opticalAdapter: MikrotikOpticalAdapter
 ) {
 
     fun poll(target: NetDiagTarget): PollResult {
@@ -103,6 +105,8 @@ class MikrotikPollAdapter(
                 version = it["version"]
             )
         }
+        val netwatch = netwatchAdapter.collect(session, monitorConfig)
+        val optical = opticalAdapter.collect(session, monitorConfig)
         return PollSnapshot(
             interfaces = interfaces,
             health = health,
@@ -110,7 +114,9 @@ class MikrotikPollAdapter(
             resource = resource,
             criticalInterfaces = monitorConfig.criticalInterfaces,
             expectedFirmware = monitorConfig.expectedFirmware,
-            previousUptimeSeconds = previousUptimeSeconds
+            previousUptimeSeconds = previousUptimeSeconds,
+            netwatch = netwatch,
+            optical = optical
         )
     }
 
@@ -128,17 +134,22 @@ class MikrotikPollAdapter(
         if (raw.isNullOrBlank()) return TargetMonitorConfig()
         return runCatching {
             val root: JsonNode = objectMapper.readTree(raw)
-            val interfaces = root.path("criticalInterfaces")
-                .takeIf { it.isArray }
-                ?.mapNotNull { it.asText(null) }
-                ?.filter { it.isNotBlank() }
-                ?: emptyList()
             TargetMonitorConfig(
-                criticalInterfaces = interfaces,
+                criticalInterfaces = stringList(root, "criticalInterfaces"),
                 expectedFirmware = root.path("expectedFirmware").asText(null),
-                cpuThreshold = root.path("cpuThreshold").takeIf { it.isNumber }?.asInt()
+                cpuThreshold = root.path("cpuThreshold").takeIf { it.isNumber }?.asInt(),
+                netwatchNames = stringList(root, "netwatchNames"),
+                opticalInterfaces = stringList(root, "opticalInterfaces")
             )
         }.getOrDefault(TargetMonitorConfig())
+    }
+
+    private fun stringList(root: JsonNode, field: String): List<String> {
+        return root.path(field)
+            .takeIf { it.isArray }
+            ?.mapNotNull { it.asText(null) }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
     }
 
     private fun persistFailed(

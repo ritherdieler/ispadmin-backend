@@ -1,4 +1,4 @@
-# NetDiag — Runbooks operativos (Fase 1)
+# NetDiag — Runbooks operativos (Fase 1 + 1.5)
 
 ## Prerrequisitos
 
@@ -7,6 +7,7 @@
 3. Filas en `net_diag_target` con `device_ref_id` apuntando a `network_device.id` y `enabled=true`
 4. REST RouterOS accesible (443 / truststore según `router.os.client.rest.*`)
 5. (Opcional WhatsApp) `net.diag.whatsapp.noc-phone` + plantilla Meta `noc_alert_v1` aprobada
+6. (Fase 1.5) Netwatch seed manual, SNMP traps y/o syslog hacia el VPS — ver [netdiag-mikrotik-ros7.md](./netdiag-mikrotik-ros7.md)
 
 ## Superficie API (alineada con backoffice NOC)
 
@@ -23,6 +24,8 @@ Auth: header `X-Netdiag-Key` (excepto `/health`)
 | POST | `/incidents/{id}/ack` | `IncidentDetailDto` (`status=ACKNOWLEDGED`) |
 | POST | `/incidents/{id}/resolve` | `IncidentDetailDto` (`status=RESOLVED`) |
 | POST | `/alerts/ingest` | `{ decisions, openedIncidentIds, suppressed }` |
+| POST | `/traps/ingest` | `TrapIngestResponseDto` |
+| POST | `/syslog/ingest` | `SyslogIngestResponseDto` |
 
 ### Query params lista
 
@@ -33,7 +36,7 @@ Auth: header `X-Netdiag-Key` (excepto `/health`)
 | targetId | `7` | id de `net_diag_target` |
 | dateFrom / dateTo | `2026-07-26` o ISO-8601 | filtro sobre `openedAt` |
 
-### Ingest body
+### Ingest alert body
 
 ```json
 {
@@ -43,6 +46,29 @@ Auth: header `X-Netdiag-Key` (excepto `/health`)
   "title": "PON down gpon 0/1",
   "component": "gpon-0/1",
   "details": "olt=OLT1"
+}
+```
+
+### Trap ingest body
+
+```json
+{
+  "targetId": 7,
+  "trapType": "interfaces",
+  "specificType": "linkDown",
+  "sourceHost": "38.224.231.2",
+  "oid": "1.3.6.1.6.3.1.1.5.3",
+  "component": "ether1",
+  "varBinds": "{\"ifName\":\"ether1\",\"ifOperStatus\":\"down\"}"
+}
+```
+
+### Syslog ingest body
+
+```json
+{
+  "targetId": 7,
+  "message": "bridge loop-protect: interface ether5 disabled on bridge1"
 }
 ```
 
@@ -76,7 +102,41 @@ Summary + `acknowledgedAt`, `resolvedAt`, `events: IncidentEventDto[]`.
 1. Abrir detalle en NOC / `GET /incidents/{id}`
 2. Copiar LLM context (`GET .../llm-context` → markdown plano)
 3. Verificar en MikroTik: `/interface print where name=...`
-4. Ack / Resolve desde UI
+4. Si hay `UPSTREAM_PROBE_FAIL` OPEN, priorizar causa aguas arriba (internet) antes de tocar enlaces locales
+5. Ack / Resolve desde UI
+
+## Runbook: UPSTREAM_PROBE_FAIL
+
+1. Confirmar Netwatch: `/tool netwatch print`
+2. Distinguir: router alcanzable vía REST pero probes HTTP/DNS down → problema de transit/WAN, no del core local
+3. Revisar WAN `sfp-sfpplus1` / BGP-peer del ISP
+4. Alertas de link/óptica hijas pueden estar suprimidas por correlación
+
+## Runbook: OPTICAL_RX_LOW / OPTICAL_TX_FAULT
+
+1. `/interface ethernet monitor <iface> once`
+2. Verificar conector/patch, limpieza, SFP correcto
+3. Comparar umbrales `net.diag.optical.*`
+4. Si TX ausente con módulo presente → posible fallo de láser/SFP
+
+## Runbook: SNMP_TRAP_*
+
+1. Revisar `net_diag_trap_event` / timeline del incidente
+2. `SNMP_TRAP_REBOOT` → cruzar con `UNEXPECTED_REBOOT` / uptime
+3. `SNMP_TRAP_TEMP` → health + ventilación
+4. Confirmar que el trap-target del router apunta al VPS correcto
+
+## Runbook: LOOP_PROTECT_TRIGGERED
+
+1. Identificar bridge/interfaz en el mensaje syslog
+2. Buscar loop L2 (CRS / ether mal puenteado)
+3. No reactivar puerto hasta aislar el loop
+
+## Runbook: PPP_MASS_DISCONNECT
+
+1. Umbral: `net.diag.syslog.ppp-mass-threshold` en ventana `ppp-mass-window-seconds`
+2. Correlacionar con `UPSTREAM_PROBE_FAIL` o caída de OLT/PON
+3. Revisar logs PPP y radius si aplica
 
 ## Runbook: POLL_STALE
 
@@ -101,8 +161,10 @@ VALUES (
   <network_device.id>,
   true,
   60000,
-  '{"criticalInterfaces":["ether1"],"expectedFirmware":"7.23.2"}',
+  '{"criticalInterfaces":["sfp-sfpplus1","sfp-sfpplus2"],"expectedFirmware":"7.23.2","netwatchNames":["upstream-http","upstream-dns"],"opticalInterfaces":["sfp-sfpplus1","sfp-sfpplus2"]}',
   NOW(),
   NOW()
 );
 ```
+
+Netwatch/SNMP/syslog en el router: aplicar a mano [netdiag-mikrotik-seed.rsc](./netdiag-mikrotik-seed.rsc).
