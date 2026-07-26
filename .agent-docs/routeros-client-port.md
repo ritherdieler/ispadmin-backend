@@ -1,12 +1,12 @@
 # RouterOS client port (`com.dscorp.wispadmin.routeros`)
 
 **Fecha:** 2026-07-26  
-**Fase:** 0 (NetDiag)  
+**Fase:** 0 → R4–R5 (NetDiag)  
 **Rama:** `feature/netdiag`
 
 ## Objetivo
 
-Puerto de transporte desacoplado de `me.legrange` y de la entidad JPA `NetworkDevice`, para que `netdiag` y (más adelante) `wispadmin` hablen con MikroTik vía la misma abstracción.
+Puerto de transporte desacoplado de `me.legrange` y de la entidad JPA `NetworkDevice`, para que `netdiag` y `wispadmin` hablen con MikroTik vía la misma abstracción.
 
 ```text
 MikrotikClient.withSession(device) { session ->
@@ -20,10 +20,10 @@ MikrotikClient.withSession(device) { session ->
 |-------|-----|
 | `MikrotikClient` / `MikrotikSession` / `MikrotikDeviceRef` | Contrato sin fugas de librería |
 | `MikrotikException` (sealed) | Taxonomía tipada: unreachable / auth / timeout / command |
-| `LegrangeClassicAdapter` + `LegrangeClassicSession` | API TCP 8728 (`me.legrange`), pool por `device.id` |
+| `LegrangeClassicAdapter` + `LegrangeClassicSession` | API TCP 8728 (`me.legrange`), pool por `device.id` — **deprecated** (R4) |
 | `RouterOs7RestAdapter` + `RouterOs7RestSession` | REST HTTPS (OkHttp + Basic auth), cliente HTTP compartido |
 | `RouterOsRestPathMapper` | `/system/resource` → `/rest/system/resource/print` |
-| `RouterOsClientProperties` / `RouterOsClientConfig` | Wiring Spring (`@ConditionalOnProperty`) |
+| `RouterOsClientProperties` / `RouterOsClientConfig` | Wiring Spring (`@ConditionalOnProperty` + `@Primary`) |
 
 Registro en scan: `WispAdminApplication` incluye `com.dscorp.wispadmin.routeros`.
 
@@ -39,9 +39,10 @@ router.os.client.classic.port=8728
 router.os.client.classic.timeout-ms=10000
 ```
 
-- `adapter=classic` (default) → bean `LegrangeClassicAdapter`.
-- `adapter=rest` → bean `RouterOs7RestAdapter`.
+- `adapter=classic` (**default**, `matchIfMissing=true`) → bean `@Primary` `LegrangeClassicAdapter` (wispadmin).
+- `adapter=rest` → bean `@Primary` `RouterOs7RestAdapter` (wispadmin).
 - Si `adapter=rest` y `verify-ssl=false`, `RouterOsClientConfig` emite **WARN** en arranque (solo lab).
+- `netdiag` **siempre** usa REST vía bean nombrado `netDiagMikrotikClient`, independiente de `router.os.client.adapter`.
 
 ## Truststore TLS (REST)
 
@@ -148,3 +149,68 @@ REST: `execute(raw)` lanza `MikrotikCommandException` (wispadmin R1–R2 usa cla
 
 - Scaffold `netdiag` + polls/alerts; no reabrir ApiConnection en wispadmin.
 - Fase R4–R5: migrar comandos raw → `print`/`add`/`set`/`remove` y `adapter=rest`.
+
+## Fase R4 — Switch REST para wispadmin (2026-07-26)
+
+**Commit:** `feat(routeros): enable REST adapter switch for wispadmin with classic default`
+
+### Default seguro
+
+| Consumidor | Adapter efectivo | Cómo |
+|------------|------------------|------|
+| wispadmin (`MikroTikConnectionService`, cortes/queues) | **classic** por defecto | `router.os.client.adapter` ausente o `classic`; bean `@Primary` |
+| netdiag (`MikrotikPollAdapter`, etc.) | **REST siempre** | bean `netDiagMikrotikClient` = `RouterOs7RestAdapter` |
+
+No hace falta cambiar código para apuntar wispadmin a REST: solo la property.
+
+### Cómo habilitar REST en prod (tras validación live)
+
+1. Completar checklist live de la sección siguiente (www-ssl, truststore, `-Plive-mk1`).
+2. Migrar usos wispadmin de `MikrotikSession.execute(raw)` a `print` / `add` / `set` / `remove` / `call` (REST no soporta raw execute).
+3. En el host/profile de prod:
+
+```properties
+router.os.client.adapter=rest
+router.os.client.rest.port=443
+router.os.client.rest.verify-ssl=true
+router.os.client.rest.trust-store=classpath:routeros-mk-truststore.jks
+router.os.client.rest.trust-store-password=${ROUTEROS_TRUSTSTORE_PASSWORD}
+router.os.client.rest.timeout-ms=10000
+```
+
+4. Restart; wispadmin inyecta `RouterOs7RestAdapter` como `@Primary`. netdiag sigue en su bean REST propio.
+5. Rollback inmediato: `router.os.client.adapter=classic` (o quitar la property).
+
+**No** activar `adapter=rest` en prod mientras existan caminos classic-only (`session.execute`) o sin validación live MK1/MK2.
+
+### Tests R4
+
+```bash
+./mvnw test -Dtest=RouterOsClientConfigTest,NetDiagMikrotikClientWiringTest,LegrangeClassicAdapterDeprecationTest,LegrangeDependencyBoundaryTest
+```
+
+- Wiring classic / missing / rest.
+- netdiag REST aunque wispadmin sea classic.
+- `@Primary` evita `NoUniqueBeanDefinition` con netdiag habilitado.
+- Boundary: `import me.legrange` solo bajo `routeros/adapter/`.
+
+### Deprecación
+
+`LegrangeClassicAdapter` está `@Deprecated` con nota de migración a `adapter=rest`. La dependencia `me.legrange:mikrotik` **permanece** en `pom.xml` hasta cumplir R5.
+
+## Fase R5 — Checklist para eliminar `me.legrange:mikrotik`
+
+No quitar la dependencia hasta cumplir **todos** los ítems:
+
+| # | Criterio | Estado |
+|---|----------|--------|
+| 1 | `www-ssl` habilitado en MK1 (y MK2 si aplica) con certificado usable | Pendiente (bloqueado en workstation) |
+| 2 | Truststore JKS importado; `verify-ssl=true` en el profile que valide REST | Pendiente |
+| 3 | Contract tests live verdes: `./mvnw test -Plive-mk1 -Dtest=LegrangeClassicAdapterTest,RouterOs7RestAdapterTest` desde host allowlisteado (VPS) | Pendiente |
+| 4 | Todos los caminos wispadmin usan `print`/`add`/`set`/`remove`/`call` (cero `MikrotikSession.execute` de producción) | Pendiente |
+| 5 | Suite unitaria wispadmin mikrotik/cortes/queues verde con `router.os.client.adapter=rest` | Pendiente |
+| 6 | `LegrangeDependencyBoundaryTest` sigue verde (hoy: legrange solo en `routeros/adapter/`) | OK como gate parcial |
+| 7 | Smoke prod/staging con `adapter=rest` estable (cortes, queues, system-info) | Pendiente |
+| 8 | Entonces: borrar `LegrangeClassicAdapter` / session / factory / mapper legrange, quitar `me.legrange:mikrotik` del `pom.xml`, dejar solo `adapter=rest` (o default rest) | No iniciar hasta 1–7 |
+
+Gate documental: si live REST no está validado, **no** force-delete legrange.

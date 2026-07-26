@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
 import javax.annotation.PostConstruct
 
 @Configuration
@@ -27,17 +28,20 @@ class RouterOsClientConfig(
     }
 
     @Bean(destroyMethod = "close")
+    @Primary
     @ConditionalOnProperty(
         prefix = "router.os.client",
         name = ["adapter"],
         havingValue = "classic",
         matchIfMissing = true
     )
+    @Suppress("DEPRECATION")
     fun legrangeClassicAdapter(): MikrotikClient {
         return LegrangeClassicAdapter(properties)
     }
 
     @Bean(destroyMethod = "close")
+    @Primary
     @ConditionalOnProperty(
         prefix = "router.os.client",
         name = ["adapter"],

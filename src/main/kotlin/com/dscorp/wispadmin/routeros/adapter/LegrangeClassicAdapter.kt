@@ -8,6 +8,9 @@ import me.legrange.mikrotik.ApiConnection
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
+@Deprecated(
+    message = "Migrate wispadmin to router.os.client.adapter=rest (RouterOs7RestAdapter). Remove me.legrange:mikrotik only after R5 checklist in .agent-docs/routeros-client-port.md"
+)
 class LegrangeClassicAdapter(
     private val properties: RouterOsClientProperties,
     private val connectionFactory: ClassicConnectionFactory = DefaultClassicConnectionFactory
