@@ -13,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableAsync
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.transaction.annotation.EnableTransactionManagement
 
-@SpringBootApplication(scanBasePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway"])
+@SpringBootApplication(scanBasePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.routeros"])
 @EntityScan(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway"])
 @EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway"])
 @EnableScheduling
