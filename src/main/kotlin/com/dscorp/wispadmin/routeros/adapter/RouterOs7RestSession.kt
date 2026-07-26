@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.routeros.adapter
 
+import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
 import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.fasterxml.jackson.databind.JsonNode
@@ -42,6 +43,12 @@ class RouterOs7RestSession(
 
     override fun remove(path: String, id: String) {
         execute("DELETE", RouterOsRestPathMapper.resourcePath(path, id), null)
+    }
+
+    override fun execute(command: String): List<Map<String, String>> {
+        throw MikrotikCommandException(
+            "Raw execute is not supported by REST adapter; use print/add/set/remove: $command"
+        )
     }
 
     private fun execute(method: String, path: String, jsonBody: String?): String {

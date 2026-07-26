@@ -1,5 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.extensions
 
+import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
+import com.dscorp.wispadmin.routeros.port.MikrotikClient
+import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.controller.ModuleException
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.data.model.ErrorLog
@@ -7,7 +10,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceDto
 import com.dscorp.wispadmin.wispadmin.service.EnvironmentService
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
-import me.legrange.mikrotik.ApiConnection
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.MikrotikDeviceRefMapper
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -91,8 +94,25 @@ object NetworkDeviceConnectionManager {
     }
 }
 
+object MikrotikClientAccessor {
+    private var client: MikrotikClient? = null
+    private var properties: RouterOsClientProperties? = null
 
-// remove /24 from ip range
+    fun setClient(client: MikrotikClient, properties: RouterOsClientProperties) {
+        this.client = client
+        this.properties = properties
+    }
+
+    fun client(): MikrotikClient {
+        return client ?: throw IllegalStateException("MikrotikClient is not initialized")
+    }
+
+    fun classicPort(): Int {
+        return properties?.classic?.port ?: 8728
+    }
+}
+
+
 fun String.getBaseIpFromRange(): String {
     val segment = this.split("/")
     val a = segment[0].split(".")
@@ -101,16 +121,14 @@ fun String.getBaseIpFromRange(): String {
     return c
 }
 
-fun NetworkDeviceConnection.executeCommand(block: (connection: ApiConnection) -> Unit) {
+fun NetworkDeviceConnection.executeCommand(block: (session: MikrotikSession) -> Unit) {
     if (NetworkDeviceConnectionManager.isMikroTikMockModeEnabled()) {
         return
     }
 
-    val connectionData = NetworkDeviceConnectionManager.getConnectionData(this)
-    ApiConnection.connect(connectionData.ipAddress).also {
-        it.login(connectionData.username, connectionData.password)
-        block.invoke(it)
-        it.close()
+    val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(this, MikrotikClientAccessor.classicPort())
+    MikrotikClientAccessor.client().withSession(deviceRef) { session ->
+        block(session)
     }
 }
 

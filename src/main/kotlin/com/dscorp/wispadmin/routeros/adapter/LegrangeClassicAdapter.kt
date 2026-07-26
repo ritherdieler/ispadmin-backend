@@ -30,6 +30,20 @@ class LegrangeClassicAdapter(
         }
     }
 
+    override fun closeSession(deviceId: String) {
+        evict(deviceId)
+        locks.remove(deviceId)
+    }
+
+    override fun isSessionActive(deviceId: String): Boolean {
+        val connection = connections[deviceId] ?: return false
+        return connection.isConnected
+    }
+
+    override fun activeSessionDeviceIds(): Set<String> {
+        return connections.filterValues { it.isConnected }.keys.toSet()
+    }
+
     private fun obtainConnection(device: MikrotikDeviceRef): ApiConnection {
         val existing = connections[device.id]
         if (existing != null && existing.isConnected) {

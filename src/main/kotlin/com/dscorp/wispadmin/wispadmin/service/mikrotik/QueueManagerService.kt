@@ -1,14 +1,12 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
-import com.dscorp.wispadmin.wispadmin.controller.toErrorLog
+import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
-import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
-import me.legrange.mikrotik.ApiConnection
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.concurrent.CompletableFuture
@@ -55,21 +53,21 @@ class QueueManagerService(
         }
     }
     
-    override fun recreateQueueForSubscription(connection: ApiConnection, subscription: Subscription): Boolean {
+    override fun recreateQueueForSubscription(session: MikrotikSession, subscription: Subscription): Boolean {
         val queryByIp = "/queue/simple/print where target=${subscription.ip}/32"
-        val resultByIp = connection.execute(queryByIp)
+        val resultByIp = session.execute(queryByIp)
 
         val queueToRemove = if (resultByIp.isNotEmpty()) {
             resultByIp.last()
         } else {
             val exactName = buildQueueName(subscription)
             val queryByName = "/queue/simple/print where name='$exactName'"
-            val resultByName = connection.execute(queryByName)
+            val resultByName = session.execute(queryByName)
             resultByName.lastOrNull()
         }
 
         queueToRemove?.let {
-            connection.execute("/queue/simple/remove numbers=${it[".id"]}")
+            session.execute("/queue/simple/remove numbers=${it[".id"]}")
         }
 
         subscription.ip?.let { ip ->
@@ -77,30 +75,30 @@ class QueueManagerService(
                 val queueName = buildQueueName(subscription)
                 val command =
                     "/queue/simple/add name='${queueName}' target=${subscription.ip} max-limit=${subscription.plan!!.uploadSpeed!!}M/${subscription.plan!!.downloadSpeed!!}M comment='${subscription.installationType}'"
-                connection.execute(command)
+                session.execute(command)
                 return true
             }
         }
         return false
     }
     
-    override fun configureMikroTikQueue(connection: ApiConnection, subscription: Subscription) {
+    override fun configureMikroTikQueue(session: MikrotikSession, subscription: Subscription) {
         val queueName = buildQueueName(subscription)
         val queueCommand =
             "/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${subscription.plan?.uploadSpeed}M/${subscription.plan?.downloadSpeed}M"
-        connection.execute(queueCommand)
+        session.execute(queueCommand)
     }
     
     override fun updateMikroTikQueue(subscription: Subscription) {
-        subscription.hostDevice?.executeCommand { connection ->
+        subscription.hostDevice?.executeCommand { session ->
             val searchQuery = "/queue/simple/print where target=${subscription.ip}/32"
-            val existingQueues = connection.execute(searchQuery)
+            val existingQueues = session.execute(searchQuery)
             existingQueues.forEach { queue ->
-                connection.execute("/queue/simple/remove .id=${queue[".id"]}")
+                session.execute("/queue/simple/remove .id=${queue[".id"]}")
             }
 
             val queueName = buildQueueName(subscription)
-            connection.execute("/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${subscription.plan?.uploadSpeed}M/${subscription.plan?.downloadSpeed}M")
+            session.execute("/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${subscription.plan?.uploadSpeed}M/${subscription.plan?.downloadSpeed}M")
         }
     }
     
@@ -118,10 +116,10 @@ class QueueManagerService(
                 logger.info("🚀 Iniciando creación de queues simples - Total suscripciones activas: ${allSubscriptions.size}")
 
                 subscriptions.firstOrNull()?.hostDevice?.let { hostDevice ->
-                    hostDevice.executeCommand { connection ->
+                    hostDevice.executeCommand { session ->
                         for (subscription in subscriptions) {
                             try {
-                                val success = recreateQueueForSubscription(connection, subscription)
+                                val success = recreateQueueForSubscription(session, subscription)
                                 if (success) {
                                     queuesGenerated++
                                 } else {
@@ -175,6 +173,3 @@ class QueueManagerService(
         }
     }
 }
-
-
-

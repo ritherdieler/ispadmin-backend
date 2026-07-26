@@ -1,25 +1,25 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
+import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionManager
-import me.legrange.mikrotik.ApiConnection
-import me.legrange.mikrotik.MikrotikApiException
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.MikrotikDeviceRefMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 @Service
-class MikroTikConnectionService {
+class MikroTikConnectionService(
+    private val mikrotikClient: MikrotikClient,
+    private val routerOsClientProperties: RouterOsClientProperties
+) {
     
     private val logger = LoggerFactory.getLogger(MikroTikConnectionService::class.java)
     
-    private val connections = ConcurrentHashMap<Int, ApiConnection>()
-    private val connectionLocks = ConcurrentHashMap<Int, Any>()
     private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(10)
 
     private fun isMockModeEnabled(): Boolean {
@@ -91,113 +91,45 @@ class MikroTikConnectionService {
             else -> emptyList()
         }
     }
-    
-    /**
-     * Ejecuta un comando de una sola lectura (abre y cierra la conexión automáticamente)
-     * Útil para comandos que se ejecutan una sola vez como obtener información del sistema, recursos, etc.
-     */
+
     fun executeSingleCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
         logger.info("🔧 [DISPOSITIVO-${device.id}] Ejecutando comando único: $command")
         if (isMockModeEnabled()) {
             return getMockResponse(command)
         }
-        val connectionData = NetworkDeviceConnectionManager.getConnectionData(device)
-        
         return try {
-            logger.debug("🔗 [DISPOSITIVO-${device.id}] Abriendo conexión temporal a ${connectionData.ipAddress}")
-            val connection = ApiConnection.connect(connectionData.ipAddress!!)
-            connection.login(connectionData.username!!, connectionData.password!!)
-            
-            logger.debug("📡 [DISPOSITIVO-${device.id}] Ejecutando comando...")
-            val result = connection.execute(command)
-            
-            connection.close()
+            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+            logger.debug("🔗 [DISPOSITIVO-${device.id}] Abriendo sesión vía MikrotikClient a ${deviceRef.host}")
+            val result = mikrotikClient.withSession(deviceRef) { session ->
+                session.execute(command)
+            }
             logger.info("✅ [DISPOSITIVO-${device.id}] Comando ejecutado exitosamente - ${result.size} resultados")
-            
             result
-        } catch (e: MikrotikApiException) {
-            logger.error("❌ [DISPOSITIVO-${device.id}] Error MikroTik ejecutando comando único: ${e.message}")
-            throw e // Propagar la excepción en lugar de retornar lista vacía
         } catch (e: Exception) {
-            logger.error("❌ [DISPOSITIVO-${device.id}] Error inesperado ejecutando comando único: ${e.message}")
-            throw e // Propagar la excepción en lugar de retornar lista vacía
+            logger.error("❌ [DISPOSITIVO-${device.id}] Error ejecutando comando único: ${e.message}")
+            throw e
         }
     }
     
-    /**
-     * Obtiene una conexión persistente a un dispositivo MikroTik
-     */
-    fun getConnection(device: NetworkDevice): ApiConnection? {
-        val deviceId = device.id
-        val connectionData = NetworkDeviceConnectionManager.getConnectionData(device)
-        
-        // Si ya existe una conexión, retornarla
-        connections[deviceId]?.let { 
-            logger.debug("🔗 [DISPOSITIVO-$deviceId] Reutilizando conexión existente")
-            return it 
-        }
-        
-        // Si no existe, crear una nueva
-        logger.info("🔗 [DISPOSITIVO-$deviceId] Creando nueva conexión persistente a ${connectionData.ipAddress}")
-        
-        return try {
-            val connection = ApiConnection.connect(connectionData.ipAddress!!)
-            connection.login(connectionData.username!!, connectionData.password!!)
-            connections[deviceId] = connection
-            
-            logger.info("✅ [DISPOSITIVO-$deviceId] Conexión persistente establecida exitosamente")
-            connection
-        } catch (e: MikrotikApiException) {
-            logger.error("❌ [DISPOSITIVO-$deviceId] Error MikroTik creando conexión: ${e.message}")
-            null
-        } catch (e: Exception) {
-            logger.error("❌ [DISPOSITIVO-$deviceId] Error inesperado creando conexión: ${e.message}")
-            null
-        }
-    }
-    
-    /**
-     * Ejecuta un comando en una conexión persistente
-     */
     fun executeCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
         val deviceId = device.id
         if (isMockModeEnabled()) {
             return getMockResponse(command)
         }
-        val lock = connectionLocks.computeIfAbsent(deviceId) { Any() }
-        
-        synchronized(lock) {
-            val connection = getConnection(device) ?: run {
-                logger.error("❌ [DISPOSITIVO-$deviceId] No se pudo obtener conexión para ejecutar comando")
-                return emptyList()
+        return try {
+            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+            logger.debug("📡 [DISPOSITIVO-$deviceId] Ejecutando comando vía MikrotikClient: $command")
+            val result = mikrotikClient.withSession(deviceRef) { session ->
+                session.execute(command)
             }
-            
-            return try {
-                logger.debug("📡 [DISPOSITIVO-$deviceId] Ejecutando comando en conexión persistente: $command")
-                val result = connection.execute(command)
-                logger.debug("✅ [DISPOSITIVO-$deviceId] Comando ejecutado exitosamente - ${result.size} resultados")
-                result
-            } catch (e: MikrotikApiException) {
-                logger.error("❌ [DISPOSITIVO-$deviceId] Error MikroTik ejecutando comando: ${e.message}")
-                logger.info("🔄 [DISPOSITIVO-$deviceId] Intentando reconectar...")
-                
-                // Intentar reconectar
-                closeConnection(deviceId)
-                val newConnection = getConnection(device)
-                newConnection?.execute(command) ?: run {
-                    logger.error("❌ [DISPOSITIVO-$deviceId] Falló la reconexión")
-                    emptyList()
-                }
-            } catch (e: Exception) {
-                logger.error("❌ [DISPOSITIVO-$deviceId] Error inesperado ejecutando comando: ${e.message}")
-                emptyList()
-            }
+            logger.debug("✅ [DISPOSITIVO-$deviceId] Comando ejecutado exitosamente - ${result.size} resultados")
+            result
+        } catch (e: Exception) {
+            logger.error("❌ [DISPOSITIVO-$deviceId] Error ejecutando comando: ${e.message}")
+            emptyList()
         }
     }
     
-    /**
-     * Ejecuta un comando de larga duración (monitoreo continuo)
-     */
     fun executeLongRunningCommand(
         device: NetworkDevice, 
         command: String, 
@@ -222,7 +154,7 @@ class MikroTikConnectionService {
                 } catch (e: Exception) {
                     logger.error("❌ [DISPOSITIVO-$deviceId] Error en comando de larga duración: ${e.message}")
                     logger.info("⏳ [DISPOSITIVO-$deviceId] Esperando 5 segundos antes de reintentar...")
-                    Thread.sleep(5000) // Esperar antes de reintentar
+                    Thread.sleep(5000)
                 }
             }
             
@@ -230,9 +162,6 @@ class MikroTikConnectionService {
         }
     }
     
-    /**
-     * Programa una tarea de monitoreo continuo
-     */
     fun scheduleMonitoring(
         device: NetworkDevice,
         command: String,
@@ -243,8 +172,6 @@ class MikroTikConnectionService {
         val deviceId = device.id
         logger.info("📅 [DISPOSITIVO-$deviceId] Programando monitoreo continuo - Intervalo: ${intervalMs}ms")
         
-        // Cambiar a scheduleWithFixedDelay para evitar ejecuciones concurrentes
-        // y agregar delay inicial para evitar ejecución inmediata duplicada
         val scheduledTask = scheduler.scheduleWithFixedDelay({
             try {
                 if (shouldContinue()) {
@@ -256,75 +183,47 @@ class MikroTikConnectionService {
             } catch (e: Exception) {
                 logger.error("❌ [DISPOSITIVO-$deviceId] Error en monitoreo programado: ${e.message}")
             }
-        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS) // Delay inicial = intervalo
+        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS)
         
         logger.info("✅ [DISPOSITIVO-$deviceId] Monitoreo programado exitosamente con delay inicial")
         return scheduledTask
     }
     
-    /**
-     * Cierra una conexión específica
-     */
     fun closeConnection(deviceId: Int) {
         logger.info("🔌 [DISPOSITIVO-$deviceId] Cerrando conexión")
-        
-        connections[deviceId]?.let { connection ->
-            try {
-                connection.close()
-                logger.info("✅ [DISPOSITIVO-$deviceId] Conexión cerrada exitosamente")
-            } catch (e: Exception) {
-                logger.error("❌ [DISPOSITIVO-$deviceId] Error cerrando conexión: ${e.message}")
-            } finally {
-                connections.remove(deviceId)
-                connectionLocks.remove(deviceId)
-                logger.info("🧹 [DISPOSITIVO-$deviceId] Recursos de conexión liberados")
-            }
-        } ?: run {
-            logger.warn("⚠️ [DISPOSITIVO-$deviceId] No se encontró conexión para cerrar")
-        }
+        mikrotikClient.closeSession(deviceId.toString())
+        logger.info("✅ [DISPOSITIVO-$deviceId] Conexión cerrada exitosamente")
     }
     
-    /**
-     * Cierra todas las conexiones
-     */
     fun closeAllConnections() {
-        logger.info("🔌 Cerrando todas las conexiones activas (${connections.size} conexiones)")
-        
-        connections.keys.forEach { deviceId ->
-            closeConnection(deviceId)
+        val deviceIds = mikrotikClient.activeSessionDeviceIds()
+        logger.info("🔌 Cerrando todas las conexiones activas (${deviceIds.size} conexiones)")
+        deviceIds.forEach { deviceId ->
+            mikrotikClient.closeSession(deviceId)
         }
-        
         scheduler.shutdown()
         logger.info("✅ Todas las conexiones cerradas y scheduler detenido")
     }
     
-    /**
-     * Verifica si una conexión está activa
-     */
     fun isConnectionActive(deviceId: Int): Boolean {
-        val isActive = connections.containsKey(deviceId)
+        val isActive = mikrotikClient.isSessionActive(deviceId.toString())
         logger.debug("🔍 [DISPOSITIVO-$deviceId] Conexión activa: $isActive")
         return isActive
     }
     
-    /**
-     * Obtiene estadísticas de conexiones
-     */
     fun getConnectionStats(): Map<String, Any> {
+        val deviceIds = mikrotikClient.activeSessionDeviceIds()
         val stats = mapOf(
-            "activeConnections" to connections.size,
-            "connectionLocks" to connectionLocks.size,
+            "activeConnections" to deviceIds.size,
+            "connectionLocks" to deviceIds.size,
             "schedulerActive" to !scheduler.isShutdown,
-            "connectedDevices" to connections.keys.toList()
+            "connectedDevices" to deviceIds.mapNotNull { it.toIntOrNull() }
         )
         
         logger.info("📊 Estadísticas de conexiones MikroTik: $stats")
         return stats
     }
     
-    /**
-     * Obtiene todos los filter rules que comienzan con "CORTADO POR DEUDA"
-     */
     fun getDebtCutFilterRules(device: NetworkDevice): List<Map<String, String>> {
         logger.info("🔍 [DISPOSITIVO-${device.id}] Obteniendo filter rules de CORTADO POR DEUDA")
         
@@ -343,9 +242,6 @@ class MikroTikConnectionService {
         }
     }
 
-    /**
-     * Obtiene todas las entradas de la address-list "deudores"
-     */
     fun getDebtorsAddressList(device: NetworkDevice): List<Map<String, String>> {
         logger.info("🔍 [DISPOSITIVO-${device.id}] Obteniendo address-list 'deudores'")
         return try {
@@ -358,9 +254,6 @@ class MikroTikConnectionService {
         }
     }
 
-    /**
-     * Habilita una entrada específica de address-list por ID (disabled=no)
-     */
     fun enableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
         logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando address-list entry ID: $entryId en 'deudores'")
         return try {
@@ -372,9 +265,6 @@ class MikroTikConnectionService {
         }
     }
 
-    /**
-     * Deshabilita una entrada específica de address-list por ID (disabled=yes)
-     */
     fun disableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando address-list entry ID: $entryId en 'deudores'")
         return try {
@@ -386,9 +276,6 @@ class MikroTikConnectionService {
         }
     }
 
-    /**
-     * Habilita múltiples entradas de address-list por sus IDs
-     */
     fun enableMultipleAddressListEntries(device: NetworkDevice, entryIds: List<String>): Map<String, Boolean> {
         logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando ${entryIds.size} address-list entries en 'deudores'")
         val results = mutableMapOf<String, Boolean>()
@@ -398,9 +285,6 @@ class MikroTikConnectionService {
         return results
     }
 
-    /**
-     * Deshabilita múltiples entradas de address-list por sus IDs
-     */
     fun disableMultipleAddressListEntries(device: NetworkDevice, entryIds: List<String>): Map<String, Boolean> {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando ${entryIds.size} address-list entries en 'deudores'")
         val results = mutableMapOf<String, Boolean>()
@@ -410,14 +294,10 @@ class MikroTikConnectionService {
         return results
     }
     
-    /**
-     * Activa un filter rule específico por ID
-     */
     fun enableFilterRule(device: NetworkDevice, ruleId: String): Boolean {
         logger.info("✅ [DISPOSITIVO-${device.id}] Activando filter rule ID: $ruleId")
         
         return try {
-            // Usar el comando /set con .id y disabled según la documentación de MikroTik API
             executeSingleCommand(device, "/ip/firewall/filter/set .id=$ruleId disabled=no")
             logger.info("✅ [DISPOSITIVO-${device.id}] Filter rule $ruleId activado exitosamente")
             true
@@ -427,14 +307,10 @@ class MikroTikConnectionService {
         }
     }
     
-    /**
-     * Desactiva un filter rule específico por ID
-     */
     fun disableFilterRule(device: NetworkDevice, ruleId: String): Boolean {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Desactivando filter rule ID: $ruleId")
         
         return try {
-            // Usar el comando /set con .id y disabled según la documentación de MikroTik API
             executeSingleCommand(device, "/ip/firewall/filter/set .id=$ruleId disabled=yes")
             logger.info("✅ [DISPOSITIVO-${device.id}] Filter rule $ruleId desactivado exitosamente")
             true
@@ -444,9 +320,6 @@ class MikroTikConnectionService {
         }
     }
     
-    /**
-     * Activa múltiples filter rules por sus IDs
-     */
     fun enableMultipleFilterRules(device: NetworkDevice, ruleIds: List<String>): Map<String, Boolean> {
         logger.info("✅ [DISPOSITIVO-${device.id}] Activando ${ruleIds.size} filter rules")
         
@@ -460,9 +333,6 @@ class MikroTikConnectionService {
         return results
     }
     
-    /**
-     * Desactiva múltiples filter rules por sus IDs
-     */
     fun disableMultipleFilterRules(device: NetworkDevice, ruleIds: List<String>): Map<String, Boolean> {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Desactivando ${ruleIds.size} filter rules")
         
@@ -472,7 +342,7 @@ class MikroTikConnectionService {
         }
         
         val successCount = results.values.count { it }
-        logger.info("📊 [DISPOSITIVO-${device.id}] Desactivación completada: $successCount/${ruleIds.size} exitosos")
+        logger.info("📊 [DISPOSITIVO-${device.id}] Deshabilitación completada: $successCount/${ruleIds.size} exitosos")
         return results
     }
-} 
+}

@@ -27,6 +27,10 @@ class LegrangeClassicSession(
         connection.execute(buildMutationCommand(path, "remove", mapOf(".id" to id)))
     }
 
+    override fun execute(command: String): List<Map<String, String>> {
+        return connection.execute(command)
+    }
+
     private fun buildPrintCommand(path: String, query: Map<String, String>): String {
         val base = ensurePrintPath(path)
         if (query.isEmpty()) {

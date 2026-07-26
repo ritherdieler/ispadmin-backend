@@ -5,4 +5,5 @@ interface MikrotikSession {
     fun add(path: String, args: Map<String, String>)
     fun set(path: String, id: String, args: Map<String, String>)
     fun remove(path: String, id: String)
+    fun execute(command: String): List<Map<String, String>>
 }

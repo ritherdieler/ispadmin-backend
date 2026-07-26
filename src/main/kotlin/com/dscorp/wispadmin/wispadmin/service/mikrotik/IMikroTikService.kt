@@ -1,30 +1,27 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
+import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
-import me.legrange.mikrotik.ApiConnection
 
 interface IMikroTikService {
     
-    fun removeIpFromDebtorsList(connection: ApiConnection, ip: String)
+    fun removeIpFromDebtorsList(session: MikrotikSession, ip: String)
     
-    fun addIpToDebtorsList(connection: ApiConnection, ip: String, comment: String)
+    fun addIpToDebtorsList(session: MikrotikSession, ip: String, comment: String)
     
-    fun addIpToDebtorsListIfNotExists(connection: ApiConnection, ip: String, comment: String)
+    fun addIpToDebtorsListIfNotExists(session: MikrotikSession, ip: String, comment: String)
     
-    fun removeFirewallRulesByComment(connection: ApiConnection, commentPattern: String)
+    fun removeFirewallRulesByComment(session: MikrotikSession, commentPattern: String)
     
-    fun createFirewallDropRule(connection: ApiConnection)
+    fun createFirewallDropRule(session: MikrotikSession)
     
-    fun clearAddressList(connection: ApiConnection, listName: String): Int
+    fun clearAddressList(session: MikrotikSession, listName: String): Int
     
-    fun clearFirewallRules(connection: ApiConnection): Int
+    fun clearFirewallRules(session: MikrotikSession): Int
     
-    fun findAndRemoveQueueByIp(connection: ApiConnection, ip: String)
+    fun findAndRemoveQueueByIp(session: MikrotikSession, ip: String)
     
-    fun executeOnDevice(device: NetworkDevice, block: (ApiConnection) -> Unit)
+    fun executeOnDevice(device: NetworkDevice, block: (MikrotikSession) -> Unit)
     
-    fun checkIfAddressExistsInList(connection: ApiConnection, listName: String, address: String): Boolean
+    fun checkIfAddressExistsInList(session: MikrotikSession, listName: String, address: String): Boolean
 }
-
-
-

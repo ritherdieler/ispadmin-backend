@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
+import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
@@ -9,7 +10,6 @@ import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
 import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
-import me.legrange.mikrotik.ApiConnection
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -88,9 +88,9 @@ class AddressListManagerService(
     ) {
         subscriptionsByDevice.forEach { (device, subscriptions) ->
             try {
-                device.executeCommand { connection ->
-                    clearAddressList(connection, result)
-                    clearFirewallRules(connection, result)
+                device.executeCommand { session ->
+                    clearAddressList(session, result)
+                    clearFirewallRules(session, result)
                 }
             } catch (e: Exception) {
                 result.errorCount += subscriptions.size
@@ -98,13 +98,13 @@ class AddressListManagerService(
         }
     }
     
-    private fun clearAddressList(connection: ApiConnection, result: AddressListGenerationResult) {
-        val deletedCount = mikrotikService.clearAddressList(connection, DEBTORS_LIST)
+    private fun clearAddressList(session: MikrotikSession, result: AddressListGenerationResult) {
+        val deletedCount = mikrotikService.clearAddressList(session, DEBTORS_LIST)
         result.deletedCount += deletedCount
     }
     
-    private fun clearFirewallRules(connection: ApiConnection, result: AddressListGenerationResult) {
-        val deletedCount = mikrotikService.clearFirewallRules(connection)
+    private fun clearFirewallRules(session: MikrotikSession, result: AddressListGenerationResult) {
+        val deletedCount = mikrotikService.clearFirewallRules(session)
         result.deletedCount += deletedCount
     }
     
@@ -114,9 +114,9 @@ class AddressListManagerService(
     ) {
         subscriptionsByDevice.forEach { (device, subscriptions) ->
             try {
-                device.executeCommand { connection ->
-                    addSubscriptionsToAddressList(subscriptions, connection, result)
-                    createFirewallRule(connection)
+                device.executeCommand { session ->
+                    addSubscriptionsToAddressList(subscriptions, session, result)
+                    createFirewallRule(session)
                 }
             } catch (e: Exception) {
                 result.errorCount += subscriptions.size
@@ -131,17 +131,17 @@ class AddressListManagerService(
     
     private fun addSubscriptionsToAddressList(
         subscriptions: List<Subscription>,
-        connection: ApiConnection,
+        session: MikrotikSession,
         result: AddressListGenerationResult
     ) {
         subscriptions.forEach { subscription ->
             try {
-                val existingAddress = connection.execute(
+                val existingAddress = session.execute(
                     "/ip/firewall/address-list/print where list=$DEBTORS_LIST and address=${subscription.ip}"
                 )
 
                 if (existingAddress.isEmpty()) {
-                    connection.execute(
+                    session.execute(
                         "/ip/firewall/address-list/add list=$DEBTORS_LIST address=${subscription.ip} comment='${
                             subscription.getFullName().uppercase()
                         }'"
@@ -166,9 +166,9 @@ class AddressListManagerService(
         }
     }
     
-    private fun createFirewallRule(connection: ApiConnection) {
+    private fun createFirewallRule(session: MikrotikSession) {
         try {
-            mikrotikService.createFirewallDropRule(connection)
+            mikrotikService.createFirewallDropRule(session)
         } catch (e: Exception) {
             logger.warn("Error creando regla de firewall: ${e.message}")
         }

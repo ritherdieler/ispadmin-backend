@@ -119,7 +119,32 @@ Clases live: `@Tag("live-mk1")`. Perfil Maven `live-mk1` pone `groups=live-mk1` 
 
 Validar desde VPS con las mismas env vars cuando haya credenciales disponibles. El adapter y los contract tests live ya están listos.
 
-## Follow-ups (fuera de Fase 0)
+## Fase R1–R2 — Refactor wispadmin (2026-07-26)
 
-- Fase R1–R2: `MikroTikConnectionService` / interfaces wispadmin delegan en `MikrotikClient` (classic).
-- No implementar netdiag ni backoffice en esta fase.
+**Commit:** `refactor(wispadmin): route MikroTik access through MikrotikClient port`
+
+### Cambios
+
+| Pieza | Cambio |
+|-------|--------|
+| `MikrotikSession.execute(command)` | Comandos raw RouterOS (compatibilidad wispadmin cortes/queues) |
+| `MikrotikClient.closeSession` / `isSessionActive` / `activeSessionDeviceIds` | Ciclo de vida expuesto (pool classic; no-op en REST) |
+| `MikroTikConnectionService` | Delega en `MikrotikClient` (classic); mock local intacto |
+| `NetworkDeviceConnection.executeCommand` | Abre `MikrotikSession` vía `MikrotikClientAccessor` (sin `ApiConnection.connect`) |
+| `IMikroTikService` / `IQueueManager` | Parámetros `MikrotikSession` (sin fuga `me.legrange`) |
+| `MikrotikDeviceRefMapper` | `NetworkDevice` → `MikrotikDeviceRef` |
+
+`me.legrange` queda solo en `routeros/adapter/*` (+ tests unitarios del adapter).
+
+REST: `execute(raw)` lanza `MikrotikCommandException` (wispadmin R1–R2 usa classic).
+
+### Tests
+
+```bash
+./mvnw test -Dtest=MikroTikConnectionServiceTest,LegrangeClassicAdapterUnitTest,RouterOs7RestAdapterUnitTest,ServiceCutManagerServiceTest,FiberInstallationStrategyTest,NetworkDeviceControllerTest,NetworkDeviceConnectionControllerTest
+```
+
+### Follow-ups (Fase 1)
+
+- Scaffold `netdiag` + polls/alerts; no reabrir ApiConnection en wispadmin.
+- Fase R4–R5: migrar comandos raw → `print`/`add`/`set`/`remove` y `adapter=rest`.
