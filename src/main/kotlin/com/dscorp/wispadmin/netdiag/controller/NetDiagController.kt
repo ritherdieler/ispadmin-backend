@@ -1,24 +1,36 @@
 package com.dscorp.wispadmin.netdiag.controller
 
+import com.dscorp.wispadmin.netdiag.dto.AlertIngestRequestDto
+import com.dscorp.wispadmin.netdiag.dto.AlertIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
 import com.dscorp.wispadmin.netdiag.dto.NetDiagHealthResponseDto
+import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
+import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
+import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/netdiag")
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
-@Tag(name = "NetDiag", description = "Diagnóstico de red / NOC (scaffold)")
+@Tag(name = "NetDiag", description = "Diagnóstico de red / NOC")
 class NetDiagController(
-    private val incidentQueryService: NetDiagIncidentQueryService
+    private val incidentQueryService: NetDiagIncidentQueryService,
+    private val llmContextService: NetDiagLlmContextService,
+    private val alertEvaluator: AlertEvaluator,
+    private val signalExtractor: AlertSignalExtractor
 ) {
 
     @GetMapping("/health")
@@ -30,14 +42,77 @@ class NetDiagController(
     @GetMapping("/incidents")
     @Operation(summary = "Lista de incidentes NOC")
     @SecurityRequirement(name = "NetDiagApiKey")
-    fun listIncidents(): List<IncidentSummaryDto> {
-        return incidentQueryService.listIncidents()
+    fun listIncidents(
+        @RequestParam(required = false) severity: String?,
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) targetId: Long?,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
+    ): List<IncidentSummaryDto> {
+        return incidentQueryService.listIncidents(
+            severity = severity,
+            status = status,
+            targetId = targetId,
+            dateFrom = dateFrom,
+            dateTo = dateTo
+        )
     }
 
     @GetMapping("/incidents/{id}")
-    @Operation(summary = "Detalle de incidente NOC")
+    @Operation(summary = "Detalle de incidente NOC con timeline")
     @SecurityRequirement(name = "NetDiagApiKey")
     fun getIncident(@PathVariable id: Long): IncidentDetailDto {
         return incidentQueryService.getIncident(id)
+    }
+
+    @GetMapping(
+        value = ["/incidents/{id}/llm-context"],
+        produces = [MediaType.TEXT_PLAIN_VALUE, "text/markdown"]
+    )
+    @Operation(summary = "Bundle markdown para LLM (text/plain)")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun llmContext(@PathVariable id: Long): String {
+        return llmContextService.buildMarkdown(id)
+    }
+
+    @GetMapping("/incidents/{id}/diagnostic-json")
+    @Operation(summary = "Bundle JSON estructurado para diagnóstico")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun diagnosticJson(@PathVariable id: Long): Map<String, Any?> {
+        return llmContextService.buildDiagnosticJson(id)
+    }
+
+    @PostMapping("/incidents/{id}/ack")
+    @Operation(summary = "Confirmar (ack) incidente")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun acknowledge(@PathVariable id: Long): IncidentDetailDto {
+        return incidentQueryService.acknowledge(id)
+    }
+
+    @PostMapping("/incidents/{id}/resolve")
+    @Operation(summary = "Resolver incidente")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun resolve(@PathVariable id: Long): IncidentDetailDto {
+        return incidentQueryService.resolve(id)
+    }
+
+    @PostMapping("/alerts/ingest")
+    @Operation(summary = "Ingest de alerta externa (p.ej. OLT PON_DOWN)")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun ingestAlert(@RequestBody request: AlertIngestRequestDto): AlertIngestResponseDto {
+        val signal = signalExtractor.fromIngest(
+            targetId = request.targetId,
+            reasonCode = request.reasonCode,
+            severity = request.severity,
+            title = request.title,
+            component = request.component,
+            details = request.details
+        )
+        val result = alertEvaluator.evaluateIngest(request.targetId, listOf(signal))
+        return AlertIngestResponseDto(
+            decisions = result.decisions,
+            openedIncidentIds = result.openedIncidentIds,
+            suppressed = result.suppressed
+        )
     }
 }

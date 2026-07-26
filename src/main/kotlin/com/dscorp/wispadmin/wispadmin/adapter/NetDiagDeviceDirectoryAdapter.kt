@@ -18,6 +18,6 @@ class NetDiagDeviceDirectoryAdapter(
     override fun findMikrotikDeviceRef(targetId: Long): MikrotikDeviceRef? {
         if (targetId > Int.MAX_VALUE || targetId < Int.MIN_VALUE) return null
         val device = networkDeviceRepository.findById(targetId.toInt()).orElse(null) ?: return null
-        return MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+        return MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
     }
 }

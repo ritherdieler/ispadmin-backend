@@ -1,5 +1,8 @@
 package com.dscorp.wispadmin.netdiag.config
 
+import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
+import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
+import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -22,5 +25,13 @@ class NetDiagConfig {
         registration.addUrlPatterns("/api/netdiag/*")
         registration.order = 25
         return registration
+    }
+
+    @Bean(name = ["netDiagMikrotikClient"], destroyMethod = "close")
+    fun netDiagMikrotikClient(
+        routerOsClientProperties: RouterOsClientProperties,
+        objectMapper: ObjectMapper
+    ): MikrotikClient {
+        return RouterOs7RestAdapter(routerOsClientProperties, objectMapper)
     }
 }

@@ -31,11 +31,16 @@ class NetDiagProperties {
     class AlertProperties {
         var cooldownMinutes: Int = 15
         var minDurationSeconds: Int = 120
+        var cpuThreshold: Int = 85
+        var lowVoltage: Double = 20.0
+        var staleMultiplier: Int = 3
+        var parentMaxDepth: Int = 5
     }
 
     class WhatsAppProperties {
         var nocPhone: String = ""
         var templateName: String = "noc_alert_v1"
+        var languageCode: String = "es"
     }
 
     fun isValidApiKey(key: String?): Boolean {

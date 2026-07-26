@@ -1,85 +1,105 @@
-# NetDiag — Fase 1
+# NetDiag Fase 1 — Polls, alertas, WhatsApp NOC y LLM
 
-## Scaffold (este commit)
+## Objetivo
 
-Módulo hermano `com.dscorp.wispadmin.netdiag`, opt-in con `net.diag.enabled=false`.
+Módulo `netdiag` operativo (opt-in) con:
 
-### Paquete
+- Poll REST exclusivo vía `RouterOs7RestAdapter` (`netDiagMikrotikClient`)
+- Motor de alertas idempotente + correlación padre-hijo
+- Ingest OLT (`PON_DOWN`)
+- Notificaciones WhatsApp NOC reutilizando `WhatsAppService.sendTemplateMessage`
+- Bundles LLM (markdown text/plain + diagnostic JSON)
+- API alineada con backoffice NOC (`feature/netdiag-noc`)
 
+## Flag y auth
+
+| Property | Default | Notas |
+|---|---|---|
+| `net.diag.enabled` | `false` | Opt-in; sin esto no hay beans ni scheduler |
+| `net.diag.api-key` | (vacío / env) | Header `X-Netdiag-Key` en `/api/netdiag/**` salvo `/health` |
+
+## Contrato UI (backoffice)
+
+| Método | Path | Notas |
+|---|---|---|
+| GET | `/api/netdiag/incidents` | Query: `severity`, `status`, `targetId`, `dateFrom`, `dateTo` |
+| GET | `/api/netdiag/incidents/{id}` | Detail + timeline |
+| GET | `/api/netdiag/incidents/{id}/llm-context` | **text/plain** markdown (no JSON wrapper) |
+| GET | `/api/netdiag/incidents/{id}/diagnostic-json` | Mapa JSON en raíz |
+| POST | `/api/netdiag/incidents/{id}/ack` | → `ACKNOWLEDGED` |
+| POST | `/api/netdiag/incidents/{id}/resolve` | → `RESOLVED` |
+| POST | `/api/netdiag/alerts/ingest` | OLT / push externo |
+
+Summary incluye `targetName` y `lastNotifiedAt`.
+
+## Poll REST
+
+`MikrotikPollAdapter` obtiene credenciales solo por `NetDiagDeviceDirectoryPort` (`deviceRefId` → `NetworkDevice`). Port REST (`router.os.client.rest.port`).
+
+Lecturas por poll:
+
+| Path REST | Uso |
+|---|---|
+| `/interface` | LINK_DOWN (críticas), GRE_TUNNEL_DOWN |
+| `/system/health` | PSU_FAIL, FAN_FAIL, LOW_VOLTAGE |
+| `/system/routerboard` | FIRMWARE_DRIFT |
+| `/system/resource` | UNEXPECTED_REBOOT, CPU_HIGH |
+
+Persistencia: `net_diag_probe_run` con payload JSON del snapshot.
+
+Config por target (`net_diag_target.monitor_config` JSON):
+
+```json
+{
+  "criticalInterfaces": ["ether1", "sfp-sfpplus1"],
+  "expectedFirmware": "7.23.2",
+  "cpuThreshold": 80
+}
 ```
-netdiag/
-  config/     NetDiagConfig, NetDiagProperties, NetDiagApiKeyFilter
-  controller/ NetDiagController (/api/netdiag/**)
-  domain/     entities + repositories (ddl-auto=update, sin Flyway)
-  dto/        health, incident list/detail, error
-  exception/  NetDiagExceptionHandler (estilo oltgateway)
-  port/       NetDiagDeviceDirectoryPort
-  service/    NetDiagIncidentQueryService (stubs)
-wispadmin/adapter/NetDiagDeviceDirectoryAdapter  # NetworkDevice → MikrotikDeviceRef
-```
 
-### Auth
+## Scheduler y retención
 
-| Capa | Comportamiento |
-|------|----------------|
-| `PlatformAuthFilter` | Excluye `/api/netdiag/**` |
-| `NetDiagApiKeyFilter` (order 25) | Header `X-Netdiag-Key`; `/health` público |
+- `NetDiagPollScheduler.scheduledPoll` — `fixedDelay` `net.diag.poll.interval-ms`, jitter `0..jitter-ms`, pool `concurrency`
+- Retención diaria 03:30 — borra `probe_run` más antiguos que `net.diag.retention.probe-run-days`
 
-### Properties (`application-dev.properties`)
+## Alertas
+
+Reason codes Fase 1: `LINK_DOWN`, `GRE_TUNNEL_DOWN`, `PSU_FAIL`, `FAN_FAIL`, `LOW_VOLTAGE`, `FIRMWARE_DRIFT`, `UNEXPECTED_REBOOT`, `CPU_HIGH`, `POLL_STALE`, `DEVICE_UNREACHABLE`, `AUTH_FAILURE`, `TIMEOUT`, `COMMAND_ERROR`, `PON_DOWN` (ingest).
+
+Idempotencia: lock por `targetId` + lookup `dedupKey`/`OPEN` + race → CONTINUE.
+
+Supresión padre-hijo (`CorrelationEngine`): ancestro OPEN → evento `SUPPRESSED_CHILD`.
+
+## WhatsApp NOC
+
+- Plantilla: `net.diag.whatsapp.template-name` (`noc_alert_v1`)
+- Destino: `net.diag.whatsapp.noc-phone`
+- Params Meta: `severity`, `title`, `reason_code`, `target`
+- Anti-spam: `min-duration-seconds` + `cooldown-minutes`
+
+## Properties
 
 ```properties
-net.diag.enabled=${NET_DIAG_ENABLED:false}
-net.diag.api-key=${NET_DIAG_API_KEY:dev-netdiag-key}
 net.diag.poll.concurrency=4
 net.diag.poll.jitter-ms=5000
+net.diag.poll.interval-ms=60000
+net.diag.poll.initial-delay-ms=15000
 net.diag.retention.probe-run-days=30
 net.diag.alert.cooldown-minutes=15
 net.diag.alert.min-duration-seconds=120
+net.diag.alert.cpu-threshold=85
+net.diag.alert.low-voltage=20.0
+net.diag.alert.stale-multiplier=3
+net.diag.alert.parent-max-depth=5
 net.diag.whatsapp.noc-phone=
 net.diag.whatsapp.template-name=noc_alert_v1
+net.diag.whatsapp.language-code=es
 ```
 
-### Tablas JPA (`net_diag_*`)
+## Tests
 
-| Tabla | Rol |
-|-------|-----|
-| `net_diag_target` | Target con `device_ref_id` (sin credenciales) |
-| `net_diag_probe_run` | Resultado de cada poll |
-| `net_diag_incident` | Incidente NOC |
-| `net_diag_incident_event` | Timeline append-only |
-| `net_diag_alert_decision` | Decisión del evaluador |
-| `net_diag_notification_log` | Log de notificaciones |
-| `net_diag_audit_log` | Auditoría |
+```bash
+./mvnw test -Dtest='*NetDiag*,*AlertEvaluator*,*AlertSignal*,*WhatsAppOps*,*MikrotikPoll*,*RouterOsUptime*'
+```
 
-### Superficie API (stubs)
-
-| Método | Path | Auth | Respuesta scaffold |
-|--------|------|------|--------------------|
-| GET | `/api/netdiag/health` | ninguna | `{ status: UP, module: netdiag }` |
-| GET | `/api/netdiag/incidents` | `X-Netdiag-Key` | `[]` |
-| GET | `/api/netdiag/incidents/{id}` | `X-Netdiag-Key` | 404 `incident_not_found` |
-
-### Wiring
-
-- `WispAdminApplication`: scan + EntityScan + EnableJpaRepositories para `netdiag`
-- OpenAPI group `netdiag` + scheme `NetDiagApiKey`
-- `NetDiagDeviceDirectoryPort` no importa `NetworkDevice`; el adapter vive en `wispadmin`
-
-### Tests
-
-- `NetDiagApiKeyFilterTest`
-- `NetDiagPropertiesTest`
-- `PlatformAuthFilterNetDiagExclusionTest`
-- `NetDiagControllerTest`
-- `NetDiagDeviceDirectoryAdapterTest`
-
-## Pendiente (siguiente worker)
-
-No incluido en scaffold:
-
-1. **Polls** — `MikrotikPollAdapter` (REST), `NetDiagPollScheduler` (concurrency + jitter), retención `probe_run`
-2. **Alertas** — `AlertEvaluator` idempotente, `CorrelationEngine` (supresión padre-hijo), reason codes, `POLL_STALE`
-3. **WhatsApp NOC** — `WhatsAppOpsNotifier` reutilizando `WhatsAppService.sendTemplateMessage`
-4. **LLM** — `GET .../llm-context` y `.../diagnostic-json`
-5. **Ingest** — `POST /api/netdiag/alerts/ingest` (PON_DOWN)
-6. **Backoffice** — página NOC en `ispadmin-backoffice`
+No se implementa Fase 1.5 (netwatch/traps/syslog/optical) ni R4–R5.

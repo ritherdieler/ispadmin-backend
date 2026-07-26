@@ -14,7 +14,7 @@ class NetDiagDeviceDirectoryAdapterTest {
 
     private val networkDeviceRepository = mockk<NetworkDeviceRepository>()
     private val routerOsClientProperties = RouterOsClientProperties().apply {
-        classic.port = 8728
+        rest.port = 443
     }
     private val adapter = NetDiagDeviceDirectoryAdapter(networkDeviceRepository, routerOsClientProperties)
 
@@ -40,7 +40,7 @@ class NetDiagDeviceDirectoryAdapterTest {
 
         assertEquals("7", ref?.id)
         assertEquals("38.224.231.2", ref?.host)
-        assertEquals(8728, ref?.port)
+        assertEquals(443, ref?.port)
         assertEquals("admin", ref?.username)
         assertEquals("secret", ref?.password)
     }

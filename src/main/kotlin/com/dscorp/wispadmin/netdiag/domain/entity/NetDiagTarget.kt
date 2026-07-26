@@ -30,6 +30,9 @@ class NetDiagTarget(
     @Column(name = "poll_interval_ms", nullable = false)
     var pollIntervalMs: Long = 60000,
 
+    @Column(name = "monitor_config", columnDefinition = "TEXT")
+    var monitorConfig: String? = null,
+
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 

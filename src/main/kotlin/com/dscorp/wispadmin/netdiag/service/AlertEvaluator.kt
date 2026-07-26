@@ -1,0 +1,172 @@
+package com.dscorp.wispadmin.netdiag.service
+
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertDecision
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertDecisionRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.stereotype.Service
+import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+
+@Service
+@ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
+class AlertEvaluator(
+    private val incidentRepository: NetDiagIncidentRepository,
+    private val incidentEventRepository: NetDiagIncidentEventRepository,
+    private val alertDecisionRepository: NetDiagAlertDecisionRepository,
+    private val targetRepository: NetDiagTargetRepository,
+    private val correlationEngine: CorrelationEngine,
+    private val notifier: WhatsAppOpsNotifier
+) {
+
+    private val locks = ConcurrentHashMap<Long, Any>()
+
+    fun evaluate(targetId: Long, signals: List<AlertSignal>): AlertEvaluationResult {
+        if (signals.isEmpty()) {
+            return AlertEvaluationResult(decisions = emptyList(), openedIncidentIds = emptyList())
+        }
+        val lock = locks.computeIfAbsent(targetId) { Any() }
+        synchronized(lock) {
+            return evaluateLocked(targetId, signals)
+        }
+    }
+
+    fun evaluateIngest(targetId: Long?, signals: List<AlertSignal>): AlertEvaluationResult {
+        val lockKey = targetId ?: -1L
+        val lock = locks.computeIfAbsent(lockKey) { Any() }
+        synchronized(lock) {
+            return evaluateLocked(targetId, signals)
+        }
+    }
+
+    private fun evaluateLocked(targetId: Long?, signals: List<AlertSignal>): AlertEvaluationResult {
+        val decisions = mutableListOf<String>()
+        val opened = mutableListOf<Long>()
+        var suppressed = false
+        val target = targetId?.let { targetRepository.findById(it).orElse(null) }
+
+        signals.forEach { signal ->
+            if (targetId != null) {
+                val ancestor = correlationEngine.findSuppressingAncestorIncident(targetId)
+                if (ancestor != null) {
+                    incidentEventRepository.save(
+                        NetDiagIncidentEvent(
+                            incident = ancestor,
+                            type = "SUPPRESSED_CHILD",
+                            payload = """{"targetId":$targetId,"dedupKey":"${signal.dedupKey}","reasonCode":"${signal.reasonCode}"}""",
+                            createdAt = Instant.now()
+                        )
+                    )
+                    alertDecisionRepository.save(
+                        NetDiagAlertDecision(
+                            target = target,
+                            incident = ancestor,
+                            decision = "SUPPRESSED",
+                            reasonCode = signal.reasonCode,
+                            details = signal.details,
+                            createdAt = Instant.now()
+                        )
+                    )
+                    decisions += "SUPPRESSED"
+                    suppressed = true
+                    return@forEach
+                }
+            }
+
+            val existing = incidentRepository.findByDedupKeyAndStatus(signal.dedupKey, "OPEN")
+            if (existing.isPresent) {
+                val incident = existing.get()
+                incidentEventRepository.save(
+                    NetDiagIncidentEvent(
+                        incident = incident,
+                        type = "ALERT_SEEN",
+                        payload = signal.details,
+                        createdAt = Instant.now()
+                    )
+                )
+                alertDecisionRepository.save(
+                    NetDiagAlertDecision(
+                        target = target,
+                        incident = incident,
+                        decision = "CONTINUE",
+                        reasonCode = signal.reasonCode,
+                        details = signal.details,
+                        createdAt = Instant.now()
+                    )
+                )
+                decisions += "CONTINUE"
+                notifier.notifyIfNeeded(incident)
+                return@forEach
+            }
+
+            try {
+                val incident = NetDiagIncident(
+                    target = target,
+                    dedupKey = signal.dedupKey,
+                    status = "OPEN",
+                    severity = signal.severity,
+                    title = signal.title,
+                    reasonCode = signal.reasonCode,
+                    openedAt = Instant.now()
+                )
+                val saved = incidentRepository.save(incident)
+                incidentEventRepository.save(
+                    NetDiagIncidentEvent(
+                        incident = saved,
+                        type = "OPENED",
+                        payload = signal.details,
+                        createdAt = Instant.now()
+                    )
+                )
+                alertDecisionRepository.save(
+                    NetDiagAlertDecision(
+                        target = target,
+                        incident = saved,
+                        decision = "OPEN",
+                        reasonCode = signal.reasonCode,
+                        details = signal.details,
+                        createdAt = Instant.now()
+                    )
+                )
+                decisions += "OPEN"
+                saved.id?.let { opened += it }
+                notifier.notifyIfNeeded(saved)
+            } catch (_: DataIntegrityViolationException) {
+                val raced = incidentRepository.findByDedupKeyAndStatus(signal.dedupKey, "OPEN").orElse(null)
+                if (raced != null) {
+                    incidentEventRepository.save(
+                        NetDiagIncidentEvent(
+                            incident = raced,
+                            type = "ALERT_SEEN",
+                            payload = signal.details,
+                            createdAt = Instant.now()
+                        )
+                    )
+                    alertDecisionRepository.save(
+                        NetDiagAlertDecision(
+                            target = target,
+                            incident = raced,
+                            decision = "CONTINUE",
+                            reasonCode = signal.reasonCode,
+                            details = signal.details,
+                            createdAt = Instant.now()
+                        )
+                    )
+                    decisions += "CONTINUE"
+                    notifier.notifyIfNeeded(raced)
+                }
+            }
+        }
+
+        return AlertEvaluationResult(
+            decisions = decisions,
+            openedIncidentIds = opened,
+            suppressed = suppressed
+        )
+    }
+}
