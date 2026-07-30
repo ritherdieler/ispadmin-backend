@@ -154,17 +154,28 @@ Summary + `acknowledgedAt`, `resolvedAt`, `events: IncidentEventDto[]`.
 
 ## Seed mínimo target MK1
 
+Listado completo de interfaces MK1 (`/interface` en `38.224.231.2`, 2026-07-27):  
+`ether1`–`ether8`, `sfp-sfpplus1`, `sfp-sfpplus2`, `LAN`, `SERVICIO CORP.TARAZONA`, `eoip-tunnel1`, `gre-ispadmin-vps`, `lo`, `vlan1`.
+
+Script idempotente: [`scripts/sql/netdiag-target-mk1-seed.sql`](../scripts/sql/netdiag-target-mk1-seed.sql)
+
+```bash
+mysql -u root -p ispadmin_dev < scripts/sql/netdiag-target-mk1-seed.sql
+```
+
 ```sql
 INSERT INTO net_diag_target (name, device_ref_id, enabled, poll_interval_ms, monitor_config, created_at, updated_at)
 VALUES (
   'MK1',
-  <network_device.id>,
+  (SELECT id FROM network_device WHERE ip_address = '38.224.231.2' LIMIT 1),
   true,
   60000,
-  '{"criticalInterfaces":["sfp-sfpplus1","sfp-sfpplus2"],"expectedFirmware":"7.23.2","netwatchNames":["upstream-http","upstream-dns"],"opticalInterfaces":["sfp-sfpplus1","sfp-sfpplus2"]}',
+  '{"criticalInterfaces":["ether1","ether2","ether3","ether4","ether5","ether6","ether7","ether8","sfp-sfpplus1","sfp-sfpplus2","LAN","SERVICIO CORP.TARAZONA","eoip-tunnel1","gre-ispadmin-vps","lo","vlan1"],"expectedFirmware":"7.23.2","netwatchNames":["upstream-http","upstream-dns"],"opticalInterfaces":["sfp-sfpplus1","sfp-sfpplus2"]}',
   NOW(),
   NOW()
 );
 ```
+
+> **Nota:** varios `ether1`–`ether8` pueden reportar `running=false` en MK1; con todas en `criticalInterfaces` el poll abrirá incidentes `LINK_DOWN` por cada puerto caído. Ajusta la lista si algunos puertos deben ignorarse (`disabled=yes` en RouterOS o quitar del array).
 
 Netwatch/SNMP/syslog en el router: aplicar a mano [netdiag-mikrotik-seed.rsc](./netdiag-mikrotik-seed.rsc).

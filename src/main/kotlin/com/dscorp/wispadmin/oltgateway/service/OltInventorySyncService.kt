@@ -17,6 +17,7 @@ import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
+import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.slf4j.LoggerFactory
@@ -178,6 +179,12 @@ open class OltInventorySyncService(
             logger.info("Inventory sync skipped by CLI bus: {}", ex.reason)
             return finish(
                 SyncResult(skippedReason = ex.reason),
+                startedAt
+            )
+        } catch (ex: OltUnreachableException) {
+            logger.info("Inventory sync skipped: olt unreachable")
+            return finish(
+                SyncResult(skippedReason = "olt_unreachable"),
                 startedAt
             )
         } catch (ex: Exception) {

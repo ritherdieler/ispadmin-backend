@@ -21,7 +21,8 @@ import java.time.format.DateTimeParseException
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class NetDiagIncidentQueryService(
     private val incidentRepository: NetDiagIncidentRepository,
-    private val incidentEventRepository: NetDiagIncidentEventRepository
+    private val incidentEventRepository: NetDiagIncidentEventRepository,
+    private val maintenanceService: NetDiagMaintenanceService
 ) {
 
     fun listIncidents(
@@ -95,6 +96,27 @@ class NetDiagIncidentQueryService(
         return toDetail(incident)
     }
 
+    @Transactional
+    fun silence(id: Long, until: Instant?): IncidentDetailDto {
+        val incident = findIncident(id)
+        if (incident.status.equals("RESOLVED", ignoreCase = true)) {
+            throw NetDiagConflictException("Cannot silence a resolved incident")
+        }
+        val effectiveUntil = until ?: Instant.now().plusSeconds(3600)
+        incident.status = "SILENCED"
+        incident.silencedUntil = effectiveUntil
+        incidentRepository.save(incident)
+        incidentEventRepository.save(
+            NetDiagIncidentEvent(
+                incident = incident,
+                type = "SILENCED",
+                payload = effectiveUntil.toString(),
+                createdAt = Instant.now()
+            )
+        )
+        return toDetail(incident)
+    }
+
     private fun findIncident(id: Long): NetDiagIncident {
         return incidentRepository.findById(id)
             .orElseThrow { IncidentNotFoundException("Incident not found: $id") }
@@ -111,7 +133,8 @@ class NetDiagIncidentQueryService(
             title = incident.title,
             reasonCode = incident.reasonCode,
             openedAt = incident.openedAt,
-            lastNotifiedAt = incident.lastNotifiedAt
+            lastNotifiedAt = incident.lastNotifiedAt,
+            silencedUntil = incident.silencedUntil
         )
     }
 
@@ -139,6 +162,7 @@ class NetDiagIncidentQueryService(
             acknowledgedAt = incident.acknowledgedAt,
             resolvedAt = incident.resolvedAt,
             lastNotifiedAt = incident.lastNotifiedAt,
+            silencedUntil = incident.silencedUntil,
             events = events
         )
     }

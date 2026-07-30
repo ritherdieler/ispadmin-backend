@@ -24,8 +24,12 @@ class RouterOs7RestSession(
 
     override fun print(path: String, query: Map<String, String>): List<Map<String, String>> {
         val bodyNode = objectMapper.createObjectNode()
-        query.forEach { (key, value) ->
-            bodyNode.put("?$key", value)
+        if (query.isNotEmpty()) {
+            val queryStack = objectMapper.createArrayNode()
+            query.forEach { (key, value) ->
+                queryStack.add("$key=$value")
+            }
+            bodyNode.set<com.fasterxml.jackson.databind.node.ArrayNode>(".query", queryStack)
         }
         val responseBody = execute("POST", RouterOsRestPathMapper.printPath(path), bodyNode.toString())
         return parseRows(responseBody)

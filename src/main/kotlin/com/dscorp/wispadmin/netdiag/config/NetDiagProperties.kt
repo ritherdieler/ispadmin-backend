@@ -23,6 +23,20 @@ class NetDiagProperties {
 
     val syslog: SyslogProperties = SyslogProperties()
 
+    val llm: LlmProperties = LlmProperties()
+
+    val mikrotik: MikrotikProperties = MikrotikProperties()
+
+    class MikrotikProperties {
+        var fallbackClassic: Boolean = true
+    }
+
+    class LlmProperties {
+        var webhookEnabled: Boolean = false
+        var webhookUrl: String = ""
+        var webhookTimeoutMs: Long = 5000
+    }
+
     class PollProperties {
         var concurrency: Int = 4
         var jitterMs: Int = 5000

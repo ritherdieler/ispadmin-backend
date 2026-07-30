@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.oltgateway.ssh
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.ScheduledExecutorService
@@ -44,7 +45,11 @@ class OltCliBus(
         Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "olt-cli-bus-keepalive").apply { isDaemon = true }
         }
-    }
+    },
+    private val reachability: OltReachabilityTracker = OltReachabilityTracker(
+        failureThreshold = properties.reachability.failureThreshold,
+        backoffMs = properties.reachability.backoffMs
+    )
 ) : AutoCloseable {
 
     companion object {
@@ -94,6 +99,9 @@ class OltCliBus(
 
     fun <T> submit(type: CliJobType, block: (HuaweiCliSession) -> T): CompletableFuture<CliBusResult<T>> {
         check(!closed.get()) { "CLI bus is closed" }
+        if (reachability.shouldSkip(type)) {
+            return CompletableFuture.completedFuture(CliBusResult.Skipped(reachability.skipReason()))
+        }
         if (workerThreadLocal.get() == true) {
             return CompletableFuture.completedFuture(runOnCurrentSession(block))
         }
@@ -117,7 +125,15 @@ class OltCliBus(
     }
 
     fun <T> execute(type: CliJobType, block: (HuaweiCliSession) -> T): CliBusResult<T> {
-        return submit(type, block).get()
+        return try {
+            submit(type, block).get()
+        } catch (ex: ExecutionException) {
+            val cause = ex.cause
+            throw if (cause is Exception) cause else ex
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw ex
+        }
     }
 
     fun executeCommand(type: CliJobType, command: String): String {
@@ -171,8 +187,12 @@ class OltCliBus(
                     @Suppress("UNCHECKED_CAST")
                     val typed = job as QueuedJob<Any?>
                     val value = typed.block(currentSession)
+                    reachability.recordSuccess()
                     typed.future.complete(CliBusResult.Ok(value))
                 } catch (ex: Exception) {
+                    if (isUnreachable(ex)) {
+                        reachability.recordFailure()
+                    }
                     job.future.completeExceptionally(ex)
                 } finally {
                     clearBusy()
@@ -221,8 +241,26 @@ class OltCliBus(
         return try {
             CliBusResult.Ok(block(currentSession))
         } catch (ex: Exception) {
+            if (isUnreachable(ex)) {
+                reachability.recordFailure()
+            }
             throw ex
         }
+    }
+
+    private fun isUnreachable(ex: Exception): Boolean {
+        var current: Throwable? = ex
+        while (current != null) {
+            if (current is com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException) {
+                return true
+            }
+            val message = current.message.orEmpty().lowercase()
+            if (message.contains("unable to reach olt")) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private fun startKeepalive() {
@@ -292,6 +330,8 @@ class OltCliBus(
         copy.sync.signalIntervalMs = properties.sync.signalIntervalMs
         copy.sync.signalInitialDelayMs = properties.sync.signalInitialDelayMs
         copy.sync.skipWhenWriteRunning = properties.sync.skipWhenWriteRunning
+        copy.reachability.failureThreshold = properties.reachability.failureThreshold
+        copy.reachability.backoffMs = properties.reachability.backoffMs
         return copy
     }
 

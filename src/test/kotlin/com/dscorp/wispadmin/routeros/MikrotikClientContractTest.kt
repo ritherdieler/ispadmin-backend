@@ -43,8 +43,8 @@ abstract class MikrotikClientContractTest {
         val client = createClient()
         val rows = client.withSession(validDevice()) { session ->
             session.print(
-                "/system/identity",
-                mapOf("name" to "__netdiag_impossible_identity_name__")
+                "/system/scheduler",
+                mapOf("name" to "__netdiag_impossible_scheduler__")
             )
         }
         assertTrue(rows.isEmpty())

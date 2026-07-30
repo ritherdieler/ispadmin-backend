@@ -21,7 +21,8 @@ class AlertEvaluator(
     private val alertDecisionRepository: NetDiagAlertDecisionRepository,
     private val targetRepository: NetDiagTargetRepository,
     private val correlationEngine: CorrelationEngine,
-    private val notifier: WhatsAppOpsNotifier
+    private val notifier: WhatsAppOpsNotifier,
+    private val llmWebhookService: NetDiagLlmWebhookService
 ) {
 
     private val locks = ConcurrentHashMap<Long, Any>()
@@ -136,6 +137,7 @@ class AlertEvaluator(
                 decisions += "OPEN"
                 saved.id?.let { opened += it }
                 notifier.notifyIfNeeded(saved)
+                llmWebhookService.notifyIncidentOpened(saved)
             } catch (_: DataIntegrityViolationException) {
                 val raced = incidentRepository.findByDedupKeyAndStatus(signal.dedupKey, "OPEN").orElse(null)
                 if (raced != null) {

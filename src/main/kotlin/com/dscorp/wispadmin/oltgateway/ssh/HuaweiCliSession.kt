@@ -64,6 +64,10 @@ class HuaweiCliSession(
                 invalidateSession()
                 throw ex
             }
+            if (ex is OltUnreachableException) {
+                invalidateSession()
+                throw ex
+            }
             logger.warn("CLI command failed, retrying once: {}", ex.message)
             invalidateSession()
             return runCommand(command, timeoutMs)
@@ -76,6 +80,10 @@ class HuaweiCliSession(
             runCommand(properties.session.keepaliveCommand, properties.session.healthTimeoutMs)
         } catch (ex: Exception) {
             if (ex is OltCommandTimeoutException) {
+                invalidateSession()
+                throw ex
+            }
+            if (ex is OltUnreachableException) {
                 invalidateSession()
                 throw ex
             }

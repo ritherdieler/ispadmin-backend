@@ -26,17 +26,26 @@ class NetDiagLlmContextServiceTest {
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
     private val probeRunRepository = mockk<NetDiagProbeRunRepository>()
     private val trapEventRepository = mockk<NetDiagTrapEventRepository>()
+    private val radiusImpactPort = mockk<com.dscorp.wispadmin.netdiag.port.NetDiagRadiusImpactPort>()
     private val service = NetDiagLlmContextService(
         incidentRepository = incidentRepository,
         incidentEventRepository = incidentEventRepository,
         probeRunRepository = probeRunRepository,
         trapEventRepository = trapEventRepository,
+        radiusImpactPort = radiusImpactPort,
         objectMapper = ObjectMapper()
     )
 
     @BeforeEach
     fun stubTraps() {
         every { trapEventRepository.findTop20ByTargetIdOrderByReceivedAtDesc(any()) } returns emptyList()
+        every { radiusImpactPort.estimateImpact(any(), any()) } returns com.dscorp.wispadmin.netdiag.port.RadiusImpactSnapshot(
+            source = "wispadmin-subscriptions",
+            activeSubscriptions = 1200L,
+            pppActiveSessions = 45,
+            estimatedAffected = 45L,
+            notes = "PPP activas desde último probe_run del target"
+        )
     }
 
     private val target = NetDiagTarget(id = 1L, name = "MK1", deviceRefId = 7L)
@@ -83,6 +92,7 @@ class NetDiagLlmContextServiceTest {
         assertTrue(markdown.contains("upstream-http"))
         assertTrue(markdown.contains("Optical snapshot"))
         assertTrue(markdown.contains("Health snapshot"))
+        assertTrue(markdown.contains("Impacto suscriptores"))
     }
 
     @Test
@@ -107,6 +117,7 @@ class NetDiagLlmContextServiceTest {
         assertTrue(json.containsKey("netwatchSnapshot"))
         assertTrue(json.containsKey("opticalSnapshot"))
         assertTrue(json.containsKey("healthSnapshot"))
+        assertTrue(json.containsKey("radiusImpact"))
     }
 
     @Test

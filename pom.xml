@@ -21,6 +21,12 @@
         <pytorch.version>2.7.1</pytorch.version>
         <pytorch.jni.version>2.7.1-0.36.0</pytorch.jni.version>
     </properties>
+    <repositories>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
     <dependencies>
         <dependency>
             <groupId>org.apache.poi</groupId>
@@ -131,9 +137,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>me.legrange</groupId>
-            <artifactId>mikrotik</artifactId>
-            <version>3.0.7</version>
+            <groupId>com.github.GideonLeGrange</groupId>
+            <artifactId>mikrotik-java</artifactId>
+            <version>f34e6c498ea02a07c0a55e65ed88149db0c619dd</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

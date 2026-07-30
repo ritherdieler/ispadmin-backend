@@ -1,12 +1,14 @@
 package com.dscorp.wispadmin.oltgateway.ssh
 
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -216,6 +218,36 @@ class OltCliBusTest {
     fun `ping uses session through bus`() {
         assertEquals(7L, bus.ping())
         verify(exactly = 1) { session.ping() }
+    }
+
+    @Test
+    fun `execute propaga OltUnreachableException sin envolver en ExecutionException`() {
+        every { session.execute(any<String>()) } throws OltUnreachableException("Unable to reach OLT at 10.11.104.2:22")
+
+        val ex = assertThrows(OltUnreachableException::class.java) {
+            bus.execute(CliJobType.INVENTORY) { session.execute("display board 0") }
+        }
+        assertEquals("Unable to reach OLT at 10.11.104.2:22", ex.message)
+    }
+
+    @Test
+    fun `background jobs skip fast when OLT is degraded`() {
+        val tracker = OltReachabilityTracker(failureThreshold = 1, backoffMs = 120_000) { 0L }
+        tracker.recordFailure()
+        val degradedBus = OltCliBus(
+            sshClient = mockk(relaxed = true),
+            properties = properties,
+            sessionFactory = { _, _ -> session },
+            reachability = tracker
+        )
+        degradedBus.start()
+        try {
+            val skipped = degradedBus.execute(CliJobType.INVENTORY) { "should-not-run" }
+            assertEquals(CliBusResult.Skipped("olt_unreachable"), skipped)
+            verify(exactly = 0) { session.execute(any()) }
+        } finally {
+            degradedBus.close()
+        }
     }
 
     @Test

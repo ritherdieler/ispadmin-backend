@@ -28,11 +28,19 @@ class OltMgrSeedRunner(
         val existing = oltRepository.findByName(properties.oltId)
         if (existing.isPresent) {
             val olt = existing.get()
+            var changed = false
             if (olt.model == null) {
                 olt.model = model
+                changed = true
+            }
+            if (olt.passwordEnc.isNullOrBlank() && properties.password.isNotBlank()) {
+                olt.passwordEnc = properties.password
+                changed = true
+            }
+            if (changed) {
                 olt.updatedAt = Instant.now()
                 oltRepository.save(olt)
-                logger.info("Backfilled olt_mgr_olt model={} name={}", model.code, properties.oltId)
+                logger.info("Backfilled olt_mgr_olt name={} model={}", properties.oltId, model.code)
             }
             return
         }

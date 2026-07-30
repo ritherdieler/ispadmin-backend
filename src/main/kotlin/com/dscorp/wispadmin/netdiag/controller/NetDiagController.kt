@@ -9,6 +9,11 @@ import com.dscorp.wispadmin.netdiag.dto.SyslogIngestRequestDto
 import com.dscorp.wispadmin.netdiag.dto.SyslogIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.TrapIngestRequestDto
 import com.dscorp.wispadmin.netdiag.dto.TrapIngestResponseDto
+import com.dscorp.wispadmin.netdiag.dto.MaintenanceWindowDto
+import com.dscorp.wispadmin.netdiag.dto.MaintenanceWindowRequestDto
+import com.dscorp.wispadmin.netdiag.dto.SilenceIncidentRequestDto
+import com.dscorp.wispadmin.netdiag.exception.NetDiagConflictException
+import com.dscorp.wispadmin.netdiag.service.NetDiagMaintenanceService
 import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
 import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
@@ -21,12 +26,16 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+
+import java.time.Instant
+import java.time.format.DateTimeParseException
 
 @RestController
 @RequestMapping("/api/netdiag")
@@ -35,6 +44,7 @@ import org.springframework.web.bind.annotation.RestController
 class NetDiagController(
     private val incidentQueryService: NetDiagIncidentQueryService,
     private val llmContextService: NetDiagLlmContextService,
+    private val maintenanceService: NetDiagMaintenanceService,
     private val alertEvaluator: AlertEvaluator,
     private val signalExtractor: AlertSignalExtractor,
     private val trapIngestService: NetDiagSnmpTrapIngestService,
@@ -104,6 +114,49 @@ class NetDiagController(
         return incidentQueryService.resolve(id)
     }
 
+    @PostMapping("/incidents/{id}/silence")
+    @Operation(summary = "Silenciar notificaciones del incidente")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun silence(
+        @PathVariable id: Long,
+        @RequestBody(required = false) request: SilenceIncidentRequestDto?
+    ): IncidentDetailDto {
+        val until = parseSilenceUntil(request)
+        return incidentQueryService.silence(id, until)
+    }
+
+    @GetMapping("/maintenance-windows")
+    @Operation(summary = "Lista ventanas de mantenimiento")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun listMaintenanceWindows(): List<MaintenanceWindowDto> {
+        return maintenanceService.list()
+    }
+
+    @PostMapping("/maintenance-windows")
+    @Operation(summary = "Crear ventana de mantenimiento")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun createMaintenanceWindow(@RequestBody request: MaintenanceWindowRequestDto): MaintenanceWindowDto {
+        val startsAt = parseInstantRequired(request.startsAt, "startsAt")
+        val endsAt = parseInstantRequired(request.endsAt, "endsAt")
+        if (request.title.isBlank()) {
+            throw NetDiagConflictException("title is required")
+        }
+        return maintenanceService.create(
+            targetId = request.targetId,
+            title = request.title,
+            description = request.description,
+            startsAt = startsAt,
+            endsAt = endsAt
+        )
+    }
+
+    @DeleteMapping("/maintenance-windows/{id}")
+    @Operation(summary = "Eliminar ventana de mantenimiento")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun deleteMaintenanceWindow(@PathVariable id: Long) {
+        maintenanceService.delete(id)
+    }
+
     @PostMapping("/alerts/ingest")
     @Operation(summary = "Ingest de alerta externa (p.ej. OLT PON_DOWN)")
     @SecurityRequirement(name = "NetDiagApiKey")
@@ -141,5 +194,28 @@ class NetDiagController(
             openedIncidentIds = result.openedIncidentIds,
             suppressed = result.suppressed
         )
+    }
+
+    private fun parseSilenceUntil(request: SilenceIncidentRequestDto?): Instant? {
+        if (request == null) return null
+        if (!request.until.isNullOrBlank()) {
+            return parseInstantRequired(request.until!!, "until")
+        }
+        val minutes = request.durationMinutes
+        if (minutes != null && minutes > 0) {
+            return Instant.now().plusSeconds(minutes * 60)
+        }
+        return null
+    }
+
+    private fun parseInstantRequired(raw: String, field: String): Instant {
+        if (raw.isBlank()) {
+            throw NetDiagConflictException("$field is required")
+        }
+        return try {
+            Instant.parse(raw)
+        } catch (_: DateTimeParseException) {
+            throw NetDiagConflictException("Invalid $field: $raw")
+        }
     }
 }

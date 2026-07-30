@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.netdiag.dto.TrapIngestResponseDto
 import com.dscorp.wispadmin.netdiag.exception.NetDiagExceptionHandler
 import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
 import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
+import com.dscorp.wispadmin.netdiag.service.NetDiagMaintenanceService
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
 import com.dscorp.wispadmin.netdiag.service.NetDiagSnmpTrapIngestService
@@ -23,6 +24,7 @@ class NetDiagTrapIngestControllerTest {
 
     private val incidentQueryService = mockk<NetDiagIncidentQueryService>()
     private val llmContextService = mockk<NetDiagLlmContextService>()
+    private val maintenanceService = mockk<NetDiagMaintenanceService>()
     private val alertEvaluator = mockk<AlertEvaluator>()
     private val signalExtractor = mockk<AlertSignalExtractor>()
     private val trapIngestService = mockk<NetDiagSnmpTrapIngestService>()
@@ -34,6 +36,7 @@ class NetDiagTrapIngestControllerTest {
             NetDiagController(
                 incidentQueryService,
                 llmContextService,
+                maintenanceService,
                 alertEvaluator,
                 signalExtractor,
                 trapIngestService,

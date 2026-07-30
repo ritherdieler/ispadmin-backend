@@ -35,6 +35,13 @@ class OltGatewayProperties {
 
     val sync: SyncProperties = SyncProperties()
 
+    val reachability: ReachabilityProperties = ReachabilityProperties()
+
+    class ReachabilityProperties {
+        var failureThreshold: Int = 2
+        var backoffMs: Long = 120_000
+    }
+
     class MockProperties {
         var enabled: Boolean = false
     }

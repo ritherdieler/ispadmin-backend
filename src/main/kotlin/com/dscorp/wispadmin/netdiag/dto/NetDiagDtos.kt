@@ -22,7 +22,8 @@ data class IncidentSummaryDto(
     val title: String,
     val reasonCode: String?,
     val openedAt: Instant,
-    val lastNotifiedAt: Instant?
+    val lastNotifiedAt: Instant?,
+    val silencedUntil: Instant? = null
 )
 
 data class IncidentDetailDto(
@@ -38,6 +39,7 @@ data class IncidentDetailDto(
     val acknowledgedAt: Instant?,
     val resolvedAt: Instant?,
     val lastNotifiedAt: Instant?,
+    val silencedUntil: Instant? = null,
     val events: List<IncidentEventDto>
 )
 
@@ -92,4 +94,28 @@ data class SyslogIngestResponseDto(
     val openedIncidentIds: List<Long>,
     val suppressed: Boolean
 )
+
+data class MaintenanceWindowDto(
+    val id: Long,
+    val targetId: Long?,
+    val title: String,
+    val description: String?,
+    val startsAt: Instant,
+    val endsAt: Instant,
+    val suppressNotifications: Boolean,
+    val createdAt: Instant
+)
+
+class MaintenanceWindowRequestDto {
+    var targetId: Long? = null
+    var title: String = ""
+    var description: String? = null
+    var startsAt: String = ""
+    var endsAt: String = ""
+}
+
+class SilenceIncidentRequestDto {
+    var until: String? = null
+    var durationMinutes: Long? = null
+}
 

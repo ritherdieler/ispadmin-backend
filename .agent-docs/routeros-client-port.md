@@ -20,7 +20,7 @@ MikrotikClient.withSession(device) { session ->
 |-------|-----|
 | `MikrotikClient` / `MikrotikSession` / `MikrotikDeviceRef` | Contrato sin fugas de librería |
 | `MikrotikException` (sealed) | Taxonomía tipada: unreachable / auth / timeout / command |
-| `LegrangeClassicAdapter` + `LegrangeClassicSession` | API TCP 8728 (`me.legrange`), pool por `device.id` — **deprecated** (R4) |
+| `LegrangeClassicAdapter` + `LegrangeClassicSession` | API TCP 8728 (legrange patched), pool por `device.id` — **deprecated** (R4) |
 | `RouterOs7RestAdapter` + `RouterOs7RestSession` | REST HTTPS (OkHttp + Basic auth), cliente HTTP compartido |
 | `RouterOsRestPathMapper` | `/system/resource` → `/rest/system/resource/print` |
 | `RouterOsClientProperties` / `RouterOsClientConfig` | Wiring Spring (`@ConditionalOnProperty` + `@Primary`) |
@@ -63,7 +63,14 @@ keytool -importcert \
 3. Ajustar `router.os.client.rest.trust-store-password` (env / secret manager; no hardcodear en prod).
 4. Mantener `router.os.client.rest.verify-ssl=true`.
 
-El archivo `routeros-mk-truststore.jks` **no se versiona** hasta que el equipo decida un truststore compartido de lab (sin claves privadas). Mientras tanto, REST en local puede usar un profile lab con `verify-ssl=false` (queda el WARN).
+El archivo `routeros-mk-truststore.jks` en `src/main/resources` contiene la CA lab `netdiag-ca` de MK1 (autofirmada). Password dev: `changeit` (`router.os.client.rest.trust-store-password`). Regenerar tras rotar CA:
+
+```bash
+export ROUTEROS_MK1_USER=... ROUTEROS_MK1_PASSWORD=...
+scripts/mk1-export-truststore.sh
+```
+
+En prod usar secret manager para `ROUTEROS_TRUSTSTORE_PASSWORD`, no `changeit`.
 
 ## Ciclo de vida
 
@@ -92,8 +99,9 @@ export ROUTEROS_MK1_PASSWORD=...
 # export ROUTEROS_MK1_CLASSIC_PORT=8728
 # export ROUTEROS_MK1_REST_PORT=443
 # export ROUTEROS_MK1_VERIFY_SSL=false   # solo si aún no hay truststore
+# export ROUTEROS_MK1_SKIP_REST=true     # omitir RouterOs7RestAdapterTest si www-ssl no tiene cert
 
-./mvnw test -Plive-mk1 -Dtest=LegrangeClassicAdapterTest,RouterOs7RestAdapterTest
+./mvnw test -Plive-mk1 -Dtest=LegrangeClassicAdapterTest,RouterOsRestClassicFallbackAdapterLiveTest,RouterOs7RestAdapterTest
 ```
 
 Clases live: `@Tag("live-mk1")`. Perfil Maven `live-mk1` pone `groups=live-mk1` y limpia `excludedGroups`.
@@ -196,7 +204,11 @@ router.os.client.rest.timeout-ms=10000
 
 ### Deprecación
 
-`LegrangeClassicAdapter` está `@Deprecated` con nota de migración a `adapter=rest`. La dependencia `me.legrange:mikrotik` **permanece** en `pom.xml` hasta cumplir R5.
+`LegrangeClassicAdapter` está `@Deprecated` con nota de migración a `adapter=rest`. La dependencia classic usa **`com.github.GideonLeGrange:mikrotik-java:f34e6c49`** (parche RouterOS 7.18+ `!empty`; upstream PR #90) hasta cumplir R5 y eliminar classic por completo.
+
+### Classic API y RouterOS 7.18+
+
+Desde RouterOS 7.18, una query API sin filas responde `!empty` en lugar de `!done` directo. `me.legrange:mikrotik:3.0.7` no lo interpreta y provoca **timeout** en comandos `print where ...` vacíos (p. ej. colas inexistentes, address-list vacía). El fork JitPack anterior incluye el fix de una línea en `ApiConnectionImpl$Processor`.
 
 ## Fase R5 — Checklist para eliminar `me.legrange:mikrotik`
 

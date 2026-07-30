@@ -14,6 +14,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentR
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
+import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
@@ -431,6 +432,26 @@ class OltInventorySyncServiceTest {
         val result = service.syncInventory()
 
         assertEquals("already_queued", result.skippedReason)
+        assertFalse(service.isRunning())
+    }
+
+    @Test
+    fun `skip cuando la OLT no es alcanzable`() {
+        every { queryFacade.listOnusParsed() } throws CliBusBusyException("olt_unreachable")
+
+        val result = service.syncInventory()
+
+        assertEquals("olt_unreachable", result.skippedReason)
+        assertFalse(service.isRunning())
+    }
+
+    @Test
+    fun `skip cuando topology discovery reporta OLT inalcanzable`() {
+        every { queryFacade.listOnusParsed() } throws OltUnreachableException("Unable to reach OLT at 10.11.104.2:22")
+
+        val result = service.syncInventory()
+
+        assertEquals("olt_unreachable", result.skippedReason)
         assertFalse(service.isRunning())
     }
 

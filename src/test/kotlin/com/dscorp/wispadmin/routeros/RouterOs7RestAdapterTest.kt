@@ -1,24 +1,23 @@
 package com.dscorp.wispadmin.routeros
 
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 @Tag("live-mk1")
 class RouterOs7RestAdapterTest : MikrotikClientContractTest() {
 
+    @BeforeEach
+    fun requireRestEndpoint() {
+        Mk1LiveSupport.assumeRestAvailable()
+    }
+
     override fun createClient(): MikrotikClient {
-        val properties = RouterOsClientProperties().apply {
-            adapter = "rest"
-            rest.port = Mk1LiveSupport.restDevice().port
-            rest.timeoutMs = 15000
-            rest.verifySsl = System.getenv("ROUTEROS_MK1_VERIFY_SSL")?.toBoolean() ?: false
-        }
-        return RouterOs7RestAdapter(properties)
+        return RouterOs7RestAdapter(Mk1LiveSupport.liveRestProperties())
     }
 
     override fun validDevice(): MikrotikDeviceRef = Mk1LiveSupport.restDevice()

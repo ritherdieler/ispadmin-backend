@@ -97,6 +97,8 @@ class RouterOs7RestAdapterUnitTest {
         }
 
         assertTrue(rows.isEmpty())
+        val recorded = server.takeRequest()
+        assertTrue(recorded.body.readUtf8().contains("\".query\""))
     }
 
     @Test

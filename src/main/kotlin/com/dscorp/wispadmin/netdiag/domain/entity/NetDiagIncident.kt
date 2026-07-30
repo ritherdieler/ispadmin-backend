@@ -53,5 +53,8 @@ class NetDiagIncident(
     var resolvedAt: Instant? = null,
 
     @Column(name = "last_notified_at")
-    var lastNotifiedAt: Instant? = null
+    var lastNotifiedAt: Instant? = null,
+
+    @Column(name = "silenced_until")
+    var silencedUntil: Instant? = null
 )

@@ -6,7 +6,6 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.time.LocalDateTime
@@ -22,14 +21,14 @@ class CollectionVisitServiceTest {
     @Test
     fun `getRecentCommentsForClients groups comments by client within window`() {
         val logs = listOf(
-            visitLog(id = 1, clientId = 10, comment = "No estaba", visitedAt = since.plusDays(5)),
             visitLog(id = 2, clientId = 10, comment = "Segunda visita", visitedAt = since.plusDays(10)),
+            visitLog(id = 1, clientId = 10, comment = "No estaba", visitedAt = since.plusDays(5)),
             visitLog(id = 3, clientId = 20, comment = "Cliente pagó parcial", visitedAt = since.plusDays(2)),
         )
         `when`(
             collectionVisitLogRepository.findCommentsByClientIdsSince(
-                eq(listOf(10, 20)),
-                eq(since),
+                listOf(10, 20),
+                since,
             ),
         ).thenReturn(logs)
 

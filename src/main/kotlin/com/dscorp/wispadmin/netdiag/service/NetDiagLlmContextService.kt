@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTrapEventRepository
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
+import com.dscorp.wispadmin.netdiag.port.NetDiagRadiusImpactPort
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -17,6 +18,7 @@ class NetDiagLlmContextService(
     private val incidentEventRepository: NetDiagIncidentEventRepository,
     private val probeRunRepository: NetDiagProbeRunRepository,
     private val trapEventRepository: NetDiagTrapEventRepository,
+    private val radiusImpactPort: NetDiagRadiusImpactPort,
     private val objectMapper: ObjectMapper
 ) {
 
@@ -113,6 +115,15 @@ class NetDiagLlmContextService(
             sb.append("\n")
         }
 
+        val radiusImpact = radiusImpactPort.estimateImpact(targetId, incident.target?.deviceRefId)
+        sb.append("## Impacto suscriptores (RADIUS/PPP)\n\n")
+        appendField(sb, "Fuente", radiusImpact.source)
+        appendField(sb, "Suscripciones activas", radiusImpact.activeSubscriptions.toString())
+        appendField(sb, "Sesiones PPP activas", radiusImpact.pppActiveSessions?.toString())
+        appendField(sb, "Estimado afectados", radiusImpact.estimatedAffected?.toString())
+        appendField(sb, "Notas", radiusImpact.notes)
+        sb.append("\n")
+
         return sb.toString()
     }
 
@@ -131,6 +142,7 @@ class NetDiagLlmContextService(
         val recentTraps = targetId?.let {
             trapEventRepository.findTop20ByTargetIdOrderByReceivedAtDesc(it)
         }.orEmpty()
+        val radiusImpact = radiusImpactPort.estimateImpact(targetId, incident.target?.deviceRefId)
 
         return linkedMapOf(
             "incidentId" to incident.id,
@@ -156,6 +168,13 @@ class NetDiagLlmContextService(
             "healthSnapshot" to jsonValue(probeNode?.get("health")),
             "netwatchSnapshot" to jsonValue(probeNode?.get("netwatch")),
             "opticalSnapshot" to jsonValue(probeNode?.get("optical")),
+            "radiusImpact" to linkedMapOf(
+                "source" to radiusImpact.source,
+                "activeSubscriptions" to radiusImpact.activeSubscriptions,
+                "pppActiveSessions" to radiusImpact.pppActiveSessions,
+                "estimatedAffected" to radiusImpact.estimatedAffected,
+                "notes" to radiusImpact.notes
+            ),
             "recentTraps" to recentTraps.map { trap ->
                 linkedMapOf(
                     "id" to trap.id,

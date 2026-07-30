@@ -14,6 +14,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -31,13 +32,21 @@ class WhatsAppOpsNotifierTest {
         whatsapp.templateName = "noc_alert_v1"
         whatsapp.languageCode = "es"
     }
+    private val maintenanceService = mockk<NetDiagMaintenanceService>()
     private val notifier = WhatsAppOpsNotifier(
         whatsAppService = whatsAppService,
         notificationLogRepository = notificationLogRepository,
         incidentRepository = incidentRepository,
         incidentEventRepository = incidentEventRepository,
-        properties = properties
+        properties = properties,
+        maintenanceService = maintenanceService
     )
+
+    @BeforeEach
+    fun setUpMaintenance() {
+        every { maintenanceService.isIncidentSilenced(any(), any()) } returns false
+        every { maintenanceService.isNotificationsSuppressed(any(), any()) } returns false
+    }
 
     @Test
     fun `no notifica si incidente es mas reciente que min-duration`() {
@@ -90,9 +99,36 @@ class WhatsAppOpsNotifierTest {
         verify { incidentEventRepository.save(match { it.type == "WHATSAPP_NOTIFIED" }) }
     }
 
+    @Test
+    fun `no notifica si incidente esta silenciado`() {
+        val until = Instant.now().plus(1, ChronoUnit.HOURS)
+        val incident = openIncident(
+            openedAt = Instant.now().minus(5, ChronoUnit.MINUTES),
+            silencedUntil = until
+        )
+        every { maintenanceService.isIncidentSilenced(until, any()) } returns true
+        every { maintenanceService.isNotificationsSuppressed(any(), any()) } returns false
+
+        notifier.notifyIfNeeded(incident)
+
+        verify(exactly = 0) { whatsAppService.sendTemplateMessage(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `no notifica durante ventana de mantenimiento activa`() {
+        val incident = openIncident(openedAt = Instant.now().minus(5, ChronoUnit.MINUTES))
+        every { maintenanceService.isNotificationsSuppressed(1L, any()) } returns true
+        every { maintenanceService.isIncidentSilenced(any(), any()) } returns false
+
+        notifier.notifyIfNeeded(incident)
+
+        verify(exactly = 0) { whatsAppService.sendTemplateMessage(any(), any(), any(), any()) }
+    }
+
     private fun openIncident(
         openedAt: Instant,
-        lastNotifiedAt: Instant? = null
+        lastNotifiedAt: Instant? = null,
+        silencedUntil: Instant? = null
     ): NetDiagIncident {
         return NetDiagIncident(
             id = 9L,
@@ -103,7 +139,8 @@ class WhatsAppOpsNotifierTest {
             title = "Link down: ether1",
             reasonCode = "LINK_DOWN",
             openedAt = openedAt,
-            lastNotifiedAt = lastNotifiedAt
+            lastNotifiedAt = lastNotifiedAt,
+            silencedUntil = silencedUntil
         )
     }
 }

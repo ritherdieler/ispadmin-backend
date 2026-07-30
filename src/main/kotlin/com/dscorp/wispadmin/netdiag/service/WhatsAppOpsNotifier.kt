@@ -22,7 +22,8 @@ class WhatsAppOpsNotifier(
     private val notificationLogRepository: NetDiagNotificationLogRepository,
     private val incidentRepository: NetDiagIncidentRepository,
     private val incidentEventRepository: NetDiagIncidentEventRepository,
-    private val properties: NetDiagProperties
+    private val properties: NetDiagProperties,
+    private val maintenanceService: NetDiagMaintenanceService
 ) {
 
     private val logger = LoggerFactory.getLogger(WhatsAppOpsNotifier::class.java)
@@ -33,6 +34,12 @@ class WhatsAppOpsNotifier(
             return
         }
         if (incident.status != "OPEN") {
+            return
+        }
+        if (maintenanceService.isIncidentSilenced(incident.silencedUntil)) {
+            return
+        }
+        if (maintenanceService.isNotificationsSuppressed(incident.target?.id)) {
             return
         }
 

@@ -27,6 +27,7 @@ class AlertEvaluatorTest {
     private val alertDecisionRepository = mockk<NetDiagAlertDecisionRepository>()
     private val targetRepository = mockk<NetDiagTargetRepository>()
     private val notifier = mockk<WhatsAppOpsNotifier>(relaxed = true)
+    private val llmWebhookService = mockk<NetDiagLlmWebhookService>(relaxed = true)
     private val properties = NetDiagProperties().apply {
         alert.parentMaxDepth = 5
     }
@@ -37,7 +38,8 @@ class AlertEvaluatorTest {
         alertDecisionRepository = alertDecisionRepository,
         targetRepository = targetRepository,
         correlationEngine = correlationEngine,
-        notifier = notifier
+        notifier = notifier,
+        llmWebhookService = llmWebhookService
     )
 
     private val idSeq = AtomicLong(100)
@@ -80,6 +82,7 @@ class AlertEvaluatorTest {
         assertEquals(listOf(55L), result.openedIncidentIds)
         assertEquals("OPEN", incidentSlot.captured.status)
         verify { notifier.notifyIfNeeded(any()) }
+        verify { llmWebhookService.notifyIncidentOpened(any()) }
     }
 
     @Test

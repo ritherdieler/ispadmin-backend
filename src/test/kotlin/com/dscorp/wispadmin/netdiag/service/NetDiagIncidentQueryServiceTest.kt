@@ -21,7 +21,12 @@ class NetDiagIncidentQueryServiceTest {
 
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
-    private val service = NetDiagIncidentQueryService(incidentRepository, incidentEventRepository)
+    private val maintenanceService = mockk<NetDiagMaintenanceService>(relaxed = true)
+    private val service = NetDiagIncidentQueryService(
+        incidentRepository,
+        incidentEventRepository,
+        maintenanceService
+    )
 
     private val target = NetDiagTarget(id = 7L, name = "MK1", deviceRefId = 7L)
 
@@ -91,6 +96,22 @@ class NetDiagIncidentQueryServiceTest {
         every { incidentRepository.findById(9L) } returns Optional.of(resolved)
 
         assertThrows<NetDiagConflictException> { service.resolve(9L) }
+    }
+
+    @Test
+    fun `silence marca SILENCED y persiste silencedUntil`() {
+        val open = incident(id = 9L, status = "OPEN")
+        every { incidentRepository.findById(9L) } returns Optional.of(open)
+        every { incidentRepository.save(any()) } answers { firstArg() }
+        every { incidentEventRepository.save(any()) } answers { firstArg<NetDiagIncidentEvent>().also { it.id = 1L } }
+        every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(9L) } returns emptyList()
+        val until = Instant.parse("2026-07-26T18:00:00Z")
+
+        val detail = service.silence(9L, until)
+
+        assertEquals("SILENCED", detail.status)
+        assertEquals(until, detail.silencedUntil)
+        verify { incidentEventRepository.save(match { it.type == "SILENCED" }) }
     }
 
     @Test

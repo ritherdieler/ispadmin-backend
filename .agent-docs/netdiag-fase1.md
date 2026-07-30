@@ -51,11 +51,18 @@ Config por target (`net_diag_target.monitor_config` JSON):
 
 ```json
 {
-  "criticalInterfaces": ["ether1", "sfp-sfpplus1"],
+  "criticalInterfaces": [
+    "ether1", "ether2", "ether3", "ether4", "ether5", "ether6", "ether7", "ether8",
+    "sfp-sfpplus1", "sfp-sfpplus2", "LAN", "SERVICIO CORP.TARAZONA",
+    "eoip-tunnel1", "gre-ispadmin-vps", "lo", "vlan1"
+  ],
   "expectedFirmware": "7.23.2",
-  "cpuThreshold": 80
+  "netwatchNames": ["upstream-http", "upstream-dns"],
+  "opticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2"]
 }
 ```
+
+Seed SQL idempotente MK1: `scripts/sql/netdiag-target-mk1-seed.sql`
 
 ## Scheduler y retención
 

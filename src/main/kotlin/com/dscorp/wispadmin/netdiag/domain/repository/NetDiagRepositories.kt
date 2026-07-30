@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagNotificationLog
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagProbeRun
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagMaintenanceWindow
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTrapEvent
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
@@ -57,4 +58,15 @@ interface NetDiagAuditLogRepository : JpaRepository<NetDiagAuditLog, Long>
 @Repository
 interface NetDiagTrapEventRepository : JpaRepository<NetDiagTrapEvent, Long> {
     fun findTop20ByTargetIdOrderByReceivedAtDesc(targetId: Long): List<NetDiagTrapEvent>
+}
+
+@Repository
+interface NetDiagMaintenanceWindowRepository : JpaRepository<NetDiagMaintenanceWindow, Long> {
+    @Query(
+        """
+        SELECT w FROM NetDiagMaintenanceWindow w
+        WHERE w.startsAt <= :at AND w.endsAt >= :at AND w.suppressNotifications = true
+        """
+    )
+    fun findActiveAt(@Param("at") at: Instant): List<NetDiagMaintenanceWindow>
 }

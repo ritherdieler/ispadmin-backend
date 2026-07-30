@@ -59,4 +59,25 @@ class OltMgrSeedRunnerTest {
         assertEquals(2L, olt.model?.id)
         verify(exactly = 1) { oltRepository.save(olt) }
     }
+
+    @Test
+    fun `seed backfill password cuando olt existe sin password`() {
+        val model = OltMgrOltModel(id = 2L, code = "MA5608T", maxConcurrentCliSessions = 4)
+        every { modelRepository.findByCode("MA5608T") } returns Optional.of(model)
+        val olt = OltMgrOlt(
+            id = 9L,
+            name = "gigafiber-ma5608t",
+            ipAddress = "10.11.104.2",
+            model = model,
+            usernameEnc = "oltadmin",
+            passwordEnc = ""
+        )
+        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
+        every { oltRepository.save(any()) } answers { firstArg() }
+
+        OltMgrSeedRunner(oltRepository, modelRepository, properties).run(null)
+
+        assertEquals("secret", olt.passwordEnc)
+        verify(exactly = 1) { oltRepository.save(olt) }
+    }
 }
