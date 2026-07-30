@@ -649,17 +649,17 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         value = """
         SELECT
             s.id AS subscription_id,
-            s.first_name,
-            s.last_name,
-            s.phone,
-            s.service_status,
-            s.installation_type,
-            s.price,
-            s.subscription_date_datetime,
-            p.name,
-            p.price,
-            p.download_speed,
-            p.upload_speed
+            s.first_name AS first_name,
+            s.last_name AS last_name,
+            s.phone AS phone,
+            s.service_status AS service_status,
+            s.installation_type AS installation_type,
+            s.price AS subscription_price,
+            s.subscription_date_datetime AS subscription_date_datetime,
+            p.name AS plan_name,
+            p.price AS plan_price,
+            p.download_speed AS download_speed,
+            p.upload_speed AS upload_speed
         FROM subscription s
         LEFT JOIN plan p ON p.id = s.plan_id
         WHERE s.id = :subscriptionId

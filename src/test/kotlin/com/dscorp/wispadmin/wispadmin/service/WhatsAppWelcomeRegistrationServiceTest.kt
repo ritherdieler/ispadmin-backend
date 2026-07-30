@@ -62,12 +62,25 @@ class WhatsAppWelcomeRegistrationServiceTest {
     }
 
     @Test
-    fun `does nothing when welcome on registration is disabled`() {
+    fun `persists skipped log when welcome on registration is disabled`() {
         whatsAppProperties.welcomeOnRegistration.enabled = false
 
-        service.sendWelcomeIfApplicable(42)
+        val result = service.sendWelcomeAndGetResult(42)
 
-        verifyNoInteractions(whatsAppMessageLogRepository, subscriptionRepository, templateDeliveryService)
+        assertEquals(WhatsAppWelcomeRegistrationService.OUTCOME_DISABLED, result.outcome)
+        verify(subscriptionRepository, never()).findWhatsAppSubscriptionRowById(42)
+        verify(templateDeliveryService).persistLog(
+            org.mockito.ArgumentMatchers.eq(null),
+            org.mockito.ArgumentMatchers.eq(42),
+            org.mockito.ArgumentMatchers.eq(""),
+            org.mockito.ArgumentMatchers.eq("WELCOME_CUSTOMER"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(WhatsAppTemplateDeliveryService.STATUS_SKIPPED),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(null),
+            org.mockito.ArgumentMatchers.eq(null),
+            org.mockito.ArgumentMatchers.eq(null)
+        )
     }
 
     @Test

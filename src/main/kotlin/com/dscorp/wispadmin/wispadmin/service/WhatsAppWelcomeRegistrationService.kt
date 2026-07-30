@@ -12,6 +12,12 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryS
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
+data class WelcomeSendResult(
+    val subscriptionId: Int,
+    val outcome: String,
+    val detail: String? = null
+)
+
 @Service
 class WhatsAppWelcomeRegistrationService(
     private val subscriptionRepository: SubscriptionRepository,
@@ -23,12 +29,55 @@ class WhatsAppWelcomeRegistrationService(
     private val log = LoggerFactory.getLogger(WhatsAppWelcomeRegistrationService::class.java)
 
     fun sendWelcomeIfApplicable(subscriptionId: Int) {
+        try {
+            sendWelcomeAndGetResult(subscriptionId)
+        } catch (e: Exception) {
+            log.error(
+                "Error inesperado al procesar bienvenida WhatsApp para suscripcion {}: {}",
+                subscriptionId,
+                e.message,
+                e
+            )
+        }
+    }
+
+    fun sendWelcomeAndGetResult(subscriptionId: Int): WelcomeSendResult {
+        return try {
+            sendWelcomeInternal(subscriptionId)
+        } catch (e: Exception) {
+            log.error(
+                "Error inesperado al procesar bienvenida WhatsApp para suscripcion {}: {}",
+                subscriptionId,
+                e.message,
+                e
+            )
+            WelcomeSendResult(
+                subscriptionId = subscriptionId,
+                outcome = OUTCOME_ERROR,
+                detail = e.message
+            )
+        }
+    }
+
+    private fun sendWelcomeInternal(subscriptionId: Int): WelcomeSendResult {
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
+
         if (!whatsAppProperties.welcomeOnRegistration.enabled) {
-            log.debug("Bienvenida WhatsApp desactivada por configuracion.")
-            return
+            val reason = "Bienvenida desactivada en configuracion."
+            log.warn("Bienvenida WhatsApp desactivada (whatsapp.welcome-on-registration.enabled=false).")
+            persistSkipped(subscriptionId, null, reason, definition.messageType)
+            return WelcomeSendResult(subscriptionId, OUTCOME_DISABLED, reason)
         }
 
-        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
+        if (!whatsAppProperties.isConfigured()) {
+            val reason = "WhatsApp Cloud API no esta configurado correctamente."
+            log.warn(
+                "WhatsApp no configurado para suscripcion {}: faltan api-version, phone-number-id, business-account-id o access-token.",
+                subscriptionId
+            )
+            persistSkipped(subscriptionId, null, reason, definition.messageType)
+            return WelcomeSendResult(subscriptionId, OUTCOME_NOT_CONFIGURED, reason)
+        }
 
         if (whatsAppMessageLogRepository.existsBySubscriptionIdAndMessageTypeAndStatus(
                 subscriptionId = subscriptionId,
@@ -37,13 +86,15 @@ class WhatsAppWelcomeRegistrationService(
             )
         ) {
             log.info("Bienvenida WhatsApp ya enviada para suscripcion {}", subscriptionId)
-            return
+            return WelcomeSendResult(subscriptionId, OUTCOME_ALREADY_SENT, null)
         }
 
         val row = subscriptionRepository.findWhatsAppSubscriptionRowById(subscriptionId).firstOrNull()
         if (row == null) {
+            val reason = "No se encontro la suscripcion $subscriptionId."
             log.warn("No se encontro suscripcion {} para bienvenida WhatsApp.", subscriptionId)
-            return
+            persistSkipped(subscriptionId, null, reason, definition.messageType)
+            return WelcomeSendResult(subscriptionId, OUTCOME_NOT_FOUND, reason)
         }
 
         val subscription = welcomeSubscriptionFromRow(row)
@@ -51,14 +102,14 @@ class WhatsAppWelcomeRegistrationService(
 
         if (phone.isNullOrBlank()) {
             persistSkipped(subscriptionId, phone, "El cliente no tiene telefono registrado.", definition.messageType)
-            return
+            return WelcomeSendResult(subscriptionId, OUTCOME_SKIPPED, "El cliente no tiene telefono registrado.")
         }
         if (!PeruvianPhoneValidator.isValid(phone)) {
             persistSkipped(subscriptionId, phone, "El telefono debe ser un celular peruano valido.", definition.messageType)
-            return
+            return WelcomeSendResult(subscriptionId, OUTCOME_SKIPPED, "El telefono debe ser un celular peruano valido.")
         }
 
-        try {
+        return try {
             val welcomeContext = WelcomeVariableMapper.buildContext(subscription)
             templateDeliveryService.deliverTemplate(
                 definition = definition,
@@ -68,8 +119,15 @@ class WhatsAppWelcomeRegistrationService(
                 welcomeContext = welcomeContext
             )
             log.info("Bienvenida WhatsApp enviada para suscripcion {} al telefono {}", subscriptionId, phone)
+            WelcomeSendResult(subscriptionId, OUTCOME_SENT, phone)
         } catch (e: Exception) {
-            log.error("No se pudo enviar bienvenida WhatsApp para suscripcion {}: {}", subscriptionId, e.message)
+            log.error(
+                "No se pudo enviar bienvenida WhatsApp para suscripcion {}: {}",
+                subscriptionId,
+                e.message,
+                e
+            )
+            WelcomeSendResult(subscriptionId, OUTCOME_FAILED, e.message)
         }
     }
 
@@ -89,5 +147,16 @@ class WhatsAppWelcomeRegistrationService(
             errorMessage = reason
         )
         log.info("Bienvenida WhatsApp omitida para suscripcion {}: {}", subscriptionId, reason)
+    }
+
+    companion object {
+        const val OUTCOME_SENT = "SENT"
+        const val OUTCOME_SKIPPED = "SKIPPED"
+        const val OUTCOME_FAILED = "FAILED"
+        const val OUTCOME_ALREADY_SENT = "ALREADY_SENT"
+        const val OUTCOME_NOT_FOUND = "NOT_FOUND"
+        const val OUTCOME_DISABLED = "DISABLED"
+        const val OUTCOME_NOT_CONFIGURED = "NOT_CONFIGURED"
+        const val OUTCOME_ERROR = "ERROR"
     }
 }
