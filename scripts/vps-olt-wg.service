@@ -1,0 +1,14 @@
+[Unit]
+Description=WireGuard tunnel VPS to Mikrotik (MK2) for OLT LAN access
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=MK_PUBLIC_IP=38.224.231.4
+ExecStart=/opt/gigafiber/scripts/setup-vps-olt-wg.sh
+ExecStop=/usr/bin/wg-quick down wg-olt
+
+[Install]
+WantedBy=multi-user.target

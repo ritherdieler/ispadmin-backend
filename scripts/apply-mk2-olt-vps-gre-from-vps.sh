@@ -23,8 +23,11 @@ if [[ -z "$MYSQL_ROOT_PASSWORD" ]]; then
   fi
 fi
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-${SPRING_DATASOURCE_PASSWORD:-}}"
+if [[ -z "$MYSQL_ROOT_PASSWORD" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx mysql8033; then
+  MYSQL_ROOT_PASSWORD="$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD 2>/dev/null || true)"
+fi
 if [[ -z "$MYSQL_ROOT_PASSWORD" ]]; then
-  echo "Set MYSQL_ROOT_PASSWORD or SPRING_DATASOURCE_PASSWORD" >&2
+  echo "Set MYSQL_ROOT_PASSWORD or ensure mysql8033 exposes MYSQL_ROOT_PASSWORD" >&2
   exit 1
 fi
 

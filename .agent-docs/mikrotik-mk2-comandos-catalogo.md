@@ -29,7 +29,8 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/ip firewall address-list add list=CloudOLT address=amz.smartolt.com` | Allowlist SmartOLT cloud | SmartOLT CloudOLT | Resuelve IPs dinámicas |
 | `/ip firewall nat add chain=dstnat … dst-address=38.224.231.4 dst-port=2333 to-addresses=10.11.104.2 to-ports=23 …` | DNAT Telnet OLT | SmartOLT CloudOLT | Igual puertos 2322→22, 2161→161 |
 | `/ip firewall filter add chain=forward action=accept connection-nat-state=dstnat comment="CloudOLT forward to OLT"` | Forward DNAT | SmartOLT CloudOLT | |
-| `/import file-name=mk2-gre-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-gre.rsc`) | GRE VPS ↔ MK2 + SNAT hacia LAN OLT | OLT Gateway / NetDiag | Peer VPS `212.85.13.47`; OLT ve `10.11.104.89` |
+| `/import file-name=mk2-wg-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-wg.rsc` + claves) | WireGuard VPS ↔ MK2 + SNAT hacia LAN OLT | OLT Gateway / NetDiag | UDP 51830; OLT ve `10.11.104.89`; prod 2026-08-01 |
+| `/import file-name=mk2-gre-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-gre.rsc`) | GRE VPS ↔ MK2 + SNAT (rollback) | OLT Gateway legacy | Peer VPS `212.85.13.47` |
 | `/interface print stats where name~"sfp-sfpplus2\|vlan100"` | RX/TX uplink vs subinterfaz | Diagnóstico | `vlan100-olt` RX=0 → native untagged |
 | `/ip arp print where address=192.168.30.202` | ARP abonado piloto | Diagnóstico | Esperado: `reachable` en `sfp-sfpplus2` |
 | `/ping 192.168.30.202 count=5` | Ping L3 abonado piloto | Diagnóstico / verify script | |
