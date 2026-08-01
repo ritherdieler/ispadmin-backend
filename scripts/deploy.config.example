@@ -24,3 +24,11 @@ MAPBOX_ACCESS_TOKEN=
 # Si se dejan vacíos, el deploy no falla: solo omite el registro.
 OBS_BASE_URL=https://api.gigafiberperu.cloud/ispadmin
 OBS_API_KEY=
+
+# NetDiag NOC (env_file Tomcat /opt/gigafiber/.env). Generar NET_DIAG_API_KEY: openssl rand -hex 24
+# NET_DIAG_ENABLED=true
+# NET_DIAG_API_KEY=
+# NET_DIAG_WHATSAPP_NOC_PHONE=519XXXXXXXX
+# OLT_GATEWAY_ENABLED=true
+# OLT_GATEWAY_API_KEY=
+# OLT_GATEWAY_PASSWORD=
