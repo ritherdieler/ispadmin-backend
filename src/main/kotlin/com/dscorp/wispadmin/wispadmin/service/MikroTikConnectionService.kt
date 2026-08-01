@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.routeros.RouterOsEntryId
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
@@ -255,9 +256,10 @@ class MikroTikConnectionService(
     }
 
     fun enableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
-        logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando address-list entry ID: $entryId en 'deudores'")
+        val normalizedId = RouterOsEntryId.normalize(entryId)
+        logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando address-list entry ID: $normalizedId en 'deudores'")
         return try {
-            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$entryId disabled=no")
+            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$normalizedId disabled=no")
             true
         } catch (e: Exception) {
             logger.error("❌ [DISPOSITIVO-${device.id}] Error habilitando address-list entry $entryId: ${e.message}")
@@ -266,9 +268,10 @@ class MikroTikConnectionService(
     }
 
     fun disableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
-        logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando address-list entry ID: $entryId en 'deudores'")
+        val normalizedId = RouterOsEntryId.normalize(entryId)
+        logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando address-list entry ID: $normalizedId en 'deudores'")
         return try {
-            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$entryId disabled=yes")
+            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$normalizedId disabled=yes")
             true
         } catch (e: Exception) {
             logger.error("❌ [DISPOSITIVO-${device.id}] Error deshabilitando address-list entry $entryId: ${e.message}")
@@ -279,7 +282,7 @@ class MikroTikConnectionService(
     fun enableMultipleAddressListEntries(device: NetworkDevice, entryIds: List<String>): Map<String, Boolean> {
         logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando ${entryIds.size} address-list entries en 'deudores'")
         val results = mutableMapOf<String, Boolean>()
-        entryIds.forEach { id -> results[id] = enableAddressListEntry(device, id) }
+        entryIds.forEach { id -> results[RouterOsEntryId.normalize(id)] = enableAddressListEntry(device, id) }
         val successCount = results.values.count { it }
         logger.info("📊 [DISPOSITIVO-${device.id}] Habilitación completada: $successCount/${entryIds.size} exitosos")
         return results
@@ -288,7 +291,7 @@ class MikroTikConnectionService(
     fun disableMultipleAddressListEntries(device: NetworkDevice, entryIds: List<String>): Map<String, Boolean> {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando ${entryIds.size} address-list entries en 'deudores'")
         val results = mutableMapOf<String, Boolean>()
-        entryIds.forEach { id -> results[id] = disableAddressListEntry(device, id) }
+        entryIds.forEach { id -> results[RouterOsEntryId.normalize(id)] = disableAddressListEntry(device, id) }
         val successCount = results.values.count { it }
         logger.info("📊 [DISPOSITIVO-${device.id}] Deshabilitación completada: $successCount/${entryIds.size} exitosos")
         return results

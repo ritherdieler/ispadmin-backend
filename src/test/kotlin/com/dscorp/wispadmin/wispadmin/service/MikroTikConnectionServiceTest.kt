@@ -80,6 +80,24 @@ class MikroTikConnectionServiceTest {
         assertTrue(service.isConnectionActive(3))
     }
 
+    @Test
+    fun `enableAddressListEntry normalizes id without asterisk`() {
+        val session = mockk<MikrotikSession>()
+        val commandSlot = slot<String>()
+        every { session.execute(capture(commandSlot)) } returns emptyList()
+        every {
+            mikrotikClient.withSession(any(), any<(MikrotikSession) -> List<Map<String, String>>>())
+        } answers {
+            val block = arg<(MikrotikSession) -> List<Map<String, String>>>(1)
+            block(session)
+        }
+
+        val ok = service.enableAddressListEntry(sampleDevice(), "19916B")
+
+        assertTrue(ok)
+        assertTrue(commandSlot.captured.contains(".id=*19916B"))
+    }
+
     private fun sampleDevice(): NetworkDevice {
         return NetworkDevice(
             id = 1,

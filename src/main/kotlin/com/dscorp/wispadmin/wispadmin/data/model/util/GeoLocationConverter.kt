@@ -27,6 +27,9 @@ class GeoLocationConverter : AttributeConverter<GeoLocation, String> {
 
 
     override fun convertToEntityAttribute(dbData: String?): GeoLocation? {
+        if (dbData.isNullOrBlank()) {
+            return null
+        }
         var info: GeoLocation? = null
         try {
             info = reader.readValue(dbData)
