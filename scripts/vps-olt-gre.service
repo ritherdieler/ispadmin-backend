@@ -1,0 +1,14 @@
+[Unit]
+Description=GRE tunnel VPS to Mikrotik (MK2) for OLT LAN access
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=MK_PUBLIC_IP=38.224.231.4
+ExecStart=/opt/gigafiber/scripts/setup-vps-olt-gre.sh
+ExecStop=/bin/bash -c 'ip link set gre-mk1 down 2>/dev/null || true; ip tunnel del gre-mk1 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
