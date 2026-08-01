@@ -22,4 +22,8 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
     fun findTop1ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppInboundMessage>
 
     fun findByPhoneAndReadAtIsNull(phone: String): List<WhatsAppInboundMessage>
+
+    fun countByPhone(phone: String): Long
+
+    fun countByPhoneAndCreatedAtAfter(phone: String, createdAt: java.time.LocalDateTime): Long
 }

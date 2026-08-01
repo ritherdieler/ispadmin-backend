@@ -27,6 +27,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationFilte
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppCsvExportService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppLogsFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
@@ -72,6 +73,7 @@ class WhatsAppBackofficeController(
     private val conversationService: WhatsAppConversationService,
     private val conversationQueryService: WhatsAppConversationQueryService,
     private val mediaDownloadService: WhatsAppMediaDownloadService,
+    private val handoffService: WhatsAppHandoffService,
     private val csvExportService: WhatsAppCsvExportService
 ) {
 
@@ -490,6 +492,19 @@ class WhatsAppBackofficeController(
             ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(mapOf("error" to (e.message ?: "Error al enviar")))
         }
+    }
+
+    @PostMapping("/conversations/{phone}/resume-bot")
+    fun resumeConversationBot(@PathVariable phone: String): ResponseEntity<Map<String, Any?>> {
+        val result = handoffService.resumeBotAndTakeControl(phone, "advisor_closed")
+        return ResponseEntity.ok(
+            mapOf(
+                "phone" to phone,
+                "botPaused" to result.botPaused,
+                "metaTransferred" to result.metaTransferred,
+                "warning" to result.warning
+            )
+        )
     }
 
     @PostMapping("/conversations/{phone}/mark-all-read")

@@ -49,4 +49,17 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         start: LocalDateTime,
         end: LocalDateTime
     ): List<WhatsAppMessageLog>
+
+    fun existsByPhoneAndMessageTypeAndCreatedAtAfter(
+        phone: String,
+        messageType: String,
+        createdAt: LocalDateTime
+    ): Boolean
+
+    fun existsByPhoneAndMessageTypeAndStatusAndCreatedAtAfter(
+        phone: String,
+        messageType: String,
+        status: String,
+        createdAt: LocalDateTime
+    ): Boolean
 }

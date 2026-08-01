@@ -5,16 +5,24 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveAction
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveActionButton
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveButton
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveContent
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListAction
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListContent
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListReplyBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListRow
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListSection
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveReplyBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveText
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMarkReadBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppPassThreadControlBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateLanguage
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateParameter
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTakeThreadControlBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppThreadControlRecipient
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import org.slf4j.LoggerFactory
@@ -115,6 +123,12 @@ class WhatsAppService(
         val title: String
     )
 
+    data class InteractiveListOption(
+        val id: String,
+        val title: String,
+        val description: String? = null
+    )
+
     fun sendInteractiveReplyButtons(
         phoneNumber: String,
         bodyText: String,
@@ -133,7 +147,7 @@ class WhatsAppService(
                         WhatsAppInteractiveActionButton(
                             reply = WhatsAppInteractiveButton(
                                 id = option.id,
-                                title = option.title.take(20)
+                                title = safeInteractiveTitle(option.title)
                             )
                         )
                     }
@@ -141,6 +155,84 @@ class WhatsAppService(
             )
         )
         return postToMeta(body)
+    }
+
+    fun sendInteractiveListMessage(
+        phoneNumber: String,
+        bodyText: String,
+        buttonText: String,
+        sectionTitle: String,
+        rows: List<InteractiveListOption>
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val normalized = normalizePhoneNumber(phoneNumber)
+        val body = WhatsAppInteractiveListReplyBody(
+            to = normalized,
+            interactive = WhatsAppInteractiveListContent(
+                body = WhatsAppInteractiveText(text = bodyText),
+                action = WhatsAppInteractiveListAction(
+                    button = buttonText.take(20),
+                    sections = listOf(
+                        WhatsAppInteractiveListSection(
+                            title = sectionTitle.take(24),
+                            rows = rows.take(10).map { option ->
+                                WhatsAppInteractiveListRow(
+                                    id = option.id,
+                                    title = safeInteractiveTitle(option.title),
+                                    description = option.description?.take(72)
+                                )
+                            }
+                        )
+                    )
+                )
+            )
+        )
+        return postToMeta(body)
+    }
+
+    fun passThreadControl(
+        userWaId: String,
+        targetAppId: String,
+        metadata: String? = null
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        if (targetAppId.isBlank()) {
+            throw IllegalArgumentException("El targetAppId de handoff no esta configurado.")
+        }
+        val normalized = normalizePhoneNumber(userWaId)
+        val body = WhatsAppPassThreadControlBody(
+            recipient = WhatsAppThreadControlRecipient(id = normalized),
+            target_app_id = targetAppId,
+            metadata = metadata?.take(500)
+        )
+        return postToMetaControl(
+            path = "pass_thread_control",
+            body = body,
+            recipient = normalized
+        )
+    }
+
+    fun takeThreadControl(
+        userWaId: String,
+        metadata: String? = null
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val normalized = normalizePhoneNumber(userWaId)
+        val body = WhatsAppTakeThreadControlBody(
+            recipient = WhatsAppThreadControlRecipient(id = normalized),
+            metadata = metadata?.take(500)
+        )
+        return postToMetaControl(
+            path = "take_thread_control",
+            body = body,
+            recipient = normalized
+        )
     }
 
     fun markMessageAsRead(metaMessageId: String): WhatsAppSendResult {
@@ -152,6 +244,33 @@ class WhatsAppService(
     }
 
     private fun postToMeta(body: Any): WhatsAppSendResult {
+        return postToMetaUrl(
+            url = whatsAppProperties.messagesUrl(),
+            body = body,
+            recipient = extractRecipient(body),
+            senderPhoneNumberId = whatsAppProperties.phoneNumberId
+        )
+    }
+
+    private fun postToMetaControl(
+        path: String,
+        body: Any,
+        recipient: String
+    ): WhatsAppSendResult {
+        return postToMetaUrl(
+            url = "${whatsAppProperties.graphApiBaseUrl()}/${whatsAppProperties.phoneNumberId}/$path",
+            body = body,
+            recipient = recipient,
+            senderPhoneNumberId = whatsAppProperties.phoneNumberId
+        )
+    }
+
+    private fun postToMetaUrl(
+        url: String,
+        body: Any,
+        recipient: String?,
+        senderPhoneNumberId: String
+    ): WhatsAppSendResult {
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
         headers.setBearerAuth(whatsAppProperties.accessToken.trim())
@@ -160,7 +279,7 @@ class WhatsAppService(
 
         return try {
             val response = restTemplate.postForEntity(
-                whatsAppProperties.messagesUrl(),
+                url,
                 request,
                 String::class.java
             )
@@ -170,8 +289,8 @@ class WhatsAppService(
                 success = response.statusCode.is2xxSuccessful,
                 metaResponse = responseBody,
                 metaMessageId = WhatsAppMetaResponseParser.extractMessageId(responseBody),
-                recipient = extractRecipient(body),
-                senderPhoneNumberId = whatsAppProperties.phoneNumberId
+                recipient = recipient,
+                senderPhoneNumberId = senderPhoneNumberId
             )
         } catch (ex: HttpStatusCodeException) {
             val metaError = ex.responseBodyAsString.ifBlank { ex.message ?: "Error desconocido de Meta" }
@@ -185,8 +304,13 @@ class WhatsAppService(
             is WhatsAppTextMessageBody -> body.to
             is WhatsAppTemplateMessageBody -> body.to
             is WhatsAppInteractiveReplyBody -> body.to
+            is WhatsAppInteractiveListReplyBody -> body.to
             else -> null
         }
+    }
+
+    private fun safeInteractiveTitle(title: String): String {
+        return title.trim().take(20).ifBlank { "Opcion" }
     }
 
     fun normalizePhoneNumber(phoneNumber: String): String {

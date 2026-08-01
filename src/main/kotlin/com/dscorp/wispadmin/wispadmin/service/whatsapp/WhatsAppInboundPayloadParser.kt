@@ -31,14 +31,17 @@ object WhatsAppInboundPayloadParser {
                 contextMessageId = contextMessageId
             )
             "interactive" -> {
-                val buttonReply = message.path("interactive").path("button_reply")
+                val interactive = message.path("interactive")
+                val buttonReply = interactive.path("button_reply")
+                val listReply = interactive.path("list_reply")
+                val reply = if (!buttonReply.isMissingNode && !buttonReply.isNull) buttonReply else listReply
                 WhatsAppInboundPayload(
                     metaMessageId = wamid,
                     phone = phone,
                     messageType = "button_reply",
-                    messageText = buttonReply.path("title").asText(null),
-                    buttonReplyId = buttonReply.path("id").asText(null),
-                    buttonReplyTitle = buttonReply.path("title").asText(null),
+                    messageText = reply.path("title").asText(null),
+                    buttonReplyId = reply.path("id").asText(null),
+                    buttonReplyTitle = reply.path("title").asText(null),
                     contextMessageId = contextMessageId
                 )
             }
