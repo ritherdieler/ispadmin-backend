@@ -30,6 +30,7 @@ class NetDiagPollService(
 
     fun pollAllEnabledTargets() {
         val targets = targetRepository.findByEnabledTrue()
+            .filter { NetDiagMonitorConfigSupport.isMikrotikPollable(it.monitorConfig) }
         if (targets.isEmpty()) {
             return
         }

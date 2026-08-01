@@ -45,6 +45,39 @@ class AlertEvaluator(
         }
     }
 
+    fun resolveByDedupKey(dedupKey: String, details: String?): Boolean {
+        val existing = incidentRepository.findByDedupKeyAndStatus(dedupKey, "OPEN").orElse(null)
+            ?: return false
+        val lockKey = existing.target?.id ?: -1L
+        val lock = locks.computeIfAbsent(lockKey) { Any() }
+        synchronized(lock) {
+            val incident = incidentRepository.findByDedupKeyAndStatus(dedupKey, "OPEN").orElse(null)
+                ?: return false
+            incident.status = "RESOLVED"
+            incident.resolvedAt = Instant.now()
+            incidentRepository.save(incident)
+            incidentEventRepository.save(
+                NetDiagIncidentEvent(
+                    incident = incident,
+                    type = "CLEARED",
+                    payload = details,
+                    createdAt = Instant.now()
+                )
+            )
+            alertDecisionRepository.save(
+                NetDiagAlertDecision(
+                    target = incident.target,
+                    incident = incident,
+                    decision = "CLEARED",
+                    reasonCode = incident.reasonCode.orEmpty(),
+                    details = details,
+                    createdAt = Instant.now()
+                )
+            )
+            return true
+        }
+    }
+
     private fun evaluateLocked(targetId: Long?, signals: List<AlertSignal>): AlertEvaluationResult {
         val decisions = mutableListOf<String>()
         val opened = mutableListOf<Long>()

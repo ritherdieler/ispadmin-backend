@@ -40,6 +40,8 @@ class HuaweiCliSession(
     private var keepaliveScheduler: ScheduledExecutorService? = null
     private var keepaliveFuture: ScheduledFuture<*>? = null
     private var lastMoreHandledLength: Int = -1
+    private var lastMoreSentAtMs: Long = 0
+    private var lastConfirmHandledLength: Int = -1
 
     fun start() {
         if (properties.session.keepaliveEnabled) {
@@ -200,6 +202,10 @@ class HuaweiCliSession(
         val out = ByteArrayOutputStream()
         shellOut = out
         val shell = newConnected.session.createShellChannel()
+        shell.setupSensibleDefaultPty()
+        shell.setPtyType("xterm")
+        shell.setPtyColumns(512)
+        shell.setPtyLines(9999)
         shell.out = out
         shell.err = out
         shell.open().verify(properties.commandTimeoutMs, TimeUnit.MILLISECONDS)
@@ -232,10 +238,13 @@ class HuaweiCliSession(
     private fun clearOutputBuffer() {
         shellOut?.reset()
         lastMoreHandledLength = -1
+        lastMoreSentAtMs = 0
+        lastConfirmHandledLength = -1
     }
 
     private fun readUntilPrompt(timeoutMs: Long): String {
         return readUntil(timeoutMs) { text ->
+            handleConfirmEnter(text)
             handleMorePagination(text)
             HuaweiCliPromptDetector.isComplete(text)
         }
@@ -243,6 +252,7 @@ class HuaweiCliSession(
 
     private fun readUntilPromptOrPassword(timeoutMs: Long): String {
         return readUntil(timeoutMs) { text ->
+            handleConfirmEnter(text)
             handleMorePagination(text)
             text.takeLast(400).contains(Regex("(?i)password:")) ||
                 HuaweiCliPromptDetector.isComplete(text)
@@ -253,30 +263,112 @@ class HuaweiCliSession(
         if (!HuaweiCliPromptDetector.needsMorePage(text)) {
             return
         }
-        if (text.length == lastMoreHandledLength) {
+        val now = System.currentTimeMillis()
+        if (text.length == lastMoreHandledLength && now - lastMoreSentAtMs < 350) {
             return
         }
+        val grew = text.length != lastMoreHandledLength
         lastMoreHandledLength = text.length
+        lastMoreSentAtMs = now
         val input = shellIn ?: return
-        input.write(" ".toByteArray(StandardCharsets.UTF_8))
+        val key = if (grew) {
+            " "
+        } else {
+            when (((now / 350) % 3).toInt()) {
+                0 -> " "
+                1 -> "\r"
+                else -> "f"
+            }
+        }
+        input.write(key.toByteArray(StandardCharsets.UTF_8))
+        input.flush()
+    }
+
+    private fun handleConfirmEnter(text: String) {
+        if (!HuaweiCliPromptDetector.needsConfirmEnter(text)) {
+            return
+        }
+        if (text.length == lastConfirmHandledLength) {
+            return
+        }
+        lastConfirmHandledLength = text.length
+        val input = shellIn ?: return
+        input.write("\r".toByteArray(StandardCharsets.UTF_8))
         input.flush()
     }
 
     private fun readUntil(timeoutMs: Long, predicate: (String) -> Boolean): String {
         val deadline = System.currentTimeMillis() + timeoutMs
         val shell = channel ?: throw OltUnreachableException("SSH shell is not open")
+        var lastText = ""
+        var lastGrowthAt = System.currentTimeMillis()
+        var lastLen = 0
         while (System.currentTimeMillis() < deadline) {
             if (!isSessionAlive()) {
                 throw OltUnreachableException("SSH session closed during command")
             }
             shell.waitFor(EnumSet.of(ClientChannelEvent.STDOUT_DATA), 200)
             val text = currentOutput()
+            lastText = text
+            if (text.length != lastLen) {
+                lastLen = text.length
+                lastGrowthAt = System.currentTimeMillis()
+            }
             if (predicate(text)) {
                 return stripPaginationMarkers(text)
             }
+            if (
+                HuaweiCliPromptDetector.needsMorePage(text) &&
+                text.contains("ALARM", ignoreCase = true) &&
+                System.currentTimeMillis() - lastGrowthAt > 12_000
+            ) {
+                logger.warn(
+                    "CLI More stalled bufferLen={}; sending q to return partial alarms",
+                    text.length
+                )
+                return finishPartialMore(shell)
+            }
             Thread.sleep(50)
         }
+        if (HuaweiCliPromptDetector.needsMorePage(lastText) && lastText.contains("ALARM", ignoreCase = true)) {
+            logger.warn(
+                "CLI timeout on More with partial alarms bufferLen={}; sending q to finish",
+                lastText.length
+            )
+            return finishPartialMore(shell)
+        }
+        val tail = lastText.takeLast(400).replace("\r", "\\r").replace("\n", "\\n")
+        logger.warn(
+            "CLI timeout bufferLen={} confirm={} more={} tail={}",
+            lastText.length,
+            HuaweiCliPromptDetector.needsConfirmEnter(lastText),
+            HuaweiCliPromptDetector.needsMorePage(lastText),
+            tail
+        )
         throw OltCommandTimeoutException("CLI command timed out after ${timeoutMs}ms")
+    }
+
+    private fun finishPartialMore(shell: ChannelShell): String {
+        try {
+            val input = shellIn
+            if (input != null) {
+                input.write("q".toByteArray(StandardCharsets.UTF_8))
+                input.flush()
+            }
+            val recoverDeadline = System.currentTimeMillis() + 8_000
+            while (System.currentTimeMillis() < recoverDeadline) {
+                if (!isSessionAlive()) break
+                shell.waitFor(EnumSet.of(ClientChannelEvent.STDOUT_DATA), 200)
+                val text = currentOutput()
+                if (HuaweiCliPromptDetector.isComplete(text)) {
+                    return stripPaginationMarkers(text)
+                }
+                Thread.sleep(50)
+            }
+        } catch (ex: Exception) {
+            logger.warn("Partial More recovery failed: {}", ex.message)
+        }
+        return stripPaginationMarkers(currentOutput())
     }
 
     private fun currentOutput(): String {

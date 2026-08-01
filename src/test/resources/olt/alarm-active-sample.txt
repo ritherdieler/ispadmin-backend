@@ -1,0 +1,57 @@
+  ALARM 459476 FAULT WARNING 0x2e21a102 PROCESS ERROR 2026-07-23 14:44:42-05:00
+  ALARM NAME  : The GPON ONT configuration recovery fails
+  SRVEFF      : SA
+  PARAMETERS  : FrameID: 0, SlotID: 1, PortID: 8, ONT ID: 27
+  DESCRIPTION : The GPON ONT configuration recovery fails and some services 
+                are affected
+  CAUSE       : (1) The current configuration is beyond the actual 
+                capabilities of the ONT
+                (2) The software of ONT is faulty
+  ADVICE      : (1) Check the current configuration, and modify the 
+                configuration to match the actual capabilities of the ONT
+                (2) Reset the ONT manually or re-register the ONT
+  --- END
+
+  ALARM 459473 FAULT MINOR 0x2e11a00b SERVICE QUALITY 2026-07-23 14:42:36-05:00
+  ALARM NAME  : The dying-gasp of GPON ONTi (DGi) is generated
+  SRVEFF      : SA
+  PARAMETERS  : FrameID: 0, SlotID: 1, PortID: 6, ONT ID: 54, Equipment ID: 
+                XN020-G3v
+  DESCRIPTION : The ONT is power off
+  CAUSE       : The power supply of the ONT is abnormal
+  ADVICE      : Check the power supply of the ONT and ensure that the power 
+                supply works in the normal state
+  --- END
+
+  ALARM 459469 FAULT WARNING 0x2e112007 SERVICE QUALITY 2026-07-23 14:32:11-05:00
+  ALARM NAME  : The distribute fiber is broken or the OLT cannot receive 
+                expected optical signals from the ONT(LOSi/LOBi)
+  SRVEFF      : SA
+  PARAMETERS  : FrameID: 0, SlotID: 1, PortID: 8, ONT ID: 2, Equipment ID: 
+                XC220-G3v
+  DESCRIPTION : The OLT cannot receive expected optical signals from the ONT 
+                in four consecutive frames
+  CAUSE       : (1) The fiber is broken
+                (2) The quality of the optical path is poor
+                (3) The ONT hardware fails
+  ADVICE      : (1) Check tributary optical fiber connection and backbone 
+                optical fiber orderly, clean the fiber connector and replace 
+                the fiber if necessary
+                (2) Ensure that the optical attenuation of the optical path is 
+                normal
+                (3) Reset the ONT or replace the ONT
+  --- END
+
+  ALARM 459454 FAULT WARNING 0x2e21a102 PROCESS ERROR 2026-07-23 13:22:18-05:00
+  ALARM NAME  : The GPON ONT configuration recovery fails
+  SRVEFF      : SA
+  PARAMETERS  : FrameID: 0, SlotID: 1, PortID: 5, ONT ID: 25
+  DESCRIPTION : The GPON ONT configuration recovery fails and some services 
+                are affected
+  CAUSE       : (1) The current configuration is beyond the actual 
+                capabilities of the ONT
+                (2) The software of ONT is faulty
+  ADVICE      : (1) Check the current configuration, and modify the 
+                configuration to match the actual capabilities of the ONT
+                (2) Reset the ONT manually or re-register the ONT
+  --- END

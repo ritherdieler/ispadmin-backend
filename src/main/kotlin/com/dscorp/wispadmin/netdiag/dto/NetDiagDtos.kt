@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.netdiag.dto
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import java.time.Instant
 
 data class NetDiagHealthResponseDto(
@@ -118,4 +119,34 @@ class SilenceIncidentRequestDto {
     var until: String? = null
     var durationMinutes: Long? = null
 }
+
+data class OltLogEventDto(
+    val id: Long,
+    val receivedAt: Instant,
+    val sourceIp: String?,
+    val reasonCode: String?,
+    val board: Int?,
+    val port: Int?,
+    val onuIndex: Int?,
+    val targetId: Long?,
+    val severity: String?,
+    val incidentId: Long?,
+    val channel: String,
+    val alarmIdHex: String?,
+    val alarmName: String?,
+    val component: String?,
+    @get:JsonProperty("isClear")
+    val isClear: Boolean,
+    @get:JsonProperty("isUnparsed")
+    val isUnparsed: Boolean,
+    val rawMessage: String
+)
+
+data class OltLogPageDto(
+    val items: List<OltLogEventDto>,
+    val page: Int,
+    val size: Int,
+    val totalElements: Long,
+    val totalPages: Int
+)
 

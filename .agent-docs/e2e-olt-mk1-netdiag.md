@@ -2,7 +2,7 @@
 
 Verificación end-to-end de datos reales desde la OLT Huawei (SSH) y el Mikrotik MK1 (REST), más el flujo NOC en backoffice.
 
-Última ejecución verificada: **2026-07-27** — OLT 769 ONUs, 715 con Rx; MK1 probe SUCCESS ~365 ms; NOC E2E OK.
+Última ejecución verificada: **2026-07-31** — OLT solo lectura OK (770 ONUs, signal 711 Rx, validate-read 10/10); detalle [e2e-olt-readonly-2026-07-31.md](./e2e-olt-readonly-2026-07-31.md). Antes: 2026-07-27 MK1 + NOC UI.
 
 ## Prerrequisitos de red
 

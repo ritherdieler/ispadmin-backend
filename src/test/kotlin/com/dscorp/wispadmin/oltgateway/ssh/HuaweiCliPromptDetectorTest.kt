@@ -47,4 +47,43 @@ class HuaweiCliPromptDetectorTest {
         assertTrue(HuaweiCliPromptDetector.isComplete(buffer))
         assertFalse(HuaweiCliPromptDetector.needsMorePage(buffer))
     }
+
+    @Test
+    fun `no necesita More si el prompt ya aparecio despues del More`() {
+        val buffer = """
+            page1
+            ---- More ( Press 'Q' to break ) ----
+            last rows
+            MA5608T#
+        """.trimIndent()
+
+        assertTrue(HuaweiCliPromptDetector.isComplete(buffer))
+        assertFalse(HuaweiCliPromptDetector.needsMorePage(buffer))
+    }
+
+    @Test
+    fun `no completo si espera confirmacion cr al final`() {
+        val buffer = """
+            MA5608T#display alarm active all
+            { <cr>||<K> }:
+        """.trimIndent()
+
+        assertFalse(HuaweiCliPromptDetector.isComplete(buffer))
+        assertTrue(HuaweiCliPromptDetector.needsConfirmEnter(buffer))
+    }
+
+    @Test
+    fun `completo cuando ya no hay confirmacion cr pendiente`() {
+        val buffer = """
+            MA5608T#display alarm active all
+            { <cr>||<K> }:
+            ALARM 1 FAULT WARNING 0x2e21a102 PROCESS ERROR 2026-07-23 14:44:42-05:00
+              ALARM NAME  : sample
+              --- END
+            MA5608T#
+        """.trimIndent()
+
+        assertTrue(HuaweiCliPromptDetector.isComplete(buffer))
+        assertFalse(HuaweiCliPromptDetector.needsConfirmEnter(buffer))
+    }
 }

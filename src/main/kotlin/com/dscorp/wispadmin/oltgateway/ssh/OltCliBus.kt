@@ -18,16 +18,17 @@ enum class CliJobType {
     ADHOC,
     KEEPALIVE,
     INVENTORY,
-    SIGNAL_POLL;
+    SIGNAL_POLL,
+    ALARM_POLL;
 
     fun priority(): Int = when (this) {
         WRITE -> 0
         ADHOC -> 1
         KEEPALIVE -> 2
-        INVENTORY, SIGNAL_POLL -> 3
+        INVENTORY, SIGNAL_POLL, ALARM_POLL -> 3
     }
 
-    fun isSync(): Boolean = this == INVENTORY || this == SIGNAL_POLL
+    fun isSync(): Boolean = this == INVENTORY || this == SIGNAL_POLL || this == ALARM_POLL
 }
 
 sealed class CliBusResult<out T> {
@@ -329,6 +330,9 @@ class OltCliBus(
         copy.sync.signalEnabled = properties.sync.signalEnabled
         copy.sync.signalIntervalMs = properties.sync.signalIntervalMs
         copy.sync.signalInitialDelayMs = properties.sync.signalInitialDelayMs
+        copy.sync.alarmEnabled = properties.sync.alarmEnabled
+        copy.sync.alarmIntervalMs = properties.sync.alarmIntervalMs
+        copy.sync.alarmInitialDelayMs = properties.sync.alarmInitialDelayMs
         copy.sync.skipWhenWriteRunning = properties.sync.skipWhenWriteRunning
         copy.reachability.failureThreshold = properties.reachability.failureThreshold
         copy.reachability.backoffMs = properties.reachability.backoffMs

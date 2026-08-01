@@ -48,3 +48,4 @@ build/
 /backups/
 .cursor/
 /.cursor/
+.e2e-artifacts/

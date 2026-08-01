@@ -107,4 +107,54 @@ class NetDiagPollServiceTest {
 
         assertEquals(12, service.purgeOldProbeRuns())
     }
+
+    @Test
+    fun `omite targets olt y pon del poll MikroTik`() {
+        val mk = NetDiagTarget(
+            id = 1L,
+            name = "MK1",
+            deviceRefId = 7L,
+            monitorConfig = """{"kind":"mikrotik","criticalInterfaces":["ether1"]}"""
+        )
+        val olt = NetDiagTarget(
+            id = 2L,
+            name = "OLT-gigafiber-ma5608t",
+            deviceRefId = 9L,
+            monitorConfig = """{"kind":"olt","oltId":"gigafiber-ma5608t"}"""
+        )
+        val pon = NetDiagTarget(
+            id = 3L,
+            name = "PON-gigafiber-ma5608t-gpon-0/0",
+            deviceRefId = 90L,
+            parentTargetId = 2L,
+            monitorConfig = """{"kind":"pon","board":0,"port":0}"""
+        )
+        every { targetRepository.findByEnabledTrue() } returns listOf(mk, olt, pon)
+        val snapshot = PollSnapshot(
+            interfaces = emptyList(),
+            health = emptyList(),
+            routerboard = null,
+            resource = null,
+            criticalInterfaces = emptyList(),
+            expectedFirmware = null,
+            previousUptimeSeconds = null
+        )
+        val probe = NetDiagProbeRun(id = 1L, target = mk, status = "SUCCESS")
+        every { pollAdapter.poll(mk) } returns PollResult(
+            probeRun = probe,
+            status = "SUCCESS",
+            payload = "{}",
+            snapshot = snapshot
+        )
+        every { signalExtractor.fromSnapshot(1L, snapshot) } returns emptyList()
+        every { probeRunRepository.findTopByTargetIdOrderByStartedAtDesc(1L) } returns Optional.of(probe)
+
+        service.pollAllEnabledTargets()
+
+        verify(exactly = 1) { pollAdapter.poll(mk) }
+        verify(exactly = 0) { pollAdapter.poll(olt) }
+        verify(exactly = 0) { pollAdapter.poll(pon) }
+        verify(exactly = 0) { alertEvaluator.evaluate(2L, any()) }
+        verify(exactly = 0) { alertEvaluator.evaluate(3L, any()) }
+    }
 }

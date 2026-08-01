@@ -59,6 +59,9 @@ class OltGatewayProperties {
         var signalEnabled: Boolean = true
         var signalIntervalMs: Long = 600000
         var signalInitialDelayMs: Long = 90000
+        var alarmEnabled: Boolean = true
+        var alarmIntervalMs: Long = 120000
+        var alarmInitialDelayMs: Long = 45000
         var skipWhenWriteRunning: Boolean = true
     }
 

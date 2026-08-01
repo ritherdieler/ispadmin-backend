@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.netdiag.dto.AlertIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
 import com.dscorp.wispadmin.netdiag.dto.NetDiagHealthResponseDto
+import com.dscorp.wispadmin.netdiag.dto.OltLogPageDto
 import com.dscorp.wispadmin.netdiag.dto.SyslogIngestRequestDto
 import com.dscorp.wispadmin.netdiag.dto.SyslogIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.TrapIngestRequestDto
@@ -18,6 +19,7 @@ import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
 import com.dscorp.wispadmin.netdiag.service.AlertSignalExtractor
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
+import com.dscorp.wispadmin.netdiag.service.NetDiagOltLogQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagSnmpTrapIngestService
 import com.dscorp.wispadmin.netdiag.service.SyslogIngestAdapter
 import io.swagger.v3.oas.annotations.Operation
@@ -48,7 +50,8 @@ class NetDiagController(
     private val alertEvaluator: AlertEvaluator,
     private val signalExtractor: AlertSignalExtractor,
     private val trapIngestService: NetDiagSnmpTrapIngestService,
-    private val syslogIngestAdapter: SyslogIngestAdapter
+    private val syslogIngestAdapter: SyslogIngestAdapter,
+    private val oltLogQueryService: NetDiagOltLogQueryService
 ) {
 
     @GetMapping("/health")
@@ -193,6 +196,29 @@ class NetDiagController(
             decisions = result.decisions,
             openedIncidentIds = result.openedIncidentIds,
             suppressed = result.suppressed
+        )
+    }
+
+    @GetMapping("/olt/logs")
+    @Operation(summary = "Lista eventos/alarmas OLT persistidos (incluye unparsed)")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun listOltLogs(
+        @RequestParam(required = false) board: Int?,
+        @RequestParam(required = false) port: Int?,
+        @RequestParam(required = false, defaultValue = "false") unparsedOnly: Boolean,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?,
+        @RequestParam(required = false, defaultValue = "0") page: Int,
+        @RequestParam(required = false, defaultValue = "50") size: Int
+    ): OltLogPageDto {
+        return oltLogQueryService.listLogs(
+            board = board,
+            port = port,
+            unparsedOnly = unparsedOnly,
+            dateFrom = dateFrom,
+            dateTo = dateTo,
+            page = page,
+            size = size
         )
     }
 

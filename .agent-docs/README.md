@@ -5,6 +5,9 @@
 | **NetDiag Fase 1 (polls / alertas / WhatsApp / LLM)** | [netdiag-fase1.md](./netdiag-fase1.md) |
 | **NetDiag Fase 1.5 (ROS7 netwatch / optical / traps / syslog)** | [netdiag-fase1.5.md](./netdiag-fase1.5.md) |
 | **NetDiag Fase 2 (mantenimiento / webhook LLM / RADIUS)** | [netdiag-fase2.md](./netdiag-fase2.md) |
+| **NetDiag targets OLT/PON (32 puertos + filtro poll)** | [netdiag-olt-targets.md](./netdiag-olt-targets.md) |
+| **OLT MA5608T alarmas / syslog (Fase 0)** | [olt-ma5608t-alarms-syslog.md](./olt-ma5608t-alarms-syslog.md) |
+| **E2E OLT solo lectura (2026-07-31)** | [e2e-olt-readonly-2026-07-31.md](./e2e-olt-readonly-2026-07-31.md) |
 | **NetDiag ROS7 ops + prerrequisitos MK1** | [netdiag-mikrotik-ros7.md](./netdiag-mikrotik-ros7.md) |
 | **NetDiag seed Netwatch/SNMP/syslog (.rsc, manual)** | [netdiag-mikrotik-seed.rsc](./netdiag-mikrotik-seed.rsc) |
 | **NetDiag runbooks NOC** | [netdiag-runbooks.md](./netdiag-runbooks.md) |

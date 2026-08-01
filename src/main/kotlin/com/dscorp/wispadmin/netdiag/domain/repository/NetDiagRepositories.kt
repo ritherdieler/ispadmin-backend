@@ -8,7 +8,10 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagNotificationLog
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagProbeRun
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagMaintenanceWindow
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagOltLogEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTrapEvent
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -20,7 +23,9 @@ import java.util.Optional
 @Repository
 interface NetDiagTargetRepository : JpaRepository<NetDiagTarget, Long> {
     fun findByDeviceRefId(deviceRefId: Long): Optional<NetDiagTarget>
+    fun findByName(name: String): Optional<NetDiagTarget>
     fun findByEnabledTrue(): List<NetDiagTarget>
+    fun findByParentTargetId(parentTargetId: Long): List<NetDiagTarget>
 }
 
 @Repository
@@ -38,6 +43,7 @@ interface NetDiagIncidentRepository : JpaRepository<NetDiagIncident, Long> {
     fun findByStatusOrderByOpenedAtDesc(status: String): List<NetDiagIncident>
     fun findByDedupKeyAndStatus(dedupKey: String, status: String): Optional<NetDiagIncident>
     fun findByTarget_IdAndStatus(targetId: Long, status: String): List<NetDiagIncident>
+    fun findByTarget_IdInAndStatus(targetIds: Collection<Long>, status: String): List<NetDiagIncident>
     fun existsByTarget_IdAndStatus(targetId: Long, status: String): Boolean
 }
 
@@ -58,6 +64,38 @@ interface NetDiagAuditLogRepository : JpaRepository<NetDiagAuditLog, Long>
 @Repository
 interface NetDiagTrapEventRepository : JpaRepository<NetDiagTrapEvent, Long> {
     fun findTop20ByTargetIdOrderByReceivedAtDesc(targetId: Long): List<NetDiagTrapEvent>
+}
+
+@Repository
+interface NetDiagOltLogEventRepository : JpaRepository<NetDiagOltLogEvent, Long> {
+    fun findTop50ByTargetIdOrderByReceivedAtDesc(targetId: Long): List<NetDiagOltLogEvent>
+
+    fun findTop50ByBoardAndPortOrderByReceivedAtDesc(board: Int, port: Int): List<NetDiagOltLogEvent>
+
+    fun findTop50ByIsUnparsedTrueOrderByReceivedAtDesc(): List<NetDiagOltLogEvent>
+
+    @Query(
+        """
+        SELECT e FROM NetDiagOltLogEvent e
+        WHERE (:board IS NULL OR e.board = :board)
+          AND (:port IS NULL OR e.port = :port)
+          AND (:unparsedOnly = false OR e.isUnparsed = true)
+          AND (:fromAt IS NULL OR e.receivedAt >= :fromAt)
+          AND (:toAt IS NULL OR e.receivedAt <= :toAt)
+        """
+    )
+    fun search(
+        @Param("board") board: Int?,
+        @Param("port") port: Int?,
+        @Param("unparsedOnly") unparsedOnly: Boolean,
+        @Param("fromAt") fromAt: Instant?,
+        @Param("toAt") toAt: Instant?,
+        pageable: Pageable
+    ): Page<NetDiagOltLogEvent>
+
+    @Modifying(clearAutomatically = true)
+    @Query("DELETE FROM NetDiagOltLogEvent e WHERE e.receivedAt < :cutoff")
+    fun deleteByReceivedAtBefore(@Param("cutoff") cutoff: Instant): Int
 }
 
 @Repository

@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.netdiag.controller
 
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
+import com.dscorp.wispadmin.netdiag.dto.OltLogEventDto
+import com.dscorp.wispadmin.netdiag.dto.OltLogPageDto
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
 import com.dscorp.wispadmin.netdiag.exception.NetDiagExceptionHandler
 import com.dscorp.wispadmin.netdiag.service.AlertEvaluator
@@ -12,6 +14,7 @@ import com.dscorp.wispadmin.netdiag.dto.MaintenanceWindowDto
 import com.dscorp.wispadmin.netdiag.service.NetDiagMaintenanceService
 import com.dscorp.wispadmin.netdiag.service.NetDiagIncidentQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagLlmContextService
+import com.dscorp.wispadmin.netdiag.service.NetDiagOltLogQueryService
 import com.dscorp.wispadmin.netdiag.service.NetDiagSnmpTrapIngestService
 import com.dscorp.wispadmin.netdiag.service.SyslogIngestAdapter
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -38,6 +41,7 @@ class NetDiagControllerTest {
     private val signalExtractor = mockk<AlertSignalExtractor>()
     private val trapIngestService = mockk<NetDiagSnmpTrapIngestService>()
     private val syslogIngestAdapter = mockk<SyslogIngestAdapter>()
+    private val oltLogQueryService = mockk<NetDiagOltLogQueryService>()
     private val objectMapper = ObjectMapper()
 
     private val mockMvc: MockMvc = MockMvcBuilders
@@ -49,7 +53,8 @@ class NetDiagControllerTest {
                 alertEvaluator,
                 signalExtractor,
                 trapIngestService,
-                syslogIngestAdapter
+                syslogIngestAdapter,
+                oltLogQueryService
             )
         )
         .setControllerAdvice(NetDiagExceptionHandler())
@@ -176,6 +181,55 @@ class NetDiagControllerTest {
         mockMvc.perform(get("/api/netdiag/maintenance-windows"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].title").value("Upgrade MK1"))
+    }
+
+    @Test
+    fun `lista logs OLT aplica filtros y pagina`() {
+        every {
+            oltLogQueryService.listLogs(1, 8, true, "2026-07-01T00:00:00Z", "2026-07-31T23:59:59Z", 0, 20)
+        } returns OltLogPageDto(
+            items = listOf(
+                OltLogEventDto(
+                    id = 7L,
+                    receivedAt = Instant.parse("2026-07-31T17:00:00Z"),
+                    sourceIp = "10.11.104.2",
+                    reasonCode = "OLT_ALARM_UNPARSED",
+                    board = 1,
+                    port = 8,
+                    onuIndex = null,
+                    targetId = null,
+                    severity = null,
+                    incidentId = null,
+                    channel = "cli_alarm_active",
+                    alarmIdHex = null,
+                    alarmName = null,
+                    component = null,
+                    isClear = false,
+                    isUnparsed = true,
+                    rawMessage = "raw-block"
+                )
+            ),
+            page = 0,
+            size = 20,
+            totalElements = 1,
+            totalPages = 1
+        )
+
+        mockMvc.perform(
+            get("/api/netdiag/olt/logs")
+                .param("board", "1")
+                .param("port", "8")
+                .param("unparsedOnly", "true")
+                .param("dateFrom", "2026-07-01T00:00:00Z")
+                .param("dateTo", "2026-07-31T23:59:59Z")
+                .param("page", "0")
+                .param("size", "20")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.items[0].reasonCode").value("OLT_ALARM_UNPARSED"))
+            .andExpect(jsonPath("$.items[0].isUnparsed").value(true))
+            .andExpect(jsonPath("$.items[0].rawMessage").value("raw-block"))
     }
 
     @Test
