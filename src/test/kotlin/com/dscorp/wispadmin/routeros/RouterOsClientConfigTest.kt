@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.routeros
 
-import com.dscorp.wispadmin.routeros.adapter.LegrangeClassicAdapter
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
 import com.dscorp.wispadmin.routeros.config.RouterOsClientConfig
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
@@ -13,6 +12,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import java.nio.file.Path
+import kotlin.io.path.readText
 
 class RouterOsClientConfigTest {
 
@@ -23,7 +24,6 @@ class RouterOsClientConfigTest {
     @Test
     fun `warns when rest verify ssl is disabled`() {
         val properties = RouterOsClientProperties().apply {
-            adapter = "rest"
             rest.verifySsl = false
         }
         val message = RouterOsClientConfig.sslVerifyDisabledWarning(properties)
@@ -34,45 +34,29 @@ class RouterOsClientConfigTest {
     @Test
     fun `no warning when rest verify ssl is enabled`() {
         val properties = RouterOsClientProperties().apply {
-            adapter = "rest"
             rest.verifySsl = true
         }
         assertNull(RouterOsClientConfig.sslVerifyDisabledWarning(properties))
     }
 
     @Test
-    fun `default adapter property is classic`() {
-        assertEquals("classic", RouterOsClientProperties().adapter)
+    fun `default adapter property is rest`() {
+        assertEquals("rest", RouterOsClientProperties().adapter)
     }
 
     @Test
-    fun `wires classic adapter when property is missing`() {
+    fun `wires rest adapter as primary MikrotikClient`() {
         contextRunner.run { context ->
             assertThat(context).hasSingleBean(MikrotikClient::class.java)
             assertThat(context.getBean(MikrotikClient::class.java))
-                .isInstanceOf(LegrangeClassicAdapter::class.java)
+                .isInstanceOf(RouterOs7RestAdapter::class.java)
         }
     }
 
     @Test
-    fun `wires classic adapter when property is classic`() {
-        contextRunner
-            .withPropertyValues("router.os.client.adapter=classic")
-            .run { context ->
-                assertThat(context).hasSingleBean(MikrotikClient::class.java)
-                assertThat(context.getBean(MikrotikClient::class.java))
-                    .isInstanceOf(LegrangeClassicAdapter::class.java)
-            }
-    }
-
-    @Test
-    fun `wires rest adapter when property is rest`() {
-        contextRunner
-            .withPropertyValues("router.os.client.adapter=rest")
-            .run { context ->
-                assertThat(context).hasSingleBean(MikrotikClient::class.java)
-                assertThat(context.getBean(MikrotikClient::class.java))
-                    .isInstanceOf(RouterOs7RestAdapter::class.java)
-            }
+    fun `pom does not declare mikrotik-java legrange dependency`() {
+        val pom = Path.of(System.getProperty("user.dir")).resolve("pom.xml").readText()
+        assertThat(pom).doesNotContain("GideonLeGrange")
+        assertThat(pom).doesNotContain("mikrotik-java")
     }
 }

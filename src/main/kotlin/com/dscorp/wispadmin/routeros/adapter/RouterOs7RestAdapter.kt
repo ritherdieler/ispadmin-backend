@@ -27,7 +27,7 @@ class RouterOs7RestAdapter(
 
     override fun <T> withSession(device: MikrotikDeviceRef, block: (MikrotikSession) -> T): T {
         val effective = device.copy(
-            port = if (device.port > 0) device.port else properties.rest.port
+            port = resolvePort(device)
         )
         return try {
             block(
@@ -44,6 +44,16 @@ class RouterOs7RestAdapter(
     }
 
     override fun close() {
+    }
+
+    private fun resolvePort(device: MikrotikDeviceRef): Int {
+        if (!properties.adapter.equals("rest", ignoreCase = true)) {
+            return if (device.port > 0) device.port else properties.rest.port
+        }
+        if (device.port <= 0 || device.port == properties.classic.port) {
+            return properties.rest.port
+        }
+        return device.port
     }
 
     companion object {

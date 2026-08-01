@@ -26,9 +26,9 @@ class MikroTikConnectionService(
         return NetworkDeviceConnectionManager.isMikroTikMockModeEnabled()
     }
 
-    private fun getMockResponse(command: String): List<Map<String, String>> {
+    private fun getMockPrint(path: String, query: Map<String, String> = emptyMap()): List<Map<String, String>> {
         return when {
-            command.startsWith("/system/resource/print") -> listOf(
+            path == "/system/resource" -> listOf(
                 mapOf(
                     "cpu-load" to "17",
                     "cpu-count" to "4",
@@ -43,17 +43,15 @@ class MikroTikConnectionService(
                     "architecture-name" to "arm"
                 )
             )
-            command.startsWith("/system/identity/print") -> listOf(
-                mapOf("name" to "mikrotik-mock")
-            )
-            command.startsWith("/system/package/print") -> listOf(
+            path == "/system/identity" -> listOf(mapOf("name" to "mikrotik-mock"))
+            path == "/system/package" && query["name"] == "routeros" -> listOf(
                 mapOf(
                     "name" to "routeros",
                     "version" to "7.15.2",
                     "build-time" to "2026-03-01 10:00:00"
                 )
             )
-            command.startsWith("/interface/print") -> listOf(
+            path == "/interface" -> listOf(
                 mapOf(
                     ".id" to "*1",
                     "name" to "ether1",
@@ -81,51 +79,74 @@ class MikroTikConnectionService(
                     "mac-address" to "AA:BB:CC:DD:EE:02"
                 )
             )
-            command.startsWith("/ip/firewall/address-list/print where list=deudores") -> listOf(
+            path == "/ip/firewall/address-list" && query["list"] == "deudores" -> listOf(
                 mapOf(".id" to "*10", "list" to "deudores", "address" to "10.10.10.20", "comment" to "MOCK CLIENTE 1", "disabled" to "false"),
                 mapOf(".id" to "*11", "list" to "deudores", "address" to "10.10.10.21", "comment" to "MOCK CLIENTE 2", "disabled" to "true")
             )
-            command.startsWith("/ip/firewall/filter/print") -> listOf(
+            path == "/ip/firewall/filter" -> listOf(
                 mapOf(".id" to "*20", "comment" to "CORTADO POR DEUDA - MOCK", "disabled" to "false")
             )
             else -> emptyList()
         }
     }
 
-    fun executeSingleCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
-        logger.info("🔧 [DISPOSITIVO-${device.id}] Ejecutando comando único: $command")
+    fun printOnDevice(
+        device: NetworkDevice,
+        path: String,
+        query: Map<String, String> = emptyMap()
+    ): List<Map<String, String>> {
+        logger.info("🔧 [DISPOSITIVO-${device.id}] REST print $path query=$query")
         if (isMockModeEnabled()) {
-            return getMockResponse(command)
+            return getMockPrint(path, query)
         }
         return try {
             val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
-            logger.debug("🔗 [DISPOSITIVO-${device.id}] Abriendo sesión vía MikrotikClient a ${deviceRef.host}")
-            val result = mikrotikClient.withSession(deviceRef) { session ->
-                session.execute(command)
+            mikrotikClient.withSession(deviceRef) { session ->
+                session.print(path, query)
+            }.also { result ->
+                logger.info("✅ [DISPOSITIVO-${device.id}] print OK - ${result.size} resultados")
             }
-            logger.info("✅ [DISPOSITIVO-${device.id}] Comando ejecutado exitosamente - ${result.size} resultados")
-            result
         } catch (e: Exception) {
-            logger.error("❌ [DISPOSITIVO-${device.id}] Error ejecutando comando único: ${e.message}")
+            logger.error("❌ [DISPOSITIVO-${device.id}] Error en print: ${e.message}")
             throw e
         }
     }
-    
-    fun executeCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
-        val deviceId = device.id
+
+    fun setOnDevice(device: NetworkDevice, path: String, id: String, args: Map<String, String>) {
+        logger.info("🔧 [DISPOSITIVO-${device.id}] REST set $path id=$id args=$args")
         if (isMockModeEnabled()) {
-            return getMockResponse(command)
+            return
         }
+        val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+        mikrotikClient.withSession(deviceRef) { session ->
+            session.set(path, id, args)
+        }
+    }
+
+    @Deprecated("Use printOnDevice", ReplaceWith("printOnDevice(device, path, query)"))
+    fun executeSingleCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
+        return legacyCommandToPrint(device, command)
+    }
+
+    private fun legacyCommandToPrint(device: NetworkDevice, command: String): List<Map<String, String>> {
+        return when {
+            command == "/interface/print" -> printOnDevice(device, "/interface")
+            command == "/system/resource/print" -> printOnDevice(device, "/system/resource")
+            command == "/system/identity/print" -> printOnDevice(device, "/system/identity")
+            command == "/ip/firewall/filter/print" -> printOnDevice(device, "/ip/firewall/filter")
+            command.startsWith("/system/package/print where name=routeros") ->
+                printOnDevice(device, "/system/package", mapOf("name" to "routeros"))
+            command.startsWith("/ip/firewall/address-list/print where list=deudores") ->
+                printOnDevice(device, "/ip/firewall/address-list", mapOf("list" to "deudores"))
+            else -> throw IllegalArgumentException("Legacy MikroTik command not mapped to REST: $command")
+        }
+    }
+
+    fun executeCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
         return try {
-            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
-            logger.debug("📡 [DISPOSITIVO-$deviceId] Ejecutando comando vía MikrotikClient: $command")
-            val result = mikrotikClient.withSession(deviceRef) { session ->
-                session.execute(command)
-            }
-            logger.debug("✅ [DISPOSITIVO-$deviceId] Comando ejecutado exitosamente - ${result.size} resultados")
-            result
+            legacyCommandToPrint(device, command)
         } catch (e: Exception) {
-            logger.error("❌ [DISPOSITIVO-$deviceId] Error ejecutando comando: ${e.message}")
+            logger.error("❌ [DISPOSITIVO-${device.id}] Error ejecutando comando: ${e.message}")
             emptyList()
         }
     }
@@ -164,18 +185,19 @@ class MikroTikConnectionService(
     
     fun scheduleMonitoring(
         device: NetworkDevice,
-        command: String,
+        path: String,
+        query: Map<String, String> = emptyMap(),
         intervalMs: Long,
         onData: (List<Map<String, String>>) -> Unit,
         shouldContinue: () -> Boolean = { true }
     ): ScheduledFuture<*> {
         val deviceId = device.id
-        logger.info("📅 [DISPOSITIVO-$deviceId] Programando monitoreo continuo - Intervalo: ${intervalMs}ms")
-        
-        val scheduledTask = scheduler.scheduleWithFixedDelay({
+        logger.info("📅 [DISPOSITIVO-$deviceId] Programando monitoreo REST $path - Intervalo: ${intervalMs}ms")
+
+        return scheduler.scheduleWithFixedDelay({
             try {
                 if (shouldContinue()) {
-                    val result = executeCommand(device, command)
+                    val result = printOnDevice(device, path, query)
                     onData(result)
                 } else {
                     logger.info("⏹️ [DISPOSITIVO-$deviceId] Condición de continuidad falsa, deteniendo monitoreo")
@@ -183,10 +205,29 @@ class MikroTikConnectionService(
             } catch (e: Exception) {
                 logger.error("❌ [DISPOSITIVO-$deviceId] Error en monitoreo programado: ${e.message}")
             }
-        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS)
-        
-        logger.info("✅ [DISPOSITIVO-$deviceId] Monitoreo programado exitosamente con delay inicial")
-        return scheduledTask
+        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS).also {
+            logger.info("✅ [DISPOSITIVO-$deviceId] Monitoreo programado exitosamente")
+        }
+    }
+
+    fun scheduleMonitoringLegacyCommand(
+        device: NetworkDevice,
+        command: String,
+        intervalMs: Long,
+        onData: (List<Map<String, String>>) -> Unit,
+        shouldContinue: () -> Boolean = { true }
+    ): ScheduledFuture<*> {
+        return scheduleMonitoring(
+            device = device,
+            path = when (command) {
+                "/interface/print" -> "/interface"
+                "/system/resource/print" -> "/system/resource"
+                else -> throw IllegalArgumentException("Unsupported monitoring command: $command")
+            },
+            intervalMs = intervalMs,
+            onData = onData,
+            shouldContinue = shouldContinue
+        )
     }
     
     fun closeConnection(deviceId: Int) {
@@ -228,7 +269,7 @@ class MikroTikConnectionService(
         logger.info("🔍 [DISPOSITIVO-${device.id}] Obteniendo filter rules de CORTADO POR DEUDA")
         
         return try {
-            val allRules = executeSingleCommand(device, "/ip/firewall/filter/print")
+            val allRules = printOnDevice(device, "/ip/firewall/filter")
             val debtRules = allRules.filter { rule ->
                 val comment = rule["comment"] ?: ""
                 comment.startsWith("CORTADO POR DEUDA", ignoreCase = true)
@@ -245,7 +286,7 @@ class MikroTikConnectionService(
     fun getDebtorsAddressList(device: NetworkDevice): List<Map<String, String>> {
         logger.info("🔍 [DISPOSITIVO-${device.id}] Obteniendo address-list 'deudores'")
         return try {
-            val entries = executeSingleCommand(device, "/ip/firewall/address-list/print where list=deudores")
+            val entries = printOnDevice(device, "/ip/firewall/address-list", mapOf("list" to "deudores"))
             logger.info("✅ [DISPOSITIVO-${device.id}] Encontradas ${entries.size} entradas en 'deudores'")
             entries
         } catch (e: Exception) {
@@ -257,7 +298,7 @@ class MikroTikConnectionService(
     fun enableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
         logger.info("✅ [DISPOSITIVO-${device.id}] Habilitando address-list entry ID: $entryId en 'deudores'")
         return try {
-            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$entryId disabled=no")
+            setOnDevice(device, "/ip/firewall/address-list", entryId, mapOf("disabled" to "no"))
             true
         } catch (e: Exception) {
             logger.error("❌ [DISPOSITIVO-${device.id}] Error habilitando address-list entry $entryId: ${e.message}")
@@ -268,7 +309,7 @@ class MikroTikConnectionService(
     fun disableAddressListEntry(device: NetworkDevice, entryId: String): Boolean {
         logger.info("🚫 [DISPOSITIVO-${device.id}] Deshabilitando address-list entry ID: $entryId en 'deudores'")
         return try {
-            executeSingleCommand(device, "/ip/firewall/address-list/set .id=$entryId disabled=yes")
+            setOnDevice(device, "/ip/firewall/address-list", entryId, mapOf("disabled" to "yes"))
             true
         } catch (e: Exception) {
             logger.error("❌ [DISPOSITIVO-${device.id}] Error deshabilitando address-list entry $entryId: ${e.message}")
@@ -298,7 +339,7 @@ class MikroTikConnectionService(
         logger.info("✅ [DISPOSITIVO-${device.id}] Activando filter rule ID: $ruleId")
         
         return try {
-            executeSingleCommand(device, "/ip/firewall/filter/set .id=$ruleId disabled=no")
+            setOnDevice(device, "/ip/firewall/filter", ruleId, mapOf("disabled" to "no"))
             logger.info("✅ [DISPOSITIVO-${device.id}] Filter rule $ruleId activado exitosamente")
             true
         } catch (e: Exception) {
@@ -311,7 +352,7 @@ class MikroTikConnectionService(
         logger.info("🚫 [DISPOSITIVO-${device.id}] Desactivando filter rule ID: $ruleId")
         
         return try {
-            executeSingleCommand(device, "/ip/firewall/filter/set .id=$ruleId disabled=yes")
+            setOnDevice(device, "/ip/firewall/filter", ruleId, mapOf("disabled" to "yes"))
             logger.info("✅ [DISPOSITIVO-${device.id}] Filter rule $ruleId desactivado exitosamente")
             true
         } catch (e: Exception) {

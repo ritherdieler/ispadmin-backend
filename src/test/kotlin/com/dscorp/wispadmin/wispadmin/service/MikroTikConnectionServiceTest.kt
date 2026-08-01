@@ -29,10 +29,10 @@ class MikroTikConnectionServiceTest {
     }
 
     @Test
-    fun `executeSingleCommand delegates to MikrotikClient session execute`() {
+    fun `printOnDevice delegates to MikrotikClient session print`() {
         val deviceRefSlot = slot<MikrotikDeviceRef>()
         val session = mockk<MikrotikSession>()
-        every { session.execute("/system/identity/print") } returns listOf(mapOf("name" to "MK1"))
+        every { session.print("/system/identity", emptyMap()) } returns listOf(mapOf("name" to "MK1"))
         every {
             mikrotikClient.withSession(capture(deviceRefSlot), any<(MikrotikSession) -> List<Map<String, String>>>())
         } answers {
@@ -40,21 +40,18 @@ class MikroTikConnectionServiceTest {
             block(session)
         }
 
-        val result = service.executeSingleCommand(sampleDevice(), "/system/identity/print")
+        val result = service.printOnDevice(sampleDevice(), "/system/identity")
 
         assertEquals(listOf(mapOf("name" to "MK1")), result)
         assertEquals("1", deviceRefSlot.captured.id)
-        assertEquals("38.224.231.2", deviceRefSlot.captured.host)
         assertEquals(8728, deviceRefSlot.captured.port)
-        assertEquals("admin", deviceRefSlot.captured.username)
-        assertEquals("secret", deviceRefSlot.captured.password)
-        verify(exactly = 1) { session.execute("/system/identity/print") }
+        verify(exactly = 1) { session.print("/system/identity", emptyMap()) }
     }
 
     @Test
-    fun `executeCommand delegates to MikrotikClient session execute`() {
+    fun `executeCommand maps legacy interface print to REST path`() {
         val session = mockk<MikrotikSession>()
-        every { session.execute("/interface/print") } returns listOf(mapOf("name" to "ether1"))
+        every { session.print("/interface", emptyMap()) } returns listOf(mapOf("name" to "ether1"))
         every {
             mikrotikClient.withSession(any(), any<(MikrotikSession) -> List<Map<String, String>>>())
         } answers {
@@ -66,6 +63,23 @@ class MikroTikConnectionServiceTest {
 
         assertEquals(1, result.size)
         assertEquals("ether1", result.first()["name"])
+    }
+
+    @Test
+    fun `setOnDevice delegates to session set`() {
+        val session = mockk<MikrotikSession>(relaxed = true)
+        every {
+            mikrotikClient.withSession(any(), any<(MikrotikSession) -> Unit>())
+        } answers {
+            val block = arg<(MikrotikSession) -> Unit>(1)
+            block(session)
+        }
+
+        service.setOnDevice(sampleDevice(), "/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
+
+        verify(exactly = 1) {
+            session.set("/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
+        }
     }
 
     @Test

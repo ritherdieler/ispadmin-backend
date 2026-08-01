@@ -20,17 +20,16 @@ MikrotikClient.withSession(device) { session ->
 |-------|-----|
 | `MikrotikClient` / `MikrotikSession` / `MikrotikDeviceRef` | Contrato sin fugas de librería |
 | `MikrotikException` (sealed) | Taxonomía tipada: unreachable / auth / timeout / command |
-| `LegrangeClassicAdapter` + `LegrangeClassicSession` | API TCP 8728 (legrange patched), pool por `device.id` — **deprecated** (R4) |
-| `RouterOs7RestAdapter` + `RouterOs7RestSession` | REST HTTPS (OkHttp + Basic auth), cliente HTTP compartido |
+| `RouterOs7RestAdapter` + `RouterOs7RestSession` | REST HTTPS (OkHttp + Basic auth); único transporte MikroTik (sin legrange ni fallback) |
 | `RouterOsRestPathMapper` | `/system/resource` → `/rest/system/resource/print` |
-| `RouterOsClientProperties` / `RouterOsClientConfig` | Wiring Spring (`@ConditionalOnProperty` + `@Primary`) |
+| `RouterOsClientProperties` / `RouterOsClientConfig` | Bean `@Primary` `RouterOs7RestAdapter`; netdiag usa bean nombrado `netDiagMikrotikClient` (también REST) |
 
 Registro en scan: `WispAdminApplication` incluye `com.dscorp.wispadmin.routeros`.
 
 ## Properties (`application-dev.properties`)
 
 ```properties
-router.os.client.adapter=classic
+router.os.client.adapter=rest
 router.os.client.rest.port=443
 router.os.client.rest.verify-ssl=true
 router.os.client.rest.trust-store=classpath:routeros-mk-truststore.jks
@@ -187,7 +186,7 @@ router.os.client.rest.timeout-ms=10000
 ```
 
 4. Restart; wispadmin inyecta `RouterOs7RestAdapter` como `@Primary`. netdiag sigue en su bean REST propio.
-5. Rollback inmediato: `router.os.client.adapter=classic` (o quitar la property).
+5. Rollback inmediato: `router.os.client.adapter=rest` (o quitar la property).
 
 **No** activar `adapter=rest` en prod mientras existan caminos classic-only (`session.execute`) o sin validación live MK1/MK2.
 
@@ -219,10 +218,38 @@ No quitar la dependencia hasta cumplir **todos** los ítems:
 | 1 | `www-ssl` habilitado en MK1 (y MK2 si aplica) con certificado usable | Pendiente (bloqueado en workstation) |
 | 2 | Truststore JKS importado; `verify-ssl=true` en el profile que valide REST | Pendiente |
 | 3 | Contract tests live verdes: `./mvnw test -Plive-mk1 -Dtest=LegrangeClassicAdapterTest,RouterOs7RestAdapterTest` desde host allowlisteado (VPS) | Pendiente |
-| 4 | Todos los caminos wispadmin usan `print`/`add`/`set`/`remove`/`call` (cero `MikrotikSession.execute` de producción) | Pendiente |
-| 5 | Suite unitaria wispadmin mikrotik/cortes/queues verde con `router.os.client.adapter=rest` | Pendiente |
+| 4 | Todos los caminos wispadmin usan `print`/`add`/`set`/`remove`/`call` (cero `MikrotikSession.execute` de producción) | **OK** (2026-08-01): dominio wispadmin migrado; `execute()` solo en adapter classic (`LegrangeClassicSession`) y REST sigue rechazando raw |
+| 5 | Suite unitaria wispadmin mikrotik/cortes/queues verde con `router.os.client.adapter=rest` | **OK** unit (`MikroTikServiceRestTest`, `MikroTikConnectionServiceTest`, cortes/instalación); live MK1 pendiente |
 | 6 | `LegrangeDependencyBoundaryTest` sigue verde (hoy: legrange solo en `routeros/adapter/`) | OK como gate parcial |
 | 7 | Smoke prod/staging con `adapter=rest` estable (cortes, queues, system-info) | Pendiente |
 | 8 | Entonces: borrar `LegrangeClassicAdapter` / session / factory / mapper legrange, quitar `me.legrange:mikrotik` del `pom.xml`, dejar solo `adapter=rest` (o default rest) | No iniciar hasta 1–7 |
 
 Gate documental: si live REST no está validado, **no** force-delete legrange.
+
+## Fase R5 — Migración wispadmin a REST nativo (2026-08-01)
+
+Sin traductor CLI: cortes, colas, address-list, filter-rules, ip-pool, websockets de recursos y `NetworkDeviceConnectionService` usan `MikrotikSession.print` / `add` / `set` / `remove`.
+
+| Módulo | API REST |
+|--------|----------|
+| `MikroTikService` | address-list, filter, queue simple |
+| `QueueManagerService` | queue simple |
+| `MikroTikConnectionService` | `printOnDevice`, `setOnDevice`; monitoreo WS por path |
+| `MikrotikService` (pagos) | address-list remove |
+| `PlanController`, `SubscriptionService`, instalación fiber/wireless | queue simple |
+| `IpPoolService` | `/ip/address` |
+
+`RouterOs7RestAdapter.resolvePort`: ref con puerto classic (8728) → HTTPS 443 cuando `adapter=rest`.
+
+Tests:
+
+```bash
+./mvnw test -Dtest=MikroTikServiceRestTest,MikroTikConnectionServiceTest,RouterOs7RestAdapterUnitTest,FiberInstallationStrategyTest,ServiceCutManagerServiceTest,NetworkDeviceConnectionControllerTest
+```
+
+Activar REST en dev tras live MK1:
+
+```properties
+router.os.client.adapter=rest
+mikrotik.connection.mock.enabled=false
+```

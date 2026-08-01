@@ -136,23 +136,19 @@ class AddressListManagerService(
     ) {
         subscriptions.forEach { subscription ->
             try {
-                val existingAddress = session.execute(
-                    "/ip/firewall/address-list/print where list=$DEBTORS_LIST and address=${subscription.ip}"
-                )
-
-                if (existingAddress.isEmpty()) {
-                    session.execute(
-                        "/ip/firewall/address-list/add list=$DEBTORS_LIST address=${subscription.ip} comment='${
-                            subscription.getFullName().uppercase()
-                        }'"
-                    )
-                    result.successCount++
-                    result.createdSubscriptions.add(
+                if (mikrotikService.checkIfAddressExistsInList(session, DEBTORS_LIST, subscription.ip!!)) {
+                    result.alreadyExistsCount++
+                    result.alreadyExistsSubscriptions.add(
                         "${subscription.getFullName()} (ID: ${subscription.id}) - IP: ${subscription.ip}"
                     )
                 } else {
-                    result.alreadyExistsCount++
-                    result.alreadyExistsSubscriptions.add(
+                    mikrotikService.addIpToDebtorsList(
+                        session,
+                        subscription.ip!!,
+                        subscription.getFullName().uppercase()
+                    )
+                    result.successCount++
+                    result.createdSubscriptions.add(
                         "${subscription.getFullName()} (ID: ${subscription.id}) - IP: ${subscription.ip}"
                     )
                 }

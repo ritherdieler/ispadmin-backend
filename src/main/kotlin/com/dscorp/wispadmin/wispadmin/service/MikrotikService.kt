@@ -96,17 +96,12 @@ class MikrotikService(
 
 
     private fun reactivateServiceInMikrotik(subscription: SubscriptionDto) {
-        subscription.hostDevice?.executeCommand {
+        subscription.hostDevice?.executeCommand { session ->
             if (subscription.ip.isValidIpAddress()) {
-                // Buscar la entrada en la address list "deudores" para la IP específica
-                val addressListQuery = "/ip/firewall/address-list/print where list=deudores and address=${subscription.ip}"
-                val addressListResult = it.execute(addressListQuery)
-                
-                // Remover la IP de la address list de deudores para reactivar el servicio
-                addressListResult.forEach { addressEntry ->
-                    val id = addressEntry[".id"]
-                    it.execute("/ip/firewall/address-list/remove numbers=$id")
-                }
+                session.print("/ip/firewall/address-list", mapOf("list" to "deudores", "address" to subscription.ip!!))
+                    .forEach { addressEntry ->
+                        addressEntry[".id"]?.let { id -> session.remove("/ip/firewall/address-list", id) }
+                    }
             }
         }
     }

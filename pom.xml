@@ -137,11 +137,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.GideonLeGrange</groupId>
-            <artifactId>mikrotik-java</artifactId>
-            <version>f34e6c498ea02a07c0a55e65ed88149db0c619dd</version>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>

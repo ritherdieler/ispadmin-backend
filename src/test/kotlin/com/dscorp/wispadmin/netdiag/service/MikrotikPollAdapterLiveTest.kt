@@ -5,10 +5,7 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.port.NetDiagDeviceDirectoryPort
 import com.dscorp.wispadmin.routeros.Mk1LiveSupport
-import com.dscorp.wispadmin.routeros.adapter.LegrangeClassicAdapter
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
-import com.dscorp.wispadmin.routeros.adapter.RouterOsRestClassicFallbackAdapter
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -64,37 +61,5 @@ class MikrotikPollAdapterLiveTest {
         assertTrue(result.snapshot!!.interfaces.any { it.name == "sfp-sfpplus1" })
         assertNotNull(result.probeRun.latencyMs)
         assertTrue(result.probeRun.latencyMs!! < 30000)
-    }
-
-    @Test
-    fun `poll MK1 via netdiag fallback client matches application-dev wiring`() {
-        Mk1LiveSupport.assumeRestAvailable()
-        every { deviceDirectory.findMikrotikDeviceRef(1L) } returns Mk1LiveSupport.restDevice()
-
-        val properties = RouterOsClientProperties().apply {
-            rest.port = 443
-            rest.verifySsl = true
-            rest.trustStore = "classpath:routeros-mk-truststore.jks"
-            rest.trustStorePassword = "changeit"
-            rest.timeoutMs = 10000
-            classic.port = 8728
-        }
-        @Suppress("DEPRECATION")
-        val fallbackAdapter = MikrotikPollAdapter(
-            mikrotikClient = RouterOsRestClassicFallbackAdapter(
-                primary = RouterOs7RestAdapter(properties, objectMapper),
-                fallback = LegrangeClassicAdapter(properties)
-            ),
-            deviceDirectory = deviceDirectory,
-            probeRunRepository = probeRunRepository,
-            objectMapper = objectMapper,
-            netwatchAdapter = MikrotikNetwatchAdapter(),
-            opticalAdapter = MikrotikOpticalAdapter()
-        )
-
-        val result = fallbackAdapter.poll(target)
-
-        assertEquals("SUCCESS", result.status, result.probeRun.error)
-        assertTrue(result.snapshot!!.interfaces.any { it.name == "sfp-sfpplus1" })
     }
 }

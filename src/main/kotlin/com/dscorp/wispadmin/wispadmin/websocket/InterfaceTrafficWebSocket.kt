@@ -141,8 +141,8 @@ class InterfaceTrafficWebSocket(
         if (activeSessions[device.id]?.size == 1) {
             val task = mikrotikConnectionService.scheduleMonitoring(
                 device = device,
-                command = "/interface/print",
-                intervalMs = 1000L, // 1 segundo
+                path = "/interface",
+                intervalMs = 1000L,
                 onData = { interfaceData ->
                     // Verificar si aún hay sesiones activas para este dispositivo
                     if (activeSessions[device.id]?.isNotEmpty() == true) {

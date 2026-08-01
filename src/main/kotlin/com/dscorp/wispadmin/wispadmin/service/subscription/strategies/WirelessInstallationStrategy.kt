@@ -27,10 +27,15 @@ class WirelessInstallationStrategy : IInstallationStrategy {
     ): InstallationResult {
         val queueName = buildQueueName(subscription)
         
-        device.executeCommand { connection ->
-            val queueCommand =
-                "/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${plan.uploadSpeed}M/${plan.downloadSpeed}M"
-            connection.execute(queueCommand)
+        device.executeCommand { session ->
+            session.add(
+                "/queue/simple",
+                mapOf(
+                    "name" to queueName,
+                    "target" to subscription.ip.orEmpty(),
+                    "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
+                )
+            )
         }
         
         return InstallationResult(queueAdded = true)
