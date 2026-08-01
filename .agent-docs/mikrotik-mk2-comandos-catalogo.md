@@ -35,7 +35,7 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/ip arp print where address=192.168.30.202` | ARP abonado piloto | Diagnóstico | Esperado: `reachable` en `sfp-sfpplus2` |
 | `/ping 192.168.30.202 count=5` | Ping L3 abonado piloto | Diagnóstico / verify script | |
 | `/tool traceroute 8.8.8.8 src-address=192.168.30.1 count=1` | Ruta WAN desde gateway piloto | Diagnóstico | NAT masquerade OK |
-| `/ip service enable api` | Habilita API RouterOS | Fase 1 | Ver [mikrotik-mk2-fase1-runbook.md](./mikrotik-mk2-fase1-runbook.md) |
+| `/ip service set www-ssl certificate=netdiag-rest-mk2 disabled=no address=212.85.13.47/32,192.168.0.0/16` | REST TLS NetDiag desde VPS | `scripts/mk2-enable-www-ssl.py` | CA `netdiag-ca`; truststore alias `mk2-netdiag-ca`; 2026-08-01 |
 | `/ip firewall address-list add list=api_whitelist address=212.85.13.47` | Allowlist VPS ispAdmin | Protección API MK2 | + `192.168.0.0/16` red interna |
 | `/ip service set api address=212.85.13.47/32,192.168.0.0/16` | API solo VPS + LAN | Protección API MK2 | Aplicado 2026-07-21 |
 | `/ip service disable api-ssl` | Apaga api-ssl sin certificado | Protección API MK2 | |
