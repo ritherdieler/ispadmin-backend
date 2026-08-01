@@ -40,4 +40,4 @@ En MK2 el import WG elimina `gre-ispadmin-vps`; el import GRE vuelve a crear GRE
 
 ## NetDiag
 
-Actualizar `criticalInterfaces` del target MK2: sustituir `gre-ispadmin-vps` por `wg-ispadmin-vps` (incidentes `GRE_TUNNEL_DOWN` vs interfaz WG).
+Actualizar `criticalInterfaces`: target **MK2** incluye `wg-ispadmin-vps`; en **MK1** quitar `gre-ispadmin-vps`. Script: `scripts/sql/netdiag-target-mk2-wg-seed.sql` (aplicado prod 2026-08-01).

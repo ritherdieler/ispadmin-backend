@@ -59,11 +59,24 @@ Además de Fase 1 (`/interface`, `/system/health`, `/system/routerboard`, `/syst
 
 `MikrotikSession.call` se usa para comandos que no son `print` (monitor DOM).
 
-## monitor_config (ejemplo MK1)
+## monitor_config (ejemplo MK2 — túnel VPS WireGuard)
 
 ```json
 {
-  "criticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2", "gre-ispadmin-vps"],
+  "criticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2", "sfp-sfpplus3", "wg-ispadmin-vps"],
+  "expectedFirmware": "7.23.2",
+  "netwatchNames": ["upstream-http", "upstream-dns"],
+  "opticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2", "sfp-sfpplus3"]
+}
+```
+
+Si `wg-ispadmin-vps` cae, el poll emite `LINK_DOWN` (no `GRE_TUNNEL_DOWN`; esa razón aplica solo a interfaces GRE).
+
+## monitor_config (ejemplo MK1 legacy)
+
+```json
+{
+  "criticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2"],
   "expectedFirmware": "7.23.2",
   "netwatchNames": ["upstream-http", "upstream-dns"],
   "opticalInterfaces": ["sfp-sfpplus1", "sfp-sfpplus2"]
