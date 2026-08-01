@@ -57,6 +57,8 @@ SSH_IDENTITY_FILE=~/.ssh/id_rsa
 
 `scripts/deploy.config.local` está en `.gitignore`. **No guardar passwords en ese archivo.**
 
+Secretos en el servidor (`.env`, Docker Compose, frontends): [vps-secrets-management.md](./vps-secrets-management.md).
+
 Acceso recomendado por clave SSH:
 
 ```bash

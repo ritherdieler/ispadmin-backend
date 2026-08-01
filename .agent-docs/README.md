@@ -23,6 +23,7 @@
 | **Replays conscientes del formato (rrweb/frames)** | [observability-replay-format.md](./observability-replay-format.md) |
 | **WhatsApp HTTPS + Webhook producción** | [whatsapp-production-https-webhook.md](./whatsapp-production-https-webhook.md) |
 | Acceso MySQL producción (túnel SSH) | [vps-mysql-access.md](./vps-mysql-access.md) |
+| **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) |
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |
 | Deploy flow | [deploy-flow.md](./deploy-flow.md) |
 | **Versionado por release en deploy (semver+git)** | [observability-release-versioning-deploy.md](./observability-release-versioning-deploy.md) |
