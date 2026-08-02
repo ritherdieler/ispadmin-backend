@@ -24,11 +24,14 @@ data class WhatsAppThreadMessageDto(
     val buttonReplyTitle: String?,
     val hasMedia: Boolean,
     val mediaId: Int?,
+    val mediaMimeType: String? = null,
+    val mediaFilename: String? = null,
     val deliveryStatus: String?,
     val createdAt: LocalDateTime,
     val replyToLogId: Int?,
     val operatorUsername: String?,
-    val templateCode: String? = null
+    val templateCode: String? = null,
+    val retryCount: Int? = null
 )
 
 data class WhatsAppConversationSubscriptionDto(
@@ -42,6 +45,41 @@ data class WhatsAppConversationPendingDebtDto(
     val invoiceCount: Int?
 )
 
+data class WhatsAppConversationRecentPaymentDto(
+    val id: Int,
+    val amount: Double,
+    val paid: Boolean,
+    val billingDate: LocalDateTime?,
+    val paymentDate: LocalDateTime?
+)
+
+data class WhatsAppConversationInstallationOrderDto(
+    val id: Int,
+    val status: String,
+    val scheduledDate: LocalDateTime?,
+    val createdAt: LocalDateTime?
+)
+
+data class WhatsAppConversationHistoryItemDto(
+    val conversationId: Long,
+    val phone: String,
+    val status: String,
+    val lastInboundAt: LocalDateTime?,
+    val lastOutboundAt: LocalDateTime?
+)
+
+data class WhatsAppConversationTicketItemDto(
+    val id: Int,
+    val category: String,
+    val status: String,
+    val statusLabel: String,
+    val priority: String,
+    val createdAt: LocalDateTime?,
+    val assignedTo: String?,
+    val conversationId: Long?,
+    val slaBreached: Boolean
+)
+
 data class WhatsAppConversationContextDto(
     val phone: String,
     val clientName: String?,
@@ -50,7 +88,11 @@ data class WhatsAppConversationContextDto(
     val pendingDebt: WhatsAppConversationPendingDebtDto?,
     val recentLogs: List<WhatsAppMessageLogDto>,
     val serviceWindowActive: Boolean,
-    val serviceWindowExpiresAt: LocalDateTime?
+    val serviceWindowExpiresAt: LocalDateTime?,
+    val recentPayments: List<WhatsAppConversationRecentPaymentDto> = emptyList(),
+    val installationOrders: List<WhatsAppConversationInstallationOrderDto> = emptyList(),
+    val conversationHistory: List<WhatsAppConversationHistoryItemDto> = emptyList(),
+    val tickets: List<WhatsAppConversationTicketItemDto> = emptyList()
 )
 
 data class WhatsAppMarkAllReadResultDto(

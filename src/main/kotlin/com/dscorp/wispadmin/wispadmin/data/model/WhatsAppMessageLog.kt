@@ -1,10 +1,23 @@
 package com.dscorp.wispadmin.wispadmin.data.model
 
 import java.time.LocalDateTime
-import javax.persistence.*
+import javax.persistence.Column
+import javax.persistence.Entity
+import javax.persistence.GeneratedValue
+import javax.persistence.GenerationType
+import javax.persistence.Id
+import javax.persistence.Index
+import javax.persistence.Table
 
 @Entity
-@Table(name = "whatsapp_message_log")
+@Table(
+    name = "whatsapp_message_log",
+    indexes = [
+        Index(name = "uk_whatsapp_message_log_meta_message_id", columnList = "metaMessageId", unique = true),
+        Index(name = "idx_wa_message_log_phone_created", columnList = "phone,createdAt"),
+        Index(name = "idx_wa_message_log_created", columnList = "createdAt")
+    ]
+)
 data class WhatsAppMessageLog(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -20,7 +33,7 @@ data class WhatsAppMessageLog(
 
     var status: String = "PENDING",
 
-    @Column(length = 500)
+    @Column(length = 500, unique = true)
     var metaMessageId: String? = null,
 
     var deliveryStatus: String? = null,
@@ -57,6 +70,22 @@ data class WhatsAppMessageLog(
 
     @Column(length = 1000)
     var errorMessage: String? = null,
+
+    var replyToLogId: Int? = null,
+
+    @Column(length = 255)
+    var mediaMetaId: String? = null,
+
+    @Column(length = 128)
+    var mediaMimeType: String? = null,
+
+    @Column(length = 1024)
+    var mediaStoredPath: String? = null,
+
+    @Column(length = 255)
+    var mediaFilename: String? = null,
+
+    var retryCount: Int = 0,
 
     var createdAt: LocalDateTime = LocalDateTime.now()
 )

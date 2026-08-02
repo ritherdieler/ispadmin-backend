@@ -22,7 +22,8 @@ class WhatsAppWebhookSignatureSkipTest {
             whatsAppWebhookEventRepository = mockk(relaxed = true),
             whatsAppInboundMessageService = mockk(relaxed = true),
             accountEventService = mockk(relaxed = true),
-            serviceWindowService = mockk(relaxed = true)
+            serviceWindowService = mockk(relaxed = true),
+            crmEventPublisher = mockk(relaxed = true)
         )
 
         assertTrue(service.verifySignature("{}".toByteArray(), null))

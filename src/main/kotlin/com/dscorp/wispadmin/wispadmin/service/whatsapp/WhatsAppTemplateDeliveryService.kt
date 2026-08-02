@@ -25,7 +25,7 @@ class WhatsAppTemplateDeliveryService(
         welcomeContext: WelcomeTemplateContext? = null,
         campaignId: String? = null,
         operatorUsername: String? = null
-    ) {
+    ): WhatsAppMessageLog {
         val parameters = TemplateParameterResolver.resolve(
             definition = definition,
             subscription = subscription,
@@ -42,7 +42,7 @@ class WhatsAppTemplateDeliveryService(
                 languageCode = definition.language,
                 parameters = parameters
             )
-            persistLog(
+            return persistLog(
                 paymentId = paymentId,
                 subscriptionId = subscriptionId,
                 phone = phone,
@@ -83,9 +83,9 @@ class WhatsAppTemplateDeliveryService(
         metaMessageId: String? = null,
         campaignId: String? = null,
         operatorUsername: String? = null
-    ) {
+    ): WhatsAppMessageLog {
         val now = LocalDateTime.now()
-        whatsAppMessageLogRepository.save(
+        return whatsAppMessageLogRepository.save(
             WhatsAppMessageLog(
                 paymentId = paymentId,
                 subscriptionId = subscriptionId,
@@ -96,6 +96,7 @@ class WhatsAppTemplateDeliveryService(
                 errorMessage = errorMessage,
                 metaMessageId = metaMessageId,
                 sentAt = if (status == STATUS_SENT) now else null,
+                failedAt = if (status == STATUS_FAILED) now else null,
                 campaignId = campaignId,
                 operatorUsername = operatorUsername
             )

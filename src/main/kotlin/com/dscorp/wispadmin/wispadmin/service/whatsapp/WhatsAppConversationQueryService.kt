@@ -3,14 +3,21 @@ package com.dscorp.wispadmin.wispadmin.service.whatsapp
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationContextDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationHistoryItemDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationInstallationOrderDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationPendingDebtDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationRecentPaymentDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSubscriptionDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationTicketItemDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
+import com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository
+import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
@@ -27,7 +34,10 @@ class WhatsAppConversationQueryService(
     private val inboundMessageRepository: WhatsAppInboundMessageRepository,
     private val messageLogRepository: WhatsAppMessageLogRepository,
     private val subscriptionRepository: SubscriptionRepository,
-    private val serviceWindowService: WhatsAppServiceWindowService
+    private val serviceWindowService: WhatsAppServiceWindowService,
+    private val paymentRepository: PaymentRepository,
+    private val crmConversationRepository: CrmConversationRepository,
+    private val crmTicketLinkService: CrmTicketLinkService
 ) {
 
     fun listConversations(filter: WhatsAppConversationFilter): List<WhatsAppConversationSummaryDto> {
@@ -44,6 +54,7 @@ class WhatsAppConversationQueryService(
         } else {
             subscriptionRepository.findAllById(subscriptionIds).associateBy { it.id }
         }
+        val serviceWindows = serviceWindowService.getServiceWindows(phones)
 
         return phones.asSequence()
             .mapNotNull { phone ->
@@ -65,7 +76,12 @@ class WhatsAppConversationQueryService(
                 val subscriptionId = phoneInbound.mapNotNull { it.subscriptionId }.lastOrNull()
                     ?: lastInbound?.subscriptionId
                 val subscription = subscriptionId?.let { subscriptions[it] }
-                val window = serviceWindowService.getServiceWindow(phone)
+                val window = serviceWindows[phone]
+                    ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                        phone = phone,
+                        open = false,
+                        expiresAt = null
+                    )
                 val unreadCount = phoneInbound.count { it.readAt == null }
                 val lastButtonReplyId = phoneInbound
                     .asSequence()
@@ -106,22 +122,33 @@ class WhatsAppConversationQueryService(
         dateTo: LocalDateTime? = null,
         limit: Int = 200
     ): List<WhatsAppThreadMessageDto> {
-        val inbound = inboundMessageRepository.findByPhoneOrderByCreatedAtAsc(phone)
-            .asSequence()
-            .filter { dateFrom == null || !it.createdAt.isBefore(dateFrom) }
-            .filter { dateTo == null || it.createdAt.isBefore(dateTo) }
-            .map { it.toThreadMessage() }
+        val pageSize = limit.coerceIn(1, 1000)
+        val pageable = PageRequest.of(0, pageSize)
+        val inboundRecent = if (dateFrom != null && dateTo != null) {
+            inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                phone = phone,
+                from = dateFrom,
+                to = dateTo,
+                pageable = pageable
+            )
+        } else {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+        }
+        val outboundRecent = if (dateFrom != null && dateTo != null) {
+            messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                phone = phone,
+                from = dateFrom,
+                to = dateTo,
+                pageable = pageable
+            )
+        } else {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+        }
 
-        val outbound = messageLogRepository.findByPhoneOrderByCreatedAtAsc(phone)
-            .asSequence()
-            .filter { dateFrom == null || !it.createdAt.isBefore(dateFrom) }
-            .filter { dateTo == null || it.createdAt.isBefore(dateTo) }
-            .map { it.toThreadMessage() }
-
-        return (inbound + outbound)
+        return (inboundRecent.map { it.toThreadMessage() } + outboundRecent.map { it.toThreadMessage() })
+            .sortedByDescending { it.createdAt }
+            .take(pageSize)
             .sortedBy { it.createdAt }
-            .take(limit.coerceIn(1, 1000))
-            .toList()
     }
 
     fun getContext(phone: String): WhatsAppConversationContextDto {
@@ -148,6 +175,73 @@ class WhatsAppConversationQueryService(
             )
         }
 
+        val recentPayments = subscription?.id?.let { subscriptionId ->
+            paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId)
+                .take(5)
+                .mapNotNull { payment ->
+                    val paymentId = payment.id ?: return@mapNotNull null
+                    WhatsAppConversationRecentPaymentDto(
+                        id = paymentId,
+                        amount = if (payment.paid) (payment.amountPaid ?: payment.amountToPay) else payment.amountToPay,
+                        paid = payment.paid,
+                        billingDate = payment.billingDateDatetime,
+                        paymentDate = payment.paymentDateDatetime
+                    )
+                }
+        }.orEmpty()
+
+        val installationOrders = listOfNotNull(subscription?.installationOrder).map { order ->
+            WhatsAppConversationInstallationOrderDto(
+                id = order.id,
+                status = order.status.name,
+                scheduledDate = order.scheduledDate,
+                createdAt = order.createdAt
+            )
+        }
+
+        val conversationHistory = subscription?.id?.let { subscriptionId ->
+            crmConversationRepository.findBySubscriptionIdOrderByLastInboundAtDesc(subscriptionId)
+                .take(5)
+                .map {
+                    WhatsAppConversationHistoryItemDto(
+                        conversationId = it.id ?: 0L,
+                        phone = it.phone,
+                        status = it.status.name,
+                        lastInboundAt = it.lastInboundAt,
+                        lastOutboundAt = it.lastOutboundAt
+                    )
+                }
+        }.orEmpty().ifEmpty {
+            listOfNotNull(
+                crmConversationRepository.findByPhoneAndChannel(
+                    normalizePhone(phone),
+                    com.dscorp.wispadmin.wispadmin.data.model.CrmChannel.WHATSAPP
+                )
+            ).map {
+                WhatsAppConversationHistoryItemDto(
+                    conversationId = it.id ?: 0L,
+                    phone = it.phone,
+                    status = it.status.name,
+                    lastInboundAt = it.lastInboundAt,
+                    lastOutboundAt = it.lastOutboundAt
+                )
+            }
+        }
+
+        val tickets = crmTicketLinkService.listTicketsForPhone(phone).take(10).map {
+            WhatsAppConversationTicketItemDto(
+                id = it.id,
+                category = it.category,
+                status = it.status.name,
+                statusLabel = it.status.status,
+                priority = it.priority,
+                createdAt = it.createdAt,
+                assignedTo = it.assignedTo,
+                conversationId = it.conversationId,
+                slaBreached = it.slaBreached
+            )
+        }
+
         return WhatsAppConversationContextDto(
             phone = phone,
             clientName = subscription?.getFullName()?.trim()?.takeIf { it.isNotBlank() && !it.contains("null") },
@@ -156,7 +250,11 @@ class WhatsAppConversationQueryService(
             pendingDebt = pendingDebt,
             recentLogs = recentLogs,
             serviceWindowActive = window.open,
-            serviceWindowExpiresAt = window.expiresAt
+            serviceWindowExpiresAt = window.expiresAt,
+            recentPayments = recentPayments,
+            installationOrders = installationOrders,
+            conversationHistory = conversationHistory,
+            tickets = tickets
         )
     }
 
@@ -200,11 +298,14 @@ class WhatsAppConversationQueryService(
             buttonReplyTitle = buttonReplyTitle,
             hasMedia = inboundHasMedia(this),
             mediaId = id,
+            mediaMimeType = mediaMimeType,
+            mediaFilename = null,
             deliveryStatus = null,
             createdAt = createdAt,
             replyToLogId = replyToLogId,
             operatorUsername = null,
-            templateCode = null
+            templateCode = null,
+            retryCount = null
         )
 
         fun WhatsAppMessageLog.toThreadMessage() = WhatsAppThreadMessageDto(
@@ -213,19 +314,26 @@ class WhatsAppConversationQueryService(
             body = message,
             messageType = messageType,
             buttonReplyTitle = null,
-            hasMedia = false,
-            mediaId = null,
+            hasMedia = outboundHasMedia(this),
+            mediaId = id.takeIf { outboundHasMedia(this) },
+            mediaMimeType = mediaMimeType,
+            mediaFilename = mediaFilename,
             deliveryStatus = deliveryStatus ?: status.takeIf { it.isNotBlank() },
             createdAt = createdAt,
-            replyToLogId = null,
+            replyToLogId = replyToLogId,
             operatorUsername = operatorUsername,
-            templateCode = resolveTemplateCode(messageType)
+            templateCode = resolveTemplateCode(messageType),
+            retryCount = retryCount
         )
+
+        fun outboundHasMedia(log: WhatsAppMessageLog): Boolean =
+            !log.mediaStoredPath.isNullOrBlank() || !log.mediaMetaId.isNullOrBlank()
 
         private fun resolveTemplateCode(messageType: String): String? {
             val normalized = messageType.trim().uppercase()
             return when (normalized) {
-                "AUTO_REPLY", "OPERATOR_REPLY", "TEXT", "INTERACTIVE" -> null
+                "AUTO_REPLY", "OPERATOR_REPLY", "OPERATOR_MEDIA", "TEXT", "INTERACTIVE",
+                "IMAGE", "DOCUMENT", "AUDIO" -> null
                 else -> messageType.takeIf { it.isNotBlank() }
             }
         }

@@ -1,0 +1,48 @@
+CREATE TABLE IF NOT EXISTS csat_survey (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id INT NOT NULL,
+    phone VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    score INT NULL,
+    comment_text VARCHAR(1000) NULL,
+    dissatisfaction_reason VARCHAR(64) NULL,
+    technician_id INT NULL,
+    place_name VARCHAR(255) NULL,
+    ticket_category VARCHAR(255) NULL,
+    send_channel VARCHAR(32) NULL,
+    meta_message_id VARCHAR(128) NULL,
+    send_idempotency_key VARCHAR(80) NOT NULL,
+    capture_idempotency_key VARCHAR(128) NULL,
+    retries INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+    next_attempt_at DATETIME NULL,
+    scheduled_at DATETIME NOT NULL,
+    sent_at DATETIME NULL,
+    expires_at DATETIME NOT NULL,
+    responded_at DATETIME NULL,
+    last_error VARCHAR(500) NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_csat_survey_ticket (ticket_id),
+    UNIQUE KEY uk_csat_survey_send_idem (send_idempotency_key),
+    UNIQUE KEY uk_csat_survey_capture_idem (capture_idempotency_key),
+    INDEX idx_csat_survey_status_next (status, next_attempt_at),
+    INDEX idx_csat_survey_expires (status, expires_at),
+    INDEX idx_csat_survey_phone_status (phone, status)
+);
+
+CREATE TABLE IF NOT EXISTS csat_follow_up (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    survey_id BIGINT NOT NULL,
+    reason VARCHAR(64) NULL,
+    status VARCHAR(32) NOT NULL,
+    assigned_to INT NULL,
+    actions VARCHAR(2000) NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    closed_at DATETIME NULL,
+    UNIQUE KEY uk_csat_follow_up_survey (survey_id),
+    INDEX idx_csat_follow_up_status (status),
+    CONSTRAINT fk_csat_follow_up_survey
+        FOREIGN KEY (survey_id) REFERENCES csat_survey (id)
+);

@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
+import com.dscorp.wispadmin.wispadmin.dto.CrmRealtimeEventDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationContextDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMarkAllReadResultDto
@@ -13,6 +14,7 @@ import com.dscorp.wispadmin.wispadmin.dto.toSummaryDto
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppConversationReplyBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppConversationTemplateBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppSelectedRemindersRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppSendMessagesRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
@@ -20,8 +22,11 @@ import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppBackofficeMessageService
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppWelcomeRegistrationService
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationForbiddenException
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAnalyticsService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAuditService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBackofficeQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
@@ -40,6 +45,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateSyncServi
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import org.springframework.core.io.FileSystemResource
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -49,6 +55,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -74,8 +81,17 @@ class WhatsAppBackofficeController(
     private val conversationQueryService: WhatsAppConversationQueryService,
     private val mediaDownloadService: WhatsAppMediaDownloadService,
     private val handoffService: WhatsAppHandoffService,
-    private val csvExportService: WhatsAppCsvExportService
+    private val csvExportService: WhatsAppCsvExportService,
+    private val auditService: WhatsAppAuditService,
+    private val crmEventPublisher: CrmEventPublisher
 ) {
+
+    @GetMapping("/events")
+    fun listEvents(
+        @RequestParam(defaultValue = "0") sinceEventId: Long
+    ): ResponseEntity<List<CrmRealtimeEventDto>> {
+        return ResponseEntity.ok(crmEventPublisher.findSince(sinceEventId))
+    }
 
     @GetMapping("/templates")
     fun listTemplates(): ResponseEntity<Any> {
@@ -431,9 +447,18 @@ class WhatsAppBackofficeController(
         @RequestParam(required = false) from: String?,
         @RequestParam(required = false) to: String?,
         @RequestParam(required = false) unreadOnly: Boolean?,
-        @RequestParam(required = false) limit: Int?
+        @RequestParam(required = false) limit: Int?,
+        httpRequest: HttpServletRequest
     ): ResponseEntity<List<WhatsAppConversationSummaryDto>> {
         val range = resolveOptionalRange(dateFrom ?: from, dateTo ?: to)
+        auditService.recordAccess(
+            operatorUsername = resolveOperator(httpRequest),
+            resource = "/whatsapp/conversations",
+            details = listOfNotNull(
+                search?.takeIf { it.isNotBlank() }?.let { "search=${it.take(64)}" },
+                unreadOnly?.let { "unreadOnly=$it" }
+            ).joinToString(";").ifBlank { null }
+        )
         return ResponseEntity.ok(
             conversationQueryService.listConversations(
                 WhatsAppConversationFilter(
@@ -454,9 +479,15 @@ class WhatsAppBackofficeController(
         @RequestParam(required = false) dateTo: String?,
         @RequestParam(required = false) from: String?,
         @RequestParam(required = false) to: String?,
-        @RequestParam(required = false) limit: Int?
+        @RequestParam(required = false) limit: Int?,
+        httpRequest: HttpServletRequest
     ): ResponseEntity<List<WhatsAppThreadMessageDto>> {
         val range = resolveOptionalRange(dateFrom ?: from, dateTo ?: to)
+        auditService.recordAccess(
+            operatorUsername = resolveOperator(httpRequest),
+            resource = "/whatsapp/conversations/$phone/thread",
+            details = "phone=$phone"
+        )
         return ResponseEntity.ok(
             conversationQueryService.getThread(
                 phone = phone,
@@ -479,19 +510,141 @@ class WhatsAppBackofficeController(
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
         return try {
-            ResponseEntity.ok(
-                conversationService.sendOperatorReply(
-                    phone = phone,
-                    text = request.text,
-                    operatorUsername = resolveOperator(httpRequest)
-                )
+            val operator = resolveOperator(httpRequest)
+            val agentId = resolveUserId(httpRequest)
+            val isAdmin = resolveUserType(httpRequest) == "ADMIN"
+            val result = conversationService.sendOperatorReply(
+                phone = phone,
+                text = request.text,
+                operatorUsername = operator,
+                agentId = agentId,
+                isAdmin = isAdmin,
+                replyToMessageId = request.replyToMessageId
             )
+            auditService.recordReply(
+                operatorUsername = operator,
+                phone = phone,
+                textLength = request.text.trim().length
+            )
+            ResponseEntity.ok(result)
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(mapOf("error" to (e.message ?: "No autorizado")))
         } catch (e: IllegalArgumentException) {
             ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
         } catch (e: Exception) {
-            ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(mapOf("error" to (e.message ?: "Error al enviar")))
         }
+    }
+
+    @PostMapping("/conversations/{phone}/media", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun sendConversationMedia(
+        @PathVariable phone: String,
+        @RequestParam("file") file: MultipartFile,
+        @RequestParam(required = false) caption: String?,
+        @RequestParam(required = false) replyToMessageId: String?,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        return try {
+            val operator = resolveOperator(httpRequest)
+            val result = conversationService.sendOperatorMedia(
+                phone = phone,
+                bytes = file.bytes,
+                mimeType = file.contentType,
+                filename = file.originalFilename,
+                caption = caption,
+                operatorUsername = operator,
+                agentId = resolveUserId(httpRequest),
+                isAdmin = resolveUserType(httpRequest) == "ADMIN",
+                replyToMessageId = replyToMessageId
+            )
+            auditService.recordReply(
+                operatorUsername = operator,
+                phone = phone,
+                textLength = caption?.trim()?.length ?: 0
+            )
+            ResponseEntity.ok(result)
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al enviar media")))
+        }
+    }
+
+    @PostMapping("/conversations/{phone}/template")
+    fun sendConversationTemplate(
+        @PathVariable phone: String,
+        @RequestBody request: WhatsAppConversationTemplateBody,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        return try {
+            val operator = resolveOperator(httpRequest)
+            val result = conversationService.sendOperatorTemplate(
+                phone = phone,
+                templateCode = request.templateCode,
+                operatorUsername = operator,
+                agentId = resolveUserId(httpRequest),
+                isAdmin = resolveUserType(httpRequest) == "ADMIN"
+            )
+            auditService.recordReply(
+                operatorUsername = operator,
+                phone = phone,
+                textLength = request.templateCode.length
+            )
+            ResponseEntity.ok(result)
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al enviar plantilla")))
+        }
+    }
+
+    @PostMapping("/conversations/{phone}/outbound/{logId}/retry")
+    fun retryConversationOutbound(
+        @PathVariable phone: String,
+        @PathVariable logId: Int,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        return try {
+            val operator = resolveOperator(httpRequest)
+            val result = conversationService.retryFailedOutbound(
+                phone = phone,
+                logId = logId,
+                operatorUsername = operator,
+                agentId = resolveUserId(httpRequest),
+                isAdmin = resolveUserType(httpRequest) == "ADMIN"
+            )
+            ResponseEntity.ok(result)
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al reintentar")))
+        }
+    }
+
+    @GetMapping("/outbound-messages/{id}/media")
+    fun downloadOutboundMedia(@PathVariable id: Int): ResponseEntity<Any> {
+        val logEntry = messageLogRepository.findById(id).orElse(null)
+            ?: return ResponseEntity.notFound().build()
+        val path = mediaDownloadService.resolveStoredPath(logEntry.mediaStoredPath)
+            ?: return ResponseEntity.notFound().build()
+        val resource = FileSystemResource(path)
+        val contentType = logEntry.mediaMimeType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
+        val filename = logEntry.mediaFilename ?: path.fileName.toString()
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$filename\"")
+            .contentType(MediaType.parseMediaType(contentType))
+            .body(resource)
     }
 
     @PostMapping("/conversations/{phone}/resume-bot")
@@ -508,15 +661,32 @@ class WhatsAppBackofficeController(
     }
 
     @PostMapping("/conversations/{phone}/mark-all-read")
-    fun markConversationAllRead(@PathVariable phone: String): ResponseEntity<WhatsAppMarkAllReadResultDto> {
-        return ResponseEntity.ok(conversationService.markAllRead(phone))
+    fun markConversationAllRead(
+        @PathVariable phone: String,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<WhatsAppMarkAllReadResultDto> {
+        val result = conversationService.markAllRead(phone)
+        auditService.recordMarkRead(
+            operatorUsername = resolveOperator(httpRequest),
+            phone = phone,
+            inboundMessageId = null
+        )
+        return ResponseEntity.ok(result)
     }
 
     @PostMapping("/conversations/{id}/mark-read")
-    fun markConversationRead(@PathVariable id: Int): ResponseEntity<Any> {
+    fun markConversationRead(
+        @PathVariable id: Int,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
         val inbound = inboundMessageRepository.findById(id).orElse(null)
             ?: return ResponseEntity.notFound().build()
         val success = conversationService.markInboundAsRead(inbound)
+        auditService.recordMarkRead(
+            operatorUsername = resolveOperator(httpRequest),
+            phone = inbound.phone,
+            inboundMessageId = id
+        )
         return ResponseEntity.ok(
             WhatsAppMarkReadResultDto(
                 success = success,
@@ -543,6 +713,18 @@ class WhatsAppBackofficeController(
     private fun resolveOperator(request: HttpServletRequest): String? {
         return request.getAttribute(PlatformAuthFilter.AUTH_USERNAME_ATTRIBUTE)?.toString()
     }
+
+    private fun resolveUserId(request: HttpServletRequest): Int? {
+        val raw = request.getAttribute(PlatformAuthFilter.AUTH_USER_ID_ATTRIBUTE) ?: return null
+        return when (raw) {
+            is Int -> raw
+            is Number -> raw.toInt()
+            else -> raw.toString().toIntOrNull()
+        }
+    }
+
+    private fun resolveUserType(request: HttpServletRequest): String? =
+        request.getAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE)?.toString()?.trim()?.uppercase()
 
     private fun resolveOptionalRange(from: String?, to: String?): Pair<LocalDateTime, LocalDateTime>? {
         if (from.isNullOrBlank() && to.isNullOrBlank()) return null

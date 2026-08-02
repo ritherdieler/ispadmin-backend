@@ -8,6 +8,9 @@ import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.requestbody.AssistanceTicketRequest
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.TicketNotificationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketCustomerNotifyService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmConstants
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage
 import com.google.firebase.messaging.FirebaseMessaging
@@ -28,7 +31,10 @@ class AssistanceTicketController(
     private val userRepository: UserRepository,
     private val fcmTokenRepository: FcmTokenRepository,
     private val storageService: FirebaseStorageService,
-    private val ticketNotificationService: TicketNotificationService
+    private val ticketNotificationService: TicketNotificationService,
+    private val customerNotifyService: CrmTicketCustomerNotifyService,
+    private val crmTicketLinkService: CrmTicketLinkService,
+    private val csatSurveyService: CsatSurveyService
 ) {
 
     @GetMapping("/byDateRange")
@@ -70,6 +76,12 @@ class AssistanceTicketController(
             newStatus = assistanceTicket.status.name,
             assignedTo = "${responsibleUser.name} ${responsibleUser.lastName}"
         )
+        customerNotifyService.notifyStatusChange(
+            ticket = assistanceTicket,
+            oldStatus = oldStatus,
+            newStatus = assistanceTicket.status.name,
+            assignedTo = "${responsibleUser.name} ${responsibleUser.lastName}"
+        )
 
         FcmMessage(
             title = "Ticket ${assistanceTicket.status.status}",
@@ -96,6 +108,59 @@ class AssistanceTicketController(
         return ResponseEntity.ok(mTicketDto)
     }
 
+    @PutMapping("/{id}/status")
+    fun updateTicketStatus(
+        @PathVariable id: Int,
+        @RequestParam status: AssistanceTicketStatus
+    ): ResponseEntity<AssistanceTicketDto> {
+        if (status !in setOf(
+                AssistanceTicketStatus.IN_PROGRESS,
+                AssistanceTicketStatus.RESOLVED,
+                AssistanceTicketStatus.REOPEN,
+                AssistanceTicketStatus.CLOSED,
+                AssistanceTicketStatus.CANCELLED
+            )
+        ) {
+            return ResponseEntity.badRequest().build()
+        }
+        val assistanceTicket = repository.findById(id).orElseThrow()
+        val oldStatus = assistanceTicket.status.name
+        assistanceTicket.status = status
+        when (status) {
+            AssistanceTicketStatus.RESOLVED -> assistanceTicket.resolvedAt = Date()
+            AssistanceTicketStatus.CLOSED, AssistanceTicketStatus.CANCELLED -> assistanceTicket.closedAt = Date()
+            AssistanceTicketStatus.REOPEN -> {
+                assistanceTicket.closedAt = null
+                assistanceTicket.resolvedAt = null
+            }
+            else -> Unit
+        }
+        val mTicketDto = repository.save(assistanceTicket).toDto()
+        ticketNotificationService.notifyTicketStatusChange(
+            ticketId = id.toLong(),
+            oldStatus = oldStatus,
+            newStatus = status.name,
+            assignedTo = mTicketDto.assignedTo
+        )
+        customerNotifyService.notifyStatusChange(
+            ticket = assistanceTicket,
+            oldStatus = oldStatus,
+            newStatus = status.name,
+            assignedTo = mTicketDto.assignedTo
+        )
+        if (status == AssistanceTicketStatus.RESOLVED || status == AssistanceTicketStatus.CLOSED) {
+            runCatching { csatSurveyService.scheduleOnTicketClose(assistanceTicket) }
+        }
+        return ResponseEntity.ok(mTicketDto)
+    }
+
+    @GetMapping("/{id}/conversation")
+    fun getLinkedConversation(@PathVariable id: Int): ResponseEntity<Map<String, Any>> {
+        val conversationId = crmTicketLinkService.getConversationIdForTicket(id)
+            ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(mapOf("ticketId" to id, "conversationId" to conversationId))
+    }
+
     @PutMapping("/closeAttendedTicket")
     fun closeAttendedTicket(
         @RequestParam("ticketId") ticketId: Int,
@@ -118,6 +183,13 @@ class AssistanceTicketController(
             oldStatus = oldStatus,
             newStatus = assistanceTicket.status.name
         )
+        customerNotifyService.notifyStatusChange(
+            ticket = assistanceTicket,
+            oldStatus = oldStatus,
+            newStatus = assistanceTicket.status.name,
+            assignedTo = mTicketDto.assignedTo
+        )
+        runCatching { csatSurveyService.scheduleOnTicketClose(assistanceTicket) }
 
         FcmMessage(
             title = "Ticket ${assistanceTicket.status.status}",
@@ -165,6 +237,15 @@ class AssistanceTicketController(
             oldStatus = oldStatus,
             newStatus = assistanceTicket.status.name
         )
+        customerNotifyService.notifyStatusChange(
+            ticket = assistanceTicket,
+            oldStatus = oldStatus,
+            newStatus = assistanceTicket.status.name,
+            assignedTo = mTicketDto.assignedTo
+        )
+        if (targetStatus == AssistanceTicketStatus.RESOLVED || targetStatus == AssistanceTicketStatus.CLOSED) {
+            runCatching { csatSurveyService.scheduleOnTicketClose(assistanceTicket) }
+        }
 
         FcmMessage(
             title = "Ticket ${assistanceTicket.status.status}",

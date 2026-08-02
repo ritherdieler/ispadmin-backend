@@ -39,4 +39,24 @@ interface AssistanceTicketRepository : JpaRepository<AssistanceTicket, Int> {
     ): List<AssistanceTicket>
 
     fun findByStatusIn(statuses: Collection<AssistanceTicketStatus>): List<AssistanceTicket>
+
+    fun findByPhoneOrderByCreatedAtDesc(phone: String): List<AssistanceTicket>
+
+    @Query(
+        """
+        SELECT t
+        FROM AssistanceTicket t
+        WHERE t.phone = :phone
+          AND t.category = :category
+          AND t.createdAt >= :since
+          AND t.status IN :openStatuses
+        ORDER BY t.createdAt DESC
+        """
+    )
+    fun findOpenByPhoneAndCategorySince(
+        @Param("phone") phone: String,
+        @Param("category") category: String,
+        @Param("since") since: Date,
+        @Param("openStatuses") openStatuses: Collection<AssistanceTicketStatus>
+    ): List<AssistanceTicket>
 }

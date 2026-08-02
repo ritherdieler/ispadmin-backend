@@ -84,6 +84,13 @@ class PlatformAuthFilter(
         request.setAttribute(AUTH_USER_ID_ATTRIBUTE, claims.userId)
         request.setAttribute(AUTH_USER_TYPE_ATTRIBUTE, claims.type)
         request.setAttribute(AUTH_USERNAME_ATTRIBUTE, claims.username)
+
+        val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
+        if (CrmAccessPolicy.isProtectedPath(path) && !CrmAccessPolicy.canAccessWhatsAppOrCrm(claims.type)) {
+            writeForbidden(response)
+            return
+        }
+
         filterChain.doFilter(request, response)
     }
 
@@ -93,6 +100,16 @@ class PlatformAuthFilter(
         val body = mapOf(
             "error" to "unauthorized",
             "message" to "Missing or invalid Authorization bearer token"
+        )
+        response.writer.write(objectMapper.writeValueAsString(body))
+    }
+
+    private fun writeForbidden(response: HttpServletResponse) {
+        response.status = HttpStatus.FORBIDDEN.value()
+        response.contentType = MediaType.APPLICATION_JSON_VALUE
+        val body = mapOf(
+            "error" to "forbidden",
+            "message" to "Requires SECRETARY or ADMIN role"
         )
         response.writer.write(objectMapper.writeValueAsString(body))
     }

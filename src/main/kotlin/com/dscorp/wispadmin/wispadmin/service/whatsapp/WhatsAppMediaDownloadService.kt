@@ -35,6 +35,21 @@ class WhatsAppMediaDownloadService(
         return if (Files.exists(path)) path else null
     }
 
+    fun storeOutboundBytes(bytes: ByteArray, mimeType: String?, filenameHint: String?): String {
+        val dir = Paths.get(whatsAppProperties.mediaStorageDir, "outbound")
+        Files.createDirectories(dir)
+        val extension = extensionForMime(mimeType).ifBlank {
+            filenameHint?.substringAfterLast('.', "")?.takeIf { it.isNotBlank() }?.let { ".$it" } ?: ".bin"
+        }
+        val safeName = (filenameHint ?: "outbound")
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(80)
+        val filename = "${safeName}_${UUID.randomUUID()}$extension"
+        val target = dir.resolve(filename)
+        Files.write(target, bytes)
+        return target.toAbsolutePath().toString()
+    }
+
     private fun fetchMediaUrl(mediaId: String): String? {
         val headers = authHeaders()
         return try {

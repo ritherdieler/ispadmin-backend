@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppDocumentPayload
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveAction
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveActionButton
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveButton
@@ -13,6 +14,9 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListSection
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveReplyBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveText
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMarkReadBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMediaIdPayload
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMediaMessageBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMessageContext
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppPassThreadControlBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
@@ -25,11 +29,15 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppThreadControlRecipient
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
 
@@ -41,10 +49,12 @@ class WhatsAppService(
 
     private val log = LoggerFactory.getLogger(this::class.java)
     private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
+    private val objectMapper = ObjectMapper()
 
     fun sendTextMessage(
         phoneNumber: String,
-        message: String
+        message: String,
+        contextMessageId: String? = null
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
@@ -55,9 +65,90 @@ class WhatsAppService(
             text = WhatsAppTextContent(
                 preview_url = false,
                 body = message
-            )
+            ),
+            context = contextMessageId?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
         )
 
+        return postToMeta(body)
+    }
+
+    fun uploadMedia(
+        bytes: ByteArray,
+        mimeType: String,
+        filename: String
+    ): String {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val headers = HttpHeaders()
+        headers.setBearerAuth(whatsAppProperties.accessToken.trim())
+        headers.contentType = MediaType.MULTIPART_FORM_DATA
+
+        val fileResource = object : ByteArrayResource(bytes) {
+            override fun getFilename(): String = filename.ifBlank { "file" }
+        }
+        val parts = LinkedMultiValueMap<String, Any>()
+        parts.add("messaging_product", "whatsapp")
+        parts.add("type", mimeType)
+        val fileHeaders = HttpHeaders()
+        fileHeaders.contentType = MediaType.parseMediaType(mimeType)
+        parts.add("file", HttpEntity(fileResource, fileHeaders))
+
+        val url = "${whatsAppProperties.graphApiBaseUrl()}/${whatsAppProperties.phoneNumberId}/media"
+        return try {
+            val response = restTemplate.postForEntity(url, HttpEntity(parts, headers), String::class.java)
+            val body = response.body.orEmpty()
+            val mediaId = objectMapper.readTree(body).path("id").asText(null)
+                ?: throw Exception("Meta no devolvio media id.")
+            mediaId
+        } catch (ex: HttpStatusCodeException) {
+            val metaError = ex.responseBodyAsString.ifBlank { ex.message ?: "Error desconocido de Meta" }
+            throw Exception("Meta API ${ex.statusCode.value()}: $metaError")
+        }
+    }
+
+    fun sendMediaMessage(
+        phoneNumber: String,
+        kind: WhatsAppOutboundMediaKind,
+        mediaId: String,
+        caption: String? = null,
+        filename: String? = null,
+        contextMessageId: String? = null
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val type = when (kind) {
+            WhatsAppOutboundMediaKind.IMAGE -> "image"
+            WhatsAppOutboundMediaKind.DOCUMENT -> "document"
+            WhatsAppOutboundMediaKind.AUDIO -> "audio"
+        }
+        val context = contextMessageId?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
+        val trimmedCaption = caption?.trim()?.takeIf { it.isNotEmpty() }?.take(1024)
+        val body = when (kind) {
+            WhatsAppOutboundMediaKind.IMAGE -> WhatsAppMediaMessageBody(
+                to = normalizePhoneNumber(phoneNumber),
+                type = type,
+                context = context,
+                image = WhatsAppMediaIdPayload(id = mediaId, caption = trimmedCaption)
+            )
+            WhatsAppOutboundMediaKind.DOCUMENT -> WhatsAppMediaMessageBody(
+                to = normalizePhoneNumber(phoneNumber),
+                type = type,
+                context = context,
+                document = WhatsAppDocumentPayload(
+                    id = mediaId,
+                    caption = trimmedCaption,
+                    filename = filename?.takeIf { it.isNotBlank() }
+                )
+            )
+            WhatsAppOutboundMediaKind.AUDIO -> WhatsAppMediaMessageBody(
+                to = normalizePhoneNumber(phoneNumber),
+                type = type,
+                context = context,
+                audio = WhatsAppMediaIdPayload(id = mediaId)
+            )
+        }
         return postToMeta(body)
     }
 
@@ -305,6 +396,7 @@ class WhatsAppService(
             is WhatsAppTemplateMessageBody -> body.to
             is WhatsAppInteractiveReplyBody -> body.to
             is WhatsAppInteractiveListReplyBody -> body.to
+            is WhatsAppMediaMessageBody -> body.to
             else -> null
         }
     }

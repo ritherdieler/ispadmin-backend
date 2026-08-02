@@ -29,21 +29,25 @@ class WhatsAppServiceWindowService(
     }
 
     fun getServiceWindow(phone: String): WhatsAppServiceWindowStatus {
-        val session = phoneSessionRepository.findById(phone).orElse(null)
-            ?: return WhatsAppServiceWindowStatus(
-                phone = phone,
-                open = false,
-                expiresAt = null
-            )
-        val expiresAt = session.serviceWindowExpiresAt
+        return getServiceWindows(listOf(phone)).getValue(phone)
+    }
+
+    fun getServiceWindows(phones: Collection<String>): Map<String, WhatsAppServiceWindowStatus> {
+        val distinct = phones.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+        val sessions = phoneSessionRepository.findAllById(distinct).associateBy { it.phone }
         val now = LocalDateTime.now()
-        val open = expiresAt != null && expiresAt.isAfter(now)
-        return WhatsAppServiceWindowStatus(
-            phone = phone,
-            open = open,
-            expiresAt = expiresAt,
-            lastInboundAt = session.updatedAt
-        )
+        return distinct.associateWith { phone ->
+            val session = sessions[phone]
+            val expiresAt = session?.serviceWindowExpiresAt
+            val open = expiresAt != null && expiresAt.isAfter(now)
+            WhatsAppServiceWindowStatus(
+                phone = phone,
+                open = open,
+                expiresAt = expiresAt,
+                lastInboundAt = session?.updatedAt
+            )
+        }
     }
 
     data class WhatsAppServiceWindowStatus(

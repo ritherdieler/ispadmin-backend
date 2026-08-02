@@ -32,7 +32,10 @@ class WhatsAppConversationService(
     private val serviceWindowService: WhatsAppServiceWindowService,
     private val whatsAppProperties: WhatsAppProperties,
     private val intentRouter: WhatsAppInboundIntentRouter,
-    private val chatStateService: WhatsAppChatStateService
+    private val chatStateService: WhatsAppChatStateService,
+    private val crmConversationService: CrmConversationService,
+    private val mediaDownloadService: WhatsAppMediaDownloadService,
+    private val templateDeliveryService: WhatsAppTemplateDeliveryService
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppConversationService::class.java)
@@ -179,8 +182,14 @@ class WhatsAppConversationService(
             bodyText = question.text,
             options = withGlobalNavigation(question.buttons),
             marker = "[SUPPORT_DIAG:${issue.code}] ",
-            currentStep = WhatsAppConversationStep.SUPPORT_DIAG
+            currentStep = WhatsAppConversationStep.SUPPORT_DIAG,
+            stepMetadata = "issue=${issue.code}"
         )
+    }
+
+    fun currentSupportIssueCode(phone: String): String? {
+        val meta = chatStateService.getMetadata(phone) ?: return null
+        return ISSUE_META_REGEX.find(meta)?.groupValues?.getOrNull(1)
     }
 
     fun closeSupportDiagnosticWithButton(
@@ -191,11 +200,13 @@ class WhatsAppConversationService(
         if (!buttonReplyId.orEmpty().startsWith(DIAG_BUTTON_PREFIX)) {
             return invalidInteractiveSelection(phone)
         }
+        val issueCode = currentSupportIssueCode(phone)
+        val diagAnswer = buttonReplyId.orEmpty().removePrefix(DIAG_BUTTON_PREFIX)
         val bodyText = buildAdvisorClosureMessage()
         return sendTextSupportReply(
             phone = phone,
             bodyText = bodyText,
-            marker = "[SUPPORT_CLOSED:ESPERANDO_ASESOR] "
+            marker = "[SUPPORT_CLOSED:ESPERANDO_ASESOR:${issueCode ?: "UNKNOWN"}:$diagAnswer] "
         )
     }
 
@@ -339,21 +350,33 @@ class WhatsAppConversationService(
     fun sendOperatorReply(
         phone: String,
         text: String,
-        operatorUsername: String?
+        operatorUsername: String?,
+        agentId: Int? = null,
+        isAdmin: Boolean = false,
+        replyToMessageId: String? = null
     ): WhatsAppThreadMessageDto {
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
             throw IllegalArgumentException("El mensaje no puede estar vacio.")
         }
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
         val window = serviceWindowService.getServiceWindow(phone)
         if (!window.open) {
             throw IllegalArgumentException("La ventana de servicio de 24h esta cerrada. Solo se pueden enviar plantillas.")
         }
 
-        val sendResult = whatsAppService.sendTextMessage(phoneNumber = phone, message = trimmed)
+        val replyContext = resolveReplyContext(phone, replyToMessageId)
+        val sendResult = whatsAppService.sendTextMessage(
+            phoneNumber = phone,
+            message = trimmed,
+            contextMessageId = replyContext.metaMessageId
+        )
         if (!sendResult.success) {
             throw Exception(sendResult.metaResponse.ifBlank { "No se pudo enviar el mensaje por WhatsApp." })
         }
+
+        chatStateService.markWaitingForAdvisor(phone, "operator_reply")
+        crmConversationService.touchOutbound(phone)
 
         val subscription = findSubscriptionByPhone(phone)
         val now = LocalDateTime.now()
@@ -366,6 +389,7 @@ class WhatsAppConversationService(
                 metaMessageId = sendResult.metaMessageId,
                 message = trimmed,
                 operatorUsername = operatorUsername,
+                replyToLogId = replyContext.replyToLogId,
                 sentAt = now,
                 createdAt = now
             )
@@ -373,9 +397,324 @@ class WhatsAppConversationService(
         return saved.toThreadMessage()
     }
 
+    fun sendOperatorMedia(
+        phone: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        filename: String?,
+        caption: String?,
+        operatorUsername: String?,
+        agentId: Int? = null,
+        isAdmin: Boolean = false,
+        replyToMessageId: String? = null
+    ): WhatsAppThreadMessageDto {
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
+        val window = serviceWindowService.getServiceWindow(phone)
+        if (!window.open) {
+            throw IllegalArgumentException("La ventana de servicio de 24h esta cerrada. Solo se pueden enviar plantillas.")
+        }
+        val kind = WhatsAppMediaConstraints.validate(mimeType, bytes.size.toLong(), filename)
+        val replyContext = resolveReplyContext(phone, replyToMessageId)
+        val safeFilename = filename?.takeIf { it.isNotBlank() } ?: defaultFilename(kind, mimeType)
+        val storedPath = mediaDownloadService.storeOutboundBytes(bytes, mimeType, safeFilename)
+
+        val metaMediaId = try {
+            whatsAppService.uploadMedia(bytes = bytes, mimeType = mimeType!!.trim(), filename = safeFilename)
+        } catch (e: Exception) {
+            persistFailedMediaLog(
+                phone = phone,
+                kind = kind,
+                caption = caption,
+                operatorUsername = operatorUsername,
+                replyToLogId = replyContext.replyToLogId,
+                storedPath = storedPath,
+                mimeType = mimeType,
+                filename = safeFilename,
+                error = e.message
+            )
+            throw e
+        }
+
+        val sendResult = try {
+            whatsAppService.sendMediaMessage(
+                phoneNumber = phone,
+                kind = kind,
+                mediaId = metaMediaId,
+                caption = caption,
+                filename = safeFilename,
+                contextMessageId = replyContext.metaMessageId
+            )
+        } catch (e: Exception) {
+            persistFailedMediaLog(
+                phone = phone,
+                kind = kind,
+                caption = caption,
+                operatorUsername = operatorUsername,
+                replyToLogId = replyContext.replyToLogId,
+                storedPath = storedPath,
+                mimeType = mimeType,
+                filename = safeFilename,
+                mediaMetaId = metaMediaId,
+                error = e.message
+            )
+            throw e
+        }
+
+        if (!sendResult.success) {
+            persistFailedMediaLog(
+                phone = phone,
+                kind = kind,
+                caption = caption,
+                operatorUsername = operatorUsername,
+                replyToLogId = replyContext.replyToLogId,
+                storedPath = storedPath,
+                mimeType = mimeType,
+                filename = safeFilename,
+                mediaMetaId = metaMediaId,
+                error = sendResult.metaResponse
+            )
+            throw Exception(sendResult.metaResponse.ifBlank { "No se pudo enviar el media por WhatsApp." })
+        }
+
+        chatStateService.markWaitingForAdvisor(phone, "operator_media")
+        crmConversationService.touchOutbound(phone)
+
+        val subscription = findSubscriptionByPhone(phone)
+        val now = LocalDateTime.now()
+        val preview = caption?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "[${kind.name}] ${safeFilename}"
+        val saved = messageLogRepository.save(
+            WhatsAppMessageLog(
+                subscriptionId = subscription?.id,
+                phone = phone,
+                messageType = MESSAGE_TYPE_OPERATOR_MEDIA,
+                status = "SENT",
+                metaMessageId = sendResult.metaMessageId,
+                message = preview,
+                operatorUsername = operatorUsername,
+                replyToLogId = replyContext.replyToLogId,
+                mediaMetaId = metaMediaId,
+                mediaMimeType = mimeType?.trim(),
+                mediaStoredPath = storedPath,
+                mediaFilename = safeFilename,
+                sentAt = now,
+                createdAt = now
+            )
+        )
+        return saved.toThreadMessage()
+    }
+
+    fun sendOperatorTemplate(
+        phone: String,
+        templateCode: String,
+        operatorUsername: String?,
+        agentId: Int? = null,
+        isAdmin: Boolean = false
+    ): WhatsAppThreadMessageDto {
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
+        val definition = WhatsAppTemplateCatalog.getByCodeString(templateCode)
+        val subscription = findSubscriptionByPhone(phone)
+            ?: throw IllegalArgumentException("No hay suscripcion asociada al telefono para armar la plantilla.")
+
+        val unpaid = unpaidPayments(subscription.id)
+        val payment = unpaid.firstOrNull()
+        val welcomeContext = if (definition.code == WhatsAppTemplateCode.WELCOME_CUSTOMER) {
+            WelcomeVariableMapper.buildContext(subscription)
+        } else {
+            null
+        }
+
+        if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER ||
+            definition.code == WhatsAppTemplateCode.PAYMENT_VALIDATION
+        ) {
+            if (payment == null && definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER) {
+                throw IllegalArgumentException("No hay facturas pendientes para enviar el recordatorio.")
+            }
+        }
+        if (definition.code == WhatsAppTemplateCode.SERVICE_CUT_NOTICE && payment == null) {
+            throw IllegalArgumentException("No hay deuda pendiente para el aviso de corte.")
+        }
+
+        val saved = templateDeliveryService.deliverTemplate(
+            definition = definition,
+            subscription = subscription,
+            phone = phone,
+            payment = payment,
+            oldestUnpaidPayment = payment,
+            paymentId = payment?.id,
+            subscriptionId = subscription.id,
+            welcomeContext = welcomeContext,
+            operatorUsername = operatorUsername
+        )
+
+        chatStateService.markWaitingForAdvisor(phone, "operator_template")
+        crmConversationService.touchOutbound(phone)
+        return saved.toThreadMessage()
+    }
+
+    fun retryFailedOutbound(
+        phone: String,
+        logId: Int,
+        operatorUsername: String?,
+        agentId: Int? = null,
+        isAdmin: Boolean = false
+    ): WhatsAppThreadMessageDto {
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
+        val existing = messageLogRepository.findById(logId).orElse(null)
+            ?: throw IllegalArgumentException("Mensaje no encontrado.")
+        if (existing.phone != phone) {
+            throw IllegalArgumentException("El mensaje no pertenece a esta conversacion.")
+        }
+        if (!existing.status.equals("FAILED", ignoreCase = true)) {
+            throw IllegalArgumentException("Solo se pueden reintentar mensajes fallidos.")
+        }
+        if (existing.retryCount >= WhatsAppMediaConstraints.MAX_RETRY_COUNT) {
+            throw IllegalArgumentException("Se alcanzo el maximo de reintentos (${WhatsAppMediaConstraints.MAX_RETRY_COUNT}).")
+        }
+
+        return if (!existing.mediaStoredPath.isNullOrBlank()) {
+            val path = mediaDownloadService.resolveStoredPath(existing.mediaStoredPath)
+                ?: throw IllegalArgumentException("No se encontro el archivo local para reintentar.")
+            val bytes = java.nio.file.Files.readAllBytes(path)
+            val result = sendOperatorMedia(
+                phone = phone,
+                bytes = bytes,
+                mimeType = existing.mediaMimeType,
+                filename = existing.mediaFilename,
+                caption = existing.message,
+                operatorUsername = operatorUsername,
+                agentId = agentId,
+                isAdmin = isAdmin
+            )
+            existing.retryCount = existing.retryCount + 1
+            messageLogRepository.save(existing)
+            result
+        } else {
+            val text = existing.message?.trim().orEmpty()
+            if (text.isBlank()) {
+                throw IllegalArgumentException("No hay contenido para reintentar.")
+            }
+            val result = sendOperatorReply(
+                phone = phone,
+                text = text,
+                operatorUsername = operatorUsername,
+                agentId = agentId,
+                isAdmin = isAdmin,
+                replyToMessageId = existing.replyToLogId?.let { "outbound:$it" }
+            )
+            existing.retryCount = existing.retryCount + 1
+            messageLogRepository.save(existing)
+            result
+        }
+    }
+
     fun resolveReplyToLogId(contextMessageId: String?): Int? {
         if (contextMessageId.isNullOrBlank()) return null
         return messageLogRepository.findByMetaMessageId(contextMessageId)?.id
+    }
+
+    private data class ReplyContext(
+        val metaMessageId: String?,
+        val replyToLogId: Int?
+    )
+
+    private fun resolveReplyContext(phone: String, replyToMessageId: String?): ReplyContext {
+        if (replyToMessageId.isNullOrBlank()) {
+            return ReplyContext(null, null)
+        }
+        val trimmed = replyToMessageId.trim()
+        when {
+            trimmed.startsWith("inbound:") -> {
+                val id = trimmed.removePrefix("inbound:").toIntOrNull()
+                    ?: throw IllegalArgumentException("replyToMessageId invalido.")
+                val inbound = inboundMessageRepository.findById(id).orElse(null)
+                    ?: throw IllegalArgumentException("Mensaje de referencia no encontrado.")
+                if (inbound.phone != phone) {
+                    throw IllegalArgumentException("El mensaje de referencia no pertenece a esta conversacion.")
+                }
+                return ReplyContext(
+                    metaMessageId = inbound.metaMessageId.takeIf { it.isNotBlank() },
+                    replyToLogId = inbound.replyToLogId ?: inbound.id
+                )
+            }
+            trimmed.startsWith("outbound:") -> {
+                val id = trimmed.removePrefix("outbound:").toIntOrNull()
+                    ?: throw IllegalArgumentException("replyToMessageId invalido.")
+                val outbound = messageLogRepository.findById(id).orElse(null)
+                    ?: throw IllegalArgumentException("Mensaje de referencia no encontrado.")
+                if (outbound.phone != phone) {
+                    throw IllegalArgumentException("El mensaje de referencia no pertenece a esta conversacion.")
+                }
+                return ReplyContext(
+                    metaMessageId = outbound.metaMessageId,
+                    replyToLogId = outbound.id
+                )
+            }
+            else -> {
+                val byMeta = messageLogRepository.findByMetaMessageId(trimmed)
+                if (byMeta != null) {
+                    if (byMeta.phone != phone) {
+                        throw IllegalArgumentException("El mensaje de referencia no pertenece a esta conversacion.")
+                    }
+                    return ReplyContext(byMeta.metaMessageId, byMeta.id)
+                }
+                val inbound = inboundMessageRepository.findByMetaMessageId(trimmed)
+                    ?: throw IllegalArgumentException("Mensaje de referencia no encontrado.")
+                if (inbound.phone != phone) {
+                    throw IllegalArgumentException("El mensaje de referencia no pertenece a esta conversacion.")
+                }
+                return ReplyContext(inbound.metaMessageId, inbound.replyToLogId ?: inbound.id)
+            }
+        }
+    }
+
+    private fun persistFailedMediaLog(
+        phone: String,
+        kind: WhatsAppOutboundMediaKind,
+        caption: String?,
+        operatorUsername: String?,
+        replyToLogId: Int?,
+        storedPath: String?,
+        mimeType: String?,
+        filename: String?,
+        mediaMetaId: String? = null,
+        error: String?
+    ): WhatsAppMessageLog {
+        val subscription = findSubscriptionByPhone(phone)
+        val now = LocalDateTime.now()
+        return messageLogRepository.save(
+            WhatsAppMessageLog(
+                subscriptionId = subscription?.id,
+                phone = phone,
+                messageType = MESSAGE_TYPE_OPERATOR_MEDIA,
+                status = "FAILED",
+                message = caption?.trim()?.takeIf { it.isNotEmpty() } ?: "[${kind.name}] ${filename.orEmpty()}",
+                operatorUsername = operatorUsername,
+                replyToLogId = replyToLogId,
+                mediaMetaId = mediaMetaId,
+                mediaMimeType = mimeType?.trim(),
+                mediaStoredPath = storedPath,
+                mediaFilename = filename,
+                errorMessage = error?.take(1000),
+                failedAt = now,
+                createdAt = now
+            )
+        )
+    }
+
+    private fun defaultFilename(kind: WhatsAppOutboundMediaKind, mimeType: String?): String {
+        val ext = when (mimeType?.lowercase()) {
+            "image/jpeg", "image/jpg" -> "jpg"
+            "image/png" -> "png"
+            "application/pdf" -> "pdf"
+            "audio/ogg" -> "ogg"
+            "audio/mpeg" -> "mp3"
+            "audio/mp4" -> "m4a"
+            "audio/aac" -> "aac"
+            "audio/amr" -> "amr"
+            else -> "bin"
+        }
+        return "${kind.name.lowercase()}.$ext"
     }
 
     fun findSubscriptionByPhone(phone: String): Subscription? {
@@ -407,7 +746,7 @@ class WhatsAppConversationService(
 
     private fun buildMainMenuBody(includeGreeting: Boolean): String {
         return if (includeGreeting) {
-            "👋 ¡Hola! Te damos la bienvenida a Atención al Cliente y Soporte Técnico. ¿En qué te podemos ayudar hoy? Estoy atento para ayudarte."
+            "👋 ¡Hola! Te atiende el asistente virtual de GigaFiber. ¿En qué te podemos ayudar hoy?"
         } else {
             "Selecciona una opción para continuar 👇"
         }
@@ -440,9 +779,20 @@ class WhatsAppConversationService(
     private fun buildAdvisorClosureMessage(): String {
         val phones = whatsAppProperties.autoReply.secretaryPhoneList().joinToString(" / ")
         return """
-            |✅ Tu caso ha sido registrado. Un asesor revisará tu diagnóstico y te atenderá por este mismo chat en breve. ⏱️
+            |✅ Tu caso fue registrado. A partir de ahora te atiende una persona de nuestro equipo por este mismo chat. ⏱️
             |
-            |También puedes comunicarte directamente con Secretaría a los números: 📞 $phones
+            |También puedes comunicarte con Secretaría: 📞 $phones
+        """.trimMargin()
+    }
+
+    fun buildAfterHoursHandoffMessage(): String {
+        val hours = whatsAppProperties.autoReply.secretaryHours
+        val base = whatsAppProperties.autoReply.afterHoursMessage.trim()
+        return """
+            |$base
+            |
+            |Horario estimado de atención: $hours.
+            |Tu mensaje quedó registrado y un asesor humano te responderá en ese horario.
         """.trimMargin()
     }
 
@@ -461,7 +811,8 @@ class WhatsAppConversationService(
         bodyText: String,
         options: List<WhatsAppService.InteractiveButtonOption>,
         marker: String,
-        currentStep: WhatsAppConversationStep? = null
+        currentStep: WhatsAppConversationStep? = null,
+        stepMetadata: String? = null
     ): AutoReplyResult {
         return try {
             val result = if (options.size <= 3) {
@@ -485,7 +836,7 @@ class WhatsAppConversationService(
                 )
             }
             if (result.success && currentStep != null) {
-                chatStateService.setCurrentStep(phone, currentStep)
+                chatStateService.setCurrentStep(phone, currentStep, stepMetadata)
             }
             AutoReplyResult(
                 success = result.success,
@@ -846,7 +1197,9 @@ class WhatsAppConversationService(
         const val BUTTON_HOME = "nav_home"
         const val MESSAGE_TYPE_AUTO_REPLY = "AUTO_REPLY"
         const val MESSAGE_TYPE_OPERATOR_REPLY = "OPERATOR_REPLY"
+        const val MESSAGE_TYPE_OPERATOR_MEDIA = "OPERATOR_MEDIA"
         private const val ISSUE_BUTTON_PREFIX = "support_issue_"
         private const val DIAG_BUTTON_PREFIX = "support_diag_"
+        private val ISSUE_META_REGEX = Regex("""(?:^|;)issue=([A-Z0-9_]+)""")
     }
 }

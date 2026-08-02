@@ -6,13 +6,19 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBusinessHoursChecker
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppChatStateService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundSession
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntent
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntentRouter
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppIntentClassifier
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayload
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmConstants
@@ -33,10 +39,15 @@ class WhatsAppInboundMessageService(
     private val whatsAppService: WhatsAppService,
     private val messageLogRepository: WhatsAppMessageLogRepository,
     private val intentRouter: WhatsAppInboundIntentRouter,
+    private val intentClassifier: WhatsAppIntentClassifier,
     private val whatsAppProperties: WhatsAppProperties,
     private val fcm: FirebaseMessaging,
     private val chatStateService: WhatsAppChatStateService,
-    private val handoffService: WhatsAppHandoffService
+    private val handoffService: WhatsAppHandoffService,
+    private val crmEventPublisher: CrmEventPublisher,
+    private val crmConversationService: CrmConversationService,
+    private val crmTicketLinkService: CrmTicketLinkService,
+    private val csatSurveyService: CsatSurveyService
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppInboundMessageService::class.java)
@@ -74,7 +85,22 @@ class WhatsAppInboundMessageService(
         notifySecretaryInbound(payload.phone, subscription?.getFullName())
         val session = chatStateService.beginInboundInteraction(payload.phone)
 
+        val csatHandled = try {
+            csatSurveyService.tryHandleInbound(
+                phone = payload.phone,
+                messageType = payload.messageType,
+                buttonReplyId = payload.buttonReplyId,
+                messageText = payload.messageText,
+                metaMessageId = payload.metaMessageId
+            )
+        } catch (e: Exception) {
+            log.warn("CSAT inbound handle failed phone={}: {}", payload.phone, e.message)
+            false
+        }
+
         val (replySent, errorMsg) = when {
+            csatHandled -> Pair(true, null)
+
             session.botPaused -> {
                 log.info("Bot pausado: chat {} esta esperando asesor", payload.phone)
                 Pair(false, null)
@@ -93,7 +119,7 @@ class WhatsAppInboundMessageService(
             else -> routeAndReply(payload, subscription, session)
         }
 
-        inboundMessageRepository.save(
+        val finalized = inboundMessageRepository.save(
             saved.copy(
                 subscriptionId = subscription?.id,
                 processed = true,
@@ -101,6 +127,64 @@ class WhatsAppInboundMessageService(
                 errorMessage = errorMsg
             )
         )
+        val crmConversation = try {
+            crmConversationService.touchInbound(finalized.phone, finalized.subscriptionId)
+        } catch (e: Exception) {
+            log.warn("No se pudo sincronizar CrmConversation inbound {}: {}", finalized.id, e.message)
+            null
+        }
+        publishInboundRealtimeEvents(finalized, subscription?.getFullName(), crmConversation)
+    }
+
+    private fun publishInboundRealtimeEvents(
+        inbound: WhatsAppInboundMessage,
+        clientName: String?,
+        crmConversation: com.dscorp.wispadmin.wispadmin.data.model.CrmConversation?
+    ) {
+        try {
+            val preview = inbound.messageText
+                ?: inbound.buttonReplyTitle
+                ?: inbound.messageType
+            val hasMedia = WhatsAppConversationQueryService.inboundHasMedia(inbound)
+            val unreadCount = inboundMessageRepository.findByPhoneAndReadAtIsNull(inbound.phone).size
+            crmEventPublisher.publish(
+                eventType = CrmEventPublisher.MESSAGE_RECEIVED,
+                payload = mapOf(
+                    "phone" to inbound.phone,
+                    "inboundMessageId" to inbound.id,
+                    "threadMessageId" to "inbound:${inbound.id}",
+                    "messageType" to inbound.messageType,
+                    "body" to inbound.messageText,
+                    "buttonReplyTitle" to inbound.buttonReplyTitle,
+                    "hasMedia" to hasMedia,
+                    "mediaId" to inbound.id,
+                    "replyToLogId" to inbound.replyToLogId,
+                    "clientName" to clientName,
+                    "subscriptionId" to inbound.subscriptionId,
+                    "createdAt" to inbound.createdAt.toString()
+                )
+            )
+            crmEventPublisher.publish(
+                eventType = CrmEventPublisher.CONVERSATION_UPDATED,
+                payload = mapOf(
+                    "phone" to inbound.phone,
+                    "clientName" to clientName,
+                    "subscriptionId" to inbound.subscriptionId,
+                    "identified" to (inbound.subscriptionId != null),
+                    "lastMessagePreview" to preview?.take(240),
+                    "lastMessageAt" to inbound.createdAt.toString(),
+                    "unreadCount" to unreadCount,
+                    "lastButtonReplyId" to inbound.buttonReplyId,
+                    "lastHasMedia" to hasMedia,
+                    "conversationId" to crmConversation?.id,
+                    "status" to crmConversation?.status?.name,
+                    "assignedAgentId" to crmConversation?.assignedAgentId,
+                    "priority" to crmConversation?.priority
+                )
+            )
+        } catch (e: Exception) {
+            log.warn("No se pudo publicar evento CRM para inbound {}: {}", inbound.id, e.message)
+        }
     }
 
     private fun routeAndReply(
@@ -140,6 +224,7 @@ class WhatsAppInboundMessageService(
                 }
 
                 if (conversationService.isSupportDiagnosticButton(payload.buttonReplyId)) {
+                    val issueCode = conversationService.currentSupportIssueCode(payload.phone)
                     val result = conversationService.closeSupportDiagnosticWithButton(
                         phone = payload.phone,
                         subscription = subscription,
@@ -147,6 +232,12 @@ class WhatsAppInboundMessageService(
                     )
                     val reply = sendAutoReplyResult(payload.phone, subscription?.id, result)
                     if (reply.first) {
+                        createGuidedTicketFromDiagnostic(
+                            phone = payload.phone,
+                            subscription = subscription,
+                            issueCode = issueCode,
+                            buttonReplyId = payload.buttonReplyId
+                        )
                         handoffService.pauseBotAndPassToAdvisor(payload.phone, "support_diagnostic")
                         notifySecretaryInbound(
                             phone = payload.phone,
@@ -229,7 +320,8 @@ class WhatsAppInboundMessageService(
         session: WhatsAppInboundSession
     ): Pair<Boolean, String?> {
         val withinHours = WhatsAppBusinessHoursChecker.isWithinBusinessHours(whatsAppProperties.autoReply)
-        val intent = intentRouter.route(payload.messageText)
+        val classification = intentClassifier.classify(payload.phone, payload.messageText)
+        val intent = classification.intent
         val normalizedText = WhatsAppInboundIntentRouter.normalize(payload.messageText).orEmpty()
 
         if (session.isNewOrExpired) {
@@ -251,19 +343,25 @@ class WhatsAppInboundMessageService(
             return sendAutoReplyResult(payload.phone, subscription?.id, result)
         }
 
-        if (intent == WhatsAppInboundIntent.HUMAN_ESCALATION) {
-            val reply = sendTextReply(
-                payload.phone,
+        if (intent == WhatsAppInboundIntent.HUMAN_ESCALATION || classification.escalate) {
+            val escalateReason = classification.escalateReason ?: "human_escalation"
+            val replyText = if (!withinHours) {
+                conversationService.buildAfterHoursHandoffMessage()
+            } else {
                 conversationService.handleHumanEscalation(
                     subscription = subscription,
                     phone = payload.phone,
                     messageText = payload.messageText
-                ),
+                )
+            }
+            val reply = sendTextReply(
+                payload.phone,
+                replyText,
                 subscription?.id,
-                "[ASESOR] "
+                "[ASESOR:${classification.source}] "
             )
             if (reply.first) {
-                handoffService.pauseBotAndPassToAdvisor(payload.phone, "human_escalation")
+                handoffService.pauseBotAndPassToAdvisor(payload.phone, escalateReason)
                 notifySecretaryInbound(
                     phone = payload.phone,
                     clientName = subscription?.getFullName(),
@@ -286,7 +384,7 @@ class WhatsAppInboundMessageService(
         if (!withinHours && intent == WhatsAppInboundIntent.ACK) {
             return sendTextReply(
                 payload.phone,
-                whatsAppProperties.autoReply.afterHoursMessage,
+                conversationService.buildAfterHoursHandoffMessage(),
                 subscription?.id,
                 "[AFTER_HOURS] "
             )
@@ -331,6 +429,13 @@ class WhatsAppInboundMessageService(
                 )
                 sendAutoReplyResult(payload.phone, subscription?.id, result)
             }
+
+            WhatsAppInboundIntent.TICKET_STATUS -> sendTextReply(
+                payload.phone,
+                crmTicketLinkService.formatStatusReply(payload.phone),
+                subscription?.id,
+                "[TICKET_STATUS] "
+            )
 
             WhatsAppInboundIntent.INSTALLATION_REQUEST -> {
                 val reply = sendTextReply(
@@ -378,10 +483,44 @@ class WhatsAppInboundMessageService(
             WhatsAppInboundIntent.DEBT_INQUIRY,
             WhatsAppInboundIntent.TECHNICAL_ISSUE,
             WhatsAppInboundIntent.SUPPORT,
+            WhatsAppInboundIntent.TICKET_STATUS,
             WhatsAppInboundIntent.INSTALLATION_REQUEST,
             WhatsAppInboundIntent.HUMAN_ESCALATION,
             WhatsAppInboundIntent.GREETING -> false
             else -> !chatStateService.hasPendingInteractiveMenu(payload.phone)
+        }
+    }
+
+    private fun createGuidedTicketFromDiagnostic(
+        phone: String,
+        subscription: com.dscorp.wispadmin.wispadmin.data.model.Subscription?,
+        issueCode: String?,
+        buttonReplyId: String?
+    ) {
+        try {
+            val category = when (issueCode) {
+                "NO_INTERNET", "SLOW_INTERNET", "WIFI_NOT_VISIBLE",
+                "INTERNET_INTERRUPTION", "BOTH_SERVICES" -> "Sin Conexión a Internet"
+                "CABLE_INTERRUPTION", "TV_NO_SIGNAL", "TV_INTERFERENCE", "DECODER_ERROR" -> "Otros"
+                else -> "Sin Conexión a Internet"
+            }
+            val diag = buttonReplyId?.substringAfterLast('_').orEmpty()
+            val description = buildString {
+                append("Averia WhatsApp")
+                if (!issueCode.isNullOrBlank()) append(" · ").append(issueCode)
+                if (diag.isNotBlank()) append(" · diagnostico=").append(diag)
+            }
+            val conversation = crmConversationService.getByPhone(phone)
+            crmTicketLinkService.createGuidedFaultTicket(
+                phone = phone,
+                conversationId = conversation?.id,
+                category = category,
+                description = description,
+                subscription = subscription,
+                createdBy = "bot"
+            )
+        } catch (e: Exception) {
+            log.warn("No se pudo crear ticket desde diagnostico WhatsApp para {}: {}", phone, e.message)
         }
     }
 

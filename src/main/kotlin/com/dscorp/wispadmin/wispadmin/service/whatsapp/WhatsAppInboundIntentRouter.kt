@@ -9,6 +9,7 @@ enum class WhatsAppInboundIntent {
     PAYMENT_CLAIM,
     TECHNICAL_ISSUE,
     SUPPORT,
+    TICKET_STATUS,
     INSTALLATION_REQUEST,
     HUMAN_ESCALATION,
     GREETING,
@@ -27,6 +28,7 @@ class WhatsAppInboundIntentRouter {
 
         return when {
             matchesAny(normalized, HUMAN_ESCALATION_PATTERNS) -> WhatsAppInboundIntent.HUMAN_ESCALATION
+            matchesAny(normalized, TICKET_STATUS_PATTERNS) -> WhatsAppInboundIntent.TICKET_STATUS
             matchesAny(normalized, PAYMENT_CLAIM_PATTERNS) -> WhatsAppInboundIntent.PAYMENT_CLAIM
             matchesAny(normalized, TECHNICAL_ISSUE_PATTERNS) -> WhatsAppInboundIntent.TECHNICAL_ISSUE
             matchesAny(normalized, DEBT_PATTERNS) -> WhatsAppInboundIntent.DEBT_INQUIRY
@@ -94,6 +96,15 @@ class WhatsAppInboundIntentRouter {
             Regex("""\bsoporte\b"""),
             Regex("""\bayuda\b"""),
             Regex("""\basesor\b""")
+        )
+
+        private val TICKET_STATUS_PATTERNS = listOf(
+            Regex("""\bestado\s+de\s+mi\s+ticket\b"""),
+            Regex("""\bcomo\s+va\s+mi\s+ticket\b"""),
+            Regex("""\bnumero\s+de\s+ticket\b"""),
+            Regex("""\bconsultar\s+ticket\b"""),
+            Regex("""\bmi\s+ticket\b"""),
+            Regex("""\bticket\s+#?\d+\b""")
         )
 
         private val INSTALLATION_PATTERNS = listOf(

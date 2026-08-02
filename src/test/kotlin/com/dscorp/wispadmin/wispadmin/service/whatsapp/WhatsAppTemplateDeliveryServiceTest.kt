@@ -50,6 +50,9 @@ class WhatsAppTemplateDeliveryServiceTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyList()
         )
+        doAnswer { invocation ->
+            invocation.getArgument(0)
+        }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
 
         service.deliverTemplate(
             definition = definition,

@@ -11,12 +11,23 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppConversationStep
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.data.model.CrmChannel
+import com.dscorp.wispadmin.wispadmin.data.model.CrmConversation
+import com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppChatStateService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffResult
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundSession
+import com.dscorp.wispadmin.wispadmin.config.CrmLlmProperties
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.LlmClient
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAuditService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntentRouter
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppIntentClassifier
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayload
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
 import com.google.firebase.messaging.FirebaseMessaging
@@ -40,7 +51,14 @@ class WhatsAppInboundMessageServiceTest {
     private val fcm = mockk<FirebaseMessaging>(relaxed = true)
     private val chatStateService = mockk<WhatsAppChatStateService>()
     private val handoffService = mockk<WhatsAppHandoffService>()
+    private val crmEventPublisher = mockk<CrmEventPublisher>(relaxed = true)
+    private val crmConversationService = mockk<CrmConversationService>(relaxed = true)
+    private val crmTicketLinkService = mockk<CrmTicketLinkService>(relaxed = true)
+    private val csatSurveyService = mockk<CsatSurveyService>(relaxed = true)
     private val intentRouter = WhatsAppInboundIntentRouter()
+    private val llmClient = mockk<LlmClient>(relaxed = true)
+    private val auditService = mockk<WhatsAppAuditService>(relaxed = true)
+    private lateinit var intentClassifier: WhatsAppIntentClassifier
     private val whatsAppProperties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties().apply {
             businessHours = "MON-SUN|00:00-23:59"
@@ -52,6 +70,13 @@ class WhatsAppInboundMessageServiceTest {
 
     @BeforeEach
     fun setUp() {
+        intentClassifier = WhatsAppIntentClassifier(
+            rulesRouter = intentRouter,
+            llmClient = llmClient,
+            chatStateService = chatStateService,
+            auditService = auditService,
+            properties = CrmLlmProperties()
+        )
         service = WhatsAppInboundMessageService(
             inboundMessageRepository = inboundMessageRepository,
             conversationService = conversationService,
@@ -59,11 +84,17 @@ class WhatsAppInboundMessageServiceTest {
             whatsAppService = whatsAppService,
             messageLogRepository = messageLogRepository,
             intentRouter = intentRouter,
+            intentClassifier = intentClassifier,
             whatsAppProperties = whatsAppProperties,
             fcm = fcm,
             chatStateService = chatStateService,
-            handoffService = handoffService
+            handoffService = handoffService,
+            crmEventPublisher = crmEventPublisher,
+            crmConversationService = crmConversationService,
+            crmTicketLinkService = crmTicketLinkService,
+            csatSurveyService = csatSurveyService
         )
+        every { csatSurveyService.tryHandleInbound(any(), any(), any(), any(), any()) } returns false
         every { chatStateService.isBotPaused(any()) } returns false
         every { chatStateService.beginInboundInteraction(any()) } returns WhatsAppInboundSession(
             botPaused = false,
@@ -72,8 +103,23 @@ class WhatsAppInboundMessageServiceTest {
             currentStep = WhatsAppConversationStep.MAIN_MENU
         )
         every { chatStateService.hasPendingInteractiveMenu(any()) } returns false
+        every { chatStateService.getUnknownRetryCount(any()) } returns 0
+        every { chatStateService.incrementUnknownRetryCount(any()) } returns 1
+        every { chatStateService.resetUnknownRetryCount(any()) } returns Unit
+        every { llmClient.classifyIntent(any()) } returns null
         every { handoffService.pauseBotAndPassToAdvisor(any(), any()) } returns
             WhatsAppHandoffResult(botPaused = true, metaTransferred = false)
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } returns emptyList()
+        every { crmConversationService.touchInbound(any(), any()) } answers {
+            CrmConversation(
+                id = 99L,
+                channel = CrmChannel.WHATSAPP,
+                phone = firstArg(),
+                subscriptionId = secondArg(),
+                status = CrmConversationStatus.NEW,
+                lastInboundAt = LocalDateTime.now()
+            )
+        }
     }
 
     @Test
@@ -393,5 +439,45 @@ class WhatsAppInboundMessageServiceTest {
 
         verify(exactly = 0) { whatsAppService.sendTextMessage(any(), any()) }
         verify(exactly = 0) { conversationService.sendAutoReplyWithButtons(any(), any()) }
+    }
+
+    @Test
+    fun `processInboundMessage publishes MESSAGE_RECEIVED and CONVERSATION_UPDATED`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-rt-1",
+            phone = "51902354183",
+            messageText = "necesito ayuda",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 99) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns true
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(payload.phone) } returns listOf(
+            WhatsAppInboundMessage(id = 99, phone = payload.phone, metaMessageId = payload.metaMessageId)
+        )
+
+        service.processInboundMessage(payload)
+
+        verify {
+            crmEventPublisher.publish(
+                CrmEventPublisher.MESSAGE_RECEIVED,
+                match { it["phone"] == payload.phone && it["inboundMessageId"] == 99 }
+            )
+        }
+        verify {
+            crmEventPublisher.publish(
+                CrmEventPublisher.CONVERSATION_UPDATED,
+                match { it["phone"] == payload.phone && it["unreadCount"] == 1 }
+            )
+        }
     }
 }

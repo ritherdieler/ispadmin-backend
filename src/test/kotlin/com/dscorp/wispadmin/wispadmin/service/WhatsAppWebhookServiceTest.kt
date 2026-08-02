@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppWebhookEventRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import io.mockk.every
@@ -26,6 +27,7 @@ class WhatsAppWebhookServiceTest {
     private val inboundMessageService = mockk<WhatsAppInboundMessageService>(relaxed = true)
     private val accountEventService = mockk<WhatsAppAccountEventService>(relaxed = true)
     private val serviceWindowService = mockk<WhatsAppServiceWindowService>(relaxed = true)
+    private val crmEventPublisher = mockk<CrmEventPublisher>(relaxed = true)
 
     private lateinit var service: WhatsAppWebhookService
 
@@ -37,7 +39,8 @@ class WhatsAppWebhookServiceTest {
             whatsAppWebhookEventRepository = webhookEventRepository,
             whatsAppInboundMessageService = inboundMessageService,
             accountEventService = accountEventService,
-            serviceWindowService = serviceWindowService
+            serviceWindowService = serviceWindowService,
+            crmEventPublisher = crmEventPublisher
         )
     }
 
@@ -84,6 +87,16 @@ class WhatsAppWebhookServiceTest {
         assertEquals("utility", saved.conversationCategory)
         assertEquals(true, saved.billable)
         assertEquals("CBP", saved.pricingModel)
+        verify {
+            crmEventPublisher.publish(
+                CrmEventPublisher.MESSAGE_STATUS,
+                match {
+                    it["phone"] == "51902354183" &&
+                        it["metaMessageId"] == "wamid.abc123" &&
+                        it["deliveryStatus"] == "delivered"
+                }
+            )
+        }
     }
 
     @Test

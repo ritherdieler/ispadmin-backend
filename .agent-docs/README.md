@@ -24,6 +24,15 @@
 | **Copiar contexto para LLM (dossier Markdown)** | [observability-llm-context.md](./observability-llm-context.md) |
 | **Replays conscientes del formato (rrweb/frames)** | [observability-replay-format.md](./observability-replay-format.md) |
 | **WhatsApp HTTPS + Webhook producción** | [whatsapp-production-https-webhook.md](./whatsapp-production-https-webhook.md) |
+| **CRM Omnicanal WhatsApp — Fase 0 (seguridad/fundaciones)** | [crm-omnicanal-fase0-seguridad-fundaciones.md](./crm-omnicanal-fase0-seguridad-fundaciones.md) |
+| **CRM Omnicanal WhatsApp — Fase 1 (tiempo real)** | [crm-omnicanal-fase1-tiempo-real.md](./crm-omnicanal-fase1-tiempo-real.md) |
+| **CRM Omnicanal WhatsApp — Fase 2 (claim/estados)** | [crm-omnicanal-fase2-claim-estados.md](./crm-omnicanal-fase2-claim-estados.md) |
+| **CRM Omnicanal WhatsApp — Fase 3 (chat completo)** | [crm-omnicanal-fase3-chat-completo.md](./crm-omnicanal-fase3-chat-completo.md) |
+| **CRM Omnicanal WhatsApp — Fase 4 (bot LLM / OpenAI)** | [crm-omnicanal-fase4-bot-llm.md](./crm-omnicanal-fase4-bot-llm.md) |
+| **CRM Omnicanal WhatsApp — Fase 5 (tickets / perfil)** | [crm-omnicanal-fase5-tickets.md](./crm-omnicanal-fase5-tickets.md) |
+| **CRM Omnicanal WhatsApp — Fase 6 (CSAT / inconformidades)** | [crm-omnicanal-fase6-csat.md](./crm-omnicanal-fase6-csat.md) |
+| **CRM Omnicanal WhatsApp — Fase 7 (métricas operativas)** | [crm-omnicanal-fase7-metricas.md](./crm-omnicanal-fase7-metricas.md) |
+| **WhatsApp Meta Cloud API (límites + analytics)** | [whatsapp-meta-cloud-api.md](./whatsapp-meta-cloud-api.md) |
 | Acceso MySQL producción (túnel SSH) | [vps-mysql-access.md](./vps-mysql-access.md) |
 | **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) |
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |

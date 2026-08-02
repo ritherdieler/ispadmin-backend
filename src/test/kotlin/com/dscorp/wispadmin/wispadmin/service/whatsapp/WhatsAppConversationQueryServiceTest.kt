@@ -11,11 +11,13 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepositor
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.data.domain.Pageable
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -25,6 +27,9 @@ class WhatsAppConversationQueryServiceTest {
     private val messageLogRepository = mockk<WhatsAppMessageLogRepository>()
     private val subscriptionRepository = mockk<SubscriptionRepository>()
     private val serviceWindowService = mockk<WhatsAppServiceWindowService>()
+    private val paymentRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.PaymentRepository>(relaxed = true)
+    private val crmConversationRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository>(relaxed = true)
+    private val crmTicketLinkService = mockk<CrmTicketLinkService>(relaxed = true)
 
     private lateinit var service: WhatsAppConversationQueryService
 
@@ -34,8 +39,12 @@ class WhatsAppConversationQueryServiceTest {
             inboundMessageRepository = inboundMessageRepository,
             messageLogRepository = messageLogRepository,
             subscriptionRepository = subscriptionRepository,
-            serviceWindowService = serviceWindowService
+            serviceWindowService = serviceWindowService,
+            paymentRepository = paymentRepository,
+            crmConversationRepository = crmConversationRepository,
+            crmTicketLinkService = crmTicketLinkService
         )
+        every { crmTicketLinkService.listTicketsForPhone(any()) } returns emptyList()
     }
 
     @Test
@@ -94,21 +103,25 @@ class WhatsAppConversationQueryServiceTest {
                 equipmentCondition = EquipmentCondition.LOAN
             )
         )
-        every { serviceWindowService.getServiceWindow("51911111111") } returns
-            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+        every {
+            serviceWindowService.getServiceWindows(match { it.containsAll(listOf("51911111111", "51922222222")) })
+        } returns mapOf(
+            "51911111111" to WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
                 phone = "51911111111",
                 open = true,
                 expiresAt = now.plusHours(20)
-            )
-        every { serviceWindowService.getServiceWindow("51922222222") } returns
-            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+            ),
+            "51922222222" to WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
                 phone = "51922222222",
                 open = false,
                 expiresAt = null
             )
+        )
 
         val result = service.listConversations(WhatsAppConversationFilter(limit = 50))
 
+        verify(exactly = 1) { serviceWindowService.getServiceWindows(any()) }
+        verify(exactly = 0) { serviceWindowService.getServiceWindow(any()) }
         assertEquals(2, result.size)
         assertEquals("51922222222", result[0].phone)
         assertEquals("Otro", result[0].lastMessagePreview)
@@ -135,16 +148,8 @@ class WhatsAppConversationQueryServiceTest {
         val t3 = LocalDateTime.of(2026, 7, 25, 9, 10)
 
         every {
-            inboundMessageRepository.findByPhoneOrderByCreatedAtAsc(phone)
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
         } returns listOf(
-            WhatsAppInboundMessage(
-                id = 42,
-                metaMessageId = "in-42",
-                phone = phone,
-                messageText = "Hola",
-                messageType = "text",
-                createdAt = t1
-            ),
             WhatsAppInboundMessage(
                 id = 43,
                 metaMessageId = "in-43",
@@ -153,10 +158,18 @@ class WhatsAppConversationQueryServiceTest {
                 messageType = "button_reply",
                 buttonReplyTitle = "Ver deuda",
                 createdAt = t3
+            ),
+            WhatsAppInboundMessage(
+                id = 42,
+                metaMessageId = "in-42",
+                phone = phone,
+                messageText = "Hola",
+                messageType = "text",
+                createdAt = t1
             )
         )
         every {
-            messageLogRepository.findByPhoneOrderByCreatedAtAsc(phone)
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
         } returns listOf(
             WhatsAppMessageLog(
                 id = 17,
@@ -183,13 +196,19 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals("delivered", thread[1].deliveryStatus)
         assertEquals("inbound:43", thread[2].id)
         assertEquals("Ver deuda", thread[2].buttonReplyTitle)
+        verify(exactly = 0) { inboundMessageRepository.findByPhoneOrderByCreatedAtAsc(phone) }
+        verify(exactly = 0) { messageLogRepository.findByPhoneOrderByCreatedAtAsc(phone) }
     }
 
     @Test
     fun `getThread maps outbound templateCode from messageType`() {
         val phone = "51902354183"
-        every { inboundMessageRepository.findByPhoneOrderByCreatedAtAsc(phone) } returns emptyList()
-        every { messageLogRepository.findByPhoneOrderByCreatedAtAsc(phone) } returns listOf(
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
             WhatsAppMessageLog(
                 id = 8,
                 phone = phone,
@@ -205,6 +224,23 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(1, thread.size)
         assertEquals("PAYMENT_REMINDER", thread[0].templateCode)
         assertEquals("SENT", thread[0].deliveryStatus)
+    }
+
+    @Test
+    fun `getThread usa pageable con el limit solicitado`() {
+        val phone = "51902354183"
+        val pageableSlot = io.mockk.slot<Pageable>()
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, capture(pageableSlot))
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+
+        service.getThread(phone, limit = 25)
+
+        assertEquals(25, pageableSlot.captured.pageSize)
+        assertEquals(0, pageableSlot.captured.pageNumber)
     }
 
     @Test
@@ -250,6 +286,9 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = LocalDateTime.now()
             )
         )
+        every { paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(7) } returns emptyList()
+        every { crmConversationRepository.findBySubscriptionIdOrderByLastInboundAtDesc(7) } returns emptyList()
+        every { crmConversationRepository.findByPhoneAndChannel(any(), any()) } returns null
 
         val context = service.getContext(phone)
 

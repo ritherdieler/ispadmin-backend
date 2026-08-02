@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.repository
 
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import java.time.LocalDateTime
 
@@ -34,6 +35,15 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findByPhoneOrderByCreatedAtAsc(phone: String): List<WhatsAppMessageLog>
 
+    fun findByPhoneOrderByCreatedAtDesc(phone: String, pageable: Pageable): List<WhatsAppMessageLog>
+
+    fun findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+        phone: String,
+        from: LocalDateTime,
+        to: LocalDateTime,
+        pageable: Pageable
+    ): List<WhatsAppMessageLog>
+
     fun findTop10ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppMessageLog>
 
     fun findByPaymentIdOrderByCreatedAtDesc(paymentId: Int): List<WhatsAppMessageLog>
@@ -62,4 +72,10 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         status: String,
         createdAt: LocalDateTime
     ): Boolean
+
+    fun findByMessageTypeInAndCreatedAtBetween(
+        messageTypes: Collection<String>,
+        from: LocalDateTime,
+        to: LocalDateTime
+    ): List<WhatsAppMessageLog>
 }

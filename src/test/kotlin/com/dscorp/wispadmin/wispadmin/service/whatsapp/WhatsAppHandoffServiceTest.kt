@@ -8,16 +8,28 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppConversationStep
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppSendResult
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 
 class WhatsAppHandoffServiceTest {
 
     private val chatStateService = mockk<WhatsAppChatStateService>()
     private val metaApiService = mockk<MetaApiService>()
+    private val crmConversationService = mockk<CrmConversationService>(relaxed = true)
+    private val crmProvider = mockk<ObjectProvider<CrmConversationService>>()
+    private val llmClient = mockk<LlmClient>(relaxed = true)
+
+    private fun buildService(properties: WhatsAppProperties): WhatsAppHandoffService {
+        every { crmProvider.ifAvailable } returns crmConversationService
+        every { crmConversationService.recentMessagesForPhone(any(), any()) } returns listOf("Cliente: hola")
+        every { llmClient.summarizeHandoff(any(), any(), any()) } returns "Resumen de prueba"
+        return WhatsAppHandoffService(chatStateService, metaApiService, properties, crmProvider, llmClient)
+    }
 
     @Test
     fun `pauseBotAndPassToAdvisor moves chat to waiting advisor without creating tickets`() = runBlocking {
@@ -36,7 +48,7 @@ class WhatsAppHandoffServiceTest {
             metadata = reason
         )
 
-        val service = WhatsAppHandoffService(chatStateService, metaApiService, properties)
+        val service = buildService(properties)
         val result = service.pauseBotAndPassToAdvisorAsync(phone, reason)
 
         assertTrue(result.botPaused)
@@ -72,7 +84,7 @@ class WhatsAppHandoffServiceTest {
             senderPhoneNumberId = "phone-number-id"
         )
 
-        val service = WhatsAppHandoffService(chatStateService, metaApiService, properties)
+        val service = buildService(properties)
         val result = service.pauseBotAndPassToAdvisorAsync(phone, reason)
 
         assertTrue(result.botPaused)

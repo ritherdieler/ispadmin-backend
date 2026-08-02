@@ -161,6 +161,10 @@ class WhatsAppChatStateService(
         return chatStateRepository.findByPhone(normalizePhone(phone))?.currentStep
     }
 
+    fun getMetadata(phone: String): String? {
+        return chatStateRepository.findByPhone(normalizePhone(phone))?.metadata
+    }
+
     fun hasPendingInteractiveMenu(phone: String): Boolean {
         val state = chatStateRepository.findByPhone(normalizePhone(phone)) ?: return false
         if (isPaused(state)) return false
@@ -193,6 +197,49 @@ class WhatsAppChatStateService(
         metadata: String? = null
     ): WhatsAppChatState = withContext(Dispatchers.IO) { setCurrentStep(phone, currentStep, metadata) }
 
+    fun getUnknownRetryCount(phone: String): Int {
+        val meta = chatStateRepository.findByPhone(normalizePhone(phone))?.metadata ?: return 0
+        return UNKNOWN_RETRY_REGEX.find(meta)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+    }
+
+    fun incrementUnknownRetryCount(phone: String): Int {
+        val normalized = normalizePhone(phone)
+        val now = LocalDateTime.now()
+        val current = chatStateRepository.findByPhone(normalized)
+        val next = getUnknownRetryCount(normalized) + 1
+        val baseMeta = current?.metadata
+            ?.replace(UNKNOWN_RETRY_REGEX, "")
+            ?.trim()
+            ?.trim(';')
+            .orEmpty()
+        val metadata = listOfNotNull(
+            baseMeta.takeIf { it.isNotBlank() },
+            "$UNKNOWN_RETRY_PREFIX$next"
+        ).joinToString(";")
+        val state = current?.copy(metadata = metadata.take(500), updatedAt = now)
+            ?: WhatsAppChatState(
+                phone = normalized,
+                metadata = metadata.take(500),
+                lastInteractionAt = now,
+                createdAt = now,
+                updatedAt = now
+            )
+        chatStateRepository.save(state)
+        return next
+    }
+
+    fun resetUnknownRetryCount(phone: String) {
+        val normalized = normalizePhone(phone)
+        val current = chatStateRepository.findByPhone(normalized) ?: return
+        val cleaned = current.metadata
+            ?.replace(UNKNOWN_RETRY_REGEX, "")
+            ?.trim()
+            ?.trim(';')
+            ?.ifBlank { null }
+        if (cleaned == current.metadata) return
+        chatStateRepository.save(current.copy(metadata = cleaned, updatedAt = LocalDateTime.now()))
+    }
+
     private fun isPaused(state: WhatsAppChatState): Boolean {
         return state.botPaused ||
             state.status == WhatsAppChatStatus.ESPERANDO_ASESOR ||
@@ -200,4 +247,9 @@ class WhatsAppChatStateService(
     }
 
     private fun normalizePhone(phone: String): String = phone.filter { it.isDigit() }
+
+    companion object {
+        private const val UNKNOWN_RETRY_PREFIX = "unknown_retries="
+        private val UNKNOWN_RETRY_REGEX = Regex("""unknown_retries=(\d+)""")
+    }
 }

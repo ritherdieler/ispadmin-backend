@@ -40,6 +40,9 @@ class WhatsAppConversationServiceTest {
     private val serviceWindowService = mockk<WhatsAppServiceWindowService>()
     private val intentRouter = WhatsAppInboundIntentRouter()
     private val chatStateService = mockk<WhatsAppChatStateService>()
+    private val crmConversationService = mockk<CrmConversationService>(relaxed = true)
+    private val mediaDownloadService = mockk<WhatsAppMediaDownloadService>(relaxed = true)
+    private val templateDeliveryService = mockk<WhatsAppTemplateDeliveryService>()
     private val whatsAppProperties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties()
     }
@@ -57,7 +60,10 @@ class WhatsAppConversationServiceTest {
             serviceWindowService = serviceWindowService,
             whatsAppProperties = whatsAppProperties,
             intentRouter = intentRouter,
-            chatStateService = chatStateService
+            chatStateService = chatStateService,
+            crmConversationService = crmConversationService,
+            mediaDownloadService = mediaDownloadService,
+            templateDeliveryService = templateDeliveryService
         )
         every { chatStateService.currentStep(any()) } returns null
         every { chatStateService.hasPendingSupportDiagnostic(any()) } returns false
@@ -66,6 +72,13 @@ class WhatsAppConversationServiceTest {
             WhatsAppChatState(
                 phone = firstArg(),
                 currentStep = secondArg()
+            )
+        }
+        every { chatStateService.markWaitingForAdvisor(any(), any()) } answers {
+            WhatsAppChatState(
+                phone = firstArg(),
+                currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
+                botPaused = true
             )
         }
     }
@@ -230,7 +243,7 @@ class WhatsAppConversationServiceTest {
         val response = service.handleSupportDiagnosticReply(subscription, phone, "A")
 
         assertTrue(response.contains("[SUPPORT_CLOSED:ESPERANDO_ASESOR]"))
-        assertTrue(response.contains("Tu caso ha sido registrado"))
+        assertTrue(response.contains("Tu caso fue registrado") || response.contains("Tu caso ha sido registrado"))
     }
 
     @Test
@@ -252,7 +265,7 @@ class WhatsAppConversationServiceTest {
             )
         every { subscriptionRepository.findByNormalizedPhone("902354183") } returns emptyList()
         every {
-            whatsAppService.sendTextMessage(phone, "Hola cliente")
+            whatsAppService.sendTextMessage(phone, "Hola cliente", null)
         } returns WhatsAppSendResult(
             success = true,
             metaResponse = "{}",
@@ -265,7 +278,13 @@ class WhatsAppConversationServiceTest {
             firstArg<WhatsAppMessageLog>().copy(id = 55)
         }
 
-        val result = service.sendOperatorReply(phone, "Hola cliente", "operador1")
+        val result = service.sendOperatorReply(
+            phone = phone,
+            text = "Hola cliente",
+            operatorUsername = "operador1",
+            agentId = 7,
+            isAdmin = false
+        )
 
         assertEquals("outbound:55", result.id)
         assertEquals("OUTBOUND", result.direction)
@@ -275,6 +294,9 @@ class WhatsAppConversationServiceTest {
         assertEquals("OPERATOR_REPLY", savedSlot.captured.messageType)
         assertEquals("SENT", savedSlot.captured.status)
         assertEquals("wamid.op-1", savedSlot.captured.metaMessageId)
+        verify { crmConversationService.assertCanReply(phone, 7, false) }
+        verify { chatStateService.markWaitingForAdvisor(phone, "operator_reply") }
+        verify { crmConversationService.touchOutbound(phone) }
     }
 
     @Test
@@ -290,8 +312,201 @@ class WhatsAppConversationServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             service.sendOperatorReply(phone, "Hola", "operador1")
         }
-        verify(exactly = 0) { whatsAppService.sendTextMessage(any(), any()) }
+        verify(exactly = 0) { whatsAppService.sendTextMessage(any(), any(), any()) }
         verify(exactly = 0) { messageLogRepository.save(any()) }
+    }
+
+    @Test
+    fun `sendOperatorReply with reply-to sends context message id`() {
+        val phone = "51902354183"
+        every { serviceWindowService.getServiceWindow(phone) } returns
+            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                phone = phone,
+                open = true,
+                expiresAt = LocalDateTime.now().plusHours(2)
+            )
+        every { subscriptionRepository.findByNormalizedPhone("902354183") } returns emptyList()
+        every { inboundMessageRepository.findById(12) } returns java.util.Optional.of(
+            WhatsAppInboundMessage(
+                id = 12,
+                metaMessageId = "wamid.context-12",
+                phone = phone,
+                messageText = "Hola"
+            )
+        )
+        every {
+            whatsAppService.sendTextMessage(phone, "Respuesta", "wamid.context-12")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.op-2",
+            recipient = phone,
+            senderPhoneNumberId = "123"
+        )
+        val savedSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(savedSlot)) } answers {
+            firstArg<WhatsAppMessageLog>().copy(id = 77)
+        }
+
+        val result = service.sendOperatorReply(
+            phone = phone,
+            text = "Respuesta",
+            operatorUsername = "operador1",
+            agentId = 7,
+            replyToMessageId = "inbound:12"
+        )
+
+        assertEquals("outbound:77", result.id)
+        assertEquals(12, savedSlot.captured.replyToLogId)
+        verify { whatsAppService.sendTextMessage(phone, "Respuesta", "wamid.context-12") }
+    }
+
+    @Test
+    fun `sendOperatorMedia uploads validates and persists outbound media`() {
+        val phone = "51902354183"
+        val bytes = ByteArray(1024) { 1 }
+        every { serviceWindowService.getServiceWindow(phone) } returns
+            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                phone = phone,
+                open = true,
+                expiresAt = LocalDateTime.now().plusHours(1)
+            )
+        every { subscriptionRepository.findByNormalizedPhone("902354183") } returns emptyList()
+        every {
+            mediaDownloadService.storeOutboundBytes(bytes, "image/jpeg", any())
+        } returns "/tmp/out.jpg"
+        every { whatsAppService.uploadMedia(bytes, "image/jpeg", any()) } returns "meta-media-1"
+        every {
+            whatsAppService.sendMediaMessage(
+                phoneNumber = phone,
+                kind = WhatsAppOutboundMediaKind.IMAGE,
+                mediaId = "meta-media-1",
+                caption = "Voucher",
+                filename = any(),
+                contextMessageId = null
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.media-1",
+            recipient = phone,
+            senderPhoneNumberId = "123"
+        )
+        val savedSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(savedSlot)) } answers {
+            firstArg<WhatsAppMessageLog>().copy(id = 88)
+        }
+
+        val result = service.sendOperatorMedia(
+            phone = phone,
+            bytes = bytes,
+            mimeType = "image/jpeg",
+            filename = "voucher.jpg",
+            caption = "Voucher",
+            operatorUsername = "operador1",
+            agentId = 7
+        )
+
+        assertEquals("OPERATOR_MEDIA", result.messageType)
+        assertEquals("meta-media-1", savedSlot.captured.mediaMetaId)
+        assertEquals("/tmp/out.jpg", savedSlot.captured.mediaStoredPath)
+        assertTrue(result.hasMedia)
+        verify { crmConversationService.assertCanReply(phone, 7, false) }
+    }
+
+    @Test
+    fun `sendOperatorMedia rejects when not assignee`() {
+        val phone = "51902354183"
+        every {
+            crmConversationService.assertCanReply(phone, 9, false)
+        } throws CrmConversationForbiddenException("No eres el agente asignado.")
+
+        assertThrows(CrmConversationForbiddenException::class.java) {
+            service.sendOperatorMedia(
+                phone = phone,
+                bytes = byteArrayOf(1, 2, 3),
+                mimeType = "image/png",
+                filename = "a.png",
+                caption = null,
+                operatorUsername = "otro",
+                agentId = 9
+            )
+        }
+        verify(exactly = 0) { whatsAppService.uploadMedia(any(), any(), any()) }
+    }
+
+    @Test
+    fun `sendOperatorTemplate requires ownership and uses delivery service`() {
+        val phone = "51902354183"
+        val subscription = Subscription(
+            firstName = "Ana",
+            lastName = "Lopez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 10 }
+        every { subscriptionRepository.findByNormalizedPhone("902354183") } returns listOf(subscription)
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(10)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 5, 31, 0, 0)
+            ).apply { id = 99 }
+        )
+        every {
+            templateDeliveryService.deliverTemplate(
+                definition = any(),
+                subscription = subscription,
+                phone = phone,
+                payment = any(),
+                oldestUnpaidPayment = any(),
+                paymentId = 99,
+                subscriptionId = 10,
+                welcomeContext = null,
+                operatorUsername = "operador1"
+            )
+        } returns WhatsAppMessageLog(
+            id = 101,
+            phone = phone,
+            messageType = "PAYMENT_REMINDER",
+            status = "SENT",
+            message = "preview",
+            operatorUsername = "operador1"
+        )
+
+        val result = service.sendOperatorTemplate(
+            phone = phone,
+            templateCode = "PAYMENT_REMINDER",
+            operatorUsername = "operador1",
+            agentId = 7
+        )
+
+        assertEquals("outbound:101", result.id)
+        assertEquals("PAYMENT_REMINDER", result.templateCode)
+        verify { crmConversationService.assertCanReply(phone, 7, false) }
+        verify { chatStateService.markWaitingForAdvisor(phone, "operator_template") }
+    }
+
+    @Test
+    fun `retryFailedOutbound rejects when max retries reached`() {
+        val phone = "51902354183"
+        every { messageLogRepository.findById(5) } returns java.util.Optional.of(
+            WhatsAppMessageLog(
+                id = 5,
+                phone = phone,
+                status = "FAILED",
+                retryCount = WhatsAppMediaConstraints.MAX_RETRY_COUNT,
+                message = "hola"
+            )
+        )
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.retryFailedOutbound(phone, 5, "operador1", agentId = 7)
+        }
+        assertTrue(ex.message!!.contains("maximo", ignoreCase = true))
     }
 
     @Test

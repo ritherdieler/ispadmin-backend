@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppWebhookEvent
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppWebhookEventRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayloadParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
@@ -32,7 +33,8 @@ class WhatsAppWebhookService(
     private val whatsAppWebhookEventRepository: WhatsAppWebhookEventRepository,
     private val whatsAppInboundMessageService: WhatsAppInboundMessageService,
     private val accountEventService: WhatsAppAccountEventService,
-    private val serviceWindowService: WhatsAppServiceWindowService
+    private val serviceWindowService: WhatsAppServiceWindowService,
+    private val crmEventPublisher: CrmEventPublisher
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppWebhookService::class.java)
@@ -173,6 +175,29 @@ class WhatsAppWebhookService(
         }
 
         whatsAppMessageLogRepository.save(messageLog)
+        publishMessageStatusEvent(messageLog, deliveryStatus, statusAt)
+    }
+
+    private fun publishMessageStatusEvent(
+        messageLog: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog,
+        deliveryStatus: String,
+        statusAt: LocalDateTime
+    ) {
+        try {
+            crmEventPublisher.publish(
+                eventType = CrmEventPublisher.MESSAGE_STATUS,
+                payload = mapOf(
+                    "phone" to messageLog.phone,
+                    "metaMessageId" to messageLog.metaMessageId,
+                    "logId" to messageLog.id,
+                    "threadMessageId" to messageLog.id?.let { "outbound:$it" },
+                    "deliveryStatus" to deliveryStatus,
+                    "deliveryStatusAt" to statusAt.toString()
+                )
+            )
+        } catch (e: Exception) {
+            log.warn("No se pudo publicar MESSAGE_STATUS para {}: {}", messageLog.metaMessageId, e.message)
+        }
     }
 
     private fun processMessageEvent(message: JsonNode) {

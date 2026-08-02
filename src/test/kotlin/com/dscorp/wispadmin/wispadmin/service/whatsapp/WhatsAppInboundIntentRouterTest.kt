@@ -63,4 +63,12 @@ class WhatsAppInboundIntentRouterTest {
     fun `payment claim wins over ack when combined`() {
         assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("ya pague gracias"))
     }
+
+    @Test
+    fun `routes ticket status inquiry phrases`() {
+        assertEquals(WhatsAppInboundIntent.TICKET_STATUS, router.route("estado de mi ticket"))
+        assertEquals(WhatsAppInboundIntent.TICKET_STATUS, router.route("como va mi ticket"))
+        assertEquals(WhatsAppInboundIntent.TICKET_STATUS, router.route("numero de ticket"))
+        assertEquals(WhatsAppInboundIntent.TICKET_STATUS, router.route("consultar ticket"))
+    }
 }
