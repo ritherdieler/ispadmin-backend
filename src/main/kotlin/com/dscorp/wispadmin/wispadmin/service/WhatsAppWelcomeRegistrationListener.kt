@@ -13,7 +13,7 @@ class WhatsAppWelcomeRegistrationListener(
 
     private val log = LoggerFactory.getLogger(WhatsAppWelcomeRegistrationListener::class.java)
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun onSubscriptionRegistered(event: SubscriptionRegisteredEvent) {
         try {
             welcomeRegistrationService.sendWelcomeIfApplicable(event.subscriptionId)

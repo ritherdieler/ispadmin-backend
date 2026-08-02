@@ -27,6 +27,10 @@ class WhatsAppWelcomeRegistrationServiceTest {
     private val whatsAppMessageLogRepository = mock(WhatsAppMessageLogRepository::class.java)
     private val templateDeliveryService = mock(WhatsAppTemplateDeliveryService::class.java)
     private val whatsAppProperties = WhatsAppProperties().apply {
+        apiVersion = "v25.0"
+        phoneNumberId = "123456789"
+        businessAccountId = "987654321"
+        accessToken = "test-token"
         welcomeOnRegistration = WhatsAppWelcomeOnRegistrationProperties().apply { enabled = true }
     }
 
@@ -62,12 +66,22 @@ class WhatsAppWelcomeRegistrationServiceTest {
     }
 
     @Test
-    fun `does nothing when welcome on registration is disabled`() {
+    fun `persists skipped log when welcome on registration is disabled`() {
         whatsAppProperties.welcomeOnRegistration.enabled = false
 
-        service.sendWelcomeIfApplicable(42)
+        val result = service.sendWelcomeAndGetResult(42)
 
-        verifyNoInteractions(whatsAppMessageLogRepository, subscriptionRepository, templateDeliveryService)
+        assertEquals(WhatsAppWelcomeRegistrationService.OUTCOME_DISABLED, result.outcome)
+        verify(subscriptionRepository, never()).findWhatsAppSubscriptionRowById(42)
+        verify(templateDeliveryService).persistLog(
+            null,
+            42,
+            "",
+            "WELCOME_CUSTOMER",
+            "Bienvenida desactivada en configuracion.",
+            WhatsAppTemplateDeliveryService.STATUS_SKIPPED,
+            "Bienvenida desactivada en configuracion."
+        )
     }
 
     @Test

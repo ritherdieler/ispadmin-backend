@@ -9,13 +9,19 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayloadPar
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import javax.annotation.PreDestroy
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -32,8 +38,13 @@ class WhatsAppWebhookService(
     private val log = LoggerFactory.getLogger(WhatsAppWebhookService::class.java)
     private val objectMapper = ObjectMapper()
     private val webhookZone = ZoneId.of("America/Lima")
+    private val webhookScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun verifySignature(payload: ByteArray, signatureHeader: String?): Boolean {
+        if (!whatsAppProperties.webhookSignatureRequired) {
+            log.warn("Webhook: validacion de firma desactivada (whatsapp.webhook-signature-required=false). Solo usar en local.")
+            return true
+        }
         if (!whatsAppProperties.isWebhookConfigured()) return false
         if (signatureHeader.isNullOrBlank()) return false
 
@@ -48,13 +59,23 @@ class WhatsAppWebhookService(
         )
     }
 
-    @Async
     fun processPayloadAsync(rawBody: String) {
-        try {
-            processPayload(rawBody)
-        } catch (e: Exception) {
-            log.error("Webhook: error procesando payload async: ${e.message}", e)
+        webhookScope.launch {
+            try {
+                processPayloadSuspend(rawBody)
+            } catch (e: Exception) {
+                log.error("Webhook: error procesando payload async: ${e.message}", e)
+            }
         }
+    }
+
+    suspend fun processPayloadSuspend(rawBody: String) = withContext(Dispatchers.IO) {
+        processPayload(rawBody)
+    }
+
+    @PreDestroy
+    fun shutdown() {
+        webhookScope.cancel()
     }
 
     fun processPayload(rawBody: String) {

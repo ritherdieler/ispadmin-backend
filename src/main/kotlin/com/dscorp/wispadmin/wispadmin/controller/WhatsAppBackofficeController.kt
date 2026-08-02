@@ -18,6 +18,8 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppSendMessagesRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppBackofficeMessageService
+import com.dscorp.wispadmin.wispadmin.service.WhatsAppWelcomeRegistrationService
+import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAnalyticsService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBackofficeQueryService
@@ -25,6 +27,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationFilte
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppCsvExportService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppLogsFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
@@ -32,6 +35,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaAnalyticsClie
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaAnalyticsParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateSyncService
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import org.springframework.core.io.FileSystemResource
@@ -58,6 +62,8 @@ class WhatsAppBackofficeController(
     private val messageLogRepository: WhatsAppMessageLogRepository,
     private val inboundMessageRepository: WhatsAppInboundMessageRepository,
     private val templateMessageSender: WhatsAppTemplateMessageSender,
+    private val welcomeRegistrationService: WhatsAppWelcomeRegistrationService,
+    private val whatsAppProperties: WhatsAppProperties,
     private val analyticsService: WhatsAppAnalyticsService,
     private val metaAnalyticsClient: WhatsAppMetaAnalyticsClient,
     private val templateSyncService: WhatsAppTemplateSyncService,
@@ -67,6 +73,7 @@ class WhatsAppBackofficeController(
     private val conversationService: WhatsAppConversationService,
     private val conversationQueryService: WhatsAppConversationQueryService,
     private val mediaDownloadService: WhatsAppMediaDownloadService,
+    private val handoffService: WhatsAppHandoffService,
     private val csvExportService: WhatsAppCsvExportService
 ) {
 
@@ -121,6 +128,43 @@ class WhatsAppBackofficeController(
         @RequestBody request: WhatsAppTemplateTestMessageRequest
     ): ResponseEntity<WhatsAppTestSendResponseDto> {
         return templateMessageSender.sendPaymentReminderTemplate(request)
+    }
+
+    @GetMapping("/registration-status")
+    fun getRegistrationStatus(): ResponseEntity<Any> {
+        val phoneNumberId = whatsAppProperties.phoneNumberId
+        return ResponseEntity.ok(
+            mapOf(
+                "welcomeOnRegistrationEnabled" to whatsAppProperties.welcomeOnRegistration.enabled,
+                "whatsappConfigured" to whatsAppProperties.isConfigured(),
+                "apiVersion" to whatsAppProperties.apiVersion,
+                "phoneNumberIdSuffix" to phoneNumberId.takeLast(4).takeIf { phoneNumberId.length >= 4 },
+                "hasAccessToken" to whatsAppProperties.accessToken.isNotBlank(),
+                "welcomeTemplate" to WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER).metaName
+            )
+        )
+    }
+
+    @PostMapping("/messages/welcome/{subscriptionId}")
+    fun sendWelcomeForSubscription(
+        @PathVariable subscriptionId: Int
+    ): ResponseEntity<Any> {
+        val result = welcomeRegistrationService.sendWelcomeAndGetResult(subscriptionId)
+        val recentLog = queryService.listLogs(
+            WhatsAppLogsFilter(
+                templateCode = WhatsAppTemplateCode.WELCOME_CUSTOMER.name,
+                limit = 1
+            )
+        ).firstOrNull { it.subscriptionId == subscriptionId }
+
+        return ResponseEntity.ok(
+            mapOf(
+                "subscriptionId" to result.subscriptionId,
+                "outcome" to result.outcome,
+                "detail" to result.detail,
+                "latestLog" to recentLog
+            )
+        )
     }
 
     @GetMapping("/logs")
@@ -448,6 +492,19 @@ class WhatsAppBackofficeController(
             ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(mapOf("error" to (e.message ?: "Error al enviar")))
         }
+    }
+
+    @PostMapping("/conversations/{phone}/resume-bot")
+    fun resumeConversationBot(@PathVariable phone: String): ResponseEntity<Map<String, Any?>> {
+        val result = handoffService.resumeBotAndTakeControl(phone, "advisor_closed")
+        return ResponseEntity.ok(
+            mapOf(
+                "phone" to phone,
+                "botPaused" to result.botPaused,
+                "metaTransferred" to result.metaTransferred,
+                "warning" to result.warning
+            )
+        )
     }
 
     @PostMapping("/conversations/{phone}/mark-all-read")

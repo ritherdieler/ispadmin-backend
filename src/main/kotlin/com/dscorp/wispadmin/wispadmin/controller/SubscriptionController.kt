@@ -11,7 +11,9 @@ import com.dscorp.wispadmin.wispadmin.requestbody.*
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
+import com.dscorp.wispadmin.wispadmin.service.WhatsAppWelcomeRegistrationService
 import com.dscorp.wispadmin.wispadmin.service.BorneValidationResult
+import org.slf4j.LoggerFactory
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -45,11 +47,33 @@ class SubscriptionController(
     private val couponRepository: CouponRepository,
     private val subscriptionLogRepository: SubscriptionLogRepository,
     private val storageService: FirebaseStorageService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val whatsAppWelcomeRegistrationService: WhatsAppWelcomeRegistrationService
 ) {
+
+    private val log = LoggerFactory.getLogger(SubscriptionController::class.java)
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
         subscriptionId?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
+    }
+
+    /** No debe lanzar excepciones: la suscripcion ya fue creada. */
+    private fun dispatchWelcomeWhatsApp(subscriptionId: Int?) {
+        if (subscriptionId == null) {
+            log.warn("No se envio bienvenida WhatsApp: la suscripcion creada no tiene id.")
+            return
+        }
+        try {
+            log.info("Disparando bienvenida WhatsApp para suscripcion {}", subscriptionId)
+            whatsAppWelcomeRegistrationService.sendWelcomeIfApplicable(subscriptionId)
+        } catch (e: Exception) {
+            log.error(
+                "Error al enviar bienvenida WhatsApp para suscripcion {}: {}",
+                subscriptionId,
+                e.message,
+                e
+            )
+        }
     }
 
     @GetMapping("/findByElectronicPayerName")
@@ -325,9 +349,11 @@ class SubscriptionController(
     @PostMapping
     fun newSubscription(@RequestBody newSubscription: SubscriptionRequest): BaseResponse {
         return try {
+            var createdSubscriptionId: Int? = null
             val subscription = subscriptionService.registerSubscription(
                 newSubscription = newSubscription,
                 onSuccess = {
+                    createdSubscriptionId = it.id
                     subscriptionLogRepository.save(
                         SubscriptionLog(
                             subscription = it,
@@ -341,6 +367,7 @@ class SubscriptionController(
             )
 
             publishSubscriptionChanged(subscription.id)
+            dispatchWelcomeWhatsApp(createdSubscriptionId ?: subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             BaseResponse(
@@ -363,9 +390,11 @@ class SubscriptionController(
 
             newSubscription.facadePhotoUrl = facadePhotoUrl
 
+            var createdSubscriptionId: Int? = null
             val subscription = subscriptionService.registerSubscription(
                 newSubscription = newSubscription,
                 onSuccess = {
+                    createdSubscriptionId = it.id
                     subscriptionLogRepository.save(
                         SubscriptionLog(
                             subscription = it,
@@ -379,6 +408,7 @@ class SubscriptionController(
             )
 
             publishSubscriptionChanged(subscription.id)
+            dispatchWelcomeWhatsApp(createdSubscriptionId ?: subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             BaseResponse(
