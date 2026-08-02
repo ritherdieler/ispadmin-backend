@@ -6,7 +6,7 @@
 2. `net.diag.api-key` configurado
 3. Filas en `net_diag_target` con `device_ref_id` apuntando a `network_device.id` y `enabled=true`
 4. REST RouterOS accesible (443 / truststore según `router.os.client.rest.*`)
-5. (Opcional WhatsApp) `net.diag.whatsapp.noc-phone` + plantilla Meta `noc_alert_v1` aprobada
+5. (Opcional WhatsApp) `net.diag.whatsapp.noc-phone` (`NET_DIAG_WHATSAPP_NOC_PHONE`, E.164 sin espacios; prod/local: **51982014925**) + plantilla Meta `noc_alert_v1` aprobada
 6. (Fase 1.5) Netwatch seed manual, SNMP traps y/o syslog hacia el VPS — ver [netdiag-mikrotik-ros7.md](./netdiag-mikrotik-ros7.md)
 
 ## Superficie API (alineada con backoffice NOC)

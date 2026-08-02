@@ -12,6 +12,7 @@
 | **NetDiag seed Netwatch/SNMP/syslog (.rsc, manual)** | [netdiag-mikrotik-seed.rsc](./netdiag-mikrotik-seed.rsc) |
 | **NetDiag runbooks NOC** | [netdiag-runbooks.md](./netdiag-runbooks.md) |
 | **NetDiag rendimiento listado incidentes (N+1 + summary)** | [netdiag-incidents-performance.md](./netdiag-incidents-performance.md) |
+| **NetDiag purga ingest NOC prod (2026-08-01)** | [netdiag-purge-ingest-prod-2026-08-01.md](./netdiag-purge-ingest-prod-2026-08-01.md) |
 | **RouterOS client port (REST + classic)** | [routeros-client-port.md](./routeros-client-port.md) |
 | **Hub de Observabilidad (contrato + extracción)** | [observability-hub.md](./observability-hub.md) |
 | **Hardening ingest path + replay workflowId + timestamp** | [observabilidad-hardening-ingest-replay-workflow.md](./observabilidad-hardening-ingest-replay-workflow.md) |
