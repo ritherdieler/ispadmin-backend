@@ -27,6 +27,7 @@
 | **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) |
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |
 | Deploy flow | [deploy-flow.md](./deploy-flow.md) |
+| **Deploy prod NetDiag 2026-08-01** | [deploy-prod-netdiag-2026-08-01.md](./deploy-prod-netdiag-2026-08-01.md) |
 | **Versionado por release en deploy (semver+git)** | [observability-release-versioning-deploy.md](./observability-release-versioning-deploy.md) |
 | **Release en runtime + registro de deploys + filtros por release (backend)** | [observability-release-comparacion-backend.md](./observability-release-comparacion-backend.md) |
 | DJL models en WAR | [djl-models-in-war.md](./djl-models-in-war.md) |
