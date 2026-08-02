@@ -124,6 +124,25 @@ interface ObsSpanRepository : JpaRepository<ObsSpan, Long> {
 
     @Query(
         """
+        SELECT s.sessionId, MAX(s.platform), COUNT(s), MAX(s.startEpochMs), MIN(s.startEpochMs)
+        FROM ObsSpan s
+        WHERE s.parentSpanId IS NULL
+          AND s.sessionId IS NOT NULL
+          AND s.startEpochMs >= :fromMs
+          AND s.startEpochMs <= :toMs
+          AND (:release IS NULL OR s.release = :release)
+        GROUP BY s.sessionId
+        ORDER BY MAX(s.startEpochMs) DESC
+        """
+    )
+    fun aggregateRecentSessions(
+        @Param("fromMs") fromMs: Long,
+        @Param("toMs") toMs: Long,
+        @Param("release") release: String?
+    ): List<Array<Any>>
+
+    @Query(
+        """
         SELECT COUNT(s), SUM(CASE WHEN s.status = 'ERROR' THEN 1 ELSE 0 END)
         FROM ObsSpan s
         WHERE s.parentSpanId IS NULL

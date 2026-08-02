@@ -15,14 +15,17 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import java.sql.Timestamp
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class ObsSessionQueryService(
     private val eventRepository: ObsEventRepository,
     private val spanRepository: ObsSpanRepository,
     private val replayRepository: ObsReplayRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val zone: ZoneId = ZoneId.systemDefault()
 ) {
 
     fun listSessions(
@@ -32,10 +35,23 @@ class ObsSessionQueryService(
         page: Int,
         size: Int
     ): PagedResponse<SessionSummaryDto> {
-        val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 200))
-        val result = eventRepository.aggregateRecentSessions(from, to, release?.takeIf { it.isNotBlank() }, pageable)
-        val rows = result.content
-        val sessionIds = rows.mapNotNull { it[0]?.toString() }
+        val normalizedRelease = release?.takeIf { it.isNotBlank() }
+        val pageable = PageRequest.of(0, MAX_SESSION_ROWS)
+        val eventRows = eventRepository.aggregateRecentSessions(from, to, normalizedRelease, pageable).content
+        val fromMs = from.atZone(zone).toInstant().toEpochMilli()
+        val toMs = to.atZone(zone).toInstant().toEpochMilli()
+        val spanRows = spanRepository.aggregateRecentSessions(fromMs, toMs, normalizedRelease)
+
+        val merged = mergeSessionAggregates(eventRows, spanRows)
+        val safePage = page.coerceAtLeast(0)
+        val safeSize = size.coerceIn(1, 200)
+        val totalElements = merged.size.toLong()
+        val totalPages = if (totalElements == 0L) 0 else ((totalElements + safeSize - 1) / safeSize).toInt()
+        val pageContent = merged
+            .drop(safePage * safeSize)
+            .take(safeSize)
+
+        val sessionIds = pageContent.mapNotNull { it.sessionId }
 
         val traceCounts = if (sessionIds.isNotEmpty()) {
             spanRepository.countRootSpansBySession(sessionIds).associate {
@@ -47,8 +63,8 @@ class ObsSessionQueryService(
             replayRepository.findSessionIdsWithReplay(sessionIds).toSet()
         } else emptySet()
 
-        val content = rows.map { row ->
-            val sessionId = row[0]?.toString()
+        val content = pageContent.map { agg ->
+            val sessionId = agg.sessionId
             val lastEvent = sessionId?.let { eventRepository.findFirstBySessionIdOrderByCreatedAtDesc(it) }
             val user = when {
                 sessionId == null -> null
@@ -57,22 +73,22 @@ class ObsSessionQueryService(
             }
             SessionSummaryDto(
                 sessionId = sessionId,
-                platform = row[1]?.toString(),
-                eventCount = (row[2] as Number).toLong(),
-                traceCount = traceCounts[sessionId] ?: 0L,
+                platform = agg.platform,
+                eventCount = agg.eventCount,
+                traceCount = traceCounts[sessionId] ?: agg.rootSpanCount,
                 hasReplay = sessionId != null && sessionId in withReplay,
-                firstSeen = toLocalDateTime(row[4]),
-                lastSeen = toLocalDateTime(row[3]),
+                firstSeen = agg.firstSeen,
+                lastSeen = agg.lastSeen,
                 user = user
             )
         }
 
         return PagedResponse(
             content = content,
-            page = result.number,
-            size = result.size,
-            totalElements = result.totalElements,
-            totalPages = result.totalPages
+            page = safePage,
+            size = safeSize,
+            totalElements = totalElements,
+            totalPages = totalPages
         )
     }
 
@@ -118,14 +134,18 @@ class ObsSessionQueryService(
 
         val platform = allEvents.firstOrNull()?.platform ?: rootSpans.firstOrNull()?.platform
         val createdAts = allEvents.mapNotNull { it.createdAt }
+        val spanTimes = rootSpans.mapNotNull { span ->
+            span.startEpochMs?.let { epochMsToLocalDateTime(it) }
+        }
+        val allTimes = createdAts + spanTimes
         val summary = SessionSummaryDto(
             sessionId = sessionId,
             platform = platform,
             eventCount = allEvents.size.toLong(),
             traceCount = traces.size.toLong(),
             hasReplay = replays.isNotEmpty(),
-            firstSeen = createdAts.minOrNull(),
-            lastSeen = createdAts.maxOrNull(),
+            firstSeen = allTimes.minOrNull(),
+            lastSeen = allTimes.maxOrNull(),
             user = resolveSessionUser(allEvents)
         )
 
@@ -136,6 +156,49 @@ class ObsSessionQueryService(
             replays = replays,
             workflows = ObsWorkflowAggregation.fromEvents(allEvents)
         )
+    }
+
+    private fun mergeSessionAggregates(
+        eventRows: List<Array<Any>>,
+        spanRows: List<Array<Any>>
+    ): List<SessionAggregate> {
+        val byId = LinkedHashMap<String, SessionAggregate>()
+        for (row in eventRows) {
+            val sessionId = row[0]?.toString() ?: continue
+            byId[sessionId] = SessionAggregate(
+                sessionId = sessionId,
+                platform = row[1]?.toString(),
+                eventCount = (row[2] as Number).toLong(),
+                lastSeen = toLocalDateTime(row[3]),
+                firstSeen = toLocalDateTime(row[4]),
+                rootSpanCount = 0L
+            )
+        }
+        for (row in spanRows) {
+            val sessionId = row[0]?.toString() ?: continue
+            val rootSpanCount = (row[2] as Number).toLong()
+            val lastSeen = epochMsToLocalDateTime(row[3] as Number)
+            val firstSeen = epochMsToLocalDateTime(row[4] as Number)
+            val existing = byId[sessionId]
+            if (existing == null) {
+                byId[sessionId] = SessionAggregate(
+                    sessionId = sessionId,
+                    platform = row[1]?.toString(),
+                    eventCount = 0L,
+                    lastSeen = lastSeen,
+                    firstSeen = firstSeen,
+                    rootSpanCount = rootSpanCount
+                )
+            } else {
+                byId[sessionId] = existing.copy(
+                    platform = existing.platform ?: row[1]?.toString(),
+                    lastSeen = maxOfLocalDateTime(existing.lastSeen, lastSeen),
+                    firstSeen = minOfLocalDateTime(existing.firstSeen, firstSeen),
+                    rootSpanCount = maxOf(existing.rootSpanCount, rootSpanCount)
+                )
+            }
+        }
+        return byId.values.sortedByDescending { it.lastSeen ?: LocalDateTime.MIN }
     }
 
     private fun buildTraceSummaries(rootSpans: List<ObsSpan>): List<TraceSummaryDto> {
@@ -178,6 +241,21 @@ class ObsSessionQueryService(
         else -> null
     }
 
+    private fun epochMsToLocalDateTime(value: Number): LocalDateTime? =
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(value.toLong()), zone)
+
+    private fun maxOfLocalDateTime(a: LocalDateTime?, b: LocalDateTime?): LocalDateTime? = when {
+        a == null -> b
+        b == null -> a
+        else -> if (a.isAfter(b)) a else b
+    }
+
+    private fun minOfLocalDateTime(a: LocalDateTime?, b: LocalDateTime?): LocalDateTime? = when {
+        a == null -> b
+        b == null -> a
+        else -> if (a.isBefore(b)) a else b
+    }
+
     private fun parseJson(raw: String?): Any? {
         if (raw.isNullOrBlank()) return null
         return try {
@@ -185,5 +263,18 @@ class ObsSessionQueryService(
         } catch (e: Exception) {
             raw
         }
+    }
+
+    private data class SessionAggregate(
+        val sessionId: String,
+        val platform: String?,
+        val eventCount: Long,
+        val lastSeen: LocalDateTime?,
+        val firstSeen: LocalDateTime?,
+        val rootSpanCount: Long
+    )
+
+    companion object {
+        private const val MAX_SESSION_ROWS = 5000
     }
 }

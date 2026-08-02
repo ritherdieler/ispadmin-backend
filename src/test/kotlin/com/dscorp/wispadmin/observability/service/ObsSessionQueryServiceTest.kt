@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class ObsSessionQueryServiceTest {
 
@@ -26,7 +27,8 @@ class ObsSessionQueryServiceTest {
         eventRepository,
         spanRepository,
         replayRepository,
-        objectMapper
+        objectMapper,
+        ZoneId.systemDefault()
     )
 
     @Test
