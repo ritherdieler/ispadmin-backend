@@ -43,8 +43,39 @@ interface NetDiagIncidentRepository : JpaRepository<NetDiagIncident, Long> {
     fun findByStatusOrderByOpenedAtDesc(status: String): List<NetDiagIncident>
     fun findByDedupKeyAndStatus(dedupKey: String, status: String): Optional<NetDiagIncident>
     fun findByTarget_IdAndStatus(targetId: Long, status: String): List<NetDiagIncident>
+    fun findByTarget_IdAndStatusAndReasonCode(
+        targetId: Long,
+        status: String,
+        reasonCode: String
+    ): List<NetDiagIncident>
     fun findByTarget_IdInAndStatus(targetIds: Collection<Long>, status: String): List<NetDiagIncident>
-    fun existsByTarget_IdAndStatus(targetId: Long, status: String): Boolean
+
+    @Query(
+        """
+        SELECT DISTINCT i FROM NetDiagIncident i
+        LEFT JOIN FETCH i.target
+        WHERE UPPER(i.status) IN :statuses
+          AND (:severity IS NULL OR UPPER(i.severity) = :severity)
+          AND (:targetId IS NULL OR i.target.id = :targetId)
+          AND (:fromAt IS NULL OR i.openedAt >= :fromAt)
+          AND (:toAt IS NULL OR i.openedAt <= :toAt)
+        ORDER BY i.openedAt DESC
+        """
+    )
+    fun findForList(
+        @Param("statuses") statuses: Collection<String>,
+        @Param("severity") severity: String?,
+        @Param("targetId") targetId: Long?,
+        @Param("fromAt") fromAt: Instant?,
+        @Param("toAt") toAt: Instant?
+    ): List<NetDiagIncident>
+
+    @Query("SELECT i FROM NetDiagIncident i LEFT JOIN FETCH i.target WHERE i.id = :id")
+    fun findByIdWithTarget(@Param("id") id: Long): Optional<NetDiagIncident>
+
+    fun countByStatusIn(statuses: Collection<String>): Long
+    fun countBySeverityAndStatusIn(severity: String, statuses: Collection<String>): Long
+    fun countByReasonCodeAndStatusIn(reasonCode: String, statuses: Collection<String>): Long
 }
 
 @Repository

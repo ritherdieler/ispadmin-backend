@@ -170,8 +170,8 @@ class HuaweiOltAlarmParser {
             name.contains("dying-gasp") || name.contains("dying gasp") -> "ONT_DYING_GASP"
             name.contains("losi") || name.contains("lobi") ||
                 (name.contains("distribute fiber") && name.contains("optical")) -> "ONT_OFFLINE"
-            (name.contains("feeder") && name.contains("los")) ||
-                (name.contains("los") && !name.contains("losi") && !name.contains("lobi") &&
+            (name.contains("feeder") && containsGponPortLos(name)) ||
+                (containsGponPortLos(name) &&
                     (name.contains("feeder") || name.contains("expected optical signals from onts"))) ->
                 "PON_PORT_DOWN"
             name.contains("lofi") || name.contains("loss of frame of onti") -> "ONT_LOFI"
@@ -210,11 +210,17 @@ class HuaweiOltAlarmParser {
                 "OLT_FAN_FAULT"
             name.contains("temperature") && (name.contains("high") || name.contains("abnormal") || name.contains("exceed")) ->
                 "OLT_TEMP_HIGH"
-            name.contains("uplink") && (name.contains("down") || name.contains("los") || name.contains("fail")) ->
+            name.contains("uplink") && (name.contains("down") || containsGponPortLos(name) || name.contains("fail")) ->
                 "OLT_UPLINK_DOWN"
-            name.contains("los") && !name.contains("losi") -> "PON_PORT_DOWN"
+            containsGponPortLos(name) -> "PON_PORT_DOWN"
             else -> "OLT_ALARM"
         }
+    }
+
+    internal fun containsGponPortLos(name: String): Boolean {
+        if (name.contains("losi") || name.contains("lobi")) return false
+        if (name.contains("(los)")) return true
+        return Regex("""\blos\b""").containsMatchIn(name)
     }
 
     private fun mapSeverity(reasonCode: String, severityRaw: String?): String {

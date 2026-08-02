@@ -18,14 +18,15 @@ class QueueManagerService(
     private val errorLogRepository: ErrorLogRepository,
     private val scheduledTaskLogService: ScheduledTaskLogService
 ) : IQueueManager {
-    
+
     private val logger = LoggerFactory.getLogger(QueueManagerService::class.java)
-    
+
     companion object {
+        private const val PATH_QUEUE_SIMPLE = "/queue/simple"
         private const val QUEUE_NAME_TEMPLATE_FIBER = "id:%d, usuario:%s %s, lugar:%s, nap:%s, plan:%s, tipo:%s"
         private const val QUEUE_NAME_TEMPLATE_WIRELESS = "id:%d, usuario:%s %s, lugar:%s, plan:%s, tipo:%s"
     }
-    
+
     override fun buildQueueName(subscription: Subscription): String {
         return when (subscription.installationType) {
             InstallationType.FIBER -> {
@@ -52,56 +53,61 @@ class QueueManagerService(
             }
         }
     }
-    
+
     override fun recreateQueueForSubscription(session: MikrotikSession, subscription: Subscription): Boolean {
-        val queryByIp = "/queue/simple/print where target=${subscription.ip}/32"
-        val resultByIp = session.execute(queryByIp)
+        val resultByIp = session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
 
         val queueToRemove = if (resultByIp.isNotEmpty()) {
             resultByIp.last()
         } else {
             val exactName = buildQueueName(subscription)
-            val queryByName = "/queue/simple/print where name='$exactName'"
-            val resultByName = session.execute(queryByName)
-            resultByName.lastOrNull()
+            session.print(PATH_QUEUE_SIMPLE, mapOf("name" to exactName)).lastOrNull()
         }
 
-        queueToRemove?.let {
-            session.execute("/queue/simple/remove numbers=${it[".id"]}")
-        }
+        queueToRemove?.get(".id")?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
 
         subscription.ip?.let { ip ->
             if (ip.isNotEmpty()) {
-                val queueName = buildQueueName(subscription)
-                val command =
-                    "/queue/simple/add name='${queueName}' target=${subscription.ip} max-limit=${subscription.plan!!.uploadSpeed!!}M/${subscription.plan!!.downloadSpeed!!}M comment='${subscription.installationType}'"
-                session.execute(command)
+                addSimpleQueue(session, subscription, includeInstallationComment = true)
                 return true
             }
         }
         return false
     }
-    
+
     override fun configureMikroTikQueue(session: MikrotikSession, subscription: Subscription) {
-        val queueName = buildQueueName(subscription)
-        val queueCommand =
-            "/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${subscription.plan?.uploadSpeed}M/${subscription.plan?.downloadSpeed}M"
-        session.execute(queueCommand)
+        addSimpleQueue(session, subscription, includeInstallationComment = false)
     }
-    
+
     override fun updateMikroTikQueue(subscription: Subscription) {
         subscription.hostDevice?.executeCommand { session ->
-            val searchQuery = "/queue/simple/print where target=${subscription.ip}/32"
-            val existingQueues = session.execute(searchQuery)
-            existingQueues.forEach { queue ->
-                session.execute("/queue/simple/remove .id=${queue[".id"]}")
-            }
-
-            val queueName = buildQueueName(subscription)
-            session.execute("/queue/simple/add name='$queueName' target=${subscription.ip} max-limit=${subscription.plan?.uploadSpeed}M/${subscription.plan?.downloadSpeed}M")
+            session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
+                .forEach { queue ->
+                    queue[".id"]?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
+                }
+            addSimpleQueue(session, subscription, includeInstallationComment = false)
         }
     }
-    
+
+    private fun addSimpleQueue(
+        session: MikrotikSession,
+        subscription: Subscription,
+        includeInstallationComment: Boolean
+    ) {
+        val queueName = buildQueueName(subscription)
+        val upload = subscription.plan?.uploadSpeed
+        val download = subscription.plan?.downloadSpeed
+        val args = mutableMapOf(
+            "name" to queueName,
+            "target" to subscription.ip.orEmpty(),
+            "max-limit" to "${upload}M/${download}M"
+        )
+        if (includeInstallationComment) {
+            args["comment"] = subscription.installationType?.name.orEmpty()
+        }
+        session.add(PATH_QUEUE_SIMPLE, args)
+    }
+
     override fun createSubscriptionsSimpleQueue(): CompletableFuture<QueueCreationStats> {
         return CompletableFuture.supplyAsync {
             try {
@@ -165,7 +171,7 @@ class QueueManagerService(
                     errorsCount = 1,
                     omittedByTvCable = 0
                 )
-                
+
                 scheduledTaskLogService.logQueueCreation(errorStats)
 
                 return@supplyAsync errorStats

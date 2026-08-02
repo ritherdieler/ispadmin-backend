@@ -5,8 +5,6 @@ import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
 import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.routeros.port.MikrotikTimeoutException
 import com.dscorp.wispadmin.routeros.port.MikrotikUnreachableException
-import me.legrange.mikrotik.ApiConnectionException
-import me.legrange.mikrotik.MikrotikApiException
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -76,9 +74,6 @@ object MikrotikExceptionMapper {
     }
 
     private fun isUnreachable(error: Throwable): Boolean {
-        if (error is ApiConnectionException) {
-            return true
-        }
         var current: Throwable? = error
         while (current != null) {
             if (current is ConnectException ||
@@ -93,12 +88,6 @@ object MikrotikExceptionMapper {
                     text.contains("network is unreachable") ||
                     text.contains("failed to connect")
                 ) {
-                    return true
-                }
-            }
-            if (current is MikrotikApiException && current !is ApiConnectionException) {
-                val text = (current.message ?: "").lowercase()
-                if (text.contains("connection refused") || text.contains("unreachable")) {
                     return true
                 }
             }

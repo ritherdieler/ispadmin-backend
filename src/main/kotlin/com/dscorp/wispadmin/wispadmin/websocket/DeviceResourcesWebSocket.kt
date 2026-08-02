@@ -90,8 +90,8 @@ class DeviceResourcesWebSocket(
         if (activeSessions[device.id]?.size == 1) {
             val task = mikrotikConnectionService.scheduleMonitoring(
                 device = device,
-                command = "/system/resource/print",
-                intervalMs = 1000L, // 1 segundo
+                path = "/system/resource",
+                intervalMs = 1000L,
                 onData = { systemResource ->
                     if (activeSessions[device.id]?.isNotEmpty() == true) {
                         try {

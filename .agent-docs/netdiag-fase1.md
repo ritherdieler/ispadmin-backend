@@ -22,7 +22,8 @@ Módulo `netdiag` operativo (opt-in) con:
 
 | Método | Path | Notas |
 |---|---|---|
-| GET | `/api/netdiag/incidents` | Query: `severity`, `status`, `targetId`, `dateFrom`, `dateTo` |
+| GET | `/api/netdiag/incidents` | Query: `severity`, `status`, `targetId`, `dateFrom`, `dateTo`. Sin `status` → solo activos (`OPEN`, `ACKNOWLEDGED`, `SILENCED`) |
+| GET | `/api/netdiag/incidents/summary` | Counts SQL: `{ openCount, p0OpenCount, pollStaleCount }` |
 | GET | `/api/netdiag/incidents/{id}` | Detail + timeline |
 | GET | `/api/netdiag/incidents/{id}/llm-context` | **text/plain** markdown (no JSON wrapper) |
 | GET | `/api/netdiag/incidents/{id}/diagnostic-json` | Mapa JSON en raíz |
@@ -31,6 +32,8 @@ Módulo `netdiag` operativo (opt-in) con:
 | POST | `/api/netdiag/alerts/ingest` | OLT / push externo |
 
 Summary incluye `targetName` y `lastNotifiedAt`.
+
+Detalle de rendimiento del listado (fix N+1, índices, summary): [netdiag-incidents-performance.md](./netdiag-incidents-performance.md).
 
 ## Poll REST
 

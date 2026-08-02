@@ -45,37 +45,53 @@ class AlertEvaluator(
         }
     }
 
+    fun reconcilePollSignals(targetId: Long, activeDedupKeys: Set<String>) {
+        val lock = locks.computeIfAbsent(targetId) { Any() }
+        synchronized(lock) {
+            incidentRepository.findByTarget_IdAndStatus(targetId, "OPEN").forEach { incident ->
+                val code = incident.reasonCode ?: return@forEach
+                if (code !in POLL_CLEARABLE_REASON_CODES) return@forEach
+                if (incident.dedupKey in activeDedupKeys) return@forEach
+                resolveByDedupKeyLocked(incident.dedupKey, "poll signal cleared")
+            }
+        }
+    }
+
     fun resolveByDedupKey(dedupKey: String, details: String?): Boolean {
         val existing = incidentRepository.findByDedupKeyAndStatus(dedupKey, "OPEN").orElse(null)
             ?: return false
         val lockKey = existing.target?.id ?: -1L
         val lock = locks.computeIfAbsent(lockKey) { Any() }
         synchronized(lock) {
-            val incident = incidentRepository.findByDedupKeyAndStatus(dedupKey, "OPEN").orElse(null)
-                ?: return false
-            incident.status = "RESOLVED"
-            incident.resolvedAt = Instant.now()
-            incidentRepository.save(incident)
-            incidentEventRepository.save(
-                NetDiagIncidentEvent(
-                    incident = incident,
-                    type = "CLEARED",
-                    payload = details,
-                    createdAt = Instant.now()
-                )
-            )
-            alertDecisionRepository.save(
-                NetDiagAlertDecision(
-                    target = incident.target,
-                    incident = incident,
-                    decision = "CLEARED",
-                    reasonCode = incident.reasonCode.orEmpty(),
-                    details = details,
-                    createdAt = Instant.now()
-                )
-            )
-            return true
+            return resolveByDedupKeyLocked(dedupKey, details)
         }
+    }
+
+    private fun resolveByDedupKeyLocked(dedupKey: String, details: String?): Boolean {
+        val incident = incidentRepository.findByDedupKeyAndStatus(dedupKey, "OPEN").orElse(null)
+            ?: return false
+        incident.status = "RESOLVED"
+        incident.resolvedAt = Instant.now()
+        incidentRepository.save(incident)
+        incidentEventRepository.save(
+            NetDiagIncidentEvent(
+                incident = incident,
+                type = "CLEARED",
+                payload = details,
+                createdAt = Instant.now()
+            )
+        )
+        alertDecisionRepository.save(
+            NetDiagAlertDecision(
+                target = incident.target,
+                incident = incident,
+                decision = "CLEARED",
+                reasonCode = incident.reasonCode.orEmpty(),
+                details = details,
+                createdAt = Instant.now()
+            )
+        )
+        return true
     }
 
     private fun evaluateLocked(targetId: Long?, signals: List<AlertSignal>): AlertEvaluationResult {
@@ -202,6 +218,28 @@ class AlertEvaluator(
             decisions = decisions,
             openedIncidentIds = opened,
             suppressed = suppressed
+        )
+    }
+
+    companion object {
+        val POLL_CLEARABLE_REASON_CODES = setOf(
+            "LINK_DOWN",
+            "GRE_TUNNEL_DOWN",
+            "OPTICAL_RX_LOW",
+            "OPTICAL_TX_FAULT",
+            "POLL_STALE",
+            "UPSTREAM_PROBE_FAIL",
+            "PSU_FAIL",
+            "FAN_FAIL",
+            "LOW_VOLTAGE",
+            "FIRMWARE_DRIFT",
+            "CPU_HIGH",
+            "UNEXPECTED_REBOOT",
+            "DEVICE_UNREACHABLE",
+            "AUTH_FAILURE",
+            "TIMEOUT",
+            "COMMAND_ERROR",
+            "DEVICE_NOT_FOUND"
         )
     }
 }

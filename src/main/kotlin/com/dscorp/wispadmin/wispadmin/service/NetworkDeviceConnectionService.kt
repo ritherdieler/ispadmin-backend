@@ -10,13 +10,9 @@ class NetworkDeviceConnectionService {
     @Autowired
     private lateinit var mikrotikConnectionService: MikroTikConnectionService
 
-    /**
-     * Obtiene información de las interfaces del dispositivo
-     */
     fun getDeviceInterfaces(device: NetworkDevice): List<Map<String, String>> {
-        return mikrotikConnectionService.executeSingleCommand(device, "/interface/print")
-            .filter { interfaceInfo -> 
-                // Filtrar interfaces de tipo pppoe-in
+        return mikrotikConnectionService.printOnDevice(device, "/interface")
+            .filter { interfaceInfo ->
                 interfaceInfo["type"] != "pppoe-in"
             }
             .map { interfaceInfo ->
@@ -32,14 +28,15 @@ class NetworkDeviceConnectionService {
             }
     }
 
-    /**
-     * Obtiene información del sistema del dispositivo
-     */
     fun getDeviceSystemInfo(device: NetworkDevice): Map<String, String> {
-        val systemInfo = mikrotikConnectionService.executeSingleCommand(device, "/system/resource/print").firstOrNull() ?: emptyMap()
-        val identityInfo = mikrotikConnectionService.executeSingleCommand(device, "/system/identity/print").firstOrNull() ?: emptyMap()
-        val versionInfo = mikrotikConnectionService.executeSingleCommand(device, "/system/package/print where name=routeros").firstOrNull() ?: emptyMap()
-        
+        val systemInfo = mikrotikConnectionService.printOnDevice(device, "/system/resource").firstOrNull() ?: emptyMap()
+        val identityInfo = mikrotikConnectionService.printOnDevice(device, "/system/identity").firstOrNull() ?: emptyMap()
+        val versionInfo = mikrotikConnectionService.printOnDevice(
+            device,
+            "/system/package",
+            mapOf("name" to "routeros")
+        ).firstOrNull() ?: emptyMap()
+
         return mapOf(
             "identity" to (identityInfo["name"] ?: ""),
             "version" to (versionInfo["version"] ?: ""),
@@ -53,12 +50,9 @@ class NetworkDeviceConnectionService {
         )
     }
 
-    /**
-     * Obtiene información de recursos del dispositivo
-     */
     fun getDeviceResources(device: NetworkDevice): Map<String, Any> {
-        val systemInfo = mikrotikConnectionService.executeSingleCommand(device, "/system/resource/print").firstOrNull() ?: emptyMap()
-        
+        val systemInfo = mikrotikConnectionService.printOnDevice(device, "/system/resource").firstOrNull() ?: emptyMap()
+
         val memoryUsage = try {
             val totalMemory = (systemInfo["total-memory"] ?: "0").toLong()
             val freeMemory = (systemInfo["free-memory"] ?: "0").toLong()
@@ -73,7 +67,7 @@ class NetworkDeviceConnectionService {
         } catch (e: Exception) {
             mapOf("error" to "Error calculando uso de memoria")
         }
-        
+
         val diskUsage = try {
             val totalHdd = (systemInfo["total-hdd-space"] ?: "0").toLong()
             val freeHdd = (systemInfo["free-hdd-space"] ?: "0").toLong()
@@ -88,7 +82,7 @@ class NetworkDeviceConnectionService {
         } catch (e: Exception) {
             mapOf("error" to "Error calculando uso de disco")
         }
-        
+
         return mapOf(
             "cpu" to mapOf(
                 "load" to (systemInfo["cpu-load"] ?: "0"),
@@ -104,9 +98,6 @@ class NetworkDeviceConnectionService {
         )
     }
 
-    /**
-     * Ejecuta un comando personalizado en el dispositivo
-     */
     fun executeCustomCommand(device: NetworkDevice, command: String): List<Map<String, String>> {
         return try {
             mikrotikConnectionService.executeSingleCommand(device, command)
@@ -114,4 +105,4 @@ class NetworkDeviceConnectionService {
             listOf(mapOf("error" to (e.message ?: "Error ejecutando comando")))
         }
     }
-} 
+}

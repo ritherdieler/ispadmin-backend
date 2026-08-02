@@ -27,23 +27,11 @@ class IpPoolService(
      * @param ipSegment El segmento IP a eliminar
      */
     private fun removeIpAddressById(hostDevice: com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice, ipSegment: String) {
-        hostDevice.executeCommand {
-            // Primero obtener todas las direcciones IP
-            val addressesQuery = "/ip/address/print"
-            val addresses = it.execute(addressesQuery)
-            
-            // Buscar la dirección que coincida con el segmento IP
-            val targetAddress = addresses.find { address ->
-                address["address"] == ipSegment
-            }
-            
-            // Si se encuentra la dirección, eliminar por ID
-            targetAddress?.let { address ->
-                val addressId = address[".id"]
-                if (addressId != null) {
-                    val removeQuery = "/ip/address/remove .id=$addressId"
-                    it.execute(removeQuery)
-                }
+        hostDevice.executeCommand { session ->
+            val addresses = session.print("/ip/address")
+            val targetAddress = addresses.find { address -> address["address"] == ipSegment }
+            targetAddress?.get(".id")?.let { addressId ->
+                session.remove("/ip/address", addressId)
             }
         }
     }
@@ -58,9 +46,15 @@ class IpPoolService(
             val savedIpPool = repository.save(IpPool)
 
             // Registrar en MikroTik (si falla, se hace rollback automático de la BD)
-            hostDevice.executeCommand {
-                val query = "/ip/address/add address=${newIpPool.ipSegment} interface=LAN comment='NO BORRAR - GENERADO POR ISP ADMIN'"
-                it.execute(query)
+            hostDevice.executeCommand { session ->
+                session.add(
+                    "/ip/address",
+                    mapOf(
+                        "address" to newIpPool.ipSegment,
+                        "interface" to "LAN",
+                        "comment" to "NO BORRAR - GENERADO POR ISP ADMIN"
+                    )
+                )
             }
 
             return savedIpPool

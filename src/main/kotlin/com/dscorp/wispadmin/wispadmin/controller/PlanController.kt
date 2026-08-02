@@ -62,15 +62,18 @@ class PlanController(
 
         CompletableFuture.runAsync {
             groupedHostDevice.forEach { id, subs ->
-                subs.first().hostDevice?.executeCommand { apiConnection ->
+                subs.first().hostDevice?.executeCommand { session ->
                     subs.forEach {
                         if (it.ip.isNullOrBlank()) {
                             logger.warn("Suscripción {} con IP nula/vacía. Se omite actualización de cola.", it.id)
                         } else {
-                            val query = "/queue/simple/print where target=${it.ip}/32"
-                            val result = apiConnection.execute(query)
-                            result.singleOrNull()?.let { map ->
-                                apiConnection.execute("/queue/simple/set .id=${map[".id"]} max-limit=${planToUpdate.uploadSpeed}M/${planToUpdate.downloadSpeed}M")
+                            val result = session.print("/queue/simple", mapOf("target" to "${it.ip}/32"))
+                            result.singleOrNull()?.get(".id")?.let { id ->
+                                session.set(
+                                    "/queue/simple",
+                                    id,
+                                    mapOf("max-limit" to "${planToUpdate.uploadSpeed}M/${planToUpdate.downloadSpeed}M")
+                                )
                             }
                         }
                     }

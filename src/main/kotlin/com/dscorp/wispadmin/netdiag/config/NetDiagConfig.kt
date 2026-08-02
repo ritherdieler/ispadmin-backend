@@ -2,9 +2,7 @@ package com.dscorp.wispadmin.netdiag.config
 
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
-import com.dscorp.wispadmin.routeros.adapter.LegrangeClassicAdapter
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
-import com.dscorp.wispadmin.routeros.adapter.RouterOsRestClassicFallbackAdapter
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -39,16 +37,9 @@ class NetDiagConfig {
     @Bean(name = ["netDiagMikrotikClient"], destroyMethod = "close")
     fun netDiagMikrotikClient(
         routerOsClientProperties: RouterOsClientProperties,
-        netDiagProperties: NetDiagProperties,
         objectMapper: ObjectMapper
     ): MikrotikClient {
-        val restClient = RouterOs7RestAdapter(routerOsClientProperties, objectMapper)
-        if (!netDiagProperties.mikrotik.fallbackClassic) {
-            return restClient
-        }
-        @Suppress("DEPRECATION")
-        val classicClient = LegrangeClassicAdapter(routerOsClientProperties)
-        return RouterOsRestClassicFallbackAdapter(restClient, classicClient)
+        return RouterOs7RestAdapter(routerOsClientProperties, objectMapper)
     }
 
     @Bean(name = ["netDiagRestTemplate"])

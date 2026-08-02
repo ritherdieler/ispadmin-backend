@@ -42,6 +42,7 @@ class MikrotikOpticalAdapterTest {
         assertEquals(1.2, rows[0].txPowerDbm)
         assertEquals(41.0, rows[0].temperatureC)
         assertEquals(true, rows[0].sfpPresent)
+        assertEquals(true, rows[0].opticalDdmAvailable)
     }
 
     @Test
@@ -52,6 +53,63 @@ class MikrotikOpticalAdapterTest {
 
         assertTrue(rows.isEmpty())
         verify(exactly = 0) { session.call(any(), any()) }
+    }
+
+    @Test
+    fun `collect modulo presente sin lecturas marca DDM no disponible`() {
+        val session = mockk<MikrotikSession>()
+        every {
+            session.call(
+                "/interface/ethernet/monitor",
+                mapOf("numbers" to "sfp-sfpplus1", "once" to "")
+            )
+        } returns listOf(
+            mapOf(
+                "name" to "sfp-sfpplus1",
+                "sfp-module-present" to "true"
+            )
+        )
+
+        val rows = adapter.collect(
+            session,
+            TargetMonitorConfig(opticalInterfaces = listOf("sfp-sfpplus1"))
+        )
+
+        assertEquals(1, rows.size)
+        assertEquals(false, rows[0].opticalDdmAvailable)
+    }
+
+    @Test
+    fun `collect MK2 DAC copper devuelve sfpPresent sin DDM optico`() {
+        val session = mockk<MikrotikSession>()
+        every {
+            session.call(
+                "/interface/ethernet/monitor",
+                mapOf("numbers" to "sfp-sfpplus1", "once" to "")
+            )
+        } returns listOf(
+            mapOf(
+                "name" to "sfp-sfpplus1",
+                "sfp-module-present" to "true",
+                "sfp-connector-type" to "copper-pigtail",
+                "sfp-vendor-part-number" to "FT-SFP-DAC1M",
+                "status" to "link-ok",
+                "rate" to "10Gbps"
+            )
+        )
+
+        val rows = adapter.collect(
+            session,
+            TargetMonitorConfig(opticalInterfaces = listOf("sfp-sfpplus1"))
+        )
+
+        assertEquals(1, rows.size)
+        assertEquals(true, rows[0].sfpPresent)
+        assertEquals(null, rows[0].rxPowerDbm)
+        assertEquals(null, rows[0].txPowerDbm)
+        assertEquals(null, rows[0].temperatureC)
+        assertEquals("copper-pigtail", rows[0].sfpConnectorType)
+        assertEquals(false, rows[0].opticalDdmAvailable)
     }
 
     @Test

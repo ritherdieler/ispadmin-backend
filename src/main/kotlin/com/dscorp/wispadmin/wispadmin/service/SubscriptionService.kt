@@ -378,11 +378,14 @@ class SubscriptionService(
     fun updateSubscriptionPlan(subscriptionId: Int, planId: Int): Subscription {
         val subscription = repository.findById(subscriptionId).get()
         val newPlan = planRepository.findById(planId).get()
-        subscription.hostDevice!!.executeCommand { connection ->
-            val query = "/queue/simple/print where target=${subscription.ip}/32"
-            val result = connection.execute(query)
-            result.lastOrNull()?.let { map ->
-                connection.execute("/queue/simple/set .id=${map[".id"]} max-limit=${newPlan.uploadSpeed}M/${newPlan.downloadSpeed}M")
+        subscription.hostDevice!!.executeCommand { session ->
+            val result = session.print("/queue/simple", mapOf("target" to "${subscription.ip}/32"))
+            result.lastOrNull()?.get(".id")?.let { id ->
+                session.set(
+                    "/queue/simple",
+                    id,
+                    mapOf("max-limit" to "${newPlan.uploadSpeed}M/${newPlan.downloadSpeed}M")
+                )
             }
         }
         subscription.plan = newPlan

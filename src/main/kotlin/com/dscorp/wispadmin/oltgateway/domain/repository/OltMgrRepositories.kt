@@ -73,6 +73,17 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
     fun findByOlt_IdWithStatus(@Param("oltId") oltId: Long): List<OltMgrOnu>
 
     @EntityGraph(attributePaths = ["status"])
+    @Query(
+        "SELECT o FROM OltMgrOnu o WHERE o.olt.id = :oltId AND o.board = :board " +
+            "AND o.port = :port AND o.deletedAt IS NULL"
+    )
+    fun findByOlt_IdAndBoardAndPortWithStatus(
+        @Param("oltId") oltId: Long,
+        @Param("board") board: Int,
+        @Param("port") port: Int
+    ): List<OltMgrOnu>
+
+    @EntityGraph(attributePaths = ["status"])
     fun findByDeletedAtIsNull(pageable: Pageable): Page<OltMgrOnu>
 
     @Query(

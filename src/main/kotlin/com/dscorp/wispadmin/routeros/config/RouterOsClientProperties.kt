@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "router.os.client")
 class RouterOsClientProperties {
 
-    var adapter: String = "classic"
+    var adapter: String = "rest"
 
     val classic: ClassicProperties = ClassicProperties()
 

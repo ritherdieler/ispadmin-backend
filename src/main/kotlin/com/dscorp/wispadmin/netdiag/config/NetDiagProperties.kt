@@ -25,12 +25,6 @@ class NetDiagProperties {
 
     val llm: LlmProperties = LlmProperties()
 
-    val mikrotik: MikrotikProperties = MikrotikProperties()
-
-    class MikrotikProperties {
-        var fallbackClassic: Boolean = true
-    }
-
     class LlmProperties {
         var webhookEnabled: Boolean = false
         var webhookUrl: String = ""

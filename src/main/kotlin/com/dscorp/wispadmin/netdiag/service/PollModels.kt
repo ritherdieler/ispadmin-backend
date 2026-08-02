@@ -60,7 +60,9 @@ data class OpticalSnapshot(
     val rxPowerDbm: Double?,
     val txPowerDbm: Double?,
     val temperatureC: Double?,
-    val sfpPresent: Boolean?
+    val sfpPresent: Boolean?,
+    val sfpConnectorType: String? = null,
+    val opticalDdmAvailable: Boolean? = null
 )
 
 data class AlertSignal(

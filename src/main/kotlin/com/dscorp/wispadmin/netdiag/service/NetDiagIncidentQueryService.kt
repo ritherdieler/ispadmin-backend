@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentEventDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
+import com.dscorp.wispadmin.netdiag.dto.IncidentsSummaryDto
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
 import com.dscorp.wispadmin.netdiag.exception.NetDiagConflictException
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -25,6 +26,7 @@ class NetDiagIncidentQueryService(
     private val maintenanceService: NetDiagMaintenanceService
 ) {
 
+    @Transactional(readOnly = true)
     fun listIncidents(
         severity: String? = null,
         status: String? = null,
@@ -34,16 +36,23 @@ class NetDiagIncidentQueryService(
     ): List<IncidentSummaryDto> {
         val from = parseInstantBound(dateFrom, endOfDay = false)
         val to = parseInstantBound(dateTo, endOfDay = true)
-        return incidentRepository.findAll()
-            .asSequence()
-            .filter { status.isNullOrBlank() || it.status.equals(status, ignoreCase = true) }
-            .filter { severity.isNullOrBlank() || it.severity.equals(severity, ignoreCase = true) }
-            .filter { targetId == null || it.target?.id == targetId }
-            .filter { from == null || !it.openedAt.isBefore(from) }
-            .filter { to == null || !it.openedAt.isAfter(to) }
-            .sortedByDescending { it.openedAt }
+        val statuses = if (status.isNullOrBlank()) {
+            ACTIVE_STATUSES
+        } else {
+            listOf(status.trim().uppercase())
+        }
+        val normalizedSeverity = severity?.trim()?.takeIf { it.isNotEmpty() }?.uppercase()
+        return incidentRepository.findForList(statuses, normalizedSeverity, targetId, from, to)
             .map { toSummary(it) }
-            .toList()
+    }
+
+    @Transactional(readOnly = true)
+    fun summarizeIncidents(): IncidentsSummaryDto {
+        return IncidentsSummaryDto(
+            openCount = incidentRepository.countByStatusIn(OPEN_STATUSES),
+            p0OpenCount = incidentRepository.countBySeverityAndStatusIn("P0", OPEN_STATUSES),
+            pollStaleCount = incidentRepository.countByReasonCodeAndStatusIn("POLL_STALE", OPEN_STATUSES)
+        )
     }
 
     fun getIncident(id: Long): IncidentDetailDto {
@@ -118,7 +127,7 @@ class NetDiagIncidentQueryService(
     }
 
     private fun findIncident(id: Long): NetDiagIncident {
-        return incidentRepository.findById(id)
+        return incidentRepository.findByIdWithTarget(id)
             .orElseThrow { IncidentNotFoundException("Incident not found: $id") }
     }
 
@@ -183,5 +192,10 @@ class NetDiagIncidentQueryService(
                 null
             }
         }
+    }
+
+    companion object {
+        private val ACTIVE_STATUSES = listOf("OPEN", "ACKNOWLEDGED", "SILENCED")
+        private val OPEN_STATUSES = listOf("OPEN", "ACKNOWLEDGED")
     }
 }

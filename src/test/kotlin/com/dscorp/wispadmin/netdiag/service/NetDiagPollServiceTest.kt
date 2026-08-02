@@ -99,6 +99,36 @@ class NetDiagPollServiceTest {
         service.pollAllEnabledTargets()
 
         verify { alertEvaluator.evaluate(1L, listOf(stale)) }
+        verify { alertEvaluator.reconcilePollSignals(1L, emptySet()) }
+    }
+
+    @Test
+    fun `pollOne reconcilia señales poll tras evaluar snapshot`() {
+        val target = NetDiagTarget(id = 1L, name = "MK1", deviceRefId = 7L)
+        val snapshot = PollSnapshot(
+            interfaces = emptyList(),
+            health = emptyList(),
+            routerboard = null,
+            resource = null,
+            criticalInterfaces = emptyList(),
+            expectedFirmware = null,
+            previousUptimeSeconds = null
+        )
+        every { pollAdapter.poll(target) } returns PollResult(
+            probeRun = NetDiagProbeRun(id = 1L, target = target, status = "SUCCESS"),
+            status = "SUCCESS",
+            payload = "{}",
+            snapshot = snapshot
+        )
+        every { signalExtractor.fromSnapshot(1L, snapshot) } returns emptyList()
+        every { probeRunRepository.findTopByTargetIdOrderByStartedAtDesc(1L) } returns Optional.of(
+            NetDiagProbeRun(id = 1L, target = target, status = "SUCCESS", startedAt = Instant.now())
+        )
+
+        service.pollOne(target)
+
+        verify { alertEvaluator.evaluate(1L, emptyList()) }
+        verify { alertEvaluator.reconcilePollSignals(1L, emptySet()) }
     }
 
     @Test
