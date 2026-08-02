@@ -19,12 +19,17 @@ class MikrotikOpticalAdapter {
                     mapOf("numbers" to iface, "once" to "")
                 )
                 val row = rows.firstOrNull() ?: return@runCatching null
+                val rxPowerDbm = parsePower(row["sfp-rx-power"] ?: row["rx-power"])
+                val txPowerDbm = parsePower(row["sfp-tx-power"] ?: row["tx-power"])
+                val temperatureC = parsePower(row["sfp-temperature"] ?: row["temperature"])
                 OpticalSnapshot(
                     interfaceName = row["name"].orEmpty().ifBlank { iface },
-                    rxPowerDbm = parsePower(row["sfp-rx-power"] ?: row["rx-power"]),
-                    txPowerDbm = parsePower(row["sfp-tx-power"] ?: row["tx-power"]),
-                    temperatureC = parsePower(row["sfp-temperature"] ?: row["temperature"]),
-                    sfpPresent = parseBool(row["sfp-module-present"] ?: row["sfp-present"])
+                    rxPowerDbm = rxPowerDbm,
+                    txPowerDbm = txPowerDbm,
+                    temperatureC = temperatureC,
+                    sfpPresent = parseBool(row["sfp-module-present"] ?: row["sfp-present"]),
+                    sfpConnectorType = row["sfp-connector-type"]?.takeIf { it.isNotBlank() },
+                    opticalDdmAvailable = resolveOpticalDdmAvailable(row, rxPowerDbm, txPowerDbm, temperatureC)
                 )
             }.getOrNull()
         }
@@ -43,5 +48,25 @@ class MikrotikOpticalAdapter {
             "false", "no", "0" -> false
             else -> null
         }
+    }
+
+    private fun resolveOpticalDdmAvailable(
+        row: Map<String, String>,
+        rxPowerDbm: Double?,
+        txPowerDbm: Double?,
+        temperatureC: Double?
+    ): Boolean {
+        if (rxPowerDbm != null || txPowerDbm != null || temperatureC != null) {
+            return true
+        }
+        val connector = row["sfp-connector-type"].orEmpty()
+        if (connector.contains("copper", ignoreCase = true)) {
+            return false
+        }
+        val partNumber = row["sfp-vendor-part-number"].orEmpty()
+        if (partNumber.contains("DAC", ignoreCase = true)) {
+            return false
+        }
+        return false
     }
 }

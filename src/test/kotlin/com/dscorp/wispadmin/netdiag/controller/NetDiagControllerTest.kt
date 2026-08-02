@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.netdiag.controller
 
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
+import com.dscorp.wispadmin.netdiag.dto.IncidentsSummaryDto
 import com.dscorp.wispadmin.netdiag.dto.OltLogEventDto
 import com.dscorp.wispadmin.netdiag.dto.OltLogPageDto
 import com.dscorp.wispadmin.netdiag.exception.IncidentNotFoundException
@@ -99,6 +100,21 @@ class NetDiagControllerTest {
             .andExpect(jsonPath("$[0].id").value(1))
             .andExpect(jsonPath("$[0].targetName").value("MK1"))
             .andExpect(jsonPath("$[0].severity").value("P0"))
+    }
+
+    @Test
+    fun `summary de incidentes retorna contadores agregados`() {
+        every { incidentQueryService.summarizeIncidents() } returns IncidentsSummaryDto(
+            openCount = 12L,
+            p0OpenCount = 3L,
+            pollStaleCount = 2L
+        )
+
+        mockMvc.perform(get("/api/netdiag/incidents/summary"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.openCount").value(12))
+            .andExpect(jsonPath("$.p0OpenCount").value(3))
+            .andExpect(jsonPath("$.pollStaleCount").value(2))
     }
 
     @Test

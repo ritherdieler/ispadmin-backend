@@ -11,6 +11,7 @@
 | **NetDiag ROS7 ops + prerrequisitos MK1** | [netdiag-mikrotik-ros7.md](./netdiag-mikrotik-ros7.md) |
 | **NetDiag seed Netwatch/SNMP/syslog (.rsc, manual)** | [netdiag-mikrotik-seed.rsc](./netdiag-mikrotik-seed.rsc) |
 | **NetDiag runbooks NOC** | [netdiag-runbooks.md](./netdiag-runbooks.md) |
+| **NetDiag rendimiento listado incidentes (N+1 + summary)** | [netdiag-incidents-performance.md](./netdiag-incidents-performance.md) |
 | **RouterOS client port (REST + classic)** | [routeros-client-port.md](./routeros-client-port.md) |
 | **Hub de Observabilidad (contrato + extracción)** | [observability-hub.md](./observability-hub.md) |
 | **Hardening ingest path + replay workflowId + timestamp** | [observabilidad-hardening-ingest-replay-workflow.md](./observabilidad-hardening-ingest-replay-workflow.md) |

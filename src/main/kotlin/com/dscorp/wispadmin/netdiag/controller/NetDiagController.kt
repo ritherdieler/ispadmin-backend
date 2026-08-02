@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.netdiag.dto.AlertIngestRequestDto
 import com.dscorp.wispadmin.netdiag.dto.AlertIngestResponseDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentDetailDto
 import com.dscorp.wispadmin.netdiag.dto.IncidentSummaryDto
+import com.dscorp.wispadmin.netdiag.dto.IncidentsSummaryDto
 import com.dscorp.wispadmin.netdiag.dto.NetDiagHealthResponseDto
 import com.dscorp.wispadmin.netdiag.dto.OltLogPageDto
 import com.dscorp.wispadmin.netdiag.dto.SyslogIngestRequestDto
@@ -77,6 +78,13 @@ class NetDiagController(
             dateFrom = dateFrom,
             dateTo = dateTo
         )
+    }
+
+    @GetMapping("/incidents/summary")
+    @Operation(summary = "Contadores agregados de incidentes NOC")
+    @SecurityRequirement(name = "NetDiagApiKey")
+    fun incidentsSummary(): IncidentsSummaryDto {
+        return incidentQueryService.summarizeIncidents()
     }
 
     @GetMapping("/incidents/{id}")

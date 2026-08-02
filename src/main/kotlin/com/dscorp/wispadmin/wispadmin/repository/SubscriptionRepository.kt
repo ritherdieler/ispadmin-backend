@@ -253,6 +253,19 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     @Query(
         """
+        SELECT s FROM Subscription s
+        WHERE s.serviceStatus = 'ACTIVE'
+        AND s.fiberOnu IS NOT NULL
+        AND (
+            UPPER(s.fiberOnu.sn) = UPPER(:sn)
+            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+        )
+        """
+    )
+    fun findActiveByFiberOnuSn(sn: String, suffix: String): List<Subscription>
+
+    @Query(
+        """
         SELECT DISTINCT s FROM Subscription s
         INNER JOIN FETCH s.payments p
         INNER JOIN FETCH s.place pl

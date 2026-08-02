@@ -73,12 +73,15 @@ class NetDiagPollService(
                 )
             }
             alertEvaluator.evaluate(targetId, signals)
+            alertEvaluator.reconcilePollSignals(targetId, signals.map { it.dedupKey }.toSet())
         } catch (ex: Exception) {
             logger.warn("NetDiag poll failed for target {}: {}", targetId, ex.message)
+            val failureSignals = signalExtractor.fromPollFailure(targetId, "COMMAND_ERROR", ex.message)
             alertEvaluator.evaluate(
                 targetId,
-                signalExtractor.fromPollFailure(targetId, "COMMAND_ERROR", ex.message)
+                failureSignals
             )
+            alertEvaluator.reconcilePollSignals(targetId, failureSignals.map { it.dedupKey }.toSet())
         }
     }
 

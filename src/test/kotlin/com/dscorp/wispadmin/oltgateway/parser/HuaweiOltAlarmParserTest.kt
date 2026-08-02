@@ -58,6 +58,23 @@ class HuaweiOltAlarmParserTest {
     }
 
     @Test
+    fun `no mapea loss of link BITS a PON_PORT_DOWN`() {
+        val raw = """
+          ALARM 453771 FAULT MAJOR 0x0a3100fd EQUIPMENT 2026-07-09 03:46:51-05:00
+          ALARM NAME  : The loss of link (LOL) occurs in the BITS input port
+          PARAMETERS  : FrameID: 0, SlotID: 3, PortID: 4
+          DESCRIPTION : The loss of link (LOL) occurs in the BITS input port
+          --- END
+        """.trimIndent()
+
+        val alarms = parser.parseActiveAlarms(raw)
+
+        assertEquals(1, alarms.size)
+        assertEquals("OLT_ALARM", alarms[0].reasonCode)
+        assertFalse(alarms[0].reasonCode == "PON_PORT_DOWN")
+    }
+
+    @Test
     fun `mapea LOS feeder a PON_PORT_DOWN sin ontId`() {
         val raw = """
           ALARM 1 FAULT CRITICAL 0x2e11a001 SERVICE QUALITY 2026-07-31 10:00:00-05:00

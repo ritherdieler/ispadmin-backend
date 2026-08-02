@@ -53,6 +53,9 @@ class AlertEvaluatorTest {
         every { targetRepository.findById(1L) } returns Optional.of(parent)
         every { incidentRepository.findByTarget_IdAndStatus(2L, "OPEN") } returns emptyList()
         every { incidentRepository.findByTarget_IdAndStatus(1L, "OPEN") } returns emptyList()
+        every {
+            incidentRepository.findByTarget_IdAndStatusAndReasonCode(any(), "OPEN", "UPSTREAM_PROBE_FAIL")
+        } returns emptyList()
         every { alertDecisionRepository.save(any()) } answers {
             firstArg<NetDiagAlertDecision>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
         }
@@ -70,7 +73,6 @@ class AlertEvaluatorTest {
             dedupKey = "LINK_DOWN:2:ether1"
         )
         every { incidentRepository.findByDedupKeyAndStatus("LINK_DOWN:2:ether1", "OPEN") } returns Optional.empty()
-        every { incidentRepository.existsByTarget_IdAndStatus(1L, "OPEN") } returns false
         val incidentSlot = slot<NetDiagIncident>()
         every { incidentRepository.save(capture(incidentSlot)) } answers {
             firstArg<NetDiagIncident>().also { it.id = 55L }
@@ -103,13 +105,45 @@ class AlertEvaluatorTest {
             dedupKey = "LINK_DOWN:2:ether1"
         )
         every { incidentRepository.findByDedupKeyAndStatus("LINK_DOWN:2:ether1", "OPEN") } returns Optional.of(existing)
-        every { incidentRepository.existsByTarget_IdAndStatus(1L, "OPEN") } returns false
 
         val result = evaluator.evaluate(2L, listOf(signal))
 
         assertEquals(listOf("CONTINUE"), result.decisions)
         verify { incidentEventRepository.save(match { it.type == "ALERT_SEEN" }) }
         verify(exactly = 0) { incidentRepository.save(any()) }
+    }
+
+    @Test
+    fun `reconcilePollSignals cierra incidentes poll sin señal activa`() {
+        val mk = NetDiagTarget(id = 1L, name = "MK1", deviceRefId = 7L)
+        every { targetRepository.findById(1L) } returns Optional.of(mk)
+        val stale = NetDiagIncident(
+            id = 21L,
+            target = mk,
+            dedupKey = "POLL_STALE:1:poll",
+            status = "OPEN",
+            severity = "P1",
+            title = "Poll stale",
+            reasonCode = "POLL_STALE"
+        )
+        val healed = NetDiagIncident(
+            id = 19L,
+            target = mk,
+            dedupKey = "OPTICAL_TX_FAULT:1:sfp-sfpplus1",
+            status = "OPEN",
+            severity = "P0",
+            title = "Optical TX fault",
+            reasonCode = "OPTICAL_TX_FAULT"
+        )
+        every { incidentRepository.findByTarget_IdAndStatus(1L, "OPEN") } returns listOf(stale, healed)
+        every { incidentRepository.findByDedupKeyAndStatus("POLL_STALE:1:poll", "OPEN") } returns Optional.of(stale)
+        every { incidentRepository.findByDedupKeyAndStatus("OPTICAL_TX_FAULT:1:sfp-sfpplus1", "OPEN") } returns Optional.of(healed)
+        every { incidentRepository.save(any()) } answers { firstArg() }
+
+        evaluator.reconcilePollSignals(1L, emptySet())
+
+        assertEquals("RESOLVED", stale.status)
+        assertEquals("RESOLVED", healed.status)
     }
 
     @Test
@@ -129,7 +163,6 @@ class AlertEvaluatorTest {
             title = "PON down",
             dedupKey = "PON_DOWN:2:gpon-0/1"
         )
-        every { incidentRepository.existsByTarget_IdAndStatus(1L, "OPEN") } returns true
         every { incidentRepository.findByTarget_IdAndStatus(1L, "OPEN") } returns listOf(parentIncident)
 
         val result = evaluator.evaluate(2L, listOf(signal))

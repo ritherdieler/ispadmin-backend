@@ -38,14 +38,15 @@ class NetDiagIncidentQueryServiceTest {
             status = "OPEN",
             openedAt = Instant.parse("2026-07-26T12:00:00Z")
         )
-        val other = incident(
-            id = 2L,
-            severity = "P1",
-            status = "OPEN",
-            openedAt = Instant.parse("2026-07-26T12:00:00Z")
-        )
-        every { incidentRepository.findAll() } returns listOf(matching, other)
-        every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(any()) } returns emptyList()
+        every {
+            incidentRepository.findForList(
+                listOf("OPEN"),
+                "P0",
+                7L,
+                Instant.parse("2026-07-26T00:00:00Z"),
+                Instant.parse("2026-07-27T00:00:00Z")
+            )
+        } returns listOf(matching)
 
         val result = service.listIncidents(
             severity = "P0",
@@ -58,12 +59,92 @@ class NetDiagIncidentQueryServiceTest {
         assertEquals(1, result.size)
         assertEquals(1L, result[0].id)
         assertEquals("MK1", result[0].targetName)
+        verify(exactly = 0) { incidentRepository.findAll() }
+    }
+
+    @Test
+    fun `lista sin status usa estados activos por defecto`() {
+        val open = incident(id = 1L, status = "OPEN")
+        every {
+            incidentRepository.findForList(
+                listOf("OPEN", "ACKNOWLEDGED", "SILENCED"),
+                null,
+                null,
+                null,
+                null
+            )
+        } returns listOf(open)
+
+        val result = service.listIncidents()
+
+        assertEquals(listOf(1L), result.map { it.id })
+        verify(exactly = 0) { incidentRepository.findAll() }
+    }
+
+    @Test
+    fun `lista con status RESOLVED lo respeta tal cual`() {
+        val resolved = incident(id = 3L, status = "RESOLVED")
+        every {
+            incidentRepository.findForList(listOf("RESOLVED"), null, null, null, null)
+        } returns listOf(resolved)
+
+        val result = service.listIncidents(status = "resolved")
+
+        assertEquals("RESOLVED", result[0].status)
+    }
+
+    @Test
+    fun `lista parsea fechas LocalDate a limites del dia`() {
+        every {
+            incidentRepository.findForList(
+                listOf("OPEN", "ACKNOWLEDGED", "SILENCED"),
+                null,
+                null,
+                Instant.parse("2026-07-26T00:00:00Z"),
+                Instant.parse("2026-07-26T23:59:59.999Z")
+            )
+        } returns emptyList()
+
+        val result = service.listIncidents(dateFrom = "2026-07-26", dateTo = "2026-07-26")
+
+        assertEquals(0, result.size)
+    }
+
+    @Test
+    fun `detalle carga incidente con target y expone targetName`() {
+        val open = incident(id = 5L, status = "OPEN")
+        every { incidentRepository.findByIdWithTarget(5L) } returns Optional.of(open)
+        every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(5L) } returns emptyList()
+
+        val detail = service.getIncident(5L)
+
+        assertEquals("MK1", detail.targetName)
+        assertEquals(7L, detail.targetId)
+        verify(exactly = 0) { incidentRepository.findById(any<Long>()) }
+    }
+
+    @Test
+    fun `summarize cuenta abiertos p0 y poll stale con agregaciones`() {
+        every { incidentRepository.countByStatusIn(listOf("OPEN", "ACKNOWLEDGED")) } returns 12L
+        every {
+            incidentRepository.countBySeverityAndStatusIn("P0", listOf("OPEN", "ACKNOWLEDGED"))
+        } returns 3L
+        every {
+            incidentRepository.countByReasonCodeAndStatusIn("POLL_STALE", listOf("OPEN", "ACKNOWLEDGED"))
+        } returns 2L
+
+        val summary = service.summarizeIncidents()
+
+        assertEquals(12L, summary.openCount)
+        assertEquals(3L, summary.p0OpenCount)
+        assertEquals(2L, summary.pollStaleCount)
+        verify(exactly = 0) { incidentRepository.findAll() }
     }
 
     @Test
     fun `ack marca ACKNOWLEDGED y agrega evento`() {
         val open = incident(id = 9L, status = "OPEN")
-        every { incidentRepository.findById(9L) } returns Optional.of(open)
+        every { incidentRepository.findByIdWithTarget(9L) } returns Optional.of(open)
         every { incidentRepository.save(any()) } answers { firstArg() }
         every { incidentEventRepository.save(any()) } answers { firstArg<NetDiagIncidentEvent>().also { it.id = 1L } }
         every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(9L) } returns emptyList()
@@ -78,7 +159,7 @@ class NetDiagIncidentQueryServiceTest {
     @Test
     fun `resolve marca RESOLVED`() {
         val open = incident(id = 9L, status = "OPEN")
-        every { incidentRepository.findById(9L) } returns Optional.of(open)
+        every { incidentRepository.findByIdWithTarget(9L) } returns Optional.of(open)
         every { incidentRepository.save(any()) } answers { firstArg() }
         every { incidentEventRepository.save(any()) } answers { firstArg<NetDiagIncidentEvent>().also { it.id = 1L } }
         every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(9L) } returns emptyList()
@@ -93,7 +174,7 @@ class NetDiagIncidentQueryServiceTest {
     @Test
     fun `no permite resolve de incidente ya resuelto`() {
         val resolved = incident(id = 9L, status = "RESOLVED")
-        every { incidentRepository.findById(9L) } returns Optional.of(resolved)
+        every { incidentRepository.findByIdWithTarget(9L) } returns Optional.of(resolved)
 
         assertThrows<NetDiagConflictException> { service.resolve(9L) }
     }
@@ -101,7 +182,7 @@ class NetDiagIncidentQueryServiceTest {
     @Test
     fun `silence marca SILENCED y persiste silencedUntil`() {
         val open = incident(id = 9L, status = "OPEN")
-        every { incidentRepository.findById(9L) } returns Optional.of(open)
+        every { incidentRepository.findByIdWithTarget(9L) } returns Optional.of(open)
         every { incidentRepository.save(any()) } answers { firstArg() }
         every { incidentEventRepository.save(any()) } answers { firstArg<NetDiagIncidentEvent>().also { it.id = 1L } }
         every { incidentEventRepository.findByIncidentIdOrderByCreatedAtDesc(9L) } returns emptyList()
@@ -116,7 +197,7 @@ class NetDiagIncidentQueryServiceTest {
 
     @Test
     fun `ack de inexistente lanza not found`() {
-        every { incidentRepository.findById(99L) } returns Optional.empty()
+        every { incidentRepository.findByIdWithTarget(99L) } returns Optional.empty()
         assertThrows<IncidentNotFoundException> { service.acknowledge(99L) }
     }
 

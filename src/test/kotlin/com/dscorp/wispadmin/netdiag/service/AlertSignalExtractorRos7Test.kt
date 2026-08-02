@@ -55,6 +55,45 @@ class AlertSignalExtractorRos7Test {
     }
 
     @Test
+    fun `no alerta optica sin lecturas DDM aunque sfp presente`() {
+        val snapshot = baseSnapshot().copy(
+            optical = listOf(
+                OpticalSnapshot(
+                    interfaceName = "sfp-sfpplus1",
+                    rxPowerDbm = null,
+                    txPowerDbm = null,
+                    temperatureC = null,
+                    sfpPresent = true,
+                    opticalDdmAvailable = true
+                )
+            )
+        )
+
+        assertTrue(extractor.fromSnapshot(1L, snapshot).none {
+            it.reasonCode.startsWith("OPTICAL_")
+        })
+    }
+
+    @Test
+    fun `no alerta OPTICAL_TX_FAULT en modulo DAC sin DDM`() {
+        val snapshot = baseSnapshot().copy(
+            optical = listOf(
+                OpticalSnapshot(
+                    interfaceName = "sfp-sfpplus1",
+                    rxPowerDbm = null,
+                    txPowerDbm = null,
+                    temperatureC = null,
+                    sfpPresent = true,
+                    sfpConnectorType = "copper-pigtail",
+                    opticalDdmAvailable = false
+                )
+            )
+        )
+
+        assertTrue(extractor.fromSnapshot(1L, snapshot).none { it.reasonCode == "OPTICAL_TX_FAULT" })
+    }
+
+    @Test
     fun `no alerta optica si potencia en rango`() {
         val snapshot = baseSnapshot().copy(
             optical = listOf(

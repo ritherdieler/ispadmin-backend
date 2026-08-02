@@ -16,7 +16,9 @@ import javax.persistence.Table
 @Table(
     name = "net_diag_incident",
     indexes = [
-        Index(name = "idx_net_diag_incident_dedup_status", columnList = "dedup_key, status")
+        Index(name = "idx_net_diag_incident_dedup_status", columnList = "dedup_key, status"),
+        Index(name = "idx_net_diag_incident_status_opened_at", columnList = "status, opened_at"),
+        Index(name = "idx_net_diag_incident_target_status", columnList = "target_id, status")
     ]
 )
 class NetDiagIncident(

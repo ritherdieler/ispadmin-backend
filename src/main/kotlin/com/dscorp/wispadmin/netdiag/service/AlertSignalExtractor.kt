@@ -107,6 +107,15 @@ class AlertSignalExtractor(
         }
 
         snapshot.optical.forEach { optic ->
+            if (optic.opticalDdmAvailable == false) {
+                return@forEach
+            }
+            val hasReading = optic.rxPowerDbm != null ||
+                optic.txPowerDbm != null ||
+                optic.temperatureC != null
+            if (!hasReading) {
+                return@forEach
+            }
             val rx = optic.rxPowerDbm
             if (rx != null && rx < properties.optical.rxLowDbm) {
                 signals += signal(

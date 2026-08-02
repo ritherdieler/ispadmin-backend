@@ -17,7 +17,8 @@ Auth: header `X-Netdiag-Key` (excepto `/health`)
 | Método | Path | Response |
 |---|---|---|
 | GET | `/health` | `{ status, module }` |
-| GET | `/incidents?severity&status&targetId&dateFrom&dateTo` | `IncidentSummaryDto[]` |
+| GET | `/incidents?severity&status&targetId&dateFrom&dateTo` | `IncidentSummaryDto[]` — sin `status` devuelve solo activos (`OPEN`, `ACKNOWLEDGED`, `SILENCED`) |
+| GET | `/incidents/summary` | `IncidentsSummaryDto` `{ openCount, p0OpenCount, pollStaleCount }` |
 | GET | `/incidents/{id}` | `IncidentDetailDto` (+ `events[]`) |
 | GET | `/incidents/{id}/llm-context` | **text/plain** markdown |
 | GET | `/incidents/{id}/diagnostic-json` | JSON mapa en raíz |
@@ -32,7 +33,7 @@ Auth: header `X-Netdiag-Key` (excepto `/health`)
 | Param | Ejemplo | Notas |
 |---|---|---|
 | severity | `P0` | case-insensitive |
-| status | `OPEN` / `ACKNOWLEDGED` / `RESOLVED` | case-insensitive |
+| status | `OPEN` / `ACKNOWLEDGED` / `RESOLVED` | case-insensitive; omitido → default activos (`OPEN`, `ACKNOWLEDGED`, `SILENCED`) |
 | targetId | `7` | id de `net_diag_target` |
 | dateFrom / dateTo | `2026-07-26` o ISO-8601 | filtro sobre `openedAt` |
 

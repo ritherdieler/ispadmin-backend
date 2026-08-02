@@ -27,6 +27,12 @@ data class IncidentSummaryDto(
     val silencedUntil: Instant? = null
 )
 
+data class IncidentsSummaryDto(
+    val openCount: Long,
+    val p0OpenCount: Long,
+    val pollStaleCount: Long
+)
+
 data class IncidentDetailDto(
     val id: Long,
     val targetId: Long?,

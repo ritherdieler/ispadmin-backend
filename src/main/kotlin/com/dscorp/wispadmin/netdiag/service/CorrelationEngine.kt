@@ -41,8 +41,9 @@ class CorrelationEngine(
             if (parentUpstream != null && reasonCode != null && suppressedByUpstream.contains(reasonCode)) {
                 return parentUpstream
             }
-            if (incidentRepository.existsByTarget_IdAndStatus(currentParentId, "OPEN")) {
-                return incidentRepository.findByTarget_IdAndStatus(currentParentId, "OPEN").firstOrNull()
+            val parentOpen = incidentRepository.findByTarget_IdAndStatus(currentParentId, "OPEN").firstOrNull()
+            if (parentOpen != null) {
+                return parentOpen
             }
             currentParentId = targetRepository.findById(currentParentId).orElse(null)?.parentTargetId
             depth++
@@ -51,7 +52,7 @@ class CorrelationEngine(
     }
 
     private fun findOpenByReason(targetId: Long, reasonCode: String): NetDiagIncident? {
-        return incidentRepository.findByTarget_IdAndStatus(targetId, "OPEN")
-            .firstOrNull { it.reasonCode == reasonCode }
+        return incidentRepository.findByTarget_IdAndStatusAndReasonCode(targetId, "OPEN", reasonCode)
+            .firstOrNull()
     }
 }
