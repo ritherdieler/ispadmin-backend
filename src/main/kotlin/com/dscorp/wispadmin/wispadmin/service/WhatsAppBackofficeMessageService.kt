@@ -370,7 +370,7 @@ class WhatsAppBackofficeMessageService(
             )
         }
 
-        return candidates to invalidPhones
+        return dedupeCandidatesBySubscription(candidates) to dedupeInvalidPhonesBySubscription(invalidPhones)
     }
 
     private fun partitionPaymentRows(
@@ -422,6 +422,24 @@ class WhatsAppBackofficeMessageService(
         }
 
         return candidates to invalidPhones
+    }
+
+    private fun dedupeCandidatesBySubscription(
+        candidates: List<WhatsAppMessageCandidateDto>,
+    ): List<WhatsAppMessageCandidateDto> {
+        val seenSubscriptionIds = mutableSetOf<Int>()
+        return candidates.filter { candidate ->
+            seenSubscriptionIds.add(candidate.subscriptionId)
+        }
+    }
+
+    private fun dedupeInvalidPhonesBySubscription(
+        invalidPhones: List<WhatsAppInvalidPhoneCandidateDto>,
+    ): List<WhatsAppInvalidPhoneCandidateDto> {
+        val seenSubscriptionIds = mutableSetOf<Int>()
+        return invalidPhones.filter { entry ->
+            seenSubscriptionIds.add(entry.subscriptionId)
+        }
     }
 
     private fun phoneInvalidReason(phone: String?): String? {
