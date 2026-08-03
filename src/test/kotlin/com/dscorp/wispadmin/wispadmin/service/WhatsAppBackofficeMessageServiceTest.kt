@@ -44,42 +44,6 @@ class WhatsAppBackofficeMessageServiceTest {
     }
 
     @Test
-    fun `listCandidates keeps one payment reminder row per subscription`() {
-        val sharedSubscription = Subscription(
-            firstName = "Mari",
-            lastName = "Rimac",
-            phone = "987654321",
-            equipmentCondition = EquipmentCondition.LOAN,
-        ).apply { id = 10 }
-
-        `when`(paymentRepository.findAllReminderCandidatePayments()).thenReturn(
-            listOf(
-                Payment(
-                    discountAmount = 0.0,
-                    paid = false,
-                    amountToPay = 50.0,
-                    billingDateDatetime = LocalDateTime.of(2026, 5, 1, 0, 0),
-                    subscription = sharedSubscription,
-                ).apply { id = 1 },
-                Payment(
-                    discountAmount = 0.0,
-                    paid = false,
-                    amountToPay = 60.0,
-                    billingDateDatetime = LocalDateTime.of(2026, 6, 1, 0, 0),
-                    subscription = sharedSubscription,
-                ).apply { id = 2 },
-            )
-        )
-
-        val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
-
-        assertEquals(1, response.candidates.size)
-        assertEquals(1, response.totals.valid)
-        assertEquals(10, response.candidates.first().subscriptionId)
-        assertEquals(1, response.candidates.first().paymentId)
-    }
-
-    @Test
     fun `listCandidates partitions valid and invalid phones for payment reminder`() {
         `when`(paymentRepository.findAllReminderCandidatePayments()).thenReturn(
             listOf(

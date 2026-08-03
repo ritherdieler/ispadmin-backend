@@ -19,21 +19,10 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         value = """
         SELECT p.*
         FROM payment p
+        """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         INNER JOIN subscription s ON s.id = p.subscription_id
-        WHERE p.paid = false
-          AND s.phone IS NOT NULL
-          AND s.phone <> ''
-          AND (
-              (
-                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 9
-                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '9%'
-              )
-              OR
-              (
-                  CHAR_LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')) = 11
-                  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE '519%'
-              )
-          )
+        WHERE 1=1
+        """ + WhatsAppCandidateSql.PERUVIAN_PHONE_FILTER + """
         ORDER BY p.billing_date_datetime ASC, p.id ASC
         LIMIT :limit
     """,
@@ -47,8 +36,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         value = """
         SELECT p.*
         FROM payment p
-        INNER JOIN subscription s ON s.id = p.subscription_id
-        WHERE p.paid = false
+        """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         ORDER BY p.billing_date_datetime ASC, p.id ASC
     """,
         nativeQuery = true
