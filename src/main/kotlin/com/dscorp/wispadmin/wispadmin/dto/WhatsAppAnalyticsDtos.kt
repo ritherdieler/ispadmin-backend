@@ -191,6 +191,7 @@ data class WhatsAppSyncedTemplateDto(
     val category: String?,
     val qualityScore: String?,
     val language: String?,
+    val bodyText: String?,
     val syncedAt: LocalDateTime
 )
 
@@ -201,6 +202,7 @@ fun WhatsAppTemplateSyncService.WhatsAppSyncedTemplateSummary.toDto() = WhatsApp
     category = category,
     qualityScore = qualityScore,
     language = language,
+    bodyText = bodyText,
     syncedAt = syncedAt
 )
 

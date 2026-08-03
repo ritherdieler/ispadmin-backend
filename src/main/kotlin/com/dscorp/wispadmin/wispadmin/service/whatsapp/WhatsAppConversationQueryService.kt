@@ -37,7 +37,8 @@ class WhatsAppConversationQueryService(
     private val serviceWindowService: WhatsAppServiceWindowService,
     private val paymentRepository: PaymentRepository,
     private val crmConversationRepository: CrmConversationRepository,
-    private val crmTicketLinkService: CrmTicketLinkService
+    private val crmTicketLinkService: CrmTicketLinkService,
+    private val templateDisplayService: WhatsAppTemplateDisplayService
 ) {
 
     fun listConversations(filter: WhatsAppConversationFilter): List<WhatsAppConversationSummaryDto> {
@@ -69,7 +70,7 @@ class WhatsAppConversationQueryService(
 
                 val lastPreview = when {
                     lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt)) ->
-                        lastOutbound.message
+                        templateDisplayService.displayStoredMessage(lastOutbound.message, lastOutbound.messageType)
                     else -> lastInbound?.messageText ?: lastInbound?.buttonReplyTitle
                 }
 
@@ -145,7 +146,10 @@ class WhatsAppConversationQueryService(
             messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
         }
 
-        return (inboundRecent.map { it.toThreadMessage() } + outboundRecent.map { it.toThreadMessage() })
+        return (
+            inboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage() } } +
+                outboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage(templateDisplayService) } }
+            )
             .sortedByDescending { it.createdAt }
             .take(pageSize)
             .sortedBy { it.createdAt }
@@ -288,54 +292,6 @@ class WhatsAppConversationQueryService(
 
     companion object {
         fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
-            !inbound.mediaStoredPath.isNullOrBlank() || !inbound.mediaId.isNullOrBlank()
-
-        fun WhatsAppInboundMessage.toThreadMessage() = WhatsAppThreadMessageDto(
-            id = "inbound:$id",
-            direction = "INBOUND",
-            body = messageText,
-            messageType = messageType,
-            buttonReplyTitle = buttonReplyTitle,
-            hasMedia = inboundHasMedia(this),
-            mediaId = id,
-            mediaMimeType = mediaMimeType,
-            mediaFilename = null,
-            deliveryStatus = null,
-            createdAt = createdAt,
-            replyToLogId = replyToLogId,
-            operatorUsername = null,
-            templateCode = null,
-            retryCount = null
-        )
-
-        fun WhatsAppMessageLog.toThreadMessage() = WhatsAppThreadMessageDto(
-            id = "outbound:$id",
-            direction = "OUTBOUND",
-            body = message,
-            messageType = messageType,
-            buttonReplyTitle = null,
-            hasMedia = outboundHasMedia(this),
-            mediaId = id.takeIf { outboundHasMedia(this) },
-            mediaMimeType = mediaMimeType,
-            mediaFilename = mediaFilename,
-            deliveryStatus = deliveryStatus ?: status.takeIf { it.isNotBlank() },
-            createdAt = createdAt,
-            replyToLogId = replyToLogId,
-            operatorUsername = operatorUsername,
-            templateCode = resolveTemplateCode(messageType),
-            retryCount = retryCount
-        )
-
-        fun outboundHasMedia(log: WhatsAppMessageLog): Boolean =
-            !log.mediaStoredPath.isNullOrBlank() || !log.mediaMetaId.isNullOrBlank()
-
-        private fun resolveTemplateCode(messageType: String): String? {
-            val normalized = messageType.trim().uppercase()
-            return when (normalized) {
-                "AUTO_REPLY", "OPERATOR_REPLY", "OPERATOR_MEDIA", "TEXT", "INTERACTIVE",
-                "IMAGE", "DOCUMENT", "AUDIO" -> null
-                else -> messageType.takeIf { it.isNotBlank() }
-            }
-        }
+            WhatsAppThreadMessageMapper.inboundHasMedia(inbound)
     }
 }

@@ -1,14 +1,17 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
+import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppSyncedTemplate
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -30,6 +33,14 @@ class WhatsAppConversationQueryServiceTest {
     private val paymentRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.PaymentRepository>(relaxed = true)
     private val crmConversationRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository>(relaxed = true)
     private val crmTicketLinkService = mockk<CrmTicketLinkService>(relaxed = true)
+    private val syncedTemplateRepository = mockk<WhatsAppSyncedTemplateRepository>()
+    private val templateSyncService = mockk<WhatsAppTemplateSyncService>(relaxed = true)
+    private val whatsAppProperties = WhatsAppProperties()
+    private val templateDisplayService = WhatsAppTemplateDisplayService(
+        syncedTemplateRepository = syncedTemplateRepository,
+        templateSyncService = templateSyncService,
+        whatsAppProperties = whatsAppProperties
+    )
 
     private lateinit var service: WhatsAppConversationQueryService
 
@@ -42,9 +53,11 @@ class WhatsAppConversationQueryServiceTest {
             serviceWindowService = serviceWindowService,
             paymentRepository = paymentRepository,
             crmConversationRepository = crmConversationRepository,
-            crmTicketLinkService = crmTicketLinkService
+            crmTicketLinkService = crmTicketLinkService,
+            templateDisplayService = templateDisplayService
         )
         every { crmTicketLinkService.listTicketsForPhone(any()) } returns emptyList()
+        every { syncedTemplateRepository.findByName(any()) } returns null
     }
 
     @Test
@@ -224,6 +237,65 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(1, thread.size)
         assertEquals("PAYMENT_REMINDER", thread[0].templateCode)
         assertEquals("SENT", thread[0].deliveryStatus)
+        assertEquals("Recordatorio", thread[0].body)
+    }
+
+    @Test
+    fun `getThread renders legacy template log body from synced Meta text`() {
+        val phone = "51902354183"
+        every { syncedTemplateRepository.findByName("payment_reminder_gigaperu") } returns WhatsAppSyncedTemplate(
+            metaTemplateId = "123",
+            name = "payment_reminder_gigaperu",
+            bodyText = "Hola {{customer_name}}, pague {{amount}} antes de {{billing_period}}."
+        )
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppMessageLog(
+                id = 9,
+                phone = phone,
+                message = "payment_reminder_gigaperu [customer_name=Ana Lopez, amount=50.0, billing_period=01/08/2026]",
+                messageType = "PAYMENT_REMINDER",
+                status = "SENT",
+                createdAt = LocalDateTime.of(2026, 8, 3, 9, 0)
+            )
+        )
+
+        val thread = service.getThread(phone)
+
+        assertEquals(1, thread.size)
+        assertEquals("Hola Ana Lopez, pague 50.0 antes de 01/08/2026.", thread[0].body)
+    }
+
+    @Test
+    fun `getThread renders legacy template log with fallback when body sync missing`() {
+        val phone = "51902354183"
+        every { syncedTemplateRepository.findByName("payment_reminder_gigaperu") } returns null
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppMessageLog(
+                id = 10,
+                phone = phone,
+                message = "payment_reminder_gigaperu [customer_name=Ana Lopez, amount=50.0, billing_period=01/08/2026]",
+                messageType = "PAYMENT_REMINDER",
+                status = "SENT",
+                createdAt = LocalDateTime.of(2026, 8, 3, 9, 0)
+            )
+        )
+
+        val thread = service.getThread(phone)
+
+        assertEquals(
+            "Estimado(a) Ana Lopez, le recordamos su pago pendiente de S/ 50.0 correspondiente al periodo 01/08/2026.",
+            thread[0].body
+        )
     }
 
     @Test

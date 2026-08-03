@@ -11,7 +11,8 @@ import java.time.LocalDateTime
 @Service
 class WhatsAppTemplateDeliveryService(
     private val whatsAppService: WhatsAppService,
-    private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository
+    private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
+    private val templateDisplayService: WhatsAppTemplateDisplayService
 ) {
 
     fun deliverTemplate(
@@ -33,7 +34,7 @@ class WhatsAppTemplateDeliveryService(
             oldestUnpaidPayment = oldestUnpaidPayment,
             welcomeContext = welcomeContext
         )
-        val previewMessage = buildPreviewMessage(definition, parameters)
+        val previewMessage = templateDisplayService.buildLogPreview(definition, parameters)
 
         try {
             val result = whatsAppService.sendTemplateMessageWithMetaResponse(
@@ -101,14 +102,6 @@ class WhatsAppTemplateDeliveryService(
                 operatorUsername = operatorUsername
             )
         )
-    }
-
-    fun buildPreviewMessage(
-        definition: WhatsAppTemplateDefinition,
-        parameters: List<NamedTemplateParameter>
-    ): String {
-        val paramsText = parameters.joinToString(", ") { "${it.parameterName}=${it.text}" }
-        return "${definition.metaName} [$paramsText]"
     }
 
     companion object {

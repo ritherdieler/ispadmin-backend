@@ -43,6 +43,7 @@ class WhatsAppConversationServiceTest {
     private val crmConversationService = mockk<CrmConversationService>(relaxed = true)
     private val mediaDownloadService = mockk<WhatsAppMediaDownloadService>(relaxed = true)
     private val templateDeliveryService = mockk<WhatsAppTemplateDeliveryService>()
+    private val templateDisplayService = mockk<WhatsAppTemplateDisplayService>(relaxed = true)
     private val whatsAppProperties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties()
     }
@@ -63,8 +64,10 @@ class WhatsAppConversationServiceTest {
             chatStateService = chatStateService,
             crmConversationService = crmConversationService,
             mediaDownloadService = mediaDownloadService,
-            templateDeliveryService = templateDeliveryService
+            templateDeliveryService = templateDeliveryService,
+            templateDisplayService = templateDisplayService
         )
+        every { templateDisplayService.displayStoredMessage(any(), any()) } answers { firstArg() }
         every { chatStateService.currentStep(any()) } returns null
         every { chatStateService.hasPendingSupportDiagnostic(any()) } returns false
         every { chatStateService.hasPendingInteractiveMenu(any()) } returns false

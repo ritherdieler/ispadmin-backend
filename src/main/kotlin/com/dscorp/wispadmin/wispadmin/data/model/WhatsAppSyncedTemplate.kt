@@ -28,5 +28,8 @@ data class WhatsAppSyncedTemplate(
     @Column(length = 16)
     var language: String? = null,
 
+    @Column(columnDefinition = "TEXT")
+    var bodyText: String? = null,
+
     var syncedAt: LocalDateTime = LocalDateTime.now()
 )

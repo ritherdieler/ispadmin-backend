@@ -67,6 +67,7 @@ class WhatsAppTemplateSyncService(
                 node.path("quality_score").asText(null)
             ),
             language = node.path("language").asText(null),
+            bodyText = extractBodyText(node),
             syncedAt = LocalDateTime.now()
         )
     }
@@ -78,6 +79,7 @@ class WhatsAppTemplateSyncService(
         category = category,
         qualityScore = qualityScore,
         language = language,
+        bodyText = bodyText,
         syncedAt = syncedAt
     )
 
@@ -96,6 +98,21 @@ class WhatsAppTemplateSyncService(
         val category: String?,
         val qualityScore: String?,
         val language: String?,
+        val bodyText: String?,
         val syncedAt: LocalDateTime
     )
+
+    companion object {
+        fun extractBodyText(node: JsonNode): String? {
+            val components = node.path("components")
+            if (!components.isArray) return null
+            for (component in components) {
+                if (component.path("type").asText("").equals("BODY", ignoreCase = true)) {
+                    val text = component.path("text").asText("").trim()
+                    if (text.isNotEmpty()) return text
+                }
+            }
+            return null
+        }
+    }
 }

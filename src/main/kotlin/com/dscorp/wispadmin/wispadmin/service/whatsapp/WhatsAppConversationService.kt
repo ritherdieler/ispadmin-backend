@@ -15,7 +15,7 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
-import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService.Companion.toThreadMessage
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppThreadMessageMapper.toThreadMessage
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -35,7 +35,8 @@ class WhatsAppConversationService(
     private val chatStateService: WhatsAppChatStateService,
     private val crmConversationService: CrmConversationService,
     private val mediaDownloadService: WhatsAppMediaDownloadService,
-    private val templateDeliveryService: WhatsAppTemplateDeliveryService
+    private val templateDeliveryService: WhatsAppTemplateDeliveryService,
+    private val templateDisplayService: WhatsAppTemplateDisplayService
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppConversationService::class.java)
@@ -394,7 +395,7 @@ class WhatsAppConversationService(
                 createdAt = now
             )
         )
-        return saved.toThreadMessage()
+        return saved.toThreadMessage(templateDisplayService)
     }
 
     fun sendOperatorMedia(
@@ -501,7 +502,7 @@ class WhatsAppConversationService(
                 createdAt = now
             )
         )
-        return saved.toThreadMessage()
+        return saved.toThreadMessage(templateDisplayService)
     }
 
     fun sendOperatorTemplate(
@@ -549,7 +550,7 @@ class WhatsAppConversationService(
 
         chatStateService.markWaitingForAdvisor(phone, "operator_template")
         crmConversationService.touchOutbound(phone)
-        return saved.toThreadMessage()
+        return saved.toThreadMessage(templateDisplayService)
     }
 
     fun retryFailedOutbound(

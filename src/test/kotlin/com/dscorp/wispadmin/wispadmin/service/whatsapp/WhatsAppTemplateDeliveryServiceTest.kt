@@ -4,7 +4,10 @@ import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppSyncedTemplate
+import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppSendResult
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WelcomeTemplateContext
@@ -16,13 +19,31 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.mockito.Mockito.verify
 
 class WhatsAppTemplateDeliveryServiceTest {
 
     private val whatsAppService = mock(WhatsAppService::class.java)
     private val messageLogRepository = mock(WhatsAppMessageLogRepository::class.java)
-    private val service = WhatsAppTemplateDeliveryService(whatsAppService, messageLogRepository)
+    private val syncedTemplateRepository = mock(WhatsAppSyncedTemplateRepository::class.java)
+    private val templateSyncService = mock(WhatsAppTemplateSyncService::class.java)
+    private val whatsAppProperties = WhatsAppProperties().apply {
+        apiVersion = "v21.0"
+        accessToken = "token"
+        phoneNumberId = "123"
+        businessAccountId = "456"
+    }
+    private val templateDisplayService = WhatsAppTemplateDisplayService(
+        syncedTemplateRepository,
+        templateSyncService,
+        whatsAppProperties
+    )
+    private val service = WhatsAppTemplateDeliveryService(
+        whatsAppService,
+        messageLogRepository,
+        templateDisplayService
+    )
 
     private val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
 
@@ -53,6 +74,13 @@ class WhatsAppTemplateDeliveryServiceTest {
         doAnswer { invocation ->
             invocation.getArgument(0)
         }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
+        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+            WhatsAppSyncedTemplate(
+                metaTemplateId = "tpl-welcome",
+                name = "welcome_customer_gigaperu",
+                bodyText = "Hola {{customer_name}}, plan {{plan_name}} por {{plan_price}}."
+            )
+        )
 
         service.deliverTemplate(
             definition = definition,
@@ -78,5 +106,6 @@ class WhatsAppTemplateDeliveryServiceTest {
         assertEquals("camp-1", saved.campaignId)
         assertEquals("admin", saved.operatorUsername)
         assertNotNull(saved.sentAt)
+        assertEquals("Hola Juan Perez, plan F200 por 80.00.", saved.message)
     }
 }
