@@ -29,6 +29,10 @@ OBS_API_KEY=
 # NET_DIAG_ENABLED=true
 # NET_DIAG_API_KEY=
 # NET_DIAG_WHATSAPP_NOC_PHONE=519XXXXXXXX
+# RouterOS REST desde Tomcat (obligatorio rest en prod; ver .agent-docs/router-os-rest-prod-fix.md)
+# ROUTER_OS_CLIENT_ADAPTER=rest
+# ROUTER_OS_REST_TRUSTSTORE_PASSWORD=
 # OLT_GATEWAY_ENABLED=true
 # OLT_GATEWAY_API_KEY=
 # OLT_GATEWAY_PASSWORD=
+# CRM (solo VPS /opt/gigafiber/.env — no deploy.sh): CRM_SECRETS_MASTER_KEY, OPENAI_API_KEY bootstrap opcional

@@ -46,17 +46,18 @@ class RouterOs7RestAdapter(
     override fun close() {
     }
 
-    private fun resolvePort(device: MikrotikDeviceRef): Int {
-        if (!properties.adapter.equals("rest", ignoreCase = true)) {
-            return if (device.port > 0) device.port else properties.rest.port
-        }
-        if (device.port <= 0 || device.port == properties.classic.port) {
-            return properties.rest.port
-        }
-        return device.port
-    }
+    private fun resolvePort(device: MikrotikDeviceRef): Int =
+        resolveRestPort(device, properties)
 
     companion object {
+
+        fun resolveRestPort(device: MikrotikDeviceRef, properties: RouterOsClientProperties): Int {
+            if (device.port <= 0 || device.port == properties.classic.port) {
+                return properties.rest.port
+            }
+            return device.port
+        }
+
         fun buildClient(properties: RouterOsClientProperties): OkHttpClient {
             val timeoutMs = properties.rest.timeoutMs.coerceAtLeast(1000)
             val builder = OkHttpClient.Builder()

@@ -3,13 +3,10 @@ package com.dscorp.wispadmin.wispadmin.service
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
-import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
-import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentRequest
-import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 import org.springframework.stereotype.Service
 import javax.persistence.EntityNotFoundException
 import javax.transaction.Transactional
@@ -18,7 +15,8 @@ import java.time.LocalDateTime
 class MikrotikService(
     private val repository: PaymentRepository,
     private val userRepository: UserRepository,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val mikrotikPaymentReactivationHandler: MikrotikPaymentReactivationHandler
 ) {
 
 
@@ -46,8 +44,7 @@ class MikrotikService(
         if (payment.subscription?.serviceStatus != ServiceStatus.CANCELLED) {
             payment.subscription?.let {
                 if (isEligibleForReactivation(it)) {
-                    reactivateServiceInMikrotik(it.toDto())
-//                    UpdateSubscriptionStateToActive(payment)
+                    mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(it.toDto())
                 }
             }
         }
@@ -77,7 +74,7 @@ class MikrotikService(
         repository.save(payment)
         payment.subscription?.let {
             if (isEligibleForReactivation(payment.subscription!!)) {
-                reactivateServiceInMikrotik(payment.subscription!!.toDto())
+                mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(payment.subscription!!.toDto())
             }
         }
 
@@ -91,18 +88,6 @@ class MikrotikService(
             pendingPayments == 1 -> true
             pendingPayments == 0 -> true
             else -> false
-        }
-    }
-
-
-    private fun reactivateServiceInMikrotik(subscription: SubscriptionDto) {
-        subscription.hostDevice?.executeCommand { session ->
-            if (subscription.ip.isValidIpAddress()) {
-                session.print("/ip/firewall/address-list", mapOf("list" to "deudores", "address" to subscription.ip!!))
-                    .forEach { addressEntry ->
-                        addressEntry[".id"]?.let { id -> session.remove("/ip/firewall/address-list", id) }
-                    }
-            }
         }
     }
 

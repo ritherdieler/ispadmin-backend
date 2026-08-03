@@ -14,6 +14,7 @@ class ApplicationProdNetDiagPropertiesFileTest {
         assertTrue(prod.contains("net.diag.enabled=\${NET_DIAG_ENABLED:"), prod)
         assertTrue(prod.contains("net.diag.api-key=\${NET_DIAG_API_KEY:"), prod)
         assertTrue(prod.contains("router.os.client.rest.trust-store=classpath:routeros-mk-truststore.jks"), prod)
+        assertTrue(prod.contains("router.os.client.adapter=\${ROUTER_OS_CLIENT_ADAPTER:rest}"), prod)
         assertTrue(prod.contains("olt.gateway.enabled=\${OLT_GATEWAY_ENABLED:"), prod)
     }
 }

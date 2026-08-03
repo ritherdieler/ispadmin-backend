@@ -4,6 +4,8 @@ Guía de **dónde viven las credenciales**, cómo llegan al backend Tomcat y qu�
 
 Host de referencia: `212.85.13.47` (`srv1043610`), stack en `/opt/gigafiber/`.
 
+**Regla Cursor (obligatoria):** `.cursor/rules/documentar-secretos-env.mdc` — todo key/secreto nuevo en prod o dev debe quedar en este catálogo (**solo nombres y ubicación**, nunca valores).
+
 ---
 
 ## Resumen
@@ -69,6 +71,8 @@ Agrupadas por función; valores **nunca** en este documento.
 | Smart Map | `MAPBOX_ACCESS_TOKEN` |
 | Buscador | `MEILI_HOST`, `MEILI_MASTER_KEY` |
 | WhatsApp Cloud API | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` |
+| CRM / OpenAI | `CRM_SECRETS_MASTER_KEY` → `crm.llm.master-key`; `OPENAI_API_KEY` bootstrap opcional → `crm.llm.bootstrap-api-key` |
+| RouterOS REST | `ROUTER_OS_CLIENT_ADAPTER` (prod: `rest`); `ROUTER_OS_REST_TRUSTSTORE_PASSWORD` → truststore JKS embebido |
 | Observabilidad (ingest + dashboard) | `OBS_API_KEY_BACKOFFICE`, `OBS_API_KEY_ASISTENCIAS`, `OBS_API_KEY_ANDROID`, `OBS_API_KEY_DASHBOARD`, `OBS_SESSION_SECRET`, `OBS_DASHBOARD_BASE_URL`, … |
 | NetDiag NOC | `NET_DIAG_ENABLED`, `NET_DIAG_API_KEY`, `NET_DIAG_WHATSAPP_NOC_PHONE` (opcional), `NET_DIAG_SNMP_*`, `NET_DIAG_SYSLOG_*`, `NET_DIAG_LLM_*` |
 | OLT Gateway (SSH) | `OLT_GATEWAY_ENABLED`, `OLT_GATEWAY_API_KEY`, `OLT_GATEWAY_PASSWORD`, `OLT_GATEWAY_HOST`, `OLT_GATEWAY_USERNAME`, … |

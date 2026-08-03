@@ -34,7 +34,7 @@
 | **CRM Omnicanal WhatsApp — Fase 7 (métricas operativas)** | [crm-omnicanal-fase7-metricas.md](./crm-omnicanal-fase7-metricas.md) |
 | **WhatsApp Meta Cloud API (límites + analytics)** | [whatsapp-meta-cloud-api.md](./whatsapp-meta-cloud-api.md) |
 | Acceso MySQL producción (túnel SSH) | [vps-mysql-access.md](./vps-mysql-access.md) |
-| **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) |
+| **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) (regla: `.cursor/rules/documentar-secretos-env.mdc`) |
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |
 | Deploy flow | [deploy-flow.md](./deploy-flow.md) |
 | **Deploy prod NetDiag 2026-08-01** | [deploy-prod-netdiag-2026-08-01.md](./deploy-prod-netdiag-2026-08-01.md) |
