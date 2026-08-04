@@ -10,6 +10,9 @@ class WhatsAppMediaContentDispositionTest {
     fun `image and audio use inline disposition`() {
         assertTrue(WhatsAppMediaContentDisposition.forMimeType("image/jpeg", "a.jpg").startsWith("inline;"))
         assertTrue(WhatsAppMediaContentDisposition.forMimeType("audio/ogg", "v.ogg").startsWith("inline;"))
+        assertTrue(
+            WhatsAppMediaContentDisposition.forMimeType("audio/ogg; codecs=opus", "v.ogg").startsWith("inline;")
+        )
     }
 
     @Test

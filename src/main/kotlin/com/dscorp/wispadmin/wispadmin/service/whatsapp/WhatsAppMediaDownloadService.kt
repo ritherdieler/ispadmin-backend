@@ -99,11 +99,18 @@ class WhatsAppMediaDownloadService(
     }
 
     private fun extensionForMime(mimeType: String?): String {
-        return when (mimeType?.lowercase()) {
-            "image/jpeg", "image/jpg" -> ".jpg"
-            "image/png" -> ".png"
-            "image/webp" -> ".webp"
-            "application/pdf" -> ".pdf"
+        val mime = mimeType?.lowercase()?.substringBefore(';')?.trim().orEmpty()
+        return when {
+            mime == "image/jpeg" || mime == "image/jpg" -> ".jpg"
+            mime == "image/png" -> ".png"
+            mime == "image/webp" -> ".webp"
+            mime == "application/pdf" -> ".pdf"
+            mime == "audio/ogg" || mime == "audio/opus" -> ".ogg"
+            mime == "audio/mpeg" || mime == "audio/mp3" -> ".mp3"
+            mime == "audio/mp4" || mime == "audio/aac" || mime == "audio/x-m4a" -> ".m4a"
+            mime == "audio/amr" -> ".amr"
+            mime == "video/mp4" -> ".mp4"
+            mime == "video/3gpp" -> ".3gp"
             else -> ".bin"
         }
     }

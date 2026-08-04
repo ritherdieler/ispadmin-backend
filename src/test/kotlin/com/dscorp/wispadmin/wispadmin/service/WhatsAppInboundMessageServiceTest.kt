@@ -470,7 +470,11 @@ class WhatsAppInboundMessageServiceTest {
         verify {
             crmEventPublisher.publish(
                 CrmEventPublisher.MESSAGE_RECEIVED,
-                match { it["phone"] == payload.phone && it["inboundMessageId"] == 99 }
+                match {
+                    it["phone"] == payload.phone &&
+                        it["inboundMessageId"] == 99 &&
+                        it.containsKey("mediaMimeType")
+                }
             )
         }
         verify {

@@ -64,4 +64,33 @@ class WhatsAppInboundPayloadParserTest {
         assertEquals("media-99", payload.mediaId)
         assertNotNull(payload.mediaMimeType)
     }
+
+    @Test
+    fun `parse audio with media id and ogg mime`() {
+        val node = mapper.readTree("""
+            {
+              "id":"wamid.5","from":"51902354183","type":"audio",
+              "audio":{"id":"media-audio-1","mime_type":"audio/ogg; codecs=opus","voice":true}
+            }
+        """.trimIndent())
+        val payload = WhatsAppInboundPayloadParser.parse(node)!!
+        assertEquals("audio", payload.messageType)
+        assertEquals("media-audio-1", payload.mediaId)
+        assertEquals("audio/ogg; codecs=opus", payload.mediaMimeType)
+        assertEquals(null, payload.messageText)
+    }
+
+    @Test
+    fun `parse sticker as image-like media`() {
+        val node = mapper.readTree("""
+            {
+              "id":"wamid.6","from":"51902354183","type":"sticker",
+              "sticker":{"id":"media-sticker-1","mime_type":"image/webp","animated":false}
+            }
+        """.trimIndent())
+        val payload = WhatsAppInboundPayloadParser.parse(node)!!
+        assertEquals("sticker", payload.messageType)
+        assertEquals("media-sticker-1", payload.mediaId)
+        assertEquals("image/webp", payload.mediaMimeType)
+    }
 }

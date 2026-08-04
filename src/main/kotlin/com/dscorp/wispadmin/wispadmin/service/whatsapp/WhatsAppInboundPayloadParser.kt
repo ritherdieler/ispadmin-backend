@@ -66,6 +66,33 @@ object WhatsAppInboundPayloadParser {
                 mediaMimeType = message.path("image").path("mime_type").asText("image/jpeg"),
                 contextMessageId = contextMessageId
             )
+            "audio" -> WhatsAppInboundPayload(
+                metaMessageId = wamid,
+                phone = phone,
+                messageType = messageType,
+                messageText = null,
+                mediaId = message.path("audio").path("id").asText(null),
+                mediaMimeType = message.path("audio").path("mime_type").asText("audio/ogg"),
+                contextMessageId = contextMessageId
+            )
+            "sticker" -> WhatsAppInboundPayload(
+                metaMessageId = wamid,
+                phone = phone,
+                messageType = messageType,
+                messageText = null,
+                mediaId = message.path("sticker").path("id").asText(null),
+                mediaMimeType = message.path("sticker").path("mime_type").asText("image/webp"),
+                contextMessageId = contextMessageId
+            )
+            "video" -> WhatsAppInboundPayload(
+                metaMessageId = wamid,
+                phone = phone,
+                messageType = messageType,
+                messageText = message.path("video").path("caption").asText(null),
+                mediaId = message.path("video").path("id").asText(null),
+                mediaMimeType = message.path("video").path("mime_type").asText("video/mp4"),
+                contextMessageId = contextMessageId
+            )
             "document" -> WhatsAppInboundPayload(
                 metaMessageId = wamid,
                 phone = phone,

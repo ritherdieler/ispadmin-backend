@@ -5,7 +5,9 @@ object WhatsAppMediaContentDisposition {
     fun forMimeType(mimeType: String?, filename: String): String {
         val safeName = filename.replace("\"", "")
         val mime = mimeType?.lowercase()?.trim().orEmpty()
-        val disposition = if (mime.startsWith("image/") || mime.startsWith("audio/")) "inline" else "attachment"
+        val baseMime = mime.substringBefore(';').trim()
+        val disposition =
+            if (baseMime.startsWith("image/") || baseMime.startsWith("audio/")) "inline" else "attachment"
         return "$disposition; filename=\"$safeName\""
     }
 }

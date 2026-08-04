@@ -158,6 +158,7 @@ class WhatsAppInboundMessageService(
                     "buttonReplyTitle" to inbound.buttonReplyTitle,
                     "hasMedia" to hasMedia,
                     "mediaId" to inbound.id,
+                    "mediaMimeType" to inbound.mediaMimeType,
                     "replyToLogId" to inbound.replyToLogId,
                     "clientName" to clientName,
                     "subscriptionId" to inbound.subscriptionId,
