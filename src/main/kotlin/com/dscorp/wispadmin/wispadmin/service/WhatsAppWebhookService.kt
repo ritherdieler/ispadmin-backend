@@ -104,7 +104,8 @@ class WhatsAppWebhookService(
                     "message_template_quality_update",
                     "account_alerts",
                     "template_category_update",
-                    "phone_number_quality_update" -> accountEventService.recordManagementEvent(field, value)
+                    "phone_number_quality_update",
+                    "business_capability_update" -> accountEventService.recordManagementEvent(field, value)
                     else -> log.debug("Webhook: campo no manejado {}", field)
                 }
             }

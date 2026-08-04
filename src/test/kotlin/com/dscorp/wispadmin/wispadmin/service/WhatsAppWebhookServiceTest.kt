@@ -198,4 +198,31 @@ class WhatsAppWebhookServiceTest {
             )
         }
     }
+
+    @Test
+    fun `processPayload delegates business_capability_update to account event service`() {
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "business_capability_update",
+                  "value": {
+                    "max_daily_conversation_per_phone": 2000,
+                    "max_phone_numbers_per_business": 20
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        verify(exactly = 1) {
+            accountEventService.recordManagementEvent(
+                "business_capability_update",
+                match { it.path("max_daily_conversation_per_phone").asInt() == 2000 }
+            )
+        }
+    }
 }
