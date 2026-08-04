@@ -55,60 +55,96 @@ class WhatsAppAnalyticsService(
         )
     }
 
-    fun campaigns(from: LocalDateTime, to: LocalDateTime, windowDays: Int = 7): List<WhatsAppCampaignAnalytics> {
+    fun campaigns(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        windowDays: Int = 7,
+        templateCode: String? = null,
+        operatorUsername: String? = null
+    ): List<WhatsAppCampaignAnalytics> {
         val logs = messageLogRepository.findByCreatedAtBetween(from, to)
             .filter { !it.campaignId.isNullOrBlank() }
+            .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
+            .filter { operatorUsername.isNullOrBlank() || it.operatorUsername == operatorUsername }
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
 
-        return logs.groupBy { it.campaignId!! }.map { (campaignId, entries) ->
-            val sent = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
-            val phones = entries.mapNotNull { it.phone }.toSet()
-            val startedAt = entries.minOfOrNull { it.createdAt }
-            val responded = if (startedAt == null) {
-                0
-            } else {
-                inbound.count { msg ->
-                    phones.contains(msg.phone) && !msg.createdAt.isBefore(startedAt)
-                }
-            }
-            val conversionAmount = computeRecoveredAmount(entries, windowDays)
-            val paid = if (conversionAmount > 0.0) {
-                entries.count { entry ->
-                    entry.subscriptionId != null && hasPaidInWindow(entry, windowDays)
-                }.coerceAtMost(sent)
-            } else {
-                0
-            }
-
-            val templateCode = entries.firstOrNull()?.messageType
-            WhatsAppCampaignAnalytics(
-                campaignId = campaignId,
-                templateCode = templateCode,
-                templateLabel = templateCode?.let { labelForTemplate(it) },
-                operatorUsername = entries.firstOrNull()?.operatorUsername,
-                sent = sent,
-                delivered = entries.count { it.deliveredAt != null },
-                read = entries.count { it.readAt != null },
-                failed = entries.count { it.failedAt != null },
-                responded = responded,
-                paid = paid,
-                startedAt = startedAt,
-                deliveryRate = rate(entries.count { it.deliveredAt != null }, sent),
-                conversionAmount = conversionAmount
-            )
-        }.sortedByDescending { it.startedAt }
+        return logs.groupBy { it.campaignId!! }
+            .map { (campaignId, entries) -> buildCampaignAnalytics(campaignId, entries, inbound, windowDays) }
+            .sortedByDescending { it.startedAt }
     }
 
-    fun campaignDetail(campaignId: String, windowDays: Int = 7): WhatsAppCampaignDetail? {
+    fun campaignDetail(
+        campaignId: String,
+        windowDays: Int = 7,
+        templateCode: String? = null,
+        operatorUsername: String? = null
+    ): WhatsAppCampaignDetail? {
         val logs = messageLogRepository.findByCampaignId(campaignId)
+            .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
+            .filter { operatorUsername.isNullOrBlank() || it.operatorUsername == operatorUsername }
         if (logs.isEmpty()) return null
         val from = logs.minOf { it.createdAt }
         val to = logs.maxOf { it.createdAt }.plusSeconds(1)
-        val summary = campaigns(from, to, windowDays).firstOrNull { it.campaignId == campaignId }
+        val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
+        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays)
 
         return WhatsAppCampaignDetail(
             summary = summary,
             messages = logs.sortedByDescending { it.createdAt }.map { it.toAnalyticsRow() }
+        )
+    }
+
+    private fun buildCampaignAnalytics(
+        campaignId: String,
+        entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
+        inbound: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage>,
+        windowDays: Int
+    ): WhatsAppCampaignAnalytics {
+        val accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
+        val sent = accepted
+        val confirmed = entries.count { isMetaConfirmed(it) }
+        val delivered = entries.count { it.deliveredAt != null }
+        val read = entries.count { it.readAt != null }
+        val failed = entries.count { it.failedAt != null || it.deliveryStatus == "failed" }
+        val phones = entries.mapNotNull { it.phone }.toSet()
+        val startedAt = entries.minOfOrNull { it.createdAt }
+        val responded = if (startedAt == null) {
+            0
+        } else {
+            inbound.count { msg ->
+                phones.contains(msg.phone) && !msg.createdAt.isBefore(startedAt)
+            }
+        }
+        val conversionAmount = computeRecoveredAmount(entries, windowDays)
+        val paid = if (conversionAmount > 0.0) {
+            entries.count { entry ->
+                entry.subscriptionId != null && hasPaidInWindow(entry, windowDays)
+            }.coerceAtMost(sent)
+        } else {
+            0
+        }
+
+        val templateCode = entries.firstOrNull()?.messageType
+        val deliveryDenominator = if (confirmed > 0) confirmed else accepted
+
+        return WhatsAppCampaignAnalytics(
+            campaignId = campaignId,
+            templateCode = templateCode,
+            templateLabel = templateCode?.let { labelForTemplate(it) },
+            operatorUsername = entries.firstOrNull()?.operatorUsername,
+            sent = sent,
+            accepted = accepted,
+            confirmed = confirmed,
+            delivered = delivered,
+            read = read,
+            failed = failed,
+            responded = responded,
+            paid = paid,
+            startedAt = startedAt,
+            deliveryRate = rate(delivered, deliveryDenominator),
+            readRate = rate(read, deliveryDenominator),
+            responseRate = rate(responded, accepted),
+            conversionAmount = conversionAmount
         )
     }
 
@@ -263,6 +299,8 @@ class WhatsAppAnalyticsService(
         val templateLabel: String?,
         val operatorUsername: String?,
         val sent: Int,
+        val accepted: Int,
+        val confirmed: Int,
         val delivered: Int,
         val read: Int,
         val failed: Int,
@@ -270,6 +308,8 @@ class WhatsAppAnalyticsService(
         val paid: Int,
         val startedAt: LocalDateTime?,
         val deliveryRate: Double,
+        val readRate: Double,
+        val responseRate: Double,
         val conversionAmount: Double
     )
 

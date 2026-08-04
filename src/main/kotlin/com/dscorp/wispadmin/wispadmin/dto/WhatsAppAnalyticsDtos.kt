@@ -49,6 +49,8 @@ data class WhatsAppCampaignSummaryDto(
     val templateCode: String?,
     val templateLabel: String?,
     val sent: Int,
+    val accepted: Int = sent,
+    val confirmed: Int = 0,
     val delivered: Int,
     val read: Int,
     val failed: Int,
@@ -56,6 +58,9 @@ data class WhatsAppCampaignSummaryDto(
     val paid: Int,
     val operatorName: String?,
     val createdAt: String?,
+    val deliveryRate: Double = 0.0,
+    val readRate: Double = 0.0,
+    val responseRate: Double = 0.0,
     val conversionAmount: Double? = null
 )
 
@@ -64,6 +69,8 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignAnalytics.toSummaryDto() = WhatsApp
     templateCode = templateCode,
     templateLabel = templateLabel,
     sent = sent,
+    accepted = accepted,
+    confirmed = confirmed,
     delivered = delivered,
     read = read,
     failed = failed,
@@ -71,6 +78,9 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignAnalytics.toSummaryDto() = WhatsApp
     paid = paid,
     operatorName = operatorUsername,
     createdAt = startedAt?.toString(),
+    deliveryRate = deliveryRate,
+    readRate = readRate,
+    responseRate = responseRate,
     conversionAmount = conversionAmount
 )
 
@@ -79,6 +89,8 @@ data class WhatsAppCampaignDetailDto(
     val templateCode: String?,
     val templateLabel: String?,
     val sent: Int,
+    val accepted: Int = sent,
+    val confirmed: Int = 0,
     val delivered: Int,
     val read: Int,
     val failed: Int,
@@ -86,6 +98,9 @@ data class WhatsAppCampaignDetailDto(
     val paid: Int,
     val operatorName: String?,
     val createdAt: String?,
+    val deliveryRate: Double = 0.0,
+    val readRate: Double = 0.0,
+    val responseRate: Double = 0.0,
     val conversionAmount: Double,
     val details: List<WhatsAppMessageLogDto>
 )
@@ -97,6 +112,8 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignDetail.toFrontendDto(
     templateCode = summary?.templateCode,
     templateLabel = summary?.templateLabel,
     sent = summary?.sent ?: 0,
+    accepted = summary?.accepted ?: 0,
+    confirmed = summary?.confirmed ?: 0,
     delivered = summary?.delivered ?: 0,
     read = summary?.read ?: 0,
     failed = summary?.failed ?: 0,
@@ -104,6 +121,9 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignDetail.toFrontendDto(
     paid = summary?.paid ?: 0,
     operatorName = summary?.operatorUsername,
     createdAt = summary?.startedAt?.toString(),
+    deliveryRate = summary?.deliveryRate ?: 0.0,
+    readRate = summary?.readRate ?: 0.0,
+    responseRate = summary?.responseRate ?: 0.0,
     conversionAmount = summary?.conversionAmount ?: 0.0,
     details = logs
 )
@@ -156,8 +176,9 @@ data class WhatsAppPausedTemplateDto(
 
 data class WhatsAppAccountHealthDto(
     val qualityScore: String,
-    val messagingLimit: String? = null,
+    val messagingLimit: Int? = null,
     val messagingLimitTier: String? = null,
+    val messagingUsedToday: Int? = null,
     val pausedTemplates: List<WhatsAppPausedTemplateDto>,
     val alerts: List<WhatsAppAccountAlertDto>,
     val phoneQuality: String? = null,
@@ -168,6 +189,7 @@ fun WhatsAppAccountEventService.WhatsAppAccountHealthSummary.toFrontendDto() = W
     qualityScore = qualityScore ?: "GREEN",
     messagingLimit = messagingLimit,
     messagingLimitTier = messagingLimitTier,
+    messagingUsedToday = messagingUsedToday,
     pausedTemplates = pausedTemplates,
     alerts = alerts,
     phoneQuality = phoneQuality ?: qualityScore,

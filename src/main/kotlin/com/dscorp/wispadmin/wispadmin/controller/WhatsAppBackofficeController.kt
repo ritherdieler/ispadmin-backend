@@ -317,12 +317,15 @@ class WhatsAppBackofficeController(
         @RequestParam(required = false) dateTo: String?,
         @RequestParam(required = false) from: String?,
         @RequestParam(required = false) to: String?,
-        @RequestParam(required = false) periodDays: Int?
+        @RequestParam(required = false) periodDays: Int?,
+        @RequestParam(required = false) templateCode: String?,
+        @RequestParam(required = false) operatorUsername: String?
     ): ResponseEntity<Any> {
         val windowDays = (periodDays ?: 7).coerceAtLeast(1)
         val range = queryService.resolveDateRange(dateFrom ?: from, dateTo ?: to, windowDays)
         return ResponseEntity.ok(
-            analyticsService.campaigns(range.first, range.second, windowDays).map { it.toSummaryDto() }
+            analyticsService.campaigns(range.first, range.second, windowDays, templateCode, operatorUsername)
+                .map { it.toSummaryDto() }
         )
     }
 
@@ -330,21 +333,28 @@ class WhatsAppBackofficeController(
     fun exportCampaigns(
         @RequestParam(required = false) dateFrom: String?,
         @RequestParam(required = false) dateTo: String?,
-        @RequestParam(required = false) periodDays: Int?
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) periodDays: Int?,
+        @RequestParam(required = false) templateCode: String?,
+        @RequestParam(required = false) operatorUsername: String?
     ): ResponseEntity<String> {
         val windowDays = (periodDays ?: 7).coerceAtLeast(1)
-        val range = queryService.resolveDateRange(dateFrom, dateTo, windowDays)
-        val campaigns = analyticsService.campaigns(range.first, range.second, windowDays).map { it.toSummaryDto() }
+        val range = queryService.resolveDateRange(dateFrom ?: from, dateTo ?: to, windowDays)
+        val campaigns = analyticsService.campaigns(range.first, range.second, windowDays, templateCode, operatorUsername)
+            .map { it.toSummaryDto() }
         return csvResponse("whatsapp-campaigns.csv", csvExportService.exportCampaigns(campaigns))
     }
 
     @GetMapping("/analytics/campaigns/{campaignId}")
     fun analyticsCampaignDetail(
         @PathVariable campaignId: String,
-        @RequestParam(required = false) periodDays: Int?
+        @RequestParam(required = false) periodDays: Int?,
+        @RequestParam(required = false) templateCode: String?,
+        @RequestParam(required = false) operatorUsername: String?
     ): ResponseEntity<Any> {
         val windowDays = (periodDays ?: 7).coerceAtLeast(1)
-        val detail = analyticsService.campaignDetail(campaignId, windowDays)
+        val detail = analyticsService.campaignDetail(campaignId, windowDays, templateCode, operatorUsername)
             ?: return ResponseEntity.notFound().build()
         val logs = messageLogRepository.findByCampaignId(campaignId).map { it.toDto() }
         return ResponseEntity.ok(detail.toFrontendDto(logs))

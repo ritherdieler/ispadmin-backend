@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppCampaignSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppInboundMessageDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMessageLogDto
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @Service
@@ -57,7 +58,7 @@ class WhatsAppCsvExportService {
                 campaign.responded,
                 campaign.paid,
                 campaign.operatorName,
-                campaign.createdAt?.format(formatter),
+                formatCampaignCreatedAt(campaign.createdAt),
                 campaign.conversionAmount
             )
         }
@@ -85,6 +86,11 @@ class WhatsAppCsvExportService {
             )
         }
         return toCsv(header, rows)
+    }
+
+    private fun formatCampaignCreatedAt(createdAt: String?): String? {
+        if (createdAt.isNullOrBlank()) return createdAt
+        return runCatching { LocalDateTime.parse(createdAt).format(formatter) }.getOrDefault(createdAt)
     }
 
     private fun toCsv(header: List<String>, rows: List<List<Any?>>): String {
