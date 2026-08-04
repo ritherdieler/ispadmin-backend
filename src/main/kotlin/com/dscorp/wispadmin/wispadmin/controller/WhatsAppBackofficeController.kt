@@ -10,6 +10,7 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppTestSendResponseDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.dto.toFrontendDto
+import com.dscorp.wispadmin.wispadmin.dto.toSeriesPointDto
 import com.dscorp.wispadmin.wispadmin.dto.toSummaryDto
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
@@ -309,6 +310,22 @@ class WhatsAppBackofficeController(
         val range = queryService.resolveDateRange(dateFrom ?: from, dateTo ?: to, windowDays)
         val overview = analyticsService.overview(range.first, range.second, windowDays, templateCode)
         return ResponseEntity.ok(overview.toDto())
+    }
+
+    @GetMapping("/analytics/overview/series")
+    fun analyticsOverviewSeries(
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?,
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) periodDays: Int?,
+        @RequestParam(required = false) templateCode: String?
+    ): ResponseEntity<Any> {
+        val windowDays = (periodDays ?: 7).coerceAtLeast(1)
+        val range = queryService.resolveDateRange(dateFrom ?: from, dateTo ?: to, windowDays)
+        return ResponseEntity.ok(
+            analyticsService.overviewSeries(range.first, range.second, templateCode).map { it.toSeriesPointDto() }
+        )
     }
 
     @GetMapping("/analytics/campaigns")

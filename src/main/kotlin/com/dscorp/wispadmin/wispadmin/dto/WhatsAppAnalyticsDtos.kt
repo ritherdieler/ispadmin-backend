@@ -136,6 +136,20 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignDetail.toFrontendDto(
     details = logs
 )
 
+data class WhatsAppAnalyticsSeriesPointDto(
+    val date: String,
+    val accepted: Int,
+    val confirmed: Int,
+    val failed: Int
+)
+
+fun WhatsAppAnalyticsService.WhatsAppAnalyticsDailyPoint.toSeriesPointDto() = WhatsAppAnalyticsSeriesPointDto(
+    date = date.toString(),
+    accepted = accepted,
+    confirmed = confirmed,
+    failed = failed
+)
+
 data class WhatsAppConversionByTemplateDto(
     val templateCode: String,
     val templateLabel: String?,

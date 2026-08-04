@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -354,5 +355,72 @@ class WhatsAppAnalyticsServiceTest {
         val detail = service.campaignDetail("camp-1")
 
         assertEquals(0.5, detail?.summary?.estimatedMetaCost ?: -1.0, 0.0001)
+    }
+
+    @Test
+    fun `overviewSeries groups accepted confirmed failed by day`() {
+        val from = LocalDateTime.of(2026, 8, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 8, 3, 0, 0)
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    deliveryStatus = "delivered",
+                    createdAt = LocalDateTime.of(2026, 8, 1, 9, 0)
+                ),
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    metaMessageId = "w2",
+                    deliveryStatus = "failed",
+                    createdAt = LocalDateTime.of(2026, 8, 1, 10, 0)
+                ),
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    metaMessageId = "w3",
+                    deliveryStatus = "delivered",
+                    createdAt = LocalDateTime.of(2026, 8, 2, 9, 0)
+                )
+            )
+        )
+
+        val series = service.overviewSeries(from, to)
+
+        assertEquals(2, series.size)
+        assertEquals(LocalDate.of(2026, 8, 1), series[0].date)
+        assertEquals(2, series[0].accepted)
+        assertEquals(2, series[0].confirmed)
+        assertEquals(1, series[0].failed)
+        assertEquals(LocalDate.of(2026, 8, 2), series[1].date)
+        assertEquals(1, series[1].accepted)
+        assertEquals(1, series[1].confirmed)
+        assertEquals(0, series[1].failed)
+    }
+
+    @Test
+    fun `overviewSeries filters by templateCode`() {
+        val from = LocalDateTime.of(2026, 8, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 8, 2, 0, 0)
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    messageType = "PAYMENT_REMINDER",
+                    metaMessageId = "w1",
+                    createdAt = LocalDateTime.of(2026, 8, 1, 9, 0)
+                ),
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    messageType = "WELCOME_CUSTOMER",
+                    metaMessageId = "w2",
+                    createdAt = LocalDateTime.of(2026, 8, 1, 10, 0)
+                )
+            )
+        )
+
+        val series = service.overviewSeries(from, to, templateCode = "PAYMENT_REMINDER")
+
+        assertEquals(1, series.size)
+        assertEquals(1, series[0].accepted)
     }
 }

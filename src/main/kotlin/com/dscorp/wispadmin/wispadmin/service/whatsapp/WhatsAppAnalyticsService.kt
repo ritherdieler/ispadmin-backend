@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -181,6 +182,26 @@ class WhatsAppAnalyticsService(
         )
     }
 
+    fun overviewSeries(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        templateCode: String? = null
+    ): List<WhatsAppAnalyticsDailyPoint> {
+        val logs = messageLogRepository.findByCreatedAtBetween(from, to)
+            .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
+
+        return logs.groupBy { it.createdAt.toLocalDate() }
+            .map { (date, entries) ->
+                WhatsAppAnalyticsDailyPoint(
+                    date = date,
+                    accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT },
+                    confirmed = entries.count { isMetaConfirmed(it) },
+                    failed = entries.count { it.failedAt != null || it.deliveryStatus == "failed" }
+                )
+            }
+            .sortedBy { it.date }
+    }
+
     fun conversion(from: LocalDateTime, to: LocalDateTime, windowDays: Int = 7, templateCode: String? = null): WhatsAppConversionAnalytics {
         val logs = messageLogRepository.findByCreatedAtBetween(from, to)
             .filter { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT && it.subscriptionId != null }
@@ -351,6 +372,13 @@ class WhatsAppAnalyticsService(
     data class WhatsAppCampaignDetail(
         val summary: WhatsAppCampaignAnalytics?,
         val messages: List<WhatsAppMessageAnalyticsRow>
+    )
+
+    data class WhatsAppAnalyticsDailyPoint(
+        val date: LocalDate,
+        val accepted: Int,
+        val confirmed: Int,
+        val failed: Int
     )
 
     data class WhatsAppMessageAnalyticsRow(
