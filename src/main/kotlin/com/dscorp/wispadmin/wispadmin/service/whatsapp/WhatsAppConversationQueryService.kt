@@ -97,6 +97,7 @@ class WhatsAppConversationQueryService(
                     subscriptionId = subscriptionId,
                     lastMessagePreview = lastPreview,
                     lastMessageAt = lastAt,
+                    lastInboundAt = lastInbound?.createdAt,
                     unreadCount = unreadCount,
                     identified = subscriptionId != null,
                     serviceWindowActive = window.open,
@@ -112,7 +113,10 @@ class WhatsAppConversationQueryService(
                     summary.lastMessagePreview?.contains(filter.search, ignoreCase = true) == true
             }
             .filter { !filter.unreadOnly || it.unreadCount > 0 }
-            .sortedByDescending { it.lastMessageAt }
+            .sortedWith(
+                compareByDescending<WhatsAppConversationSummaryDto> { it.lastInboundAt ?: LocalDateTime.MIN }
+                    .thenByDescending { it.lastMessageAt }
+            )
             .take(filter.limit.coerceIn(1, 500))
             .toList()
     }

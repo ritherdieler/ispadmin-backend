@@ -8,6 +8,7 @@ data class WhatsAppConversationSummaryDto(
     val subscriptionId: Int?,
     val lastMessagePreview: String?,
     val lastMessageAt: LocalDateTime,
+    val lastInboundAt: LocalDateTime? = null,
     val unreadCount: Int,
     val identified: Boolean,
     val serviceWindowActive: Boolean,

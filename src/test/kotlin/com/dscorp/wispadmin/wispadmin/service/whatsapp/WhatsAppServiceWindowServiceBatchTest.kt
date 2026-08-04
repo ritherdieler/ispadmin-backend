@@ -24,7 +24,7 @@ class WhatsAppServiceWindowServiceBatchTest {
 
     @Test
     fun `getServiceWindows carga sesiones en batch sin N+1`() {
-        val now = LocalDateTime.of(2026, 8, 2, 10, 0)
+        val now = LocalDateTime.now()
         every { phoneSessionRepository.findAllById(any<Iterable<String>>()) } returns listOf(
             WhatsAppPhoneSession(
                 phone = "51911111111",

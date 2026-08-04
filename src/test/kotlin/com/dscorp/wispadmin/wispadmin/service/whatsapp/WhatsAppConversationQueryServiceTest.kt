@@ -138,6 +138,7 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(2, result.size)
         assertEquals("51922222222", result[0].phone)
         assertEquals("Otro", result[0].lastMessagePreview)
+        assertEquals(now.minusMinutes(5), result[0].lastInboundAt)
         assertEquals(0, result[0].unreadCount)
         assertFalse(result[0].identified)
         assertTrue(result[0].lastHasMedia)
@@ -145,12 +146,55 @@ class WhatsAppConversationQueryServiceTest {
 
         assertEquals("51911111111", result[1].phone)
         assertEquals("Auto reply", result[1].lastMessagePreview)
+        assertEquals(now.minusMinutes(10), result[1].lastInboundAt)
         assertEquals(2, result[1].unreadCount)
         assertEquals("Ana Lopez", result[1].clientName)
         assertTrue(result[1].identified)
         assertTrue(result[1].serviceWindowActive)
         assertEquals("soporte", result[1].lastButtonReplyId)
         assertFalse(result[1].lastHasMedia)
+    }
+
+    @Test
+    fun `listConversations ordena por lastInboundAt y no por outbound del bot`() {
+        val now = LocalDateTime.of(2026, 8, 4, 15, 0)
+        every { inboundMessageRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+            WhatsAppInboundMessage(
+                id = 1,
+                metaMessageId = "in-old",
+                phone = "51911111111",
+                messageText = "Cliente viejo",
+                createdAt = now.minusHours(2),
+                readAt = null
+            ),
+            WhatsAppInboundMessage(
+                id = 2,
+                metaMessageId = "in-new",
+                phone = "51922222222",
+                messageText = "Cliente reciente",
+                createdAt = now.minusMinutes(20),
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+            WhatsAppMessageLog(
+                id = 100,
+                phone = "51911111111",
+                message = "[MAIN_MENU] Hola bot",
+                messageType = "AUTO_REPLY",
+                status = "SENT",
+                createdAt = now.minusMinutes(1)
+            )
+        )
+        every { subscriptionRepository.findAllById(emptyList()) } returns emptyList()
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val result = service.listConversations(WhatsAppConversationFilter(limit = 50))
+
+        assertEquals(listOf("51922222222", "51911111111"), result.map { it.phone })
+        assertEquals(now.minusMinutes(20), result[0].lastInboundAt)
+        assertEquals(now.minusHours(2), result[1].lastInboundAt)
+        assertEquals(now.minusMinutes(1), result[1].lastMessageAt)
     }
 
     @Test
