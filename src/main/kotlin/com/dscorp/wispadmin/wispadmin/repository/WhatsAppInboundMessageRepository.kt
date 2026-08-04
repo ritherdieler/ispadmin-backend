@@ -23,6 +23,12 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     fun findByPhoneOrderByCreatedAtDesc(phone: String, pageable: Pageable): List<WhatsAppInboundMessage>
 
+    fun findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(
+        phone: String,
+        before: LocalDateTime,
+        pageable: Pageable
+    ): List<WhatsAppInboundMessage>
+
     fun findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
         phone: String,
         from: LocalDateTime,

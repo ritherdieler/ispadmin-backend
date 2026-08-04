@@ -37,6 +37,12 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findByPhoneOrderByCreatedAtDesc(phone: String, pageable: Pageable): List<WhatsAppMessageLog>
 
+    fun findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(
+        phone: String,
+        before: LocalDateTime,
+        pageable: Pageable
+    ): List<WhatsAppMessageLog>
+
     fun findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
         phone: String,
         from: LocalDateTime,

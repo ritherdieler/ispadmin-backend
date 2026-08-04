@@ -240,9 +240,12 @@ class WhatsAppConversationQueryServiceTest {
             )
         )
 
-        val thread = service.getThread(phone)
+        val page = service.getThread(phone)
+        val thread = page.messages
 
         assertEquals(3, thread.size)
+        assertFalse(page.hasMore)
+        assertEquals(t1, page.nextBefore)
         assertEquals("inbound:42", thread[0].id)
         assertEquals("INBOUND", thread[0].direction)
         assertEquals(42, thread[0].mediaId)
@@ -276,7 +279,7 @@ class WhatsAppConversationQueryServiceTest {
             )
         )
 
-        val thread = service.getThread(phone)
+        val thread = service.getThread(phone).messages
 
         assertEquals(1, thread.size)
         assertEquals("PAYMENT_REMINDER", thread[0].templateCode)
@@ -308,7 +311,7 @@ class WhatsAppConversationQueryServiceTest {
             )
         )
 
-        val thread = service.getThread(phone)
+        val thread = service.getThread(phone).messages
 
         assertEquals(1, thread.size)
         assertEquals("Hola Ana Lopez, pague 50.0 antes de 01/08/2026.", thread[0].body)
@@ -334,7 +337,7 @@ class WhatsAppConversationQueryServiceTest {
             )
         )
 
-        val thread = service.getThread(phone)
+        val thread = service.getThread(phone).messages
 
         assertEquals(
             "Estimado(a) Ana Lopez, le recordamos su pago pendiente de S/ 50.0 correspondiente al periodo 01/08/2026.",
@@ -355,8 +358,45 @@ class WhatsAppConversationQueryServiceTest {
 
         service.getThread(phone, limit = 25)
 
-        assertEquals(25, pageableSlot.captured.pageSize)
+        assertEquals(26, pageableSlot.captured.pageSize)
         assertEquals(0, pageableSlot.captured.pageNumber)
+    }
+
+    @Test
+    fun `getThread pagina con before y marca hasMore`() {
+        val phone = "51902354183"
+        val t1 = LocalDateTime.of(2026, 8, 4, 10, 0)
+        val t2 = LocalDateTime.of(2026, 8, 4, 11, 0)
+        val t3 = LocalDateTime.of(2026, 8, 4, 12, 0)
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppInboundMessage(id = 3, metaMessageId = "in-3", phone = phone, messageText = "C", createdAt = t3),
+            WhatsAppInboundMessage(id = 2, metaMessageId = "in-2", phone = phone, messageText = "B", createdAt = t2),
+            WhatsAppInboundMessage(id = 1, metaMessageId = "in-1", phone = phone, messageText = "A", createdAt = t1),
+        )
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+
+        val first = service.getThread(phone, limit = 2)
+        assertEquals(listOf("inbound:2", "inbound:3"), first.messages.map { it.id })
+        assertTrue(first.hasMore)
+        assertEquals(t2, first.nextBefore)
+
+        every {
+            inboundMessageRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, t2, any<Pageable>())
+        } returns listOf(
+            WhatsAppInboundMessage(id = 1, metaMessageId = "in-1", phone = phone, messageText = "A", createdAt = t1),
+        )
+        every {
+            messageLogRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, t2, any<Pageable>())
+        } returns emptyList()
+
+        val older = service.getThread(phone, limit = 2, before = t2)
+        assertEquals(listOf("inbound:1"), older.messages.map { it.id })
+        assertFalse(older.hasMore)
+        assertEquals(t1, older.nextBefore)
     }
 
     @Test

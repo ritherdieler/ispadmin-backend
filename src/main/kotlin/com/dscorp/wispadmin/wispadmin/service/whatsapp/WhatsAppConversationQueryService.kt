@@ -11,6 +11,7 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSubscriptionDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationTicketItemDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadPageDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
@@ -125,38 +126,58 @@ class WhatsAppConversationQueryService(
         phone: String,
         dateFrom: LocalDateTime? = null,
         dateTo: LocalDateTime? = null,
-        limit: Int = 200
-    ): List<WhatsAppThreadMessageDto> {
-        val pageSize = limit.coerceIn(1, 1000)
-        val pageable = PageRequest.of(0, pageSize)
-        val inboundRecent = if (dateFrom != null && dateTo != null) {
-            inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
-                phone = phone,
-                from = dateFrom,
-                to = dateTo,
-                pageable = pageable
-            )
-        } else {
-            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+        limit: Int = 50,
+        before: LocalDateTime? = null
+    ): WhatsAppThreadPageDto {
+        val pageSize = limit.coerceIn(1, 200)
+        val fetchSize = pageSize + 1
+        val pageable = PageRequest.of(0, fetchSize)
+        val upperBound = when {
+            before != null && dateTo != null -> if (before.isBefore(dateTo)) before else dateTo
+            before != null -> before
+            else -> dateTo
         }
-        val outboundRecent = if (dateFrom != null && dateTo != null) {
-            messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
-                phone = phone,
-                from = dateFrom,
-                to = dateTo,
-                pageable = pageable
-            )
-        } else {
-            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+        val inboundRecent = when {
+            dateFrom != null && upperBound != null ->
+                inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                    phone = phone,
+                    from = dateFrom,
+                    to = upperBound,
+                    pageable = pageable
+                )
+            before != null ->
+                inboundMessageRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
+            else ->
+                inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+        }
+        val outboundRecent = when {
+            dateFrom != null && upperBound != null ->
+                messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                    phone = phone,
+                    from = dateFrom,
+                    to = upperBound,
+                    pageable = pageable
+                )
+            before != null ->
+                messageLogRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
+            else ->
+                messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
         }
 
-        return (
+        val mergedDesc = (
             inboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage() } } +
                 outboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage(templateDisplayService) } }
             )
             .sortedByDescending { it.createdAt }
-            .take(pageSize)
-            .sortedBy { it.createdAt }
+            .distinctBy { it.id }
+        val hasMore = mergedDesc.size > pageSize
+        val pageDesc = mergedDesc.take(pageSize)
+        val messages = pageDesc.sortedBy { it.createdAt }
+        return WhatsAppThreadPageDto(
+            messages = messages,
+            hasMore = hasMore,
+            nextBefore = messages.firstOrNull()?.createdAt
+        )
     }
 
     fun getContext(phone: String): WhatsAppConversationContextDto {

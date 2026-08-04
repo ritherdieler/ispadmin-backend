@@ -35,6 +35,12 @@ data class WhatsAppThreadMessageDto(
     val retryCount: Int? = null
 )
 
+data class WhatsAppThreadPageDto(
+    val messages: List<WhatsAppThreadMessageDto>,
+    val hasMore: Boolean,
+    val nextBefore: LocalDateTime?
+)
+
 data class WhatsAppConversationSubscriptionDto(
     val id: Int,
     val status: String?,

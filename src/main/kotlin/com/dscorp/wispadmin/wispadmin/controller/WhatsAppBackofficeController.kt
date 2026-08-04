@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMarkReadResultDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppTemplateSyncResultDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppTestSendResponseDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadPageDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.dto.toFrontendDto
 import com.dscorp.wispadmin.wispadmin.dto.toSeriesPointDto
@@ -36,6 +37,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppCsvExportService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppLogsFilter
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaContentDisposition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaAnalyticsClient
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaAnalyticsParser
@@ -507,8 +509,9 @@ class WhatsAppBackofficeController(
         @RequestParam(required = false) from: String?,
         @RequestParam(required = false) to: String?,
         @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) before: String?,
         httpRequest: HttpServletRequest
-    ): ResponseEntity<List<WhatsAppThreadMessageDto>> {
+    ): ResponseEntity<WhatsAppThreadPageDto> {
         val range = resolveOptionalRange(dateFrom ?: from, dateTo ?: to)
         auditService.recordAccess(
             operatorUsername = resolveOperator(httpRequest),
@@ -520,7 +523,8 @@ class WhatsAppBackofficeController(
                 phone = phone,
                 dateFrom = range?.first,
                 dateTo = range?.second,
-                limit = limit ?: 200
+                limit = limit ?: 50,
+                before = before?.takeIf { it.isNotBlank() }?.let { LocalDateTime.parse(it) }
             )
         )
     }
@@ -669,7 +673,7 @@ class WhatsAppBackofficeController(
         val contentType = logEntry.mediaMimeType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
         val filename = logEntry.mediaFilename ?: path.fileName.toString()
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$filename\"")
+            .header(HttpHeaders.CONTENT_DISPOSITION, WhatsAppMediaContentDisposition.forMimeType(contentType, filename))
             .contentType(MediaType.parseMediaType(contentType))
             .body(resource)
     }
@@ -732,7 +736,10 @@ class WhatsAppBackofficeController(
         val resource = FileSystemResource(path)
         val contentType = inbound.mediaMimeType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${path.fileName}\"")
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                WhatsAppMediaContentDisposition.forMimeType(contentType, path.fileName.toString())
+            )
             .contentType(MediaType.parseMediaType(contentType))
             .body(resource)
     }
