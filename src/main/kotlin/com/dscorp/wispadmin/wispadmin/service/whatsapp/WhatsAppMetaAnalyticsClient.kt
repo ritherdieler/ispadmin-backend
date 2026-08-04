@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import java.time.Duration
 import java.time.Instant
 
 @Service
@@ -20,6 +21,12 @@ class WhatsAppMetaAnalyticsClient(
     private val log = LoggerFactory.getLogger(WhatsAppMetaAnalyticsClient::class.java)
     private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
     private val objectMapper = ObjectMapper()
+
+    private val phoneNumberHealthTtl = Duration.ofMinutes(5)
+    @Volatile
+    private var cachedPhoneNumberHealth: JsonNode? = null
+    @Volatile
+    private var cachedPhoneNumberHealthAt: Instant? = null
 
     fun fetchMessagingAnalytics(start: Instant, end: Instant, granularity: String = "DAY"): JsonNode {
         val fields = "analytics.start(${start.epochSecond}).end(${end.epochSecond}).granularity($granularity)"
@@ -52,6 +59,26 @@ class WhatsAppMetaAnalyticsClient(
         return exchange(url)
     }
 
+    fun fetchPhoneNumberHealth(): JsonNode {
+        return fetchWithCache(Instant.now()) {
+            val url = "${whatsAppProperties.graphApiBaseUrl()}/${whatsAppProperties.phoneNumberId}" +
+                "?fields=messaging_limit_tier,quality_rating"
+            exchange(url)
+        }
+    }
+
+    internal fun fetchWithCache(now: Instant, fetcher: () -> JsonNode): JsonNode {
+        val fetchedAt = cachedPhoneNumberHealthAt
+        val cached = cachedPhoneNumberHealth
+        if (cached != null && fetchedAt != null && Duration.between(fetchedAt, now) < phoneNumberHealthTtl) {
+            return cached
+        }
+        val fresh = fetcher()
+        cachedPhoneNumberHealth = fresh
+        cachedPhoneNumberHealthAt = now
+        return fresh
+    }
+
     private fun fetchWabaField(fields: String): JsonNode {
         val url = "${whatsAppProperties.businessAccountUrl()}?fields=$fields"
         return exchange(url)
@@ -78,5 +105,13 @@ class WhatsAppMetaAnalyticsClient(
             log.warn("Fallo al consultar analytics Meta: {}", error.message)
             objectMapper.createObjectNode()
         }
+    }
+
+    companion object {
+        fun parseMessagingLimitTier(node: JsonNode): String? =
+            node.path("messaging_limit_tier").takeIf { it.isTextual }?.asText()
+
+        fun parseQualityRating(node: JsonNode): String? =
+            node.path("quality_rating").takeIf { it.isTextual }?.asText()
     }
 }

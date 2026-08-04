@@ -125,10 +125,74 @@ Para habilitar tracking de clicks en `template_analytics`:
 `GET /whatsapp/account/health` incluye:
 
 - `qualityScore`, `phoneQuality`
+- `messagingLimitTier` (código crudo de Meta, ej. `TIER_250`)
+- `messagingLimit` (límite numérico diario resuelto para el tier vigente, ej. `250`)
+- `messagingUsedToday` (mensajes con status `SENT` en las últimas 24h, proxy de conversaciones iniciadas por negocio)
 - `pausedTemplates[]` con `{ code, name, reason }`
 - `alerts[]` generadas por:
   - Calidad YELLOW / RED en plantillas
   - Tasa de fallo ≥ 20% en últimas 24h (≥ 10 envíos)
+  - `MESSAGING_LIMIT_NEAR` (WARNING): uso ≥ 80% del límite diario vigente
+  - `MESSAGING_LIMIT_REACHED` (CRITICAL): uso ≥ límite diario vigente
+
+### Messaging limit tier y quality rating (Fase 2 — Fábrica 2026-08-04)
+
+**Contexto confirmado por el usuario:** el número comercial está hoy en el tier **`TIER_250`** (250 conversaciones
+iniciadas por negocio cada 24h). Al completar la **verificación de negocio (Business Verification)** en Meta
+Business Manager, Meta amplía el límite a **2.000/día** (`TIER_2K`). Este cambio de tier es un **trámite externo,
+no depende del código**; mientras Meta no confirme el nuevo tier vía la API, la alerta de uso sigue usando **250**
+como límite vigente (resuelto dinámicamente a partir del valor real que devuelve Meta, no hardcodeado). Esto
+explica la causa raíz de los envíos fallidos/no confirmados del 3 de agosto cuando una campaña superó las 250
+conversaciones/día.
+
+**Endpoint Meta usado:**
+
+```http
+GET https://graph.facebook.com/{api-version}/{phone-number-id}?fields=messaging_limit_tier,quality_rating
+```
+
+- Cliente: `WhatsAppMetaAnalyticsClient.fetchPhoneNumberHealth()`.
+- Parsing puro y testeable: `WhatsAppMetaAnalyticsClient.parseMessagingLimitTier(node)` /
+  `parseQualityRating(node)`.
+- **Caché corta de 5 minutos** en memoria (por instancia de la app) para no golpear Meta en cada request de
+  health; implementada en `fetchWithCache(now, fetcher)` (testeable con `Instant` inyectado, sin mocks de red).
+- Consumido por `WhatsAppAccountEventService.getAccountHealth()`, que reemplaza el `null` hardcodeado anterior
+  (línea ~82-83) por el valor real de Meta.
+
+**Valores de tier soportados** (`WhatsAppMessagingLimitTiers.dailyLimitFor`):
+
+| Tier Meta | Límite diario (conversaciones iniciadas por negocio) |
+|-----------|-------------------------------------------------------|
+| `TIER_50` | 50 |
+| `TIER_250` | **250 (vigente hoy)** |
+| `TIER_1K` | 1.000 |
+| `TIER_2K` | **2.000 (tras completar Business Verification)** |
+| `TIER_10K` | 10.000 |
+| `TIER_100K` | 100.000 |
+
+Tiers no reconocidos devuelven `messagingLimit = null` (sin alerta de uso, ya que no hay límite numérico
+conocido contra el cual comparar).
+
+**Cálculo de uso vs. límite:** `messagingUsedToday` cuenta mensajes con `status = SENT` en `whatsapp_message_log`
+creados en las últimas 24h (mismo query ya usado para la tasa de fallo, sin duplicar consultas a BD). Se compara
+contra `messagingLimit` para decidir las alertas `MESSAGING_LIMIT_NEAR` / `MESSAGING_LIMIT_REACHED` descritas
+arriba.
+
+**Frontend (`WhatsAppAccountHealthBanner.tsx`):**
+
+- Muestra el límite en texto legible: `"Límite actual: 250 conversaciones/día"` en vez del código crudo
+  `TIER_250` (mapeo por `messagingLimit` numérico, ya resuelto en backend).
+- Muestra uso vs. límite: `"184/250 usadas hoy"`.
+- Advertencia visual (WARNING, texto ámbar) cuando el uso alcanza ≥ 80% del límite.
+- Advertencia crítica (texto rojo) cuando el uso alcanza o supera el límite.
+- Prop opcional `pendingBulkRecipients` para que una futura pantalla de lanzamiento de campaña masiva pase el
+  tamaño del envío pendiente; si excede el remanente del día (`límite - usado`), se muestra advertencia
+  "El envío masivo pendiente (...) excedería el límite restante del día". **Nota:** esta prop no está aún
+  conectada desde `WhatsAppMetricsTab.tsx` (fuera de alcance de esta fase, coordinar con la fase que integre el
+  flujo de lanzamiento de campañas).
+- Cuando Meta confirme el cambio a `TIER_2K` (verificación de negocio completada), el banner reflejará
+  automáticamente "Límite actual: 2.000 conversaciones/día" sin cambios de código, ya que el valor viene en vivo
+  de Meta (con caché de 5 min) y el mapeo de tiers ya contempla `TIER_2K`.
 
 ## Export CSV (Fase 4)
 

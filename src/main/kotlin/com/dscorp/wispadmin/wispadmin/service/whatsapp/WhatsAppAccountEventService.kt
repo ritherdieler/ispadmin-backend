@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppAccountEvent
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppAccountAlertDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppPausedTemplateDto
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppAccountEventRepository
@@ -14,8 +15,13 @@ import java.time.LocalDateTime
 class WhatsAppAccountEventService(
     private val accountEventRepository: WhatsAppAccountEventRepository,
     private val messageLogRepository: WhatsAppMessageLogRepository,
-    private val syncedTemplateRepository: WhatsAppSyncedTemplateRepository
+    private val syncedTemplateRepository: WhatsAppSyncedTemplateRepository,
+    private val metaAnalyticsClient: WhatsAppMetaAnalyticsClient
 ) {
+
+    companion object {
+        private const val NEAR_LIMIT_THRESHOLD = 0.8
+    }
 
     fun recordManagementEvent(
         field: String,
@@ -65,7 +71,17 @@ class WhatsAppAccountEventService(
             )
         }.distinctBy { it.code }
 
-        val operationalAlerts = buildOperationalAlerts(latestQuality)
+        val phoneHealthNode = metaAnalyticsClient.fetchPhoneNumberHealth()
+        val messagingLimitTier = WhatsAppMetaAnalyticsClient.parseMessagingLimitTier(phoneHealthNode)
+        val messagingLimit = WhatsAppMessagingLimitTiers.dailyLimitFor(messagingLimitTier)
+        val liveQualityRating = WhatsAppMetaAnalyticsClient.parseQualityRating(phoneHealthNode)
+        val resolvedQuality = latestQuality ?: liveQualityRating
+
+        val since = LocalDateTime.now().minusHours(24)
+        val recentLogs = messageLogRepository.findByCreatedAtBetween(since, LocalDateTime.now())
+        val messagingUsedToday = recentLogs.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
+
+        val operationalAlerts = buildOperationalAlerts(resolvedQuality, recentLogs, messagingUsedToday, messagingLimit)
         val webhookAlerts = alertEvents.map {
             WhatsAppAccountAlertDto(
                 type = it.eventType,
@@ -78,17 +94,23 @@ class WhatsAppAccountEventService(
             .maxOfOrNull { it.syncedAt }
 
         return WhatsAppAccountHealthSummary(
-            qualityScore = latestQuality,
-            messagingLimit = null,
-            messagingLimitTier = null,
-            phoneQuality = latestQuality,
+            qualityScore = resolvedQuality,
+            messagingLimit = messagingLimit,
+            messagingLimitTier = messagingLimitTier,
+            messagingUsedToday = messagingUsedToday,
+            phoneQuality = resolvedQuality,
             lastSyncedAt = lastSynced,
             pausedTemplates = pausedTemplates,
             alerts = operationalAlerts + webhookAlerts
         )
     }
 
-    private fun buildOperationalAlerts(qualityScore: String?): List<WhatsAppAccountAlertDto> {
+    private fun buildOperationalAlerts(
+        qualityScore: String?,
+        recentLogs: List<WhatsAppMessageLog>,
+        messagingUsedToday: Int,
+        messagingLimit: Int?
+    ): List<WhatsAppAccountAlertDto> {
         val alerts = mutableListOf<WhatsAppAccountAlertDto>()
         when (qualityScore?.uppercase()) {
             "YELLOW" -> alerts.add(
@@ -107,22 +129,43 @@ class WhatsAppAccountEventService(
             )
         }
 
-        val since = LocalDateTime.now().minusHours(24)
-        val recentLogs = messageLogRepository.findByCreatedAtBetween(since, LocalDateTime.now())
-        val sent = recentLogs.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
         val failed = recentLogs.count {
             it.status == WhatsAppTemplateDeliveryService.STATUS_FAILED ||
                 it.deliveryStatus == "failed" ||
                 it.failedAt != null
         }
-        if (sent >= 10) {
-            val failureRate = (failed.toDouble() / sent.toDouble()) * 100.0
+        if (messagingUsedToday >= 10) {
+            val failureRate = (failed.toDouble() / messagingUsedToday.toDouble()) * 100.0
             if (failureRate >= 20.0) {
                 alerts.add(
                     WhatsAppAccountAlertDto(
                         type = "HIGH_FAILURE_RATE",
-                        message = "Tasa de fallo alta en las últimas 24h: ${"%.1f".format(failureRate)}% ($failed/$sent).",
+                        message = "Tasa de fallo alta en las últimas 24h: ${"%.1f".format(failureRate)}% " +
+                            "($failed/$messagingUsedToday).",
                         severity = if (failureRate >= 40.0) "CRITICAL" else "WARNING"
+                    )
+                )
+            }
+        }
+
+        if (messagingLimit != null && messagingLimit > 0) {
+            val usageRatio = messagingUsedToday.toDouble() / messagingLimit.toDouble()
+            if (messagingUsedToday >= messagingLimit) {
+                alerts.add(
+                    WhatsAppAccountAlertDto(
+                        type = "MESSAGING_LIMIT_REACHED",
+                        message = "Límite diario de conversaciones alcanzado: $messagingUsedToday/$messagingLimit. " +
+                            "Los nuevos envíos serán rechazados por Meta hasta el próximo ciclo de 24h.",
+                        severity = "CRITICAL"
+                    )
+                )
+            } else if (usageRatio >= NEAR_LIMIT_THRESHOLD) {
+                alerts.add(
+                    WhatsAppAccountAlertDto(
+                        type = "MESSAGING_LIMIT_NEAR",
+                        message = "Uso cercano al límite diario de conversaciones: " +
+                            "$messagingUsedToday/$messagingLimit.",
+                        severity = "WARNING"
                     )
                 )
             }
@@ -173,8 +216,9 @@ class WhatsAppAccountEventService(
 
     data class WhatsAppAccountHealthSummary(
         val qualityScore: String?,
-        val messagingLimit: String?,
+        val messagingLimit: Int?,
         val messagingLimitTier: String?,
+        val messagingUsedToday: Int?,
         val phoneQuality: String?,
         val lastSyncedAt: LocalDateTime?,
         val pausedTemplates: List<WhatsAppPausedTemplateDto>,
