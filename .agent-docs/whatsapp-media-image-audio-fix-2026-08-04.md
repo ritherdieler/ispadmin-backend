@@ -23,6 +23,12 @@ En Conversaciones, imagen entrante se veía como “Documento” y audio solo co
 - Realtime propaga `mediaMimeType`.
 - No muestra `[image]`/`[audio]` cuando hay media sin caption.
 
+## Persistencia en VPS
+
+- Volumen: host `/opt/gigafiber/data/whatsapp/media` → contenedor `/var/lib/gigafiber/whatsapp/media`
+- Env: `WHATSAPP_MEDIA_STORAGE_DIR` (también en `application-prod.properties`)
+- Imagen inbound `191` re-descargada desde Meta tras el wipe del filesystem efímero del contenedor
+
 ## Nota sobre mensajes ya recibidos
 
-Audios antiguos sin `media_id`/`media_stored_path` no se pueden reproducir (Meta no retiene el binario). Hay que reenviar el audio tras el deploy.
+Audios antiguos sin `media_id`/`media_stored_path` (ej. inbound `188`) no se pueden reproducir. Hay que reenviar el audio tras el deploy.
