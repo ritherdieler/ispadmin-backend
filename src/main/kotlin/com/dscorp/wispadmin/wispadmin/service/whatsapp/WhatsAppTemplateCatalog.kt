@@ -25,11 +25,18 @@ enum class TemplateParameterSource {
     PLAN_NAME,
     PLAN_PRICE,
     PAYMENT_DAY,
-    PAYMENT_INFO
+    PAYMENT_INFO,
+    PAYMENT_ID
 }
 
 data class WhatsAppTemplateParameterDef(
     val metaParameterName: String,
+    val source: TemplateParameterSource
+)
+
+data class WhatsAppTemplateButtonDef(
+    val index: Int = 0,
+    val subType: String = "url",
     val source: TemplateParameterSource
 )
 
@@ -40,7 +47,8 @@ data class WhatsAppTemplateDefinition(
     val label: String,
     val description: String,
     val targetType: WhatsAppTargetType,
-    val parameters: List<WhatsAppTemplateParameterDef>
+    val parameters: List<WhatsAppTemplateParameterDef>,
+    val buttonParameter: WhatsAppTemplateButtonDef? = null
 ) {
     val messageType: String get() = code.name
 }

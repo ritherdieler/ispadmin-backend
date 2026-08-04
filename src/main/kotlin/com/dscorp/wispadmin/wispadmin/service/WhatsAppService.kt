@@ -30,6 +30,7 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppThreadControlRecipient
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateButtonParameter
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ByteArrayResource
@@ -157,7 +158,8 @@ class WhatsAppService(
         templateName: String,
         languageCode: String,
         parameters: List<NamedTemplateParameter>,
-        callbackToken: String? = null
+        callbackToken: String? = null,
+        buttonParameter: WhatsAppTemplateButtonParameter? = null
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
@@ -175,22 +177,32 @@ class WhatsAppService(
             throw IllegalArgumentException("La plantilla de WhatsApp requiere al menos un parametro.")
         }
 
+        val components = mutableListOf(
+            WhatsAppTemplateComponent(
+                parameters = parameters.map { param ->
+                    WhatsAppTemplateParameter(
+                        parameter_name = param.parameterName,
+                        text = param.text
+                    )
+                }
+            )
+        )
+        if (buttonParameter != null) {
+            components += WhatsAppTemplateComponent(
+                type = "button",
+                sub_type = buttonParameter.subType,
+                index = buttonParameter.index.toString(),
+                parameters = listOf(WhatsAppTemplateParameter(text = buttonParameter.parameter.text))
+            )
+        }
+
         val body = WhatsAppTemplateMessageBody(
             to = normalizePhoneNumber(phoneNumber),
             biz_opaque_callback_data = callbackToken,
             template = WhatsAppTemplate(
                 name = templateName,
                 language = WhatsAppTemplateLanguage(code = languageCode),
-                components = listOf(
-                    WhatsAppTemplateComponent(
-                        parameters = parameters.map { param ->
-                            WhatsAppTemplateParameter(
-                                parameter_name = param.parameterName,
-                                text = param.text
-                            )
-                        }
-                    )
-                )
+                components = components
             )
         )
 
@@ -202,14 +214,16 @@ class WhatsAppService(
         templateName: String,
         languageCode: String,
         parameters: List<NamedTemplateParameter>,
-        callbackToken: String? = null
+        callbackToken: String? = null,
+        buttonParameter: WhatsAppTemplateButtonParameter? = null
     ): Boolean {
         return sendTemplateMessageWithMetaResponse(
             phoneNumber = phoneNumber,
             templateName = templateName,
             languageCode = languageCode,
             parameters = parameters,
-            callbackToken = callbackToken
+            callbackToken = callbackToken,
+            buttonParameter = buttonParameter
         ).success
     }
 

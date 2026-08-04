@@ -36,6 +36,22 @@ class WhatsAppInboundPayloadParserTest {
     }
 
     @Test
+    fun `parse button click from template quick reply`() {
+        val node = mapper.readTree("""
+            {
+              "id":"wamid.4","from":"51902354183","type":"button",
+              "context":{"id":"wamid.outbound-template"},
+              "button":{"payload":"pagar_ahora","text":"Pagar ahora"}
+            }
+        """.trimIndent())
+        val payload = WhatsAppInboundPayloadParser.parse(node)!!
+        assertEquals("button_reply", payload.messageType)
+        assertEquals("pagar_ahora", payload.buttonReplyId)
+        assertEquals("Pagar ahora", payload.buttonReplyTitle)
+        assertEquals("wamid.outbound-template", payload.contextMessageId)
+    }
+
+    @Test
     fun `parse image with media id`() {
         val node = mapper.readTree("""
             {

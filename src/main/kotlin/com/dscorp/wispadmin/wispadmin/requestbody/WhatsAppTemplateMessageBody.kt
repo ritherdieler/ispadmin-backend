@@ -21,8 +21,11 @@ data class WhatsAppTemplateLanguage(
     val code: String
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class WhatsAppTemplateComponent(
     val type: String = "body",
+    val sub_type: String? = null,
+    val index: String? = null,
     val parameters: List<WhatsAppTemplateParameter>
 )
 

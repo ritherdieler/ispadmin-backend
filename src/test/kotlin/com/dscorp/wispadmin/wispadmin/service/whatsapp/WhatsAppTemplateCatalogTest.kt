@@ -176,6 +176,45 @@ class TemplateParameterResolverTest {
     }
 
     @Test
+    fun `resolveButtonParameter returns null when template has no button`() {
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_REMINDER)
+
+        val buttonParameter = TemplateParameterResolver.resolveButtonParameter(
+            definition = definition,
+            subscription = subscription
+        )
+
+        assertEquals(null, buttonParameter)
+    }
+
+    @Test
+    fun `resolveButtonParameter resolves dynamic url parameter from payment id`() {
+        val payment = Payment(
+            discountAmount = 0.0,
+            paid = false,
+            amountToPay = 79.9,
+            billingDateDatetime = LocalDateTime.of(2026, 7, 1, 0, 0)
+        ).apply { id = 42; this.subscription = subscription }
+
+        val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_REMINDER).copy(
+            buttonParameter = WhatsAppTemplateButtonDef(
+                index = 0,
+                subType = "url",
+                source = TemplateParameterSource.PAYMENT_ID
+            )
+        )
+
+        val buttonParameter = TemplateParameterResolver.resolveButtonParameter(
+            definition = definition,
+            subscription = subscription,
+            payment = payment
+        )
+
+        assertEquals("button_0", buttonParameter?.parameterName)
+        assertEquals("42", buttonParameter?.text)
+    }
+
+    @Test
     fun `payment date is required for validation template`() {
         val payment = Payment(
             discountAmount = 0.0,

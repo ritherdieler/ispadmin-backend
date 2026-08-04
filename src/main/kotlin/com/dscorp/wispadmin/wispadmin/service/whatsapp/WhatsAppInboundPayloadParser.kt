@@ -45,6 +45,18 @@ object WhatsAppInboundPayloadParser {
                     contextMessageId = contextMessageId
                 )
             }
+            "button" -> {
+                val button = message.path("button")
+                WhatsAppInboundPayload(
+                    metaMessageId = wamid,
+                    phone = phone,
+                    messageType = "button_reply",
+                    messageText = button.path("text").asText(null),
+                    buttonReplyId = button.path("payload").asText(null),
+                    buttonReplyTitle = button.path("text").asText(null),
+                    contextMessageId = contextMessageId
+                )
+            }
             "image" -> WhatsAppInboundPayload(
                 metaMessageId = wamid,
                 phone = phone,

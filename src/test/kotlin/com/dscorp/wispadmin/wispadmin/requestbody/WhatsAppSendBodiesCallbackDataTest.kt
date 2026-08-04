@@ -43,6 +43,32 @@ class WhatsAppSendBodiesCallbackDataTest {
     }
 
     @Test
+    fun `body component omits sub_type and index when not a button`() {
+        val component = WhatsAppTemplateComponent(parameters = emptyList())
+
+        val json = mapper.writeValueAsString(component)
+
+        assertFalse(json.contains("sub_type"))
+        assertFalse(json.contains("\"index\""))
+    }
+
+    @Test
+    fun `button component serializes sub_type, index and dynamic parameter`() {
+        val component = WhatsAppTemplateComponent(
+            type = "button",
+            sub_type = "url",
+            index = "0",
+            parameters = listOf(WhatsAppTemplateParameter(text = "42"))
+        )
+
+        val json = mapper.writeValueAsString(component)
+
+        assertTrue(json.contains("\"type\":\"button\""))
+        assertTrue(json.contains("\"sub_type\":\"url\""))
+        assertTrue(json.contains("\"index\":\"0\""))
+    }
+
+    @Test
     fun `text body omits biz_opaque_callback_data when null`() {
         val body = WhatsAppTextMessageBody(
             to = "51987654321",

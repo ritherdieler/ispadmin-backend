@@ -34,6 +34,19 @@ class WhatsAppTemplateDeliveryService(
             oldestUnpaidPayment = oldestUnpaidPayment,
             welcomeContext = welcomeContext
         )
+        val buttonParameter = TemplateParameterResolver.resolveButtonParameter(
+            definition = definition,
+            subscription = subscription,
+            payment = payment,
+            oldestUnpaidPayment = oldestUnpaidPayment,
+            welcomeContext = welcomeContext
+        )?.let { resolvedButton ->
+            WhatsAppTemplateButtonParameter(
+                subType = definition.buttonParameter!!.subType,
+                index = definition.buttonParameter!!.index,
+                parameter = resolvedButton
+            )
+        }
         val previewMessage = templateDisplayService.buildLogPreview(definition, parameters)
         val callbackToken = java.util.UUID.randomUUID().toString()
 
@@ -43,7 +56,8 @@ class WhatsAppTemplateDeliveryService(
                 templateName = definition.metaName,
                 languageCode = definition.language,
                 parameters = parameters,
-                callbackToken = callbackToken
+                callbackToken = callbackToken,
+                buttonParameter = buttonParameter
             )
             return persistLog(
                 paymentId = paymentId,

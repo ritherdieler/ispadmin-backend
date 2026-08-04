@@ -9,6 +9,12 @@ data class NamedTemplateParameter(
     val text: String
 )
 
+data class WhatsAppTemplateButtonParameter(
+    val subType: String = "url",
+    val index: Int = 0,
+    val parameter: NamedTemplateParameter
+)
+
 object TemplateParameterResolver {
 
     private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
@@ -65,7 +71,24 @@ object TemplateParameterResolver {
                 requireWelcomeContext(welcomeContext).paymentDay
             TemplateParameterSource.PAYMENT_INFO ->
                 requireWelcomeContext(welcomeContext).paymentInfo
+            TemplateParameterSource.PAYMENT_ID ->
+                requirePayment(payment).id?.toString()
+                    ?: throw IllegalArgumentException("La factura no tiene id valido para el boton de plantilla.")
         }
+    }
+
+    fun resolveButtonParameter(
+        definition: WhatsAppTemplateDefinition,
+        subscription: Subscription,
+        payment: Payment? = null,
+        oldestUnpaidPayment: Payment? = null,
+        welcomeContext: WelcomeTemplateContext? = null
+    ): NamedTemplateParameter? {
+        val buttonDef = definition.buttonParameter ?: return null
+        return NamedTemplateParameter(
+            parameterName = "button_${buttonDef.index}",
+            text = resolveValue(buttonDef.source, subscription, payment, oldestUnpaidPayment, welcomeContext)
+        )
     }
 
     private fun requireWelcomeContext(welcomeContext: WelcomeTemplateContext?): WelcomeTemplateContext {

@@ -70,7 +70,8 @@ class WhatsAppTemplateDeliveryServiceTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyList(),
-            org.mockito.ArgumentMatchers.anyString()
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.nullable(WhatsAppTemplateButtonParameter::class.java)
         )
         doAnswer { invocation ->
             invocation.getArgument(0)
@@ -134,7 +135,8 @@ class WhatsAppTemplateDeliveryServiceTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyList(),
-            callbackTokenCaptor.capture()
+            callbackTokenCaptor.capture(),
+            org.mockito.ArgumentMatchers.nullable(WhatsAppTemplateButtonParameter::class.java)
         )
         doAnswer { invocation ->
             invocation.getArgument(0)
@@ -167,5 +169,66 @@ class WhatsAppTemplateDeliveryServiceTest {
         val saved = captor.value
         assertNotNull(saved.callbackId)
         assertEquals(callbackTokenCaptor.value, saved.callbackId)
+    }
+
+    @Test
+    fun `deliverTemplate builds button component when template definition declares a dynamic button`() {
+        val subscription = Subscription(
+            firstName = "Juan",
+            lastName = "Perez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 1 }
+
+        val paymentReminderWithButton = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_REMINDER).copy(
+            buttonParameter = WhatsAppTemplateButtonDef(
+                index = 0,
+                subType = "url",
+                source = TemplateParameterSource.PAYMENT_ID
+            )
+        )
+        val payment = com.dscorp.wispadmin.wispadmin.data.model.Payment(
+            discountAmount = 0.0,
+            paid = false,
+            amountToPay = 79.9,
+            billingDateDatetime = java.time.LocalDateTime.of(2026, 7, 1, 0, 0)
+        ).apply { id = 42; this.subscription = subscription }
+
+        val buttonParameterCaptor = ArgumentCaptor.forClass(WhatsAppTemplateButtonParameter::class.java)
+        doAnswer {
+            WhatsAppSendResult(
+                success = true,
+                metaResponse = """{"messages":[{"id":"wamid.btn1"}]}""",
+                metaMessageId = "wamid.btn1",
+                recipient = "51902354183",
+                senderPhoneNumberId = "123"
+            )
+        }.`when`(whatsAppService).sendTemplateMessageWithMetaResponse(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyList(),
+            org.mockito.ArgumentMatchers.anyString(),
+            buttonParameterCaptor.capture()
+        )
+        doAnswer { invocation ->
+            invocation.getArgument(0)
+        }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
+        `when`(syncedTemplateRepository.findByName("payment_reminder_gigaperu")).thenReturn(null)
+
+        service.deliverTemplate(
+            definition = paymentReminderWithButton,
+            subscription = subscription,
+            phone = "902354183",
+            payment = payment,
+            paymentId = 42
+        )
+
+        val buttonParameter = buttonParameterCaptor.value
+        assertNotNull(buttonParameter)
+        assertEquals("url", buttonParameter.subType)
+        assertEquals(0, buttonParameter.index)
+        assertEquals("42", buttonParameter.parameter.text)
     }
 }
