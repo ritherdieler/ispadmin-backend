@@ -32,6 +32,12 @@ POST/GET https://api.gigafiberperu.cloud/ispadmin/whatsapp/webhook
 | `phone_number_quality_update` | Calidad del número |
 | `account_alerts` | Alertas operativas de cuenta |
 | `template_category_update` | Cambios de categoría |
+| `business_capability_update` | Cambios de límites de la cuenta (ej. `max_daily_conversation_per_phone`) — evento consultable en health/alerts |
+| `user_preferences` | Opt-out/opt-in de mensajes de marketing por número (`wa_id`, `category`, `stop`/`resume`) |
+
+**Nota operativa (`business_capability_update` y `user_preferences`):** ambos campos deben suscribirse manualmente
+en Meta App Dashboard → WhatsApp → Configuration → Webhook fields (no se activan solo con el código del backend).
+Sin esta suscripción manual, Meta nunca envía estos webhooks aunque el endpoint ya sepa procesarlos.
 
 ### Firma
 
@@ -255,6 +261,98 @@ Persistidos en `WhatsAppMessageLog` (`deliveryStatus`, timestamps `sentAt`/`deli
 - CSAT y notificaciones proactivas (Fase 6) requieren plantillas aprobadas con antelación.
 - Reply libre del operador (Fases 1–3) solo dentro de ventana 24h; fuera → UI debe ofrecer plantilla.
 - Media saliente (Fase 3) debe validar tipo/tamaño de esta tabla antes de llamar a Meta.
+
+## Atribución precisa de envíos: biz_opaque_callback_data (Fase 4 — 2026-08-04)
+
+**Problema resuelto:** hasta ahora el `WhatsAppMessageLog` solo se ligaba al webhook de `statuses` por `wamid`
+(`metaMessageId`). Si Meta demora en devolver el `wamid` en la respuesta del envío (timeout, reintento, etc.), el
+webhook de status llega sin forma de encontrar el log correspondiente.
+
+**Solución:** `WhatsAppTemplateDeliveryService.deliverTemplate` genera un `UUID` propio (`callbackToken`) **antes**
+de llamar a Meta, lo envía en el campo `biz_opaque_callback_data` del body de envío, y lo persiste en
+`WhatsAppMessageLog.callbackId` junto con el resultado del envío (éxito o fallo).
+
+- Migración `V12__whatsapp_message_log_callback_id.sql` agrega `callback_id VARCHAR(64)` indexado a
+  `whatsapp_message_log`.
+- `WhatsAppMessageLogRepository.findByCallbackId(callbackId)` — nuevo lookup.
+- `WhatsAppWebhookService.processStatusEvent`: primero busca por `findByMetaMessageId(wamid)`; si no encuentra,
+  lee `biz_opaque_callback_data` del status y busca por `findByCallbackId(it)`. Si el log encontrado por `wamid`
+  no tenía `callbackId` guardado (por ejemplo porque el log se creó antes de esta fase), lo rellena (`backfill`)
+  con el valor recibido en el webhook.
+- `biz_opaque_callback_data` se serializa como `String?` con `@JsonInclude(NON_NULL)` en
+  `WhatsAppTemplateMessageBody`, `WhatsAppTextMessageBody` y `WhatsAppMediaMessageBody` — nunca se envía el campo
+  si es `null`.
+- `WhatsAppService.sendTemplateMessageWithMetaResponse` / `sendTemplateMessage` aceptan `callbackToken: String? = null`.
+
+**Fallback:** si Meta no ecoa `biz_opaque_callback_data` en el status (webhooks antiguos o algún edge case), el
+lookup por `wamid` sigue funcionando igual que antes; el `callbackId` es un mecanismo adicional, no un reemplazo.
+
+## Cambios de límites de cuenta: business_capability_update (Fase 3 — 2026-08-04)
+
+`WhatsAppWebhookService.processManagementFields` delega `business_capability_update` a
+`WhatsAppAccountEventService.recordManagementEvent(field, value)`, igual que el resto de campos de gestión
+(`message_template_status_update`, `account_alerts`, etc.). El payload típico incluye
+`max_daily_conversation_per_phone` / `max_phone_numbers_per_business`; queda persistido como evento consultable
+en el mismo mecanismo de health/alerts que ya usan los demás webhooks de gestión.
+
+Ver nota operativa de suscripción manual del campo arriba (sección Webhook).
+
+## Botones dinámicos en plantillas — Quick Reply URL (Fase 6 — 2026-08-04)
+
+Además del componente `BUTTONS` estático descrito arriba (creado en Meta Business Manager), el backend soporta
+**parámetros dinámicos de botón URL** por plantilla:
+
+- `WhatsAppTemplateCatalog`: cada `WhatsAppTemplateDefinition` puede declarar `buttonParameter:
+  WhatsAppTemplateButtonDef?` con `index`, `subType` (`"url"`) y `source` (`TemplateParameterSource`, incluye
+  `PAYMENT_ID` para enlaces de pago con el id de la factura como sufijo dinámico).
+- `TemplateParameterResolver.resolveButtonParameter(...)` resuelve el parámetro dinámico igual que los parámetros
+  de `BODY`, devolviendo `null` si la plantilla no declara botón.
+- `WhatsAppTemplateDeliveryService.deliverTemplate` arma el `WhatsAppTemplateButtonParameter` (si aplica) y lo pasa
+  a `WhatsAppService.sendTemplateMessageWithMetaResponse`, que agrega un componente `{"type":"button","sub_type":
+  "url","index":"N","parameters":[...]}` al body de Meta.
+- `WhatsAppTemplateComponent` ahora incluye `sub_type`/`index` opcionales (`@JsonInclude(NON_NULL)`), solo se
+  serializan cuando el componente es de tipo `button`.
+- Inbound: `WhatsAppInboundPayloadParser` maneja `type = "button"` (click en botón de plantilla desde el
+  celular del cliente), extrayendo `buttonReplyId` (`button.payload`) y `buttonReplyTitle` (`button.text`) igual
+  que las respuestas interactivas (`button_reply`/`list_reply`).
+
+**Nota operativa obligatoria:** cualquier plantilla con botón dinámico debe estar **APPROVED** en Meta Business
+Manager (con el componente `BUTTONS` ya creado y aprobado ahí) antes de poder activarse en el catálogo backend
+(`buttonParameter` en `WhatsAppTemplateCatalog`). El backend no crea ni edita botones en Meta, solo rellena el
+parámetro dinámico de un botón URL ya existente y aprobado.
+
+Ninguna de las 4 plantillas actuales del catálogo (`payment_reminder_gigaperu`, `payment_validation_gigaperu`,
+`service_cut_notice_gigaperu`, `welcome_customer_gigaperu`) tiene `buttonParameter` configurado todavía; la
+infraestructura queda lista para cuando se apruebe una plantilla con botón URL dinámico en Meta.
+
+## Opt-out de marketing: user_preferences (Fase 7 — 2026-08-04)
+
+Meta notifica cuando un usuario responde "STOP"/similar (o vuelve a aceptar) mensajes de marketing vía el webhook
+`user_preferences`. El backend:
+
+- `WhatsAppTemplateCatalog`: cada `WhatsAppTemplateDefinition` tiene `category: WhatsAppTemplateCategory`
+  (`MARKETING` / `UTILITY` / `AUTHENTICATION`), por defecto `UTILITY`. Ninguna plantilla actual es `MARKETING`.
+- Migración `V13__whatsapp_marketing_optout.sql` crea `whatsapp_marketing_optout` (`phone` único, `category`,
+  `status` `OPTED_OUT`/`RESUMED`) + `WhatsAppMarketingOptOutRepository`.
+- `WhatsAppWebhookService.processUserPreferencesField` itera `value.user_preferences[]`, extrae `wa_id`,
+  `category` y `value` (`stop`/`resume`), y crea/actualiza el registro de opt-out por teléfono (dígitos del
+  `wa_id`, formato internacional tal cual lo envía Meta).
+- **Gate de envío:** `WhatsAppTemplateDeliveryService.deliverTemplate`, si la plantilla es `MARKETING`, normaliza
+  el teléfono destino a formato internacional y consulta `WhatsAppMarketingOptOutRepository.findByPhone(...)`. Si
+  está `OPTED_OUT`, persiste el `WhatsAppMessageLog` con `status = SKIPPED` y `errorMessage` con el motivo, y
+  lanza `IllegalStateException` (mismo patrón que "ya se envió hoy") para que `WhatsAppBackofficeMessageService`
+  y demás orquestadores lo reporten como omitido sin intentar el envío a Meta.
+- **v1 sin UI dedicada:** no hay pantalla en el backoffice para ver/gestionar opt-outs manualmente; solo el gate
+  de envío y la persistencia vía webhook.
+
+Ver nota operativa de suscripción manual del campo `user_preferences` arriba (sección Webhook).
+
+## Migraciones Flyway relevantes a estas fases
+
+| Migración | Contenido |
+|-----------|-----------|
+| `V12__whatsapp_message_log_callback_id.sql` | `callback_id VARCHAR(64)` + índice en `whatsapp_message_log` (Fase 4) |
+| `V13__whatsapp_marketing_optout.sql` | Tabla `whatsapp_marketing_optout` (Fase 7) |
 
 ## Referencias
 
