@@ -2,7 +2,9 @@ package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMarketingOptOut
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMarketingOptOutRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
 import org.springframework.stereotype.Service
@@ -12,7 +14,8 @@ import java.time.LocalDateTime
 class WhatsAppTemplateDeliveryService(
     private val whatsAppService: WhatsAppService,
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
-    private val templateDisplayService: WhatsAppTemplateDisplayService
+    private val templateDisplayService: WhatsAppTemplateDisplayService,
+    private val marketingOptOutRepository: WhatsAppMarketingOptOutRepository
 ) {
 
     fun deliverTemplate(
@@ -27,6 +30,27 @@ class WhatsAppTemplateDeliveryService(
         campaignId: String? = null,
         operatorUsername: String? = null
     ): WhatsAppMessageLog {
+        if (definition.category == WhatsAppTemplateCategory.MARKETING) {
+            val normalizedPhone = normalizeToInternational(phone)
+            val optOut = marketingOptOutRepository.findByPhone(normalizedPhone)
+            if (optOut?.status == WhatsAppMarketingOptOut.OPTED_OUT) {
+                val reason = "El cliente $normalizedPhone opto por no recibir mensajes de marketing" +
+                    (optOut.category?.let { " ($it)" } ?: "") + "."
+                persistLog(
+                    paymentId = paymentId,
+                    subscriptionId = subscriptionId,
+                    phone = phone,
+                    messageType = definition.messageType,
+                    message = reason,
+                    status = STATUS_SKIPPED,
+                    errorMessage = reason,
+                    campaignId = campaignId,
+                    operatorUsername = operatorUsername
+                )
+                throw IllegalStateException(reason)
+            }
+        }
+
         val parameters = TemplateParameterResolver.resolve(
             definition = definition,
             subscription = subscription,
@@ -122,6 +146,15 @@ class WhatsAppTemplateDeliveryService(
                 callbackId = callbackId
             )
         )
+    }
+
+    private fun normalizeToInternational(phone: String): String {
+        val digits = phone.filter { it.isDigit() }
+        return when {
+            digits.length == 9 && digits.startsWith("9") -> "51$digits"
+            digits.length == 11 && digits.startsWith("51") -> digits
+            else -> digits
+        }
     }
 
     companion object {

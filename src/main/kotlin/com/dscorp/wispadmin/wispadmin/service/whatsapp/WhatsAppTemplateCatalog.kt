@@ -12,6 +12,12 @@ enum class WhatsAppTargetType {
     SUBSCRIPTION
 }
 
+enum class WhatsAppTemplateCategory {
+    MARKETING,
+    UTILITY,
+    AUTHENTICATION
+}
+
 enum class TemplateParameterSource {
     CLIENT_NAME,
     AMOUNT_TO_PAY,
@@ -48,7 +54,8 @@ data class WhatsAppTemplateDefinition(
     val description: String,
     val targetType: WhatsAppTargetType,
     val parameters: List<WhatsAppTemplateParameterDef>,
-    val buttonParameter: WhatsAppTemplateButtonDef? = null
+    val buttonParameter: WhatsAppTemplateButtonDef? = null,
+    val category: WhatsAppTemplateCategory = WhatsAppTemplateCategory.UTILITY
 ) {
     val messageType: String get() = code.name
 }

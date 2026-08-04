@@ -1,7 +1,9 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMarketingOptOut
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppWebhookEvent
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMarketingOptOutRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppWebhookEventRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
@@ -34,7 +36,8 @@ class WhatsAppWebhookService(
     private val whatsAppInboundMessageService: WhatsAppInboundMessageService,
     private val accountEventService: WhatsAppAccountEventService,
     private val serviceWindowService: WhatsAppServiceWindowService,
-    private val crmEventPublisher: CrmEventPublisher
+    private val crmEventPublisher: CrmEventPublisher,
+    private val marketingOptOutRepository: WhatsAppMarketingOptOutRepository
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppWebhookService::class.java)
@@ -100,6 +103,7 @@ class WhatsAppWebhookService(
 
                 when (field) {
                     "messages" -> processMessagesField(value)
+                    "user_preferences" -> processUserPreferencesField(value)
                     "message_template_status_update",
                     "message_template_quality_update",
                     "account_alerts",
@@ -204,6 +208,36 @@ class WhatsAppWebhookService(
             )
         } catch (e: Exception) {
             log.warn("No se pudo publicar MESSAGE_STATUS para {}: {}", messageLog.metaMessageId, e.message)
+        }
+    }
+
+    private fun processUserPreferencesField(value: JsonNode) {
+        value.path("user_preferences").forEach { preference ->
+            val waId = preference.path("wa_id").asText(null) ?: return@forEach
+            val category = preference.path("category").asText(null)
+            val action = preference.path("value").asText(null) ?: return@forEach
+            val phone = waId.filter { it.isDigit() }
+
+            val status = when (action) {
+                "stop" -> WhatsAppMarketingOptOut.OPTED_OUT
+                "resume" -> WhatsAppMarketingOptOut.RESUMED
+                else -> {
+                    log.debug("Webhook: user_preferences con valor no manejado {}", action)
+                    return@forEach
+                }
+            }
+
+            val existing = marketingOptOutRepository.findByPhone(phone)
+            val record = existing?.apply {
+                this.category = category
+                this.status = status
+                this.updatedAt = LocalDateTime.now()
+            } ?: WhatsAppMarketingOptOut(
+                phone = phone,
+                category = category,
+                status = status
+            )
+            marketingOptOutRepository.save(record)
         }
     }
 

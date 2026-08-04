@@ -1,7 +1,9 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMarketingOptOut
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
+import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMarketingOptOutRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppWebhookEventRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
@@ -28,6 +30,7 @@ class WhatsAppWebhookServiceTest {
     private val accountEventService = mockk<WhatsAppAccountEventService>(relaxed = true)
     private val serviceWindowService = mockk<WhatsAppServiceWindowService>(relaxed = true)
     private val crmEventPublisher = mockk<CrmEventPublisher>(relaxed = true)
+    private val marketingOptOutRepository = mockk<WhatsAppMarketingOptOutRepository>(relaxed = true)
 
     private lateinit var service: WhatsAppWebhookService
 
@@ -40,7 +43,8 @@ class WhatsAppWebhookServiceTest {
             whatsAppInboundMessageService = inboundMessageService,
             accountEventService = accountEventService,
             serviceWindowService = serviceWindowService,
-            crmEventPublisher = crmEventPublisher
+            crmEventPublisher = crmEventPublisher,
+            marketingOptOutRepository = marketingOptOutRepository
         )
     }
 
@@ -224,5 +228,74 @@ class WhatsAppWebhookServiceTest {
                 match { it.path("max_daily_conversation_per_phone").asInt() == 2000 }
             )
         }
+    }
+
+    @Test
+    fun `processPayload records marketing opt-out from user_preferences stop`() {
+        every { marketingOptOutRepository.findByPhone("51987654321") } returns null
+        val savedSlot = slot<WhatsAppMarketingOptOut>()
+        every { marketingOptOutRepository.save(capture(savedSlot)) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "user_preferences",
+                  "value": {
+                    "user_preferences": [{
+                      "wa_id": "51987654321",
+                      "category": "marketing_messages",
+                      "value": "stop",
+                      "timestamp": "1700000000"
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("51987654321", savedSlot.captured.phone)
+        assertEquals("marketing_messages", savedSlot.captured.category)
+        assertEquals("OPTED_OUT", savedSlot.captured.status)
+    }
+
+    @Test
+    fun `processPayload resumes marketing opt-in from user_preferences resume`() {
+        val existing = WhatsAppMarketingOptOut(
+            id = 7,
+            phone = "51987654321",
+            category = "marketing_messages",
+            status = "OPTED_OUT"
+        )
+        every { marketingOptOutRepository.findByPhone("51987654321") } returns existing
+        val savedSlot = slot<WhatsAppMarketingOptOut>()
+        every { marketingOptOutRepository.save(capture(savedSlot)) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "user_preferences",
+                  "value": {
+                    "user_preferences": [{
+                      "wa_id": "51987654321",
+                      "category": "marketing_messages",
+                      "value": "resume",
+                      "timestamp": "1700000001"
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(7, savedSlot.captured.id)
+        assertEquals("RESUMED", savedSlot.captured.status)
     }
 }
