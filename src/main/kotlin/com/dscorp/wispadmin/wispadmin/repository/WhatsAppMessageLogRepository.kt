@@ -50,6 +50,8 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findByMetaMessageId(metaMessageId: String): WhatsAppMessageLog?
 
+    fun findByCallbackId(callbackId: String): WhatsAppMessageLog?
+
     fun findByCampaignId(campaignId: String): List<WhatsAppMessageLog>
 
     fun findByCreatedAtBetween(start: LocalDateTime, end: LocalDateTime): List<WhatsAppMessageLog>

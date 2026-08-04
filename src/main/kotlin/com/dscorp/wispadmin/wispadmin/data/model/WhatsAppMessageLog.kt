@@ -15,7 +15,8 @@ import javax.persistence.Table
     indexes = [
         Index(name = "uk_whatsapp_message_log_meta_message_id", columnList = "metaMessageId", unique = true),
         Index(name = "idx_wa_message_log_phone_created", columnList = "phone,createdAt"),
-        Index(name = "idx_wa_message_log_created", columnList = "createdAt")
+        Index(name = "idx_wa_message_log_created", columnList = "createdAt"),
+        Index(name = "idx_wa_message_log_callback_id", columnList = "callbackId")
     ]
 )
 data class WhatsAppMessageLog(
@@ -87,5 +88,8 @@ data class WhatsAppMessageLog(
 
     var retryCount: Int = 0,
 
-    var createdAt: LocalDateTime = LocalDateTime.now()
+    var createdAt: LocalDateTime = LocalDateTime.now(),
+
+    @Column(length = 64)
+    var callbackId: String? = null
 )

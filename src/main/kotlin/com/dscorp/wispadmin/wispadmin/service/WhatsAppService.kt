@@ -156,7 +156,8 @@ class WhatsAppService(
         phoneNumber: String,
         templateName: String,
         languageCode: String,
-        parameters: List<NamedTemplateParameter>
+        parameters: List<NamedTemplateParameter>,
+        callbackToken: String? = null
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
@@ -176,6 +177,7 @@ class WhatsAppService(
 
         val body = WhatsAppTemplateMessageBody(
             to = normalizePhoneNumber(phoneNumber),
+            biz_opaque_callback_data = callbackToken,
             template = WhatsAppTemplate(
                 name = templateName,
                 language = WhatsAppTemplateLanguage(code = languageCode),
@@ -199,13 +201,15 @@ class WhatsAppService(
         phoneNumber: String,
         templateName: String,
         languageCode: String,
-        parameters: List<NamedTemplateParameter>
+        parameters: List<NamedTemplateParameter>,
+        callbackToken: String? = null
     ): Boolean {
         return sendTemplateMessageWithMetaResponse(
             phoneNumber = phoneNumber,
             templateName = templateName,
             languageCode = languageCode,
-            parameters = parameters
+            parameters = parameters,
+            callbackToken = callbackToken
         ).success
     }
 

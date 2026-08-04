@@ -69,7 +69,8 @@ class WhatsAppTemplateDeliveryServiceTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
-            org.mockito.ArgumentMatchers.anyList()
+            org.mockito.ArgumentMatchers.anyList(),
+            org.mockito.ArgumentMatchers.anyString()
         )
         doAnswer { invocation ->
             invocation.getArgument(0)
@@ -107,5 +108,64 @@ class WhatsAppTemplateDeliveryServiceTest {
         assertEquals("admin", saved.operatorUsername)
         assertNotNull(saved.sentAt)
         assertEquals("Hola Juan Perez, plan F200 por 80.00.", saved.message)
+    }
+
+    @Test
+    fun `deliverTemplate generates a callback token and persists it with the log`() {
+        val subscription = Subscription(
+            firstName = "Juan",
+            lastName = "Perez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 1 }
+
+        val callbackTokenCaptor = ArgumentCaptor.forClass(String::class.java)
+        doAnswer {
+            WhatsAppSendResult(
+                success = true,
+                metaResponse = """{"messages":[{"id":"wamid.cb123"}]}""",
+                metaMessageId = "wamid.cb123",
+                recipient = "51902354183",
+                senderPhoneNumberId = "123"
+            )
+        }.`when`(whatsAppService).sendTemplateMessageWithMetaResponse(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyList(),
+            callbackTokenCaptor.capture()
+        )
+        doAnswer { invocation ->
+            invocation.getArgument(0)
+        }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
+        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+            WhatsAppSyncedTemplate(
+                metaTemplateId = "tpl-welcome",
+                name = "welcome_customer_gigaperu",
+                bodyText = "Hola {{customer_name}}, plan {{plan_name}} por {{plan_price}}."
+            )
+        )
+
+        service.deliverTemplate(
+            definition = definition,
+            subscription = subscription,
+            phone = "902354183",
+            subscriptionId = 1,
+            welcomeContext = WelcomeTemplateContext(
+                serviceTitle = "Internet 100% Fibra Optica",
+                serviceDetails = "200 Mbps",
+                planName = "F200",
+                planPrice = "80.00",
+                paymentDay = "5",
+                paymentInfo = "Paga en nuestras oficinas"
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(WhatsAppMessageLog::class.java)
+        verify(messageLogRepository).save(captor.capture())
+        val saved = captor.value
+        assertNotNull(saved.callbackId)
+        assertEquals(callbackTokenCaptor.value, saved.callbackId)
     }
 }

@@ -100,6 +100,78 @@ class WhatsAppWebhookServiceTest {
     }
 
     @Test
+    fun `processPayload finds log by biz_opaque_callback_data when wamid does not match`() {
+        val log = WhatsAppMessageLog(
+            id = 2,
+            phone = "51902354183",
+            status = "SENT",
+            metaMessageId = "wamid.other",
+            callbackId = "cb-token-1"
+        )
+        every { webhookEventRepository.existsByEventKey(any()) } returns false
+        every { webhookEventRepository.save(any()) } answers { firstArg() }
+        every { messageLogRepository.findByMetaMessageId("wamid.new") } returns null
+        every { messageLogRepository.findByCallbackId("cb-token-1") } returns log
+        val savedSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(savedSlot)) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "messages",
+                  "value": {
+                    "statuses": [{
+                      "id": "wamid.new",
+                      "status": "delivered",
+                      "timestamp": "1700000000",
+                      "biz_opaque_callback_data": "cb-token-1"
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val saved = savedSlot.captured
+        assertEquals("delivered", saved.deliveryStatus)
+        assertEquals("cb-token-1", saved.callbackId)
+    }
+
+    @Test
+    fun `processPayload ignores status without wamid or callback match`() {
+        every { webhookEventRepository.existsByEventKey(any()) } returns false
+        every { webhookEventRepository.save(any()) } answers { firstArg() }
+        every { messageLogRepository.findByMetaMessageId("wamid.unknown") } returns null
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "messages",
+                  "value": {
+                    "statuses": [{
+                      "id": "wamid.unknown",
+                      "status": "delivered",
+                      "timestamp": "1700000000"
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        verify(exactly = 0) { messageLogRepository.findByCallbackId(any()) }
+        verify(exactly = 0) { messageLogRepository.save(any()) }
+    }
+
+    @Test
     fun `processPayload delegates management webhooks to account event service`() {
         service.processPayload(
             """

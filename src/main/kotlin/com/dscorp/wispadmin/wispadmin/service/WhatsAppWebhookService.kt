@@ -137,10 +137,16 @@ class WhatsAppWebhookService(
             )
         )
 
-        val messageLog = whatsAppMessageLogRepository.findByMetaMessageId(wamid) ?: return
+        val callbackId = status.path("biz_opaque_callback_data").asText(null)
+        val messageLog = whatsAppMessageLogRepository.findByMetaMessageId(wamid)
+            ?: callbackId?.let { whatsAppMessageLogRepository.findByCallbackId(it) }
+            ?: return
         val statusAt = parseWebhookTimestamp(timestamp) ?: LocalDateTime.now()
         messageLog.deliveryStatus = deliveryStatus
         messageLog.deliveryStatusAt = statusAt
+        if (messageLog.callbackId == null && !callbackId.isNullOrBlank()) {
+            messageLog.callbackId = callbackId
+        }
 
         when (deliveryStatus) {
             "sent" -> messageLog.sentAt = messageLog.sentAt ?: statusAt

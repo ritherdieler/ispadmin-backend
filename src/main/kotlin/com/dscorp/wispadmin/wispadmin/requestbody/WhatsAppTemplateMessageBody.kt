@@ -1,10 +1,14 @@
 package com.dscorp.wispadmin.wispadmin.requestbody
 
+import com.fasterxml.jackson.annotation.JsonInclude
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class WhatsAppTemplateMessageBody(
     val messaging_product: String = "whatsapp",
     val to: String,
     val type: String = "template",
-    val template: WhatsAppTemplate
+    val template: WhatsAppTemplate,
+    val biz_opaque_callback_data: String? = null
 )
 
 data class WhatsAppTemplate(

@@ -35,13 +35,15 @@ class WhatsAppTemplateDeliveryService(
             welcomeContext = welcomeContext
         )
         val previewMessage = templateDisplayService.buildLogPreview(definition, parameters)
+        val callbackToken = java.util.UUID.randomUUID().toString()
 
         try {
             val result = whatsAppService.sendTemplateMessageWithMetaResponse(
                 phoneNumber = phone,
                 templateName = definition.metaName,
                 languageCode = definition.language,
-                parameters = parameters
+                parameters = parameters,
+                callbackToken = callbackToken
             )
             return persistLog(
                 paymentId = paymentId,
@@ -53,7 +55,8 @@ class WhatsAppTemplateDeliveryService(
                 errorMessage = null,
                 metaMessageId = result.metaMessageId,
                 campaignId = campaignId,
-                operatorUsername = operatorUsername
+                operatorUsername = operatorUsername,
+                callbackId = callbackToken
             )
         } catch (e: Exception) {
             val friendlyError = WhatsAppMessageErrors.toFriendlyMessage(e.message)
@@ -67,7 +70,8 @@ class WhatsAppTemplateDeliveryService(
                 errorMessage = friendlyError,
                 metaMessageId = null,
                 campaignId = campaignId,
-                operatorUsername = operatorUsername
+                operatorUsername = operatorUsername,
+                callbackId = callbackToken
             )
             throw Exception(friendlyError, e)
         }
@@ -83,7 +87,8 @@ class WhatsAppTemplateDeliveryService(
         errorMessage: String?,
         metaMessageId: String? = null,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        callbackId: String? = null
     ): WhatsAppMessageLog {
         val now = LocalDateTime.now()
         return whatsAppMessageLogRepository.save(
@@ -99,7 +104,8 @@ class WhatsAppTemplateDeliveryService(
                 sentAt = if (status == STATUS_SENT) now else null,
                 failedAt = if (status == STATUS_FAILED) now else null,
                 campaignId = campaignId,
-                operatorUsername = operatorUsername
+                operatorUsername = operatorUsername,
+                callbackId = callbackId
             )
         )
     }
