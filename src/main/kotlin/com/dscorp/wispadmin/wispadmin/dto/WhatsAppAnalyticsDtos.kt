@@ -61,7 +61,9 @@ data class WhatsAppCampaignSummaryDto(
     val deliveryRate: Double = 0.0,
     val readRate: Double = 0.0,
     val responseRate: Double = 0.0,
-    val conversionAmount: Double? = null
+    val conversionAmount: Double? = null,
+    val estimatedMetaCost: Double = 0.0,
+    val roi: Double? = null
 )
 
 fun WhatsAppAnalyticsService.WhatsAppCampaignAnalytics.toSummaryDto() = WhatsAppCampaignSummaryDto(
@@ -81,7 +83,9 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignAnalytics.toSummaryDto() = WhatsApp
     deliveryRate = deliveryRate,
     readRate = readRate,
     responseRate = responseRate,
-    conversionAmount = conversionAmount
+    conversionAmount = conversionAmount,
+    estimatedMetaCost = estimatedMetaCost,
+    roi = roi
 )
 
 data class WhatsAppCampaignDetailDto(
@@ -102,6 +106,8 @@ data class WhatsAppCampaignDetailDto(
     val readRate: Double = 0.0,
     val responseRate: Double = 0.0,
     val conversionAmount: Double,
+    val estimatedMetaCost: Double = 0.0,
+    val roi: Double? = null,
     val details: List<WhatsAppMessageLogDto>
 )
 
@@ -125,6 +131,8 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignDetail.toFrontendDto(
     readRate = summary?.readRate ?: 0.0,
     responseRate = summary?.responseRate ?: 0.0,
     conversionAmount = summary?.conversionAmount ?: 0.0,
+    estimatedMetaCost = summary?.estimatedMetaCost ?: 0.0,
+    roi = summary?.roi,
     details = logs
 )
 

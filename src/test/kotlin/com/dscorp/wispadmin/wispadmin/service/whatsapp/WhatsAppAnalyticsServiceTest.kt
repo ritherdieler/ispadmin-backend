@@ -4,21 +4,27 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class WhatsAppAnalyticsServiceTest {
 
     private val messageLogRepository = mock(WhatsAppMessageLogRepository::class.java)
     private val inboundMessageRepository = mock(WhatsAppInboundMessageRepository::class.java)
     private val paymentRepository = mock(PaymentRepository::class.java)
+    private val metaAnalyticsClient = mock(WhatsAppMetaAnalyticsClient::class.java)
+    private val objectMapper = ObjectMapper()
+    private val zone = ZoneId.of("America/Lima")
     private val service = WhatsAppAnalyticsService(
         messageLogRepository,
         inboundMessageRepository,
-        paymentRepository
+        paymentRepository,
+        metaAnalyticsClient
     )
 
     @Test
@@ -242,5 +248,111 @@ class WhatsAppAnalyticsServiceTest {
         val filteredByOperator = service.campaignDetail("camp-1", operatorUsername = "operator.b")
         assertEquals(1, filteredByOperator?.messages?.size)
         assertEquals("operator.b", filteredByOperator?.summary?.operatorUsername)
+    }
+
+    @Test
+    fun `campaigns computes estimatedMetaCost and roi deduplicating by conversationId`() {
+        val from = LocalDateTime.now().minusDays(7)
+        val to = LocalDateTime.now()
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    conversationId = "conv-1",
+                    conversationCategory = "marketing",
+                    billable = true
+                ),
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    metaMessageId = "w2",
+                    conversationId = "conv-1",
+                    conversationCategory = "marketing",
+                    billable = true
+                ),
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    metaMessageId = "w3",
+                    conversationId = "conv-2",
+                    conversationCategory = "marketing",
+                    billable = true
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(emptyList())
+        `when`(metaAnalyticsClient.fetchConversationAnalytics(from.atZone(zone).toInstant(), to.atZone(zone).toInstant()))
+            .thenReturn(
+                objectMapper.readTree(
+                    """{"data":[{"data_points":[{"conversation_category":"MARKETING","conversation":10,"cost":5.0,"currency":"USD"}]}]}"""
+                )
+            )
+
+        val campaigns = service.campaigns(from, to)
+
+        assertEquals(1.0, campaigns.first().estimatedMetaCost, 0.0001)
+        assertEquals(-1.0, campaigns.first().roi, 0.0001)
+    }
+
+    @Test
+    fun `campaigns returns zero estimatedMetaCost when Meta conversation analytics has no data`() {
+        val from = LocalDateTime.now().minusDays(7)
+        val to = LocalDateTime.now()
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    conversationId = "conv-1",
+                    conversationCategory = "marketing",
+                    billable = true
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(emptyList())
+        `when`(metaAnalyticsClient.fetchConversationAnalytics(from.atZone(zone).toInstant(), to.atZone(zone).toInstant()))
+            .thenReturn(objectMapper.createObjectNode())
+
+        val campaigns = service.campaigns(from, to)
+
+        assertEquals(0.0, campaigns.first().estimatedMetaCost, 0.0001)
+        assertEquals(0.0, campaigns.first().roi, 0.0001)
+    }
+
+    @Test
+    fun `campaignDetail computes estimatedMetaCost using the campaign own date range`() {
+        val createdAt = LocalDateTime.now().minusHours(2)
+        `when`(messageLogRepository.findByCampaignId("camp-1")).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    conversationId = "conv-1",
+                    conversationCategory = "utility",
+                    billable = true,
+                    createdAt = createdAt
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(createdAt, createdAt.plusSeconds(1)))
+            .thenReturn(emptyList())
+        `when`(
+            metaAnalyticsClient.fetchConversationAnalytics(
+                createdAt.atZone(zone).toInstant(),
+                createdAt.plusSeconds(1).atZone(zone).toInstant()
+            )
+        ).thenReturn(
+            objectMapper.readTree(
+                """{"data":[{"data_points":[{"conversation_category":"UTILITY","conversation":4,"cost":2.0,"currency":"USD"}]}]}"""
+            )
+        )
+
+        val detail = service.campaignDetail("camp-1")
+
+        assertEquals(0.5, detail?.summary?.estimatedMetaCost ?: -1.0, 0.0001)
     }
 }

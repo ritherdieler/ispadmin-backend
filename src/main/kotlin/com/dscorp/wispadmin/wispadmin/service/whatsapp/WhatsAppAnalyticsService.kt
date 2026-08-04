@@ -5,13 +5,17 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepositor
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class WhatsAppAnalyticsService(
     private val messageLogRepository: WhatsAppMessageLogRepository,
     private val inboundMessageRepository: WhatsAppInboundMessageRepository,
-    private val paymentRepository: PaymentRepository
+    private val paymentRepository: PaymentRepository,
+    private val metaAnalyticsClient: WhatsAppMetaAnalyticsClient
 ) {
+
+    private val zone = ZoneId.of("America/Lima")
 
     fun overview(from: LocalDateTime, to: LocalDateTime, windowDays: Int = 7, templateCode: String? = null): WhatsAppAnalyticsOverview {
         val logs = messageLogRepository.findByCreatedAtBetween(from, to)
@@ -67,9 +71,10 @@ class WhatsAppAnalyticsService(
             .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
             .filter { operatorUsername.isNullOrBlank() || it.operatorUsername == operatorUsername }
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
+        val costPerCategory = estimatedCostPerCategory(from, to)
 
         return logs.groupBy { it.campaignId!! }
-            .map { (campaignId, entries) -> buildCampaignAnalytics(campaignId, entries, inbound, windowDays) }
+            .map { (campaignId, entries) -> buildCampaignAnalytics(campaignId, entries, inbound, windowDays, costPerCategory) }
             .sortedByDescending { it.startedAt }
     }
 
@@ -86,7 +91,8 @@ class WhatsAppAnalyticsService(
         val from = logs.minOf { it.createdAt }
         val to = logs.maxOf { it.createdAt }.plusSeconds(1)
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
-        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays)
+        val costPerCategory = estimatedCostPerCategory(from, to)
+        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays, costPerCategory)
 
         return WhatsAppCampaignDetail(
             summary = summary,
@@ -94,11 +100,35 @@ class WhatsAppAnalyticsService(
         )
     }
 
+    private fun estimatedCostPerCategory(from: LocalDateTime, to: LocalDateTime): Map<String, Double> {
+        return runCatching {
+            val node = metaAnalyticsClient.fetchConversationAnalytics(
+                from.atZone(zone).toInstant(),
+                to.atZone(zone).toInstant()
+            )
+            WhatsAppMetaAnalyticsParser.parseConversationAnalytics(node).categories
+                .filter { it.cost != null && it.conversationCount > 0 }
+                .associate { it.category.uppercase() to (it.cost!! / it.conversationCount) }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun estimateCampaignCost(
+        entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
+        costPerCategory: Map<String, Double>
+    ): Double {
+        if (costPerCategory.isEmpty()) return 0.0
+        return entries
+            .filter { it.billable == true && !it.conversationId.isNullOrBlank() }
+            .distinctBy { it.conversationId }
+            .sumOf { entry -> costPerCategory[entry.conversationCategory?.uppercase()] ?: 0.0 }
+    }
+
     private fun buildCampaignAnalytics(
         campaignId: String,
         entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
         inbound: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage>,
-        windowDays: Int
+        windowDays: Int,
+        costPerCategory: Map<String, Double>
     ): WhatsAppCampaignAnalytics {
         val accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
         val sent = accepted
@@ -126,6 +156,7 @@ class WhatsAppAnalyticsService(
 
         val templateCode = entries.firstOrNull()?.messageType
         val deliveryDenominator = if (confirmed > 0) confirmed else accepted
+        val estimatedMetaCost = estimateCampaignCost(entries, costPerCategory)
 
         return WhatsAppCampaignAnalytics(
             campaignId = campaignId,
@@ -144,7 +175,9 @@ class WhatsAppAnalyticsService(
             deliveryRate = rate(delivered, deliveryDenominator),
             readRate = rate(read, deliveryDenominator),
             responseRate = rate(responded, accepted),
-            conversionAmount = conversionAmount
+            conversionAmount = conversionAmount,
+            estimatedMetaCost = estimatedMetaCost,
+            roi = conversionAmount - estimatedMetaCost
         )
     }
 
@@ -310,7 +343,9 @@ class WhatsAppAnalyticsService(
         val deliveryRate: Double,
         val readRate: Double,
         val responseRate: Double,
-        val conversionAmount: Double
+        val conversionAmount: Double,
+        val estimatedMetaCost: Double = 0.0,
+        val roi: Double = conversionAmount - estimatedMetaCost
     )
 
     data class WhatsAppCampaignDetail(
