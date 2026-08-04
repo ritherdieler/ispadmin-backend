@@ -16,7 +16,9 @@ class WhatsAppAnalyticsService(
     fun overview(from: LocalDateTime, to: LocalDateTime, windowDays: Int = 7, templateCode: String? = null): WhatsAppAnalyticsOverview {
         val logs = messageLogRepository.findByCreatedAtBetween(from, to)
             .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
-        val sent = logs.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
+        val accepted = logs.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
+        val sent = accepted
+        val confirmed = logs.count { isMetaConfirmed(it) }
         val delivered = logs.count { it.deliveredAt != null }
         val read = logs.count { it.readAt != null }
         val failed = logs.count { it.failedAt != null || it.deliveryStatus == "failed" }
@@ -29,11 +31,14 @@ class WhatsAppAnalyticsService(
         val responded = inbound.size
 
         val conversion = conversion(from, to, windowDays, templateCode)
+        val deliveryDenominator = if (confirmed > 0) confirmed else accepted
 
         return WhatsAppAnalyticsOverview(
             from = from,
             to = to,
             sent = sent,
+            accepted = accepted,
+            confirmed = confirmed,
             delivered = delivered,
             read = read,
             failed = failed,
@@ -41,9 +46,9 @@ class WhatsAppAnalyticsService(
             responded = responded,
             paid = conversion.converted,
             sentWithoutMetaMessageId = withoutMetaId,
-            deliveryRate = rate(delivered, sent),
-            readRate = rate(read, sent),
-            responseRate = rate(responded, sent),
+            deliveryRate = rate(delivered, deliveryDenominator),
+            readRate = rate(read, deliveryDenominator),
+            responseRate = rate(responded, accepted),
             conversionRate = conversion.conversionRate,
             recoveredAmount = conversion.recoveredAmount,
             periodDays = windowDays
@@ -193,6 +198,16 @@ class WhatsAppAnalyticsService(
         }.getOrNull()
     }
 
+    private fun isMetaConfirmed(log: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog): Boolean {
+        if (log.status != WhatsAppTemplateDeliveryService.STATUS_SENT) {
+            return false
+        }
+        if (!log.deliveryStatus.isNullOrBlank()) {
+            return true
+        }
+        return log.deliveredAt != null || log.readAt != null || log.failedAt != null
+    }
+
     private fun rate(numerator: Int, denominator: Int): Double {
         if (denominator == 0) return 0.0
         return (numerator.toDouble() / denominator.toDouble()) * 100.0
@@ -225,6 +240,8 @@ class WhatsAppAnalyticsService(
         val from: LocalDateTime,
         val to: LocalDateTime,
         val sent: Int,
+        val accepted: Int,
+        val confirmed: Int,
         val delivered: Int,
         val read: Int,
         val failed: Int,

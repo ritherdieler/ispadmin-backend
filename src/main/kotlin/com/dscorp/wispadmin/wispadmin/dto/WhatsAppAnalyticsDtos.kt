@@ -8,6 +8,8 @@ import java.time.LocalDateTime
 
 data class WhatsAppAnalyticsOverviewDto(
     val sent: Int,
+    val accepted: Int,
+    val confirmed: Int,
     val delivered: Int,
     val read: Int,
     val failed: Int,
@@ -25,6 +27,8 @@ data class WhatsAppAnalyticsOverviewDto(
 
 fun WhatsAppAnalyticsService.WhatsAppAnalyticsOverview.toDto() = WhatsAppAnalyticsOverviewDto(
     sent = sent,
+    accepted = accepted,
+    confirmed = confirmed,
     delivered = delivered,
     read = read,
     failed = failed,
