@@ -56,6 +56,22 @@ class WhatsAppTemplateSyncService(
         return syncedTemplateRepository.findByName(name)?.metaTemplateId
     }
 
+    fun resolveMetaTemplateIdsForAnalytics(metaNames: List<String>): List<String> {
+        var synced = listSynced()
+        if (synced.isEmpty()) {
+            syncFromMeta()
+            synced = listSynced()
+        }
+        val matched = if (metaNames.isEmpty()) {
+            synced
+        } else {
+            metaNames.mapNotNull { name ->
+                synced.find { it.name.equals(name, ignoreCase = true) }
+            }
+        }
+        return matched.map { it.metaTemplateId }.distinct().take(10)
+    }
+
     private fun syncTemplate(node: JsonNode): WhatsAppSyncedTemplate {
         val id = node.path("id").asText("")
         return WhatsAppSyncedTemplate(

@@ -136,4 +136,35 @@ class WhatsAppMetaAnalyticsParserTest {
         assertEquals("FREE_CUSTOMER_SERVICE", parsed.tiers[1].tier)
         assertEquals("SERVICE", parsed.tiers[1].category)
     }
+
+    @Test
+    fun `parseTemplateAnalytics reads template_analytics edge response`() {
+        every { templateRepository.findById("2632273056924580") } returns Optional.of(
+            WhatsAppSyncedTemplate(metaTemplateId = "2632273056924580", name = "payment_reminder_gigaperu")
+        )
+
+        val root = objectMapper.readTree(
+            """
+            {
+              "data": [{
+                "granularity": "DAILY",
+                "data_points": [{
+                  "template_id": "2632273056924580",
+                  "sent": 12,
+                  "delivered": 10,
+                  "read": 8,
+                  "clicked": [{"count": 3}, {"count": 2}]
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val items = WhatsAppMetaAnalyticsParser.parseTemplateAnalytics(root, templateRepository)
+
+        assertEquals(1, items.size)
+        assertEquals("payment_reminder_gigaperu", items.first().templateName)
+        assertEquals(12, items.first().sent)
+        assertEquals(5, items.first().clicked)
+    }
 }

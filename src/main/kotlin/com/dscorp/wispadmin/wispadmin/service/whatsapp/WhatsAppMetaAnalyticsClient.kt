@@ -54,8 +54,13 @@ class WhatsAppMetaAnalyticsClient(
     ): JsonNode {
         if (templateIds.isEmpty()) return objectMapper.createObjectNode()
         val ids = templateIds.take(10).joinToString(",")
-        val fields = "template_analytics.template_ids([$ids]).start(${start.epochSecond}).end(${end.epochSecond})"
-        return fetchWabaField(fields)
+        val url =
+            "${whatsAppProperties.businessAccountUrl()}/template_analytics" +
+                "?start=${start.epochSecond}&end=${end.epochSecond}" +
+                "&granularity=DAILY" +
+                "&metric_types=SENT,DELIVERED,READ,CLICKED" +
+                "&template_ids=[$ids]"
+        return exchange(url)
     }
 
     fun fetchMessageTemplates(): JsonNode {

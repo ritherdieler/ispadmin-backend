@@ -15,15 +15,13 @@ object WhatsAppMetaAnalyticsParser {
         templateRepository: WhatsAppSyncedTemplateRepository
     ): List<WhatsAppMetaTemplateAnalyticsItemDto> {
         val aggregated = linkedMapOf<String, MutableTemplateMetrics>()
-        val dataArray = when {
-            root.path("data").isArray -> root.path("data")
-            root.path("template_analytics").path("data").isArray -> root.path("template_analytics").path("data")
-            else -> root.path("data")
-        }
 
-        dataArray.forEach { entry ->
+        templateAnalyticsGroups(root).forEach { entry ->
+            val entryTemplateId = entry.path("template_id").asText(null)
             entry.path("data_points").forEach { point ->
-                val templateId = point.path("template_id").asText(null) ?: return@forEach
+                val templateId = point.path("template_id").asText(null)
+                    ?: entryTemplateId
+                    ?: return@forEach
                 val metrics = aggregated.getOrPut(templateId) { MutableTemplateMetrics(templateId) }
                 metrics.sent += point.path("sent").asInt(0)
                 metrics.delivered += point.path("delivered").asInt(0)
@@ -43,7 +41,20 @@ object WhatsAppMetaAnalyticsParser {
                 read = metrics.read,
                 clicked = metrics.clicked
             )
-        }.sortedByDescending { it.sent }
+        }.sortedByDescending { it.sent + it.clicked }
+    }
+
+    private fun templateAnalyticsGroups(root: JsonNode): List<JsonNode> {
+        val groups = mutableListOf<JsonNode>()
+        val nested = root.path("template_analytics").path("data")
+        when {
+            nested.isArray -> nested.forEach { groups.add(it) }
+            nested.isObject && !nested.isMissingNode -> groups.add(nested)
+        }
+        if (root.path("data").isArray) {
+            root.path("data").forEach { groups.add(it) }
+        }
+        return groups
     }
 
     fun parseConversationAnalytics(root: JsonNode): WhatsAppMetaConversationAnalyticsDto {

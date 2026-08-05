@@ -416,7 +416,7 @@ class WhatsAppBackofficeController(
                 WhatsAppTemplateCatalog.getByCodeString(templateCode).metaName
             }.getOrNull()?.let { names.add(it) }
         }
-        val ids = names.distinct().mapNotNull { templateSyncService.findMetaTemplateIdByName(it) }
+        val ids = templateSyncService.resolveMetaTemplateIdsForAnalytics(names.distinct())
         val node = metaAnalyticsClient.fetchTemplateAnalytics(ids, range.first, range.second)
         return ResponseEntity.ok(
             WhatsAppMetaAnalyticsParser.parseTemplateAnalytics(node, syncedTemplateRepository)
