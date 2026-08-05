@@ -87,35 +87,62 @@ object WhatsAppMetaAnalyticsParser {
     }
 
     fun parsePricingAnalytics(root: JsonNode): WhatsAppMetaPricingAnalyticsDto {
-        val tiers = mutableListOf<WhatsAppMetaPricingTierDto>()
-        val dataArray = when {
-            root.path("pricing_analytics").path("data").isArray ->
-                root.path("pricing_analytics").path("data")
-            root.path("data").isArray -> root.path("data")
-            else -> root.path("pricing_analytics").path("data")
-        }
+        val aggregated = linkedMapOf<String, PricingAccumulator>()
 
-        dataArray.forEach { entry ->
+        pricingAnalyticsGroups(root).forEach { entry ->
             entry.path("data_points").forEach { point ->
-                tiers.add(
-                    WhatsAppMetaPricingTierDto(
-                        tier = point.path("tier").asText(
-                            point.path("pricing_tier").asText("UNKNOWN")
-                        ),
-                        category = point.path("category").asText(
-                            point.path("conversation_category").asText("UNKNOWN")
-                        ),
-                        volume = point.path("volume").asInt(
-                            point.path("conversation_count").asInt(0)
-                        ),
-                        cost = point.path("cost").takeIf { it.isNumber || it.isTextual }?.asDouble(),
-                        currency = point.path("currency").asText(null)
-                    )
+                val pricingCategory = point.path("pricing_category").asText(null)
+                val pricingType = point.path("pricing_type").asText(null)
+                val country = point.path("country").asText(null)
+                val tierRaw = point.path("tier").asText(null)
+                val tier = when {
+                    !tierRaw.isNullOrBlank() -> tierRaw
+                    !pricingType.isNullOrBlank() -> pricingType
+                    else -> "—"
+                }
+                val category = when {
+                    !pricingCategory.isNullOrBlank() -> pricingCategory
+                    !country.isNullOrBlank() -> country
+                    else -> "Agregado"
+                }
+                val key = listOf(tier, category, country.orEmpty(), pricingType.orEmpty()).joinToString("|")
+                val bucket = aggregated.getOrPut(key) {
+                    PricingAccumulator(tier = tier, category = category)
+                }
+                bucket.volume += point.path("volume").asInt(
+                    point.path("conversation_count").asInt(0)
                 )
+                if (point.has("cost")) {
+                    bucket.cost = (bucket.cost ?: 0.0) + point.path("cost").asDouble(0.0)
+                }
+                bucket.currency = point.path("currency").asText(bucket.currency)
             }
         }
 
+        val tiers = aggregated.values.map {
+            WhatsAppMetaPricingTierDto(
+                tier = it.tier,
+                category = it.category,
+                volume = it.volume,
+                cost = it.cost,
+                currency = it.currency
+            )
+        }.sortedByDescending { it.cost ?: 0.0 }
+
         return WhatsAppMetaPricingAnalyticsDto(tiers = tiers)
+    }
+
+    private fun pricingAnalyticsGroups(root: JsonNode): List<JsonNode> {
+        val groups = mutableListOf<JsonNode>()
+        val pricingData = root.path("pricing_analytics").path("data")
+        when {
+            pricingData.isArray -> pricingData.forEach { groups.add(it) }
+            pricingData.isObject && !pricingData.isMissingNode -> groups.add(pricingData)
+        }
+        if (groups.isEmpty() && root.path("data").isArray) {
+            root.path("data").forEach { groups.add(it) }
+        }
+        return groups
     }
 
     private fun conversationAnalyticsGroups(root: JsonNode): List<JsonNode> {
@@ -153,6 +180,14 @@ object WhatsAppMetaAnalyticsParser {
     private data class ConversationAccumulator(
         val category: String,
         var conversationCount: Int = 0,
+        var cost: Double? = null,
+        var currency: String? = null
+    )
+
+    private data class PricingAccumulator(
+        val tier: String,
+        val category: String,
+        var volume: Int = 0,
         var cost: Double? = null,
         var currency: String? = null
     )

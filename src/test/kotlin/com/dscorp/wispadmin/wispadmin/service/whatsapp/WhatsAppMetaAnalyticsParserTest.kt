@@ -98,4 +98,42 @@ class WhatsAppMetaAnalyticsParserTest {
         assertEquals(5250, parsed.categories.first().conversationCount)
         assertEquals(45.05, parsed.categories.first().cost)
     }
+
+    @Test
+    fun `parsePricingAnalytics maps pricing_category tier and pricing_type from Meta`() {
+        val root = objectMapper.readTree(
+            """
+            {
+              "pricing_analytics": {
+                "data": [{
+                  "data_points": [{
+                    "country": "PE",
+                    "tier": "0:750000",
+                    "pricing_type": "REGULAR",
+                    "pricing_category": "UTILITY",
+                    "volume": 69,
+                    "cost": 7.95,
+                    "currency": "USD"
+                  }, {
+                    "country": "PE",
+                    "pricing_type": "FREE_CUSTOMER_SERVICE",
+                    "pricing_category": "SERVICE",
+                    "volume": 50,
+                    "cost": 0.2
+                  }]
+                }]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val parsed = WhatsAppMetaAnalyticsParser.parsePricingAnalytics(root)
+
+        assertEquals(2, parsed.tiers.size)
+        assertEquals("0:750000", parsed.tiers[0].tier)
+        assertEquals("UTILITY", parsed.tiers[0].category)
+        assertEquals(69, parsed.tiers[0].volume)
+        assertEquals("FREE_CUSTOMER_SERVICE", parsed.tiers[1].tier)
+        assertEquals("SERVICE", parsed.tiers[1].category)
+    }
 }

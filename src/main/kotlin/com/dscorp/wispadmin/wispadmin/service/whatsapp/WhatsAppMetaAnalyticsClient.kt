@@ -41,7 +41,9 @@ class WhatsAppMetaAnalyticsClient(
     }
 
     fun fetchPricingAnalytics(start: Instant, end: Instant, granularity: String = "DAILY"): JsonNode {
-        val fields = "pricing_analytics.start(${start.epochSecond}).end(${end.epochSecond}).granularity($granularity)"
+        val fields =
+            "pricing_analytics.start(${start.epochSecond}).end(${end.epochSecond})" +
+                ".granularity($granularity).dimensions([\"PRICING_CATEGORY\",\"PRICING_TYPE\",\"TIER\",\"COUNTRY\"])"
         return fetchWabaField(fields)
     }
 
