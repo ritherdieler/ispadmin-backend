@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianWhatsAppPhone
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppDocumentPayload
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveAction
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveActionButton
@@ -423,19 +424,6 @@ class WhatsAppService(
         return title.trim().take(20).ifBlank { "Opcion" }
     }
 
-    fun normalizePhoneNumber(phoneNumber: String): String {
-        val digits = phoneNumber.filter { it.isDigit() }
-
-        val normalized = when {
-            digits.length == 9 && digits.startsWith("9") -> "51$digits"
-            digits.length == 11 && digits.startsWith("51") -> digits
-            else -> throw IllegalArgumentException("El telefono debe ser un celular peruano valido.")
-        }
-
-        if (!normalized.substring(2).startsWith("9")) {
-            throw IllegalArgumentException("El telefono debe ser un celular peruano valido.")
-        }
-
-        return normalized
-    }
+    fun normalizePhoneNumber(phoneNumber: String): String =
+        PeruvianWhatsAppPhone.toInternational(phoneNumber)
 }

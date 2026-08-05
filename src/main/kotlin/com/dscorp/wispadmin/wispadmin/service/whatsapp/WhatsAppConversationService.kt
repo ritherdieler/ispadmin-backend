@@ -327,7 +327,9 @@ class WhatsAppConversationService(
     }
 
     fun markAllRead(phone: String): WhatsAppMarkAllReadResultDto {
-        val unread = inboundMessageRepository.findByPhoneAndReadAtIsNull(phone)
+        val unread = PeruvianWhatsAppPhone.queryVariants(phone)
+            .flatMap { variant -> inboundMessageRepository.findByPhoneAndReadAtIsNull(variant) }
+            .distinctBy { it.id }
         val now = LocalDateTime.now()
         var allMetaOk = true
         unread.forEach { inbound ->
@@ -384,7 +386,7 @@ class WhatsAppConversationService(
         val saved = messageLogRepository.save(
             WhatsAppMessageLog(
                 subscriptionId = subscription?.id,
-                phone = phone,
+                phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 messageType = MESSAGE_TYPE_OPERATOR_REPLY,
                 status = "SENT",
                 metaMessageId = sendResult.metaMessageId,
@@ -487,7 +489,7 @@ class WhatsAppConversationService(
         val saved = messageLogRepository.save(
             WhatsAppMessageLog(
                 subscriptionId = subscription?.id,
-                phone = phone,
+                phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 messageType = MESSAGE_TYPE_OPERATOR_MEDIA,
                 status = "SENT",
                 metaMessageId = sendResult.metaMessageId,
@@ -512,6 +514,9 @@ class WhatsAppConversationService(
         agentId: Int? = null,
         isAdmin: Boolean = false
     ): WhatsAppThreadMessageDto {
+        if (!isAdmin) {
+            throw CrmConversationForbiddenException("Solo ADMIN puede enviar plantillas.")
+        }
         crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
         val definition = WhatsAppTemplateCatalog.getByCodeString(templateCode)
         val subscription = findSubscriptionByPhone(phone)
@@ -686,7 +691,7 @@ class WhatsAppConversationService(
         return messageLogRepository.save(
             WhatsAppMessageLog(
                 subscriptionId = subscription?.id,
-                phone = phone,
+                phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 messageType = MESSAGE_TYPE_OPERATOR_MEDIA,
                 status = "FAILED",
                 message = caption?.trim()?.takeIf { it.isNotEmpty() } ?: "[${kind.name}] ${filename.orEmpty()}",

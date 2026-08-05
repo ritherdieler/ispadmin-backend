@@ -31,7 +31,7 @@ class WhatsAppTemplateDeliveryService(
         operatorUsername: String? = null
     ): WhatsAppMessageLog {
         if (definition.category == WhatsAppTemplateCategory.MARKETING) {
-            val normalizedPhone = normalizeToInternational(phone)
+            val normalizedPhone = PeruvianWhatsAppPhone.toInternational(phone)
             val optOut = marketingOptOutRepository.findByPhone(normalizedPhone)
             if (optOut?.status == WhatsAppMarketingOptOut.OPTED_OUT) {
                 val reason = "El cliente $normalizedPhone opto por no recibir mensajes de marketing" +
@@ -39,7 +39,7 @@ class WhatsAppTemplateDeliveryService(
                 persistLog(
                     paymentId = paymentId,
                     subscriptionId = subscriptionId,
-                    phone = phone,
+                    phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                     messageType = definition.messageType,
                     message = reason,
                     status = STATUS_SKIPPED,
@@ -129,11 +129,12 @@ class WhatsAppTemplateDeliveryService(
         callbackId: String? = null
     ): WhatsAppMessageLog {
         val now = LocalDateTime.now()
+        val storedPhone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone)
         return whatsAppMessageLogRepository.save(
             WhatsAppMessageLog(
                 paymentId = paymentId,
                 subscriptionId = subscriptionId,
-                phone = phone,
+                phone = storedPhone,
                 messageType = messageType,
                 status = status,
                 message = message,
@@ -146,15 +147,6 @@ class WhatsAppTemplateDeliveryService(
                 callbackId = callbackId
             )
         )
-    }
-
-    private fun normalizeToInternational(phone: String): String {
-        val digits = phone.filter { it.isDigit() }
-        return when {
-            digits.length == 9 && digits.startsWith("9") -> "51$digits"
-            digits.length == 11 && digits.startsWith("51") -> digits
-            else -> digits
-        }
     }
 
     companion object {

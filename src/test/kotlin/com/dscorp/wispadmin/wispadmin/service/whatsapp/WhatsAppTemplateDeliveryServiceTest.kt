@@ -116,6 +116,63 @@ class WhatsAppTemplateDeliveryServiceTest {
     }
 
     @Test
+    fun `deliverTemplate stores international phone when candidate uses nine digits`() {
+        val subscription = Subscription(
+            firstName = "Augusto",
+            lastName = "Valverde",
+            phone = "932489604",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 648 }
+
+        doAnswer {
+            WhatsAppSendResult(
+                success = true,
+                metaResponse = """{"messages":[{"id":"wamid.reminder"}]}""",
+                metaMessageId = "wamid.reminder",
+                recipient = "51932489604",
+                senderPhoneNumberId = "123"
+            )
+        }.`when`(whatsAppService).sendTemplateMessageWithMetaResponse(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyList(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.nullable(WhatsAppTemplateButtonParameter::class.java)
+        )
+        doAnswer { invocation ->
+            invocation.getArgument(0)
+        }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
+        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+            WhatsAppSyncedTemplate(
+                metaTemplateId = "tpl-welcome",
+                name = "welcome_customer_gigaperu",
+                bodyText = "Hola {{customer_name}}."
+            )
+        )
+
+        service.deliverTemplate(
+            definition = definition,
+            subscription = subscription,
+            phone = "932489604",
+            subscriptionId = 648,
+            welcomeContext = WelcomeTemplateContext(
+                serviceTitle = "Internet",
+                serviceDetails = "200 Mbps",
+                planName = "F200",
+                planPrice = "70.00",
+                paymentDay = "5",
+                paymentInfo = "Oficinas"
+            )
+        )
+
+        val captor = ArgumentCaptor.forClass(WhatsAppMessageLog::class.java)
+        verify(messageLogRepository).save(captor.capture())
+        assertEquals("51932489604", captor.value.phone)
+    }
+
+    @Test
     fun `deliverTemplate generates a callback token and persists it with the log`() {
         val subscription = Subscription(
             firstName = "Juan",

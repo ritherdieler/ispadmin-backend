@@ -192,10 +192,12 @@ class WhatsAppAnalyticsService(
 
         return logs.groupBy { it.createdAt.toLocalDate() }
             .map { (date, entries) ->
+                val accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
+                val delivered = entries.count { it.deliveredAt != null }
                 WhatsAppAnalyticsDailyPoint(
                     date = date,
-                    accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT },
-                    confirmed = entries.count { isMetaConfirmed(it) },
+                    accepted = accepted,
+                    notDelivered = (accepted - delivered).coerceAtLeast(0),
                     failed = entries.count { it.failedAt != null || it.deliveryStatus == "failed" }
                 )
             }
@@ -377,7 +379,7 @@ class WhatsAppAnalyticsService(
     data class WhatsAppAnalyticsDailyPoint(
         val date: LocalDate,
         val accepted: Int,
-        val confirmed: Int,
+        val notDelivered: Int,
         val failed: Int
     )
 

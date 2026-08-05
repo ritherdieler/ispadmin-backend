@@ -46,9 +46,14 @@ class WhatsAppConversationQueryService(
         val inbound = loadInbound(filter.dateFrom, filter.dateTo)
         val outbound = loadOutbound(filter.dateFrom, filter.dateTo)
 
-        val phones = (inbound.map { it.phone } + outbound.mapNotNull { it.phone }).distinct()
-        val inboundByPhone = inbound.groupBy { it.phone }
-        val outboundByPhone = outbound.filter { it.phone != null }.groupBy { it.phone!! }
+        val phones = (
+            inbound.map { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) } +
+                outbound.mapNotNull { it.phone?.let { p -> PeruvianWhatsAppPhone.canonicalConversationKey(p) } }
+            ).distinct()
+        val inboundByPhone = inbound.groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) }
+        val outboundByPhone = outbound
+            .filter { it.phone != null }
+            .groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone!!) }
 
         val subscriptionIds = inbound.mapNotNull { it.subscriptionId }.distinct()
         val subscriptions = if (subscriptionIds.isEmpty()) {
@@ -56,7 +61,9 @@ class WhatsAppConversationQueryService(
         } else {
             subscriptionRepository.findAllById(subscriptionIds).associateBy { it.id }
         }
-        val serviceWindows = serviceWindowService.getServiceWindows(phones)
+        val serviceWindows = serviceWindowService.getServiceWindows(
+            phones.flatMap { PeruvianWhatsAppPhone.queryVariants(it) }.distinct()
+        )
 
         return phones.asSequence()
             .mapNotNull { phone ->
@@ -78,7 +85,9 @@ class WhatsAppConversationQueryService(
                 val subscriptionId = phoneInbound.mapNotNull { it.subscriptionId }.lastOrNull()
                     ?: lastInbound?.subscriptionId
                 val subscription = subscriptionId?.let { subscriptions[it] }
-                val window = serviceWindows[phone]
+                val window = pickBestServiceWindow(
+                    PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
+                )
                     ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
                         phone = phone,
                         open = false,
@@ -137,32 +146,9 @@ class WhatsAppConversationQueryService(
             before != null -> before
             else -> dateTo
         }
-        val inboundRecent = when {
-            dateFrom != null && upperBound != null ->
-                inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
-                    phone = phone,
-                    from = dateFrom,
-                    to = upperBound,
-                    pageable = pageable
-                )
-            before != null ->
-                inboundMessageRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
-            else ->
-                inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
-        }
-        val outboundRecent = when {
-            dateFrom != null && upperBound != null ->
-                messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
-                    phone = phone,
-                    from = dateFrom,
-                    to = upperBound,
-                    pageable = pageable
-                )
-            before != null ->
-                messageLogRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
-            else ->
-                messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
-        }
+        val phones = PeruvianWhatsAppPhone.queryVariants(phone)
+        val inboundRecent = fetchInboundRecent(phones, dateFrom, upperBound, before, pageable, fetchSize)
+        val outboundRecent = fetchOutboundRecent(phones, dateFrom, upperBound, before, pageable, fetchSize)
 
         val mergedDesc = (
             inboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage() } } +
@@ -181,13 +167,22 @@ class WhatsAppConversationQueryService(
     }
 
     fun getContext(phone: String): WhatsAppConversationContextDto {
-        val latestInbound = inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc(phone).firstOrNull()
+        val phones = PeruvianWhatsAppPhone.queryVariants(phone)
+        val latestInbound = phones
+            .flatMap { inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc(it) }
+            .maxByOrNull { it.createdAt }
         val subscription = latestInbound?.subscriptionId?.let { subscriptionRepository.findById(it).orElse(null) }
             ?: findSubscriptionByPhone(phone)
 
         val pending = subscription?.payments?.filter { !it.paid }.orEmpty()
-        val window = serviceWindowService.getServiceWindow(phone)
-        val recentLogs = messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc(phone).map { it.toDto() }
+        val window = pickBestServiceWindow(phones.map { serviceWindowService.getServiceWindow(it) })
+            ?: serviceWindowService.getServiceWindow(phone)
+        val recentLogs = phones
+            .flatMap { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc(it) }
+            .distinctBy { it.id }
+            .sortedByDescending { it.createdAt }
+            .take(10)
+            .map { it.toDto() }
         val subscriptionDto = subscription?.id?.let { id ->
             WhatsAppConversationSubscriptionDto(
                 id = id,
@@ -242,10 +237,12 @@ class WhatsAppConversationQueryService(
                 }
         }.orEmpty().ifEmpty {
             listOfNotNull(
-                crmConversationRepository.findByPhoneAndChannel(
-                    normalizePhone(phone),
-                    com.dscorp.wispadmin.wispadmin.data.model.CrmChannel.WHATSAPP
-                )
+                phones.firstNotNullOfOrNull { variant ->
+                    crmConversationRepository.findByPhoneAndChannel(
+                        variant,
+                        com.dscorp.wispadmin.wispadmin.data.model.CrmChannel.WHATSAPP
+                    )
+                }
             ).map {
                 WhatsAppConversationHistoryItemDto(
                     conversationId = it.id ?: 0L,
@@ -272,7 +269,7 @@ class WhatsAppConversationQueryService(
         }
 
         return WhatsAppConversationContextDto(
-            phone = phone,
+            phone = PeruvianWhatsAppPhone.canonicalConversationKey(phone),
             clientName = subscription?.getFullName()?.trim()?.takeIf { it.isNotBlank() && !it.contains("null") },
             identified = subscription?.id != null,
             subscription = subscriptionDto,
@@ -302,6 +299,88 @@ class WhatsAppConversationQueryService(
             messageLogRepository.findTop500ByOrderByCreatedAtDesc()
         }
     }
+
+    private fun fetchInboundRecent(
+        phones: List<String>,
+        dateFrom: LocalDateTime?,
+        upperBound: LocalDateTime?,
+        before: LocalDateTime?,
+        pageable: PageRequest,
+        fetchSize: Int
+    ): List<WhatsAppInboundMessage> {
+        if (phones.size == 1) {
+            return queryInboundRecent(phones.single(), dateFrom, upperBound, before, pageable)
+        }
+        return phones
+            .flatMap { queryInboundRecent(it, dateFrom, upperBound, before, pageable) }
+            .distinctBy { it.id }
+            .sortedByDescending { it.createdAt }
+            .take(fetchSize)
+    }
+
+    private fun fetchOutboundRecent(
+        phones: List<String>,
+        dateFrom: LocalDateTime?,
+        upperBound: LocalDateTime?,
+        before: LocalDateTime?,
+        pageable: PageRequest,
+        fetchSize: Int
+    ): List<WhatsAppMessageLog> {
+        if (phones.size == 1) {
+            return queryOutboundRecent(phones.single(), dateFrom, upperBound, before, pageable)
+        }
+        return phones
+            .flatMap { queryOutboundRecent(it, dateFrom, upperBound, before, pageable) }
+            .distinctBy { it.id }
+            .sortedByDescending { it.createdAt }
+            .take(fetchSize)
+    }
+
+    private fun queryInboundRecent(
+        phone: String,
+        dateFrom: LocalDateTime?,
+        upperBound: LocalDateTime?,
+        before: LocalDateTime?,
+        pageable: PageRequest
+    ): List<WhatsAppInboundMessage> = when {
+        dateFrom != null && upperBound != null ->
+            inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                phone = phone,
+                from = dateFrom,
+                to = upperBound,
+                pageable = pageable
+            )
+        before != null ->
+            inboundMessageRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
+        else ->
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+    }
+
+    private fun queryOutboundRecent(
+        phone: String,
+        dateFrom: LocalDateTime?,
+        upperBound: LocalDateTime?,
+        before: LocalDateTime?,
+        pageable: PageRequest
+    ): List<WhatsAppMessageLog> = when {
+        dateFrom != null && upperBound != null ->
+            messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                phone = phone,
+                from = dateFrom,
+                to = upperBound,
+                pageable = pageable
+            )
+        before != null ->
+            messageLogRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(phone, before, pageable)
+        else ->
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, pageable)
+    }
+
+    private fun pickBestServiceWindow(
+        windows: List<WhatsAppServiceWindowService.WhatsAppServiceWindowStatus>
+    ): WhatsAppServiceWindowService.WhatsAppServiceWindowStatus? =
+        windows.filter { it.open }.maxByOrNull { it.expiresAt ?: LocalDateTime.MIN }
+            ?: windows.firstOrNull()
 
     private fun findSubscriptionByPhone(phone: String) =
         subscriptionRepository.findByNormalizedPhone(normalizePhone(phone)).firstOrNull()

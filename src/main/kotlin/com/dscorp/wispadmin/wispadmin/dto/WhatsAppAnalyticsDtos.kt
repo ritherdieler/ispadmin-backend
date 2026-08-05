@@ -139,14 +139,14 @@ fun WhatsAppAnalyticsService.WhatsAppCampaignDetail.toFrontendDto(
 data class WhatsAppAnalyticsSeriesPointDto(
     val date: String,
     val accepted: Int,
-    val confirmed: Int,
+    val notDelivered: Int,
     val failed: Int
 )
 
 fun WhatsAppAnalyticsService.WhatsAppAnalyticsDailyPoint.toSeriesPointDto() = WhatsAppAnalyticsSeriesPointDto(
     date = date.toString(),
     accepted = accepted,
-    confirmed = confirmed,
+    notDelivered = notDelivered,
     failed = failed
 )
 

@@ -48,17 +48,14 @@ object WhatsAppMetaAnalyticsParser {
 
     fun parseConversationAnalytics(root: JsonNode): WhatsAppMetaConversationAnalyticsDto {
         val categories = linkedMapOf<String, ConversationAccumulator>()
-        val dataArray = when {
-            root.path("conversation_analytics").path("data").isArray ->
-                root.path("conversation_analytics").path("data")
-            root.path("data").isArray -> root.path("data")
-            else -> root.path("conversation_analytics").path("data")
-        }
+        val groups = conversationAnalyticsGroups(root)
 
-        dataArray.forEach { entry ->
+        groups.forEach { entry ->
             entry.path("data_points").forEach { point ->
                 val category = point.path("conversation_category").asText(
-                    point.path("category").asText("UNKNOWN")
+                    point.path("category").asText(
+                        point.path("conversation_type").asText("UNKNOWN")
+                    )
                 )
                 val bucket = categories.getOrPut(category) { ConversationAccumulator(category) }
                 bucket.conversationCount += point.path("conversation").asInt(
@@ -119,6 +116,19 @@ object WhatsAppMetaAnalyticsParser {
         }
 
         return WhatsAppMetaPricingAnalyticsDto(tiers = tiers)
+    }
+
+    private fun conversationAnalyticsGroups(root: JsonNode): List<JsonNode> {
+        val groups = mutableListOf<JsonNode>()
+        val conversationData = root.path("conversation_analytics").path("data")
+        when {
+            conversationData.isArray -> conversationData.forEach { groups.add(it) }
+            conversationData.isObject && !conversationData.isMissingNode -> groups.add(conversationData)
+        }
+        if (groups.isEmpty() && root.path("data").isArray) {
+            root.path("data").forEach { groups.add(it) }
+        }
+        return groups
     }
 
     private fun sumClicked(node: JsonNode): Int {

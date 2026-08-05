@@ -64,7 +64,7 @@ class CrmConversationService(
     fun getById(id: Long): CrmConversationDto = requireConversation(id).toDto()
 
     fun getByPhone(phone: String): CrmConversationDto? =
-        conversationRepository.findByPhoneAndChannel(phone, CrmChannel.WHATSAPP)?.toDto()
+        findWhatsAppConversation(phone)?.toDto()
 
     @Transactional
     fun claim(conversationId: Long, agentId: Int, operatorUsername: String?): CrmConversationDto {
@@ -225,11 +225,11 @@ class CrmConversationService(
         handoffSummary: String? = null
     ): CrmConversation {
         val now = LocalDateTime.now()
-        val existing = conversationRepository.findByPhoneAndChannel(phone, CrmChannel.WHATSAPP)
+        val existing = findWhatsAppConversation(phone)
         val conversation = if (existing == null) {
             CrmConversation(
                 channel = CrmChannel.WHATSAPP,
-                phone = phone,
+                phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 subscriptionId = subscriptionId,
                 status = CrmConversationStatus.PENDING,
                 lastInboundAt = now,
@@ -310,11 +310,11 @@ class CrmConversationService(
     @Transactional
     fun touchInbound(phone: String, subscriptionId: Int?): CrmConversation {
         val now = LocalDateTime.now()
-        val existing = conversationRepository.findByPhoneAndChannel(phone, CrmChannel.WHATSAPP)
+        val existing = findWhatsAppConversation(phone)
         val conversation = if (existing == null) {
             CrmConversation(
                 channel = CrmChannel.WHATSAPP,
-                phone = phone,
+                phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 subscriptionId = subscriptionId,
                 status = CrmConversationStatus.NEW,
                 lastInboundAt = now,
@@ -338,7 +338,7 @@ class CrmConversationService(
 
     @Transactional
     fun touchOutbound(phone: String) {
-        val existing = conversationRepository.findByPhoneAndChannel(phone, CrmChannel.WHATSAPP) ?: return
+        val existing = findWhatsAppConversation(phone) ?: return
         val now = LocalDateTime.now()
         existing.lastOutboundAt = now
         existing.updatedAt = now
@@ -346,7 +346,7 @@ class CrmConversationService(
     }
 
     fun assertCanReply(phone: String, agentId: Int?, isAdmin: Boolean) {
-        val conversation = conversationRepository.findByPhoneAndChannel(phone, CrmChannel.WHATSAPP)
+        val conversation = findWhatsAppConversation(phone)
             ?: throw CrmConversationForbiddenException("Debes tomar la conversacion antes de responder")
         if (conversation.status == CrmConversationStatus.RESOLVED) {
             throw CrmConversationForbiddenException("La conversacion esta resuelta")
@@ -500,6 +500,11 @@ class CrmConversationService(
             .trim()
             .ifBlank { user.username }
     }
+
+    private fun findWhatsAppConversation(phone: String): CrmConversation? =
+        PeruvianWhatsAppPhone.queryVariants(phone).firstNotNullOfOrNull { variant ->
+            conversationRepository.findByPhoneAndChannel(variant, CrmChannel.WHATSAPP)
+        }
 
     companion object {
         private val CLAIMABLE_STATUSES = setOf(

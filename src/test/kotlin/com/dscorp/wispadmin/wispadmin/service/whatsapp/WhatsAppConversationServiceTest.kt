@@ -484,13 +484,29 @@ class WhatsAppConversationServiceTest {
             phone = phone,
             templateCode = "PAYMENT_REMINDER",
             operatorUsername = "operador1",
-            agentId = 7
+            agentId = 7,
+            isAdmin = true
         )
 
         assertEquals("outbound:101", result.id)
         assertEquals("PAYMENT_REMINDER", result.templateCode)
-        verify { crmConversationService.assertCanReply(phone, 7, false) }
+        verify { crmConversationService.assertCanReply(phone, 7, true) }
         verify { chatStateService.markWaitingForAdvisor(phone, "operator_template") }
+    }
+
+    @Test
+    fun `sendOperatorTemplate forbidden when not admin`() {
+        val ex = assertThrows(CrmConversationForbiddenException::class.java) {
+            service.sendOperatorTemplate(
+                phone = "51902354183",
+                templateCode = "PAYMENT_REMINDER",
+                operatorUsername = "operador1",
+                agentId = 7,
+                isAdmin = false
+            )
+        }
+        assertEquals("Solo ADMIN puede enviar plantillas.", ex.message)
+        verify(exactly = 0) { crmConversationService.assertCanReply(any(), any(), any()) }
     }
 
     @Test

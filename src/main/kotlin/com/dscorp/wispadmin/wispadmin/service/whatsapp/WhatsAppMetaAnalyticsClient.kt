@@ -33,12 +33,14 @@ class WhatsAppMetaAnalyticsClient(
         return fetchWabaField(fields)
     }
 
-    fun fetchConversationAnalytics(start: Instant, end: Instant, granularity: String = "DAY"): JsonNode {
-        val fields = "conversation_analytics.start(${start.epochSecond}).end(${end.epochSecond}).granularity($granularity)"
+    fun fetchConversationAnalytics(start: Instant, end: Instant, granularity: String = "DAILY"): JsonNode {
+        val fields =
+            "conversation_analytics.start(${start.epochSecond}).end(${end.epochSecond})" +
+                ".granularity($granularity).metric_types([\"CONVERSATION\",\"COST\"])"
         return fetchWabaField(fields)
     }
 
-    fun fetchPricingAnalytics(start: Instant, end: Instant, granularity: String = "DAY"): JsonNode {
+    fun fetchPricingAnalytics(start: Instant, end: Instant, granularity: String = "DAILY"): JsonNode {
         val fields = "pricing_analytics.start(${start.epochSecond}).end(${end.epochSecond}).granularity($granularity)"
         return fetchWabaField(fields)
     }

@@ -113,6 +113,7 @@ class WhatsAppBackofficeController(
         @RequestBody request: WhatsAppSendMessagesRequest,
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
+        forbiddenUnlessAdmin(httpRequest)?.let { return it }
         return ResponseEntity.ok(
             messageService.sendSelected(
                 templateCode = request.templateCode,
@@ -134,6 +135,7 @@ class WhatsAppBackofficeController(
         @RequestBody request: WhatsAppSelectedRemindersRequest,
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
+        forbiddenUnlessAdmin(httpRequest)?.let { return it }
         return ResponseEntity.ok(
             messageService.sendSelectedReminders(
                 paymentIds = request.paymentIds,
@@ -144,8 +146,13 @@ class WhatsAppBackofficeController(
 
     @PostMapping("/messages/template")
     fun sendManualTemplateMessage(
-        @RequestBody request: WhatsAppTemplateTestMessageRequest
+        @RequestBody request: WhatsAppTemplateTestMessageRequest,
+        httpRequest: HttpServletRequest
     ): ResponseEntity<WhatsAppTestSendResponseDto> {
+        forbiddenUnlessAdmin(httpRequest)?.let {
+            @Suppress("UNCHECKED_CAST")
+            return it as ResponseEntity<WhatsAppTestSendResponseDto>
+        }
         return templateMessageSender.sendPaymentReminderTemplate(request)
     }
 
@@ -612,6 +619,7 @@ class WhatsAppBackofficeController(
         @RequestBody request: WhatsAppConversationTemplateBody,
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
+        forbiddenUnlessAdmin(httpRequest)?.let { return it }
         return try {
             val operator = resolveOperator(httpRequest)
             val result = conversationService.sendOperatorTemplate(
@@ -759,6 +767,15 @@ class WhatsAppBackofficeController(
 
     private fun resolveUserType(request: HttpServletRequest): String? =
         request.getAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE)?.toString()?.trim()?.uppercase()
+
+    private fun isAdmin(request: HttpServletRequest): Boolean =
+        resolveUserType(request) == "ADMIN"
+
+    private fun forbiddenUnlessAdmin(request: HttpServletRequest): ResponseEntity<Any>? {
+        if (isAdmin(request)) return null
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(mapOf("error" to "Solo ADMIN puede enviar mensajes por plantilla"))
+    }
 
     private fun resolveOptionalRange(from: String?, to: String?): Pair<LocalDateTime, LocalDateTime>? {
         if (from.isNullOrBlank() && to.isNullOrBlank()) return null

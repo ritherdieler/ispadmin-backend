@@ -72,4 +72,30 @@ class WhatsAppMetaAnalyticsParserTest {
         assertEquals(1.5, parsed.categories.first().cost)
         assertEquals(1.5, parsed.totalCost)
     }
+
+    @Test
+    fun `parseConversationAnalytics reads data_points when data is an object`() {
+        val root = objectMapper.readTree(
+            """
+            {
+              "conversation_analytics": {
+                "data": {
+                  "data_points": [{
+                    "conversation": 5250,
+                    "cost": 45.05,
+                    "currency": "USD"
+                  }]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val parsed = WhatsAppMetaAnalyticsParser.parseConversationAnalytics(root)
+
+        assertEquals(1, parsed.categories.size)
+        assertEquals("UNKNOWN", parsed.categories.first().category)
+        assertEquals(5250, parsed.categories.first().conversationCount)
+        assertEquals(45.05, parsed.categories.first().cost)
+    }
 }

@@ -60,6 +60,35 @@ class WhatsAppConversationQueryServiceTest {
         every { syncedTemplateRepository.findByName(any()) } returns null
     }
 
+    private fun stubEmptyLocalPhoneVariant(internationalPhone: String) {
+        if (!internationalPhone.startsWith("51") || internationalPhone.length != 11) return
+        val local = internationalPhone.removePrefix("51")
+        every { inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(local, any()) } returns emptyList()
+        every { messageLogRepository.findByPhoneOrderByCreatedAtDesc(local, any()) } returns emptyList()
+        every {
+            inboundMessageRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(local, any(), any())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneAndCreatedAtLessThanOrderByCreatedAtDesc(local, any(), any())
+        } returns emptyList()
+        every {
+            inboundMessageRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                local,
+                any(),
+                any(),
+                any(),
+            )
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                local,
+                any(),
+                any(),
+                any(),
+            )
+        } returns emptyList()
+    }
+
     @Test
     fun `listConversations groups by phone with unread and last preview`() {
         val now = LocalDateTime.of(2026, 7, 25, 10, 0)
@@ -200,6 +229,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread merges inbound and outbound sorted by createdAt`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         val t1 = LocalDateTime.of(2026, 7, 25, 9, 0)
         val t2 = LocalDateTime.of(2026, 7, 25, 9, 5)
         val t3 = LocalDateTime.of(2026, 7, 25, 9, 10)
@@ -263,6 +293,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread maps outbound templateCode from messageType`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         every {
             inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
         } returns emptyList()
@@ -290,6 +321,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread renders legacy template log body from synced Meta text`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         every { syncedTemplateRepository.findByName("payment_reminder_gigaperu") } returns WhatsAppSyncedTemplate(
             metaTemplateId = "123",
             name = "payment_reminder_gigaperu",
@@ -320,6 +352,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread renders legacy template log with fallback when body sync missing`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         every { syncedTemplateRepository.findByName("payment_reminder_gigaperu") } returns null
         every {
             inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
@@ -348,6 +381,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread usa pageable con el limit solicitado`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         val pageableSlot = io.mockk.slot<Pageable>()
         every {
             inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, capture(pageableSlot))
@@ -365,6 +399,7 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `getThread pagina con before y marca hasMore`() {
         val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
         val t1 = LocalDateTime.of(2026, 8, 4, 10, 0)
         val t2 = LocalDateTime.of(2026, 8, 4, 11, 0)
         val t3 = LocalDateTime.of(2026, 8, 4, 12, 0)
@@ -425,6 +460,7 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = LocalDateTime.now()
             )
         )
+        every { inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc("902354183") } returns emptyList()
         every { subscriptionRepository.findById(7) } returns Optional.of(subscription)
         every { subscriptionRepository.findByNormalizedPhone("902354183") } returns listOf(subscription)
         every { serviceWindowService.getServiceWindow(phone) } returns
@@ -432,6 +468,12 @@ class WhatsAppConversationQueryServiceTest {
                 phone = phone,
                 open = true,
                 expiresAt = LocalDateTime.now().plusHours(5)
+            )
+        every { serviceWindowService.getServiceWindow("902354183") } returns
+            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                phone = "902354183",
+                open = false,
+                expiresAt = null
             )
         every { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc(phone) } returns listOf(
             WhatsAppMessageLog(
@@ -442,6 +484,7 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = LocalDateTime.now()
             )
         )
+        every { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc("902354183") } returns emptyList()
         every { paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(7) } returns emptyList()
         every { crmConversationRepository.findBySubscriptionIdOrderByLastInboundAtDesc(7) } returns emptyList()
         every { crmConversationRepository.findByPhoneAndChannel(any(), any()) } returns null
@@ -457,5 +500,49 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(2, context.pendingDebt?.invoiceCount)
         assertTrue(context.serviceWindowActive)
         assertEquals(1, context.recentLogs.size)
+    }
+
+    @Test
+    fun `getThread merges inbound international with outbound stored as local nine digits`() {
+        val international = "51932489604"
+        val local = "932489604"
+        val inboundAt = LocalDateTime.of(2026, 8, 4, 13, 6)
+        val outboundAt = LocalDateTime.of(2026, 8, 3, 11, 8)
+
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(international, any<Pageable>())
+        } returns listOf(
+            WhatsAppInboundMessage(
+                id = 77,
+                metaMessageId = "in-77",
+                phone = international,
+                messageText = "Pago julio",
+                messageType = "text",
+                createdAt = inboundAt
+            )
+        )
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(local, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(international, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(local, any<Pageable>())
+        } returns listOf(
+            WhatsAppMessageLog(
+                id = 114,
+                phone = local,
+                messageType = "PAYMENT_REMINDER",
+                status = "SENT",
+                createdAt = outboundAt
+            )
+        )
+
+        val thread = service.getThread(local).messages
+
+        assertEquals(2, thread.size)
+        assertEquals("outbound:114", thread[0].id)
+        assertEquals("inbound:77", thread[1].id)
     }
 }

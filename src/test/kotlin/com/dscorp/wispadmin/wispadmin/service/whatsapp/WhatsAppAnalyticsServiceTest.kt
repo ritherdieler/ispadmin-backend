@@ -358,7 +358,7 @@ class WhatsAppAnalyticsServiceTest {
     }
 
     @Test
-    fun `overviewSeries groups accepted confirmed failed by day`() {
+    fun `overviewSeries groups accepted notDelivered failed by day`() {
         val from = LocalDateTime.of(2026, 8, 1, 0, 0)
         val to = LocalDateTime.of(2026, 8, 3, 0, 0)
         `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
@@ -367,6 +367,7 @@ class WhatsAppAnalyticsServiceTest {
                     status = "SENT",
                     metaMessageId = "w1",
                     deliveryStatus = "delivered",
+                    deliveredAt = LocalDateTime.of(2026, 8, 1, 9, 5),
                     createdAt = LocalDateTime.of(2026, 8, 1, 9, 0)
                 ),
                 WhatsAppMessageLog(
@@ -379,6 +380,7 @@ class WhatsAppAnalyticsServiceTest {
                     status = "SENT",
                     metaMessageId = "w3",
                     deliveryStatus = "delivered",
+                    deliveredAt = LocalDateTime.of(2026, 8, 2, 9, 5),
                     createdAt = LocalDateTime.of(2026, 8, 2, 9, 0)
                 )
             )
@@ -389,11 +391,11 @@ class WhatsAppAnalyticsServiceTest {
         assertEquals(2, series.size)
         assertEquals(LocalDate.of(2026, 8, 1), series[0].date)
         assertEquals(2, series[0].accepted)
-        assertEquals(2, series[0].confirmed)
+        assertEquals(1, series[0].notDelivered)
         assertEquals(1, series[0].failed)
         assertEquals(LocalDate.of(2026, 8, 2), series[1].date)
         assertEquals(1, series[1].accepted)
-        assertEquals(1, series[1].confirmed)
+        assertEquals(0, series[1].notDelivered)
         assertEquals(0, series[1].failed)
     }
 
