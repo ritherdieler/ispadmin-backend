@@ -12,13 +12,16 @@ data class WhatsAppInteractiveReplyBody(
     val recipient_type: String = "individual",
     val to: String,
     val type: String = "interactive",
-    val interactive: WhatsAppInteractiveContent
+    val interactive: WhatsAppInteractiveContent,
+    val context: WhatsAppMessageContext? = null
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class WhatsAppInteractiveContent(
     val type: String = "button",
     val body: WhatsAppInteractiveText,
-    val action: WhatsAppInteractiveAction
+    val action: WhatsAppInteractiveAction,
+    val footer: WhatsAppInteractiveText? = null
 )
 
 data class WhatsAppInteractiveText(
@@ -39,7 +42,8 @@ data class WhatsAppInteractiveListReplyBody(
     val recipient_type: String = "individual",
     val to: String,
     val type: String = "interactive",
-    val interactive: WhatsAppInteractiveListContent
+    val interactive: WhatsAppInteractiveListContent,
+    val context: WhatsAppMessageContext? = null
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -67,10 +71,16 @@ data class WhatsAppInteractiveListRow(
     val description: String? = null
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class WhatsAppMarkReadBody(
     val messaging_product: String = "whatsapp",
     val status: String = "read",
-    val message_id: String
+    val message_id: String,
+    val typing_indicator: WhatsAppTypingIndicator? = null
+)
+
+data class WhatsAppTypingIndicator(
+    val type: String = "text"
 )
 
 data class WhatsAppThreadControlRecipient(

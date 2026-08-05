@@ -73,7 +73,7 @@ class WhatsAppAutoReplyProperties {
     var inboundBurstSeconds: Int = 30
     var menuCooldownMinutes: Int = 20
     var sessionTimeoutMinutes: Int = 10
-    var advisorWaitTimeoutMinutes: Int = 120
+    var advisorWaitTimeoutMinutes: Int = 30
 
     fun secretaryPhoneList(): List<String> {
         return secretaryPhones.split(",")

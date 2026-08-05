@@ -23,9 +23,29 @@ powershell -ExecutionPolicy Bypass -File scripts\whatsapp-simulate-inbound.ps1 -
 ```
 
 Revisa:
-- Logs del backend (`[DEUDA]`, `[ACK]`, `[AVERIA]`, `[MENU]`)
+- Logs del backend (`[DEUDA]`, `[ACK]`, `[AVERIA]`, `[MAIN_MENU]`)
 - Tabla `whatsapp_message_log` status `AUTO_REPLY`
 - WhatsApp del número `902354183` (si Meta acepta el envío outbound)
+
+El menú principal se envía como lista con cuatro opciones:
+
+- `Reportar avería`
+- `Consultar deuda`
+- `Registrar pago`
+- `Hablar con asesor`
+
+Los submenús aceptan tanto pulsaciones como texto (`1`, `2`, `3`, `A`, `B`, `C` o el nombre de la opción). Los comandos `MENÚ` y `ASESOR` están disponibles durante todo el flujo.
+
+`Registrar pago` deja el chat en `AWAITING_PAYMENT_PROOF`: el bot pide una foto o PDF, confirma al recibirlo y vuelve al menú principal. Si llega texto mientras espera, recuerda que falta el archivo (`[COMPROBANTE_PENDIENTE]`).
+
+Cualquier imagen o documento recibido se procesa como comprobante de pago en cualquier estado, incluso cuando el bot está pausado por espera de asesor.
+
+Para probar el flujo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\whatsapp-simulate-inbound.ps1 -ButtonId "enviar_comprobante" -Phone "51902354183"
+powershell -ExecutionPolicy Bypass -File scripts\whatsapp-simulate-inbound.ps1 -Text "quiero enviar mi comprobante" -Phone "51902354183"
+```
 
 ## 3. Opción B — WhatsApp real vía túnel
 

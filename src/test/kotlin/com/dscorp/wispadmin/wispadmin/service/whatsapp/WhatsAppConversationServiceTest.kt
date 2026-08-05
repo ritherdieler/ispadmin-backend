@@ -563,7 +563,9 @@ class WhatsAppConversationServiceTest {
             WhatsAppInboundMessage(id = 1, metaMessageId = "m1", phone = phone, readAt = null),
             WhatsAppInboundMessage(id = 2, metaMessageId = "m2", phone = phone, readAt = null)
         )
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(phone) } returns unread
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } answers {
+            if (firstArg<String>() == phone) unread else emptyList()
+        }
         every { whatsAppService.markMessageAsRead(any()) } returns WhatsAppSendResult(
             success = true,
             metaResponse = "{}",
@@ -604,5 +606,223 @@ class WhatsAppConversationServiceTest {
             inboundMessageRepository.countByPhoneAndCreatedAtAfter("51902354183", any())
         } returns 1
         assertFalse(service.isInboundBurst("51902354183"))
+    }
+
+    @Test
+    fun `main menu offers payment proof option with descriptions`() {
+        val rowsSlot = slot<List<WhatsAppService.InteractiveListOption>>()
+        every {
+            whatsAppService.sendInteractiveListMessage(
+                phoneNumber = "51902354183",
+                bodyText = any(),
+                buttonText = any(),
+                sectionTitle = any(),
+                rows = capture(rowsSlot),
+                footerText = "Escribe MENÚ o ASESOR en cualquier momento",
+                contextMessageId = "wamid.in-menu"
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.menu",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        val result = service.sendMainMenu(
+            phone = "51902354183",
+            subscription = null,
+            includeGreeting = true,
+            contextMessageId = "wamid.in-menu"
+        )
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf("reportar_averia", "ver_deuda", "enviar_comprobante", "hablar_asesor"),
+            rowsSlot.captured.map { it.id }
+        )
+        assertEquals("Registrar pago", rowsSlot.captured[2].title)
+        assertTrue(rowsSlot.captured.all { !it.description.isNullOrBlank() })
+        assertTrue(rowsSlot.captured.none { it.id == WhatsAppConversationService.BUTTON_INSTALLATION })
+        verify { chatStateService.setCurrentStep("51902354183", WhatsAppConversationStep.MAIN_MENU) }
+    }
+
+    @Test
+    fun `payment proof request waits for image or pdf`() {
+        val buttonsSlot = slot<List<WhatsAppService.InteractiveButtonOption>>()
+        every {
+            whatsAppService.sendInteractiveReplyButtons(
+                phoneNumber = "51902354183",
+                bodyText = any(),
+                buttons = capture(buttonsSlot),
+                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                contextMessageId = "wamid.in-proof"
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.proof",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        val result = service.sendPaymentProofRequest(
+            phone = "51902354183",
+            subscription = null,
+            contextMessageId = "wamid.in-proof"
+        )
+
+        assertTrue(result.success)
+        assertTrue(result.messageText.contains("[COMPROBANTE]"))
+        assertTrue(result.messageText.contains("PDF"))
+        assertEquals(listOf("nav_home", "hablar_asesor"), buttonsSlot.captured.map { it.id })
+        verify {
+            chatStateService.setCurrentStep(
+                "51902354183",
+                WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+            )
+        }
+    }
+
+    @Test
+    fun `paid status menu shows pending amount and waits for proof`() {
+        val subscription = Subscription(
+            firstName = "Ana",
+            lastName = "Lopez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 31 }
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(31)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 5, 31, 0, 0)
+            )
+        )
+        val bodySlot = slot<String>()
+        every {
+            whatsAppService.sendInteractiveReplyButtons(
+                phoneNumber = "51902354183",
+                bodyText = capture(bodySlot),
+                buttons = any(),
+                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                contextMessageId = null
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.paid",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        val result = service.sendPaidStatusMenu(
+            phone = "51902354183",
+            subscription = subscription,
+            contextMessageId = null
+        )
+
+        assertTrue(result.success)
+        assertTrue(bodySlot.captured.contains("50.00"))
+        verify {
+            chatStateService.setCurrentStep(
+                "51902354183",
+                WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+            )
+        }
+    }
+
+    @Test
+    fun `pending text selection works while waiting for payment proof`() {
+        val phone = "51902354183"
+        every { chatStateService.currentStep(phone) } returns
+            WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+
+        assertEquals("nav_home", service.resolvePendingTextSelection(phone, null, "1"))
+        assertEquals(
+            "hablar_asesor",
+            service.resolvePendingTextSelection(phone, null, "hablar con asesor")
+        )
+    }
+
+    @Test
+    fun `debt response offers paid home and advisor actions`() {
+        val buttonsSlot = slot<List<WhatsAppService.InteractiveButtonOption>>()
+        every {
+            whatsAppService.sendInteractiveReplyButtons(
+                phoneNumber = "51902354183",
+                bodyText = any(),
+                buttons = capture(buttonsSlot),
+                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                contextMessageId = "wamid.in-debt"
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.debt-menu",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        val result = service.sendDebtResponseMenu(
+            phone = "51902354183",
+            subscription = null,
+            contextMessageId = "wamid.in-debt"
+        )
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf("ya_pague", "nav_home", "hablar_asesor"),
+            buttonsSlot.captured.map { it.id }
+        )
+    }
+
+    @Test
+    fun `support menu uses direct issue buttons and global text commands`() {
+        val buttonsSlot = slot<List<WhatsAppService.InteractiveButtonOption>>()
+        every {
+            whatsAppService.sendInteractiveReplyButtons(
+                phoneNumber = "51902354183",
+                bodyText = any(),
+                buttons = capture(buttonsSlot),
+                footerText = "Escribe MENÚ o ASESOR en cualquier momento",
+                contextMessageId = "wamid.in-support"
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.support-menu",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        val result = service.sendSupportEntryMenu(
+            phone = "51902354183",
+            subscription = null,
+            contextMessageId = "wamid.in-support"
+        )
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf("support_issue_no_internet", "support_issue_slow_internet"),
+            buttonsSlot.captured.map { it.id }
+        )
+        assertTrue(buttonsSlot.captured.none { it.id.startsWith("nav_") })
+    }
+
+    @Test
+    fun `unknown callback does not fall through to support`() {
+        val response = service.handleButtonReply(
+            phone = "51902354183",
+            buttonReplyId = "unknown_callback",
+            subscription = null,
+            sourceText = "Opción antigua"
+        )
+
+        assertEquals(service.invalidInteractiveSelectionText(), response)
     }
 }

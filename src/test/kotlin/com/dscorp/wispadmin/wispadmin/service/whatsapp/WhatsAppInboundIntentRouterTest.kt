@@ -31,6 +31,15 @@ class WhatsAppInboundIntentRouterTest {
     }
 
     @Test
+    fun `routes payment proof phrases`() {
+        assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("quiero enviar mi comprobante"))
+        assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("les mando el voucher"))
+        assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("tengo la constancia de pago"))
+        assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("quiero registrar pago"))
+        assertEquals(WhatsAppInboundIntent.PAYMENT_CLAIM, router.route("quiero registrar mi pago"))
+    }
+
+    @Test
     fun `routes technical issue before generic support`() {
         assertEquals(WhatsAppInboundIntent.TECHNICAL_ISSUE, router.route("tengo el internet lento"))
         assertEquals(WhatsAppInboundIntent.TECHNICAL_ISSUE, router.route("sin internet"))

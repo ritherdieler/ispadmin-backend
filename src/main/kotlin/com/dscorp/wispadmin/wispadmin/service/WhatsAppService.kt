@@ -28,7 +28,12 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTakeThreadControlBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextContent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTextMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppThreadControlRecipient
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTypingIndicator
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.NamedTemplateParameter
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveListOption
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveMessageValidator
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveOption
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveSection
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateButtonParameter
@@ -239,30 +244,44 @@ class WhatsAppService(
         val description: String? = null
     )
 
+    data class InteractiveListSectionOption(
+        val title: String,
+        val rows: List<InteractiveListOption>
+    )
+
     fun sendInteractiveReplyButtons(
         phoneNumber: String,
         bodyText: String,
-        buttons: List<InteractiveButtonOption>
+        buttons: List<InteractiveButtonOption>,
+        footerText: String? = null,
+        contextMessageId: String? = null
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
+        WhatsAppInteractiveMessageValidator.validateReplyButtons(
+            bodyText = bodyText,
+            footerText = footerText,
+            buttons = buttons.map { WhatsAppInteractiveOption(it.id, it.title) }
+        )
         val normalized = normalizePhoneNumber(phoneNumber)
         val body = WhatsAppInteractiveReplyBody(
             to = normalized,
             interactive = WhatsAppInteractiveContent(
                 body = WhatsAppInteractiveText(text = bodyText),
                 action = WhatsAppInteractiveAction(
-                    buttons = buttons.take(3).map { option ->
+                    buttons = buttons.map { option ->
                         WhatsAppInteractiveActionButton(
                             reply = WhatsAppInteractiveButton(
-                                id = option.id,
-                                title = safeInteractiveTitle(option.title)
+                                id = option.id.trim(),
+                                title = option.title.trim()
                             )
                         )
                     }
-                )
-            )
+                ),
+                footer = footerText?.trim()?.takeIf { it.isNotBlank() }?.let { WhatsAppInteractiveText(it) }
+            ),
+            context = contextMessageId?.trim()?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
         )
         return postToMeta(body)
     }
@@ -272,32 +291,67 @@ class WhatsAppService(
         bodyText: String,
         buttonText: String,
         sectionTitle: String,
-        rows: List<InteractiveListOption>
+        rows: List<InteractiveListOption>,
+        footerText: String? = null,
+        contextMessageId: String? = null
+    ): WhatsAppSendResult {
+        return sendInteractiveListSectionsMessage(
+            phoneNumber = phoneNumber,
+            bodyText = bodyText,
+            buttonText = buttonText,
+            sections = listOf(InteractiveListSectionOption(sectionTitle, rows)),
+            footerText = footerText,
+            contextMessageId = contextMessageId
+        )
+    }
+
+    fun sendInteractiveListSectionsMessage(
+        phoneNumber: String,
+        bodyText: String,
+        buttonText: String,
+        sections: List<InteractiveListSectionOption>,
+        footerText: String? = null,
+        contextMessageId: String? = null
     ): WhatsAppSendResult {
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
+        WhatsAppInteractiveMessageValidator.validateList(
+            bodyText = bodyText,
+            buttonText = buttonText,
+            footerText = footerText,
+            sections = sections.map { section ->
+                WhatsAppInteractiveSection(
+                    title = section.title,
+                    rows = section.rows.map {
+                        WhatsAppInteractiveListOption(it.id, it.title, it.description)
+                    }
+                )
+            }
+        )
         val normalized = normalizePhoneNumber(phoneNumber)
         val body = WhatsAppInteractiveListReplyBody(
             to = normalized,
             interactive = WhatsAppInteractiveListContent(
                 body = WhatsAppInteractiveText(text = bodyText),
                 action = WhatsAppInteractiveListAction(
-                    button = buttonText.take(20),
-                    sections = listOf(
+                    button = buttonText.trim(),
+                    sections = sections.map { section ->
                         WhatsAppInteractiveListSection(
-                            title = sectionTitle.take(24),
-                            rows = rows.take(10).map { option ->
+                            title = section.title.trim(),
+                            rows = section.rows.map { option ->
                                 WhatsAppInteractiveListRow(
-                                    id = option.id,
-                                    title = safeInteractiveTitle(option.title),
-                                    description = option.description?.take(72)
+                                    id = option.id.trim(),
+                                    title = option.title.trim(),
+                                    description = option.description?.trim()?.takeIf { it.isNotBlank() }
                                 )
                             }
                         )
-                    )
-                )
-            )
+                    }
+                ),
+                footer = footerText?.trim()?.takeIf { it.isNotBlank() }?.let { WhatsAppInteractiveText(it) }
+            ),
+            context = contextMessageId?.trim()?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
         )
         return postToMeta(body)
     }
@@ -350,6 +404,17 @@ class WhatsAppService(
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
         val body = WhatsAppMarkReadBody(message_id = metaMessageId)
+        return postToMeta(body)
+    }
+
+    fun markMessageAsReadWithTyping(metaMessageId: String): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val body = WhatsAppMarkReadBody(
+            message_id = metaMessageId,
+            typing_indicator = WhatsAppTypingIndicator()
+        )
         return postToMeta(body)
     }
 
@@ -418,10 +483,6 @@ class WhatsAppService(
             is WhatsAppMediaMessageBody -> body.to
             else -> null
         }
-    }
-
-    private fun safeInteractiveTitle(title: String): String {
-        return title.trim().take(20).ifBlank { "Opcion" }
     }
 
     fun normalizePhoneNumber(phoneNumber: String): String =

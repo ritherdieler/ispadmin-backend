@@ -194,7 +194,8 @@ class WhatsAppChatStateService(
             WhatsAppConversationStep.MAIN_MENU,
             WhatsAppConversationStep.SUPPORT_MENU,
             WhatsAppConversationStep.SUPPORT_DIAG,
-            WhatsAppConversationStep.DEBT_VIEW
+            WhatsAppConversationStep.DEBT_VIEW,
+            WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
         )
     }
 

@@ -23,7 +23,7 @@ class WhatsAppChatStateServiceTest {
     private val properties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties().apply {
             sessionTimeoutMinutes = 10
-            advisorWaitTimeoutMinutes = 120
+            advisorWaitTimeoutMinutes = 30
         }
     }
 
@@ -109,8 +109,8 @@ class WhatsAppChatStateServiceTest {
             status = WhatsAppChatStatus.ESPERANDO_ASESOR,
             currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
             botPaused = true,
-            lastInteractionAt = LocalDateTime.now().minusMinutes(119),
-            updatedAt = LocalDateTime.now().minusMinutes(119)
+            lastInteractionAt = LocalDateTime.now().minusMinutes(29),
+            updatedAt = LocalDateTime.now().minusMinutes(29)
         )
         every { repository.findByPhone(phone) } returns previous
 
@@ -131,8 +131,8 @@ class WhatsAppChatStateServiceTest {
             currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
             botPaused = true,
             metadata = "support_diagnostic",
-            lastInteractionAt = LocalDateTime.now().minusMinutes(130),
-            updatedAt = LocalDateTime.now().minusMinutes(121)
+            lastInteractionAt = LocalDateTime.now().minusMinutes(40),
+            updatedAt = LocalDateTime.now().minusMinutes(31)
         )
         val savedSlot = slot<WhatsAppChatState>()
         every { repository.findByPhone(phone) } returns previous

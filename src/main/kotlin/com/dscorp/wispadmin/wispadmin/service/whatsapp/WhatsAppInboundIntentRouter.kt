@@ -70,7 +70,12 @@ class WhatsAppInboundIntentRouter {
             Regex("""\bpago\s+hecho\b"""),
             Regex("""\bya\s+pague\b"""),
             Regex("""\brealiz(?:e|o)\s+el\s+pago\b"""),
-            Regex("""\bpague\b""")
+            Regex("""\bpague\b"""),
+            Regex("""\bcomprobante\b"""),
+            Regex("""\bvoucher\b"""),
+            Regex("""\bconstancia\s+de\s+pago\b"""),
+            Regex("""\bregistrar\s+pago\b"""),
+            Regex("""\bregistrar\s+mi\s+pago\b""")
         )
 
         private val TECHNICAL_ISSUE_PATTERNS = listOf(

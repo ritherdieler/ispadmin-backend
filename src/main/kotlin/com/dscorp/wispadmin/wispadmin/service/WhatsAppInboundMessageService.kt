@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.controller.sendNotification
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppConversationStep
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
@@ -10,7 +11,12 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBotAction
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBotEvent
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBotMenuCatalog
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBotTransition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBusinessHoursChecker
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationStateMachine
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppChatStateService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
@@ -108,6 +114,11 @@ class WhatsAppInboundMessageService(
         val (replySent, errorMsg) = when {
             csatHandled -> Pair(true, null)
 
+            isGlobalPaymentProof(payload) -> {
+                showTypingIndicator(payload)
+                routeAndReply(payload, subscription, session)
+            }
+
             session.botPaused -> {
                 log.info("Bot pausado: chat {} esta esperando asesor", payload.phone)
                 Pair(false, null)
@@ -123,7 +134,10 @@ class WhatsAppInboundMessageService(
                 Pair(false, null)
             }
 
-            else -> routeAndReply(payload, subscription, session)
+            else -> {
+                showTypingIndicator(payload)
+                routeAndReply(payload, subscription, session)
+            }
         }
 
         val finalized = inboundMessageRepository.save(
@@ -141,6 +155,18 @@ class WhatsAppInboundMessageService(
             null
         }
         publishInboundRealtimeEvents(finalized, subscription?.getFullName(), crmConversation)
+    }
+
+    private fun isGlobalPaymentProof(payload: WhatsAppInboundPayload): Boolean =
+        payload.messageType == "image" || payload.messageType == "document"
+
+    private fun showTypingIndicator(payload: WhatsAppInboundPayload) {
+        if (payload.messageType !in setOf("text", "button_reply", "image", "document")) return
+        try {
+            whatsAppService.markMessageAsReadWithTyping(payload.metaMessageId)
+        } catch (e: Exception) {
+            log.warn("Inbound typing indicator failed phone={}: {}", payload.phone, e.message)
+        }
     }
 
     private fun publishInboundRealtimeEvents(
@@ -202,123 +228,158 @@ class WhatsAppInboundMessageService(
     ): Pair<Boolean, String?> {
         return when (payload.messageType) {
             "text" -> handleText(payload, subscription, session)
-            "button_reply" -> {
-                if (payload.buttonReplyId == WhatsAppConversationService.BUTTON_HOME) {
-                    return sendAutoReplyResult(
-                        phone = payload.phone,
-                        subscriptionId = subscription?.id,
-                        result = conversationService.sendMainMenuForNavigation(payload.phone, subscription)
-                    )
-                }
+            "button_reply" -> handleBotEvent(
+                payload = payload,
+                subscription = subscription,
+                currentStep = session.currentStep,
+                event = WhatsAppBotEvent.ButtonSelected(payload.buttonReplyId)
+            )
+            "image", "document" -> handleBotEvent(
+                payload = payload,
+                subscription = subscription,
+                currentStep = session.currentStep,
+                event = WhatsAppBotEvent.PaymentProofReceived
+            )
+            else -> Pair(false, null)
+        }
+    }
 
-                if (payload.buttonReplyId == WhatsAppConversationService.BUTTON_BACK) {
-                    return sendAutoReplyResult(
-                        phone = payload.phone,
-                        subscriptionId = subscription?.id,
-                        result = conversationService.sendBackNavigation(payload.phone, subscription)
-                    )
-                }
+    private fun handleBotEvent(
+        payload: WhatsAppInboundPayload,
+        subscription: com.dscorp.wispadmin.wispadmin.data.model.Subscription?,
+        currentStep: WhatsAppConversationStep,
+        event: WhatsAppBotEvent
+    ): Pair<Boolean, String?> {
+        val transition = WhatsAppConversationStateMachine.next(currentStep, event)
+        val issueCode = if (transition.action == WhatsAppBotAction.CLOSE_SUPPORT_DIAGNOSTIC) {
+            conversationService.currentSupportIssueCode(payload.phone)
+        } else {
+            null
+        }
 
-                if (conversationService.isSupportEntryButton(payload.buttonReplyId)) {
-                    return sendAutoReplyResult(
-                        phone = payload.phone,
-                        subscriptionId = subscription?.id,
-                        result = conversationService.sendSupportDiagnosticQuestion(
-                            phone = payload.phone,
-                            subscription = subscription,
-                            buttonReplyId = payload.buttonReplyId
-                        )
-                    )
-                }
+        val reply = executeBotAction(payload, subscription, transition)
+        if (reply.first) {
+            applyTransitionEffects(payload, subscription, transition, issueCode)
+        }
+        return reply
+    }
 
-                if (conversationService.isSupportDiagnosticButton(payload.buttonReplyId)) {
-                    val issueCode = conversationService.currentSupportIssueCode(payload.phone)
-                    val result = conversationService.closeSupportDiagnosticWithButton(
-                        phone = payload.phone,
-                        subscription = subscription,
-                        buttonReplyId = payload.buttonReplyId
-                    )
-                    val reply = sendAutoReplyResult(payload.phone, subscription?.id, result)
-                    if (reply.first) {
-                        createGuidedTicketFromDiagnostic(
-                            phone = payload.phone,
-                            subscription = subscription,
-                            issueCode = issueCode,
-                            buttonReplyId = payload.buttonReplyId
-                        )
-                        handoffService.pauseBotAndPassToAdvisor(payload.phone, "support_diagnostic")
-                        notifySecretaryInbound(
-                            phone = payload.phone,
-                            clientName = subscription?.getFullName(),
-                            force = true,
-                            advisorRequired = true
-                        )
-                    }
-                    return reply
-                }
+    private fun executeBotAction(
+        payload: WhatsAppInboundPayload,
+        subscription: com.dscorp.wispadmin.wispadmin.data.model.Subscription?,
+        transition: WhatsAppBotTransition
+    ): Pair<Boolean, String?> {
+        val phone = payload.phone
+        val subscriptionId = subscription?.id
+        return when (transition.action) {
+            WhatsAppBotAction.SHOW_MAIN_MENU -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendMainMenuForNavigation(phone, subscription, payload.metaMessageId)
+            )
 
-                if (payload.buttonReplyId == WhatsAppConversationService.BUTTON_SUPPORT ||
-                    payload.buttonReplyId == WhatsAppConversationService.BUTTON_REPORT_FAULT
-                ) {
-                    return sendAutoReplyResult(
-                        phone = payload.phone,
-                        subscriptionId = subscription?.id,
-                        result = conversationService.sendSupportEntryMenu(payload.phone, subscription)
-                    )
-                }
+            WhatsAppBotAction.SHOW_SUPPORT_MENU -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendSupportEntryMenu(phone, subscription, payload.metaMessageId)
+            )
 
-                if (payload.buttonReplyId == WhatsAppConversationService.BUTTON_DEBT) {
-                    return sendAutoReplyResult(
-                        phone = payload.phone,
-                        subscriptionId = subscription?.id,
-                        result = conversationService.sendDebtResponseMenu(payload.phone, subscription)
-                    )
-                }
+            WhatsAppBotAction.SHOW_SUPPORT_DIAGNOSTIC -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendSupportDiagnosticQuestion(
+                    phone = phone,
+                    subscription = subscription,
+                    buttonReplyId = payload.buttonReplyId,
+                    contextMessageId = payload.metaMessageId
+                )
+            )
 
-                val text = conversationService.handleButtonReply(
-                    phone = payload.phone,
+            WhatsAppBotAction.CLOSE_SUPPORT_DIAGNOSTIC -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.closeSupportDiagnosticWithButton(
+                    phone = phone,
+                    subscription = subscription,
+                    buttonReplyId = payload.buttonReplyId
+                )
+            )
+
+            WhatsAppBotAction.SHOW_DEBT_MENU -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendDebtResponseMenu(phone, subscription, payload.metaMessageId)
+            )
+
+            WhatsAppBotAction.SHOW_PAID_STATUS -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendPaidStatusMenu(phone, subscription, payload.metaMessageId)
+            )
+
+            WhatsAppBotAction.REQUEST_PAYMENT_PROOF -> sendAutoReplyResult(
+                phone, subscriptionId,
+                conversationService.sendPaymentProofRequest(phone, subscription, payload.metaMessageId)
+            )
+
+            WhatsAppBotAction.CONFIRM_PAYMENT_PROOF -> sendTextReply(
+                phone,
+                conversationService.buildVoucherReceivedResponse(),
+                subscriptionId,
+                "[VOUCHER] "
+            )
+
+            WhatsAppBotAction.REMIND_PAYMENT_PROOF -> sendTextReply(
+                phone,
+                conversationService.buildPaymentProofReminder(),
+                subscriptionId,
+                "[COMPROBANTE_PENDIENTE] "
+            )
+
+            WhatsAppBotAction.ESCALATE_TO_ADVISOR -> sendTextReply(
+                phone,
+                conversationService.handleButtonReply(
+                    phone = phone,
                     buttonReplyId = payload.buttonReplyId,
                     subscription = subscription,
                     sourceText = payload.buttonReplyTitle
-                )
-                val prefix = when (payload.buttonReplyId) {
-                    WhatsAppConversationService.BUTTON_DEBT -> "[DEUDA] "
-                    WhatsAppConversationService.BUTTON_PAID -> "[YA_PAGUE] "
-                    WhatsAppConversationService.BUTTON_SUPPORT,
-                    WhatsAppConversationService.BUTTON_REPORT_FAULT -> "[AVERIA] "
-                    WhatsAppConversationService.BUTTON_INSTALLATION -> "[INSTALACION] "
-                    WhatsAppConversationService.BUTTON_ADVISOR -> "[ASESOR] "
-                    else -> "[AUTO] "
-                }
-                val reply = sendTextReply(payload.phone, text, subscription?.id, prefix)
-                if (reply.first &&
-                    (payload.buttonReplyId == WhatsAppConversationService.BUTTON_INSTALLATION ||
-                        payload.buttonReplyId == WhatsAppConversationService.BUTTON_ADVISOR)
-                ) {
-                    handoffService.pauseBotAndPassToAdvisor(
-                        payload.phone,
-                        if (payload.buttonReplyId == WhatsAppConversationService.BUTTON_INSTALLATION) {
-                            "installation_request"
-                        } else {
-                            "advisor_request"
-                        }
-                    )
-                    notifySecretaryInbound(
-                        phone = payload.phone,
-                        clientName = subscription?.getFullName(),
-                        force = true,
-                        advisorRequired = true
-                    )
-                }
-                reply
-            }
-            "image", "document" -> sendTextReply(
-                payload.phone,
-                conversationService.buildVoucherReceivedResponse(),
-                subscription?.id,
-                "[VOUCHER] "
+                ),
+                subscriptionId,
+                if (transition.handoffReason == "installation_request") "[INSTALACION] " else "[ASESOR] "
             )
-            else -> Pair(false, null)
+
+            WhatsAppBotAction.INVALID_SELECTION -> sendTextReply(
+                phone,
+                conversationService.invalidInteractiveSelectionText(),
+                subscriptionId,
+                "[MENU_INVALID] "
+            )
+        }
+    }
+
+    private fun applyTransitionEffects(
+        payload: WhatsAppInboundPayload,
+        subscription: com.dscorp.wispadmin.wispadmin.data.model.Subscription?,
+        transition: WhatsAppBotTransition,
+        issueCode: String?
+    ) {
+        if (transition.action == WhatsAppBotAction.CLOSE_SUPPORT_DIAGNOSTIC) {
+            createGuidedTicketFromDiagnostic(
+                phone = payload.phone,
+                subscription = subscription,
+                issueCode = issueCode,
+                buttonReplyId = payload.buttonReplyId
+            )
+        }
+
+        val handoffReason = transition.handoffReason
+        if (handoffReason != null) {
+            handoffService.pauseBotAndPassToAdvisor(payload.phone, handoffReason)
+            notifySecretaryInbound(
+                phone = payload.phone,
+                clientName = subscription?.getFullName(),
+                force = true,
+                advisorRequired = true
+            )
+            return
+        }
+
+        if (!transition.action.sendsInteractiveMenu) {
+            transition.nextStep?.let { chatStateService.setCurrentStep(payload.phone, it) }
         }
     }
 
@@ -332,23 +393,22 @@ class WhatsAppInboundMessageService(
         val intent = classification.intent
         val normalizedText = WhatsAppInboundIntentRouter.normalize(payload.messageText).orEmpty()
 
-        if (session.isNewOrExpired) {
-            val result = conversationService.sendMainMenu(
-                phone = payload.phone,
-                subscription = subscription,
-                includeGreeting = true
-            )
-            return sendAutoReplyResult(payload.phone, subscription?.id, result)
-        }
-
         if (normalizedText in setOf("menu", "menu inicio", "menu principal", "inicio")) {
-            val result = conversationService.sendMainMenuForNavigation(payload.phone, subscription)
-            return sendAutoReplyResult(payload.phone, subscription?.id, result)
+            return handleBotEvent(
+                payload = payload,
+                subscription = subscription,
+                currentStep = session.currentStep,
+                event = WhatsAppBotEvent.ButtonSelected(WhatsAppBotMenuCatalog.HOME)
+            )
         }
 
         if (normalizedText in setOf("volver", "menu anterior", "atras", "regresar")) {
-            val result = conversationService.sendBackNavigation(payload.phone, subscription)
-            return sendAutoReplyResult(payload.phone, subscription?.id, result)
+            return handleBotEvent(
+                payload = payload,
+                subscription = subscription,
+                currentStep = session.currentStep,
+                event = WhatsAppBotEvent.ButtonSelected(WhatsAppBotMenuCatalog.BACK)
+            )
         }
 
         if (intent == WhatsAppInboundIntent.HUMAN_ESCALATION || classification.escalate) {
@@ -380,13 +440,37 @@ class WhatsAppInboundMessageService(
             return reply
         }
 
-        if (chatStateService.hasPendingInteractiveMenu(payload.phone)) {
-            return sendTextReply(
-                payload.phone,
-                conversationService.invalidInteractiveSelectionText(),
-                subscription?.id,
-                "[MENU_INVALID] "
+        if (!session.isNewOrExpired && chatStateService.hasPendingInteractiveMenu(payload.phone)) {
+            val selectedButtonId = conversationService.resolvePendingTextSelection(
+                phone = payload.phone,
+                subscription = subscription,
+                messageText = payload.messageText
             )
+            if (selectedButtonId != null) {
+                return handleBotEvent(
+                    payload = payload.copy(
+                        messageType = "button_reply",
+                        buttonReplyId = selectedButtonId,
+                        buttonReplyTitle = payload.messageText
+                    ),
+                    subscription = subscription,
+                    currentStep = session.currentStep,
+                    event = WhatsAppBotEvent.ButtonSelected(selectedButtonId)
+                )
+            }
+            if (intent in setOf(
+                    WhatsAppInboundIntent.ACK,
+                    WhatsAppInboundIntent.GREETING,
+                    WhatsAppInboundIntent.UNKNOWN
+                )
+            ) {
+                return handleBotEvent(
+                    payload = payload,
+                    subscription = subscription,
+                    currentStep = session.currentStep,
+                    event = WhatsAppBotEvent.UnmatchedText
+                )
+            }
         }
 
         if (!withinHours && intent == WhatsAppInboundIntent.ACK) {
@@ -407,16 +491,22 @@ class WhatsAppInboundMessageService(
             )
 
             WhatsAppInboundIntent.DEBT_INQUIRY -> {
-                val result = conversationService.sendDebtResponseMenu(payload.phone, subscription)
+                val result = conversationService.sendDebtResponseMenu(
+                    payload.phone,
+                    subscription,
+                    payload.metaMessageId
+                )
                 sendAutoReplyResult(payload.phone, subscription?.id, result)
             }
 
-            WhatsAppInboundIntent.PAYMENT_CLAIM -> sendTextReply(
-                payload.phone,
-                conversationService.buildPaidResponse(subscription),
-                subscription?.id,
-                "[YA_PAGUE] "
-            )
+            WhatsAppInboundIntent.PAYMENT_CLAIM -> {
+                val result = conversationService.sendPaidStatusMenu(
+                    payload.phone,
+                    subscription,
+                    payload.metaMessageId
+                )
+                sendAutoReplyResult(payload.phone, subscription?.id, result)
+            }
 
             WhatsAppInboundIntent.HUMAN_ESCALATION -> sendTextReply(
                 payload.phone,
@@ -433,7 +523,8 @@ class WhatsAppInboundMessageService(
             WhatsAppInboundIntent.SUPPORT -> {
                 val result = conversationService.sendSupportEntryMenu(
                     phone = payload.phone,
-                    subscription = subscription
+                    subscription = subscription,
+                    contextMessageId = payload.metaMessageId
                 )
                 sendAutoReplyResult(payload.phone, subscription?.id, result)
             }
@@ -468,7 +559,8 @@ class WhatsAppInboundMessageService(
                 val result = conversationService.sendMainMenu(
                     phone = payload.phone,
                     subscription = subscription,
-                    includeGreeting = session.isNewOrExpired
+                    includeGreeting = session.isNewOrExpired,
+                    contextMessageId = payload.metaMessageId
                 )
                 sendAutoReplyResult(payload.phone, subscription?.id, result)
             }
@@ -477,7 +569,8 @@ class WhatsAppInboundMessageService(
                 val result = conversationService.sendMainMenu(
                     phone = payload.phone,
                     subscription = subscription,
-                    includeGreeting = session.isNewOrExpired
+                    includeGreeting = session.isNewOrExpired,
+                    contextMessageId = payload.metaMessageId
                 )
                 sendAutoReplyResult(payload.phone, subscription?.id, result)
             }

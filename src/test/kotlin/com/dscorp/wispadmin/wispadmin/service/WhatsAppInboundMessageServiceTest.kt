@@ -103,10 +103,17 @@ class WhatsAppInboundMessageServiceTest {
             currentStep = WhatsAppConversationStep.MAIN_MENU
         )
         every { chatStateService.hasPendingInteractiveMenu(any()) } returns false
+        every { conversationService.resolvePendingTextSelection(any(), any(), any()) } returns null
         every { chatStateService.getUnknownRetryCount(any()) } returns 0
         every { chatStateService.incrementUnknownRetryCount(any()) } returns 1
         every { chatStateService.resetUnknownRetryCount(any()) } returns Unit
         every { llmClient.classifyIntent(any()) } returns null
+        every { whatsAppService.markMessageAsReadWithTyping(any()) } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = """{"success":true}""",
+            recipient = null,
+            senderPhoneNumberId = "123"
+        )
         every { handoffService.pauseBotAndPassToAdvisor(any(), any()) } returns
             WhatsAppHandoffResult(botPaused = true, metaTransferred = false)
         every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } returns emptyList()
@@ -145,7 +152,7 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.isSupportEntryButton("soporte") } returns false
         every { conversationService.isSupportDiagnosticButton("soporte") } returns false
         every {
-            conversationService.sendSupportEntryMenu(payload.phone, null)
+            conversationService.sendSupportEntryMenu(payload.phone, null, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[SUPPORT_MENU:SOLO_INTERNET] Selecciona el problema",
@@ -234,7 +241,7 @@ class WhatsAppInboundMessageServiceTest {
             currentStep = WhatsAppConversationStep.MAIN_MENU
         )
         every {
-            conversationService.sendMainMenu(payload.phone, null, true)
+            conversationService.sendMainMenu(payload.phone, null, true, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[MAIN_MENU] Bienvenida",
@@ -245,7 +252,10 @@ class WhatsAppInboundMessageServiceTest {
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 1) { conversationService.sendMainMenu(payload.phone, null, true) }
+        verify(exactly = 1) { whatsAppService.markMessageAsReadWithTyping(payload.metaMessageId) }
+        verify(exactly = 1) {
+            conversationService.sendMainMenu(payload.phone, null, true, payload.metaMessageId)
+        }
         assertEquals("AUTO_REPLY", logSlot.captured.messageType)
         assertEquals("wamid.main-menu", logSlot.captured.metaMessageId)
     }
@@ -272,7 +282,7 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
         every { conversationService.isInboundBurst(payload.phone) } returns false
         every {
-            conversationService.sendMainMenu(payload.phone, null, false)
+            conversationService.sendMainMenu(payload.phone, null, false, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[MAIN_MENU] Selecciona una opcion para continuar",
@@ -283,7 +293,9 @@ class WhatsAppInboundMessageServiceTest {
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 1) { conversationService.sendMainMenu(payload.phone, null, false) }
+        verify(exactly = 1) {
+            conversationService.sendMainMenu(payload.phone, null, false, payload.metaMessageId)
+        }
         assertEquals("wamid.main-menu-active", logSlot.captured.metaMessageId)
     }
 
@@ -317,7 +329,7 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.isSupportEntryButton(WhatsAppConversationService.BUTTON_DEBT) } returns false
         every { conversationService.isSupportDiagnosticButton(WhatsAppConversationService.BUTTON_DEBT) } returns false
         every {
-            conversationService.sendDebtResponseMenu(payload.phone, subscription)
+            conversationService.sendDebtResponseMenu(payload.phone, subscription, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[DEUDA] Estimado(a) Ana Lopez, tu saldo pendiente al dia de hoy es S/ 50.00.",
@@ -333,11 +345,11 @@ class WhatsAppInboundMessageServiceTest {
     }
 
     @Test
-    fun `text manual returns guardrail when interactive menu is pending`() {
+    fun `unrelated text returns guardrail when interactive menu is pending`() {
         val payload = WhatsAppInboundPayload(
             metaMessageId = "wamid.in-4",
             phone = "51902354183",
-            messageText = "Buenas tardes tengo internet lento",
+            messageText = "No entiendo estas opciones",
             messageType = "text",
             buttonReplyId = null,
             buttonReplyTitle = null,
@@ -370,10 +382,293 @@ class WhatsAppInboundMessageServiceTest {
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 0) { conversationService.sendSupportEntryMenu(any(), any()) }
+        verify(exactly = 0) { conversationService.sendSupportEntryMenu(any(), any(), any()) }
         verify(exactly = 1) { conversationService.invalidInteractiveSelectionText() }
         assertTrue(logSlot.captured.message!!.contains("[MENU_INVALID]"))
         assertEquals("wamid.guardrail", logSlot.captured.metaMessageId)
+    }
+
+    @Test
+    fun `new session honors technical intent instead of forcing main menu`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-new-tech",
+            phone = "51965754000",
+            messageText = "Sin internet",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 61) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = true,
+            lastInteractionAt = null,
+            currentStep = WhatsAppConversationStep.MAIN_MENU
+        )
+        every {
+            conversationService.sendSupportEntryMenu(payload.phone, null, payload.metaMessageId)
+        } returns WhatsAppConversationService.AutoReplyResult(
+            success = true,
+            messageText = "[SUPPORT_MENU:SOLO_INTERNET] Selecciona el problema",
+            metaMessageId = "wamid.support-new"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) {
+            conversationService.sendSupportEntryMenu(payload.phone, null, payload.metaMessageId)
+        }
+        verify(exactly = 0) { conversationService.sendMainMenu(any(), any(), any<Boolean>(), any()) }
+    }
+
+    @Test
+    fun `numeric text selects pending support option`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-support-number",
+            phone = "51965754000",
+            messageText = "1",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 62) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns true
+        every {
+            conversationService.resolvePendingTextSelection(payload.phone, null, payload.messageText)
+        } returns "support_issue_no_internet"
+        every { conversationService.isSupportEntryButton("support_issue_no_internet") } returns true
+        every {
+            conversationService.sendSupportDiagnosticQuestion(
+                payload.phone,
+                null,
+                "support_issue_no_internet",
+                payload.metaMessageId
+            )
+        } returns WhatsAppConversationService.AutoReplyResult(
+            success = true,
+            messageText = "[SUPPORT_DIAG:NO_INTERNET] Revisa LOS o PON",
+            metaMessageId = "wamid.support-diag"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) {
+            conversationService.sendSupportDiagnosticQuestion(
+                payload.phone,
+                null,
+                "support_issue_no_internet",
+                payload.metaMessageId
+            )
+        }
+    }
+
+    @Test
+    fun `image and pdf remain global payment proofs`() {
+        val image = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-voucher-image",
+            phone = "51965754000",
+            messageText = null,
+            messageType = "image",
+            mediaId = "media-image",
+            mediaMimeType = "image/jpeg"
+        )
+        val pdf = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-voucher-pdf",
+            phone = "51965754000",
+            messageText = "voucher.pdf",
+            messageType = "document",
+            mediaId = "media-pdf",
+            mediaMimeType = "application/pdf"
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { mediaDownloadService.downloadAndStore("media-image", "image/jpeg") } returns "/tmp/image.jpg"
+        every { mediaDownloadService.downloadAndStore("media-pdf", "application/pdf") } returns "/tmp/voucher.pdf"
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = if (msg.messageType == "image") 63 else 64) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(image.phone) } returns null
+        every { chatStateService.beginInboundInteraction(image.phone) } returns WhatsAppInboundSession(
+            botPaused = true,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR
+        )
+        every { conversationService.hasRecentOperatorReply(image.phone) } returns false
+        every { conversationService.buildVoucherReceivedResponse() } returns "Comprobante recibido"
+        every {
+            whatsAppService.sendTextMessage(image.phone, "Comprobante recibido")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.voucher-ack",
+            recipient = image.phone,
+            senderPhoneNumberId = "123"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(image)
+        service.processInboundMessage(pdf)
+
+        verify(exactly = 2) { conversationService.buildVoucherReceivedResponse() }
+        verify(exactly = 2) { whatsAppService.sendTextMessage(image.phone, "Comprobante recibido") }
+    }
+
+    @Test
+    fun `payment proof button asks for image or pdf and waits`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-proof",
+            phone = "51965754000",
+            messageText = null,
+            messageType = "button_reply",
+            buttonReplyId = WhatsAppConversationService.BUTTON_PAYMENT_PROOF,
+            buttonReplyTitle = "Registrar pago",
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 71) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every {
+            conversationService.sendPaymentProofRequest(payload.phone, null, payload.metaMessageId)
+        } returns WhatsAppConversationService.AutoReplyResult(
+            success = true,
+            messageText = "[COMPROBANTE] Envíanos tu comprobante como foto o PDF",
+            metaMessageId = "wamid.proof-ask"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) {
+            conversationService.sendPaymentProofRequest(payload.phone, null, payload.metaMessageId)
+        }
+        verify(exactly = 0) { handoffService.pauseBotAndPassToAdvisor(any(), any()) }
+        assertTrue(logSlot.captured.message!!.contains("[COMPROBANTE]"))
+    }
+
+    @Test
+    fun `proof received while waiting confirms and returns to main menu`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-proof-pdf",
+            phone = "51965754000",
+            messageText = "voucher.pdf",
+            messageType = "document",
+            mediaId = "media-proof",
+            mediaMimeType = "application/pdf"
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { mediaDownloadService.downloadAndStore("media-proof", "application/pdf") } returns "/tmp/p.pdf"
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 72) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+        )
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.buildVoucherReceivedResponse() } returns "Comprobante recibido"
+        every { chatStateService.setCurrentStep(payload.phone, any()) } returns mockk(relaxed = true)
+        every {
+            whatsAppService.sendTextMessage(payload.phone, "Comprobante recibido")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.proof-ack",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { whatsAppService.sendTextMessage(payload.phone, "Comprobante recibido") }
+        verify(exactly = 1) {
+            chatStateService.setCurrentStep(payload.phone, WhatsAppConversationStep.MAIN_MENU)
+        }
+    }
+
+    @Test
+    fun `text while waiting for proof reminds instead of generic guardrail`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-proof-text",
+            phone = "51965754000",
+            messageText = "ahi va",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 73) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+        )
+        every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns true
+        every {
+            conversationService.resolvePendingTextSelection(payload.phone, null, payload.messageText)
+        } returns null
+        every { conversationService.buildPaymentProofReminder() } returns "Seguimos esperando tu comprobante"
+        every {
+            whatsAppService.sendTextMessage(payload.phone, "Seguimos esperando tu comprobante")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.proof-remind",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { conversationService.buildPaymentProofReminder() }
+        verify(exactly = 0) { conversationService.invalidInteractiveSelectionText() }
+        assertTrue(logSlot.captured.message!!.contains("[COMPROBANTE_PENDIENTE]"))
     }
 
     @Test
@@ -399,7 +694,7 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.isInboundBurst(payload.phone) } returns true
         every { conversationService.hasPendingInteractiveMenu(payload.phone) } returns false
         every {
-            conversationService.sendSupportEntryMenu(payload.phone, null)
+            conversationService.sendSupportEntryMenu(payload.phone, null, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[SUPPORT_MENU:SOLO_INTERNET] Selecciona el problema",
@@ -410,7 +705,9 @@ class WhatsAppInboundMessageServiceTest {
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 1) { conversationService.sendSupportEntryMenu(payload.phone, null) }
+        verify(exactly = 1) {
+            conversationService.sendSupportEntryMenu(payload.phone, null, payload.metaMessageId)
+        }
         assertEquals("wamid.burst-support", logSlot.captured.metaMessageId)
     }
 
@@ -517,7 +814,7 @@ class WhatsAppInboundMessageServiceTest {
             handoffService.resumeBotAndTakeControl(payload.phone, "auto_resume_advisor_wait")
         } returns WhatsAppHandoffResult(botPaused = false, metaTransferred = false)
         every {
-            conversationService.sendMainMenu(payload.phone, null, true)
+            conversationService.sendMainMenu(payload.phone, null, true, payload.metaMessageId)
         } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
             messageText = "[MAIN_MENU] Bienvenida",
@@ -530,6 +827,8 @@ class WhatsAppInboundMessageServiceTest {
         verify(exactly = 1) {
             handoffService.resumeBotAndTakeControl(payload.phone, "auto_resume_advisor_wait")
         }
-        verify(exactly = 1) { conversationService.sendMainMenu(payload.phone, null, true) }
+        verify(exactly = 1) {
+            conversationService.sendMainMenu(payload.phone, null, true, payload.metaMessageId)
+        }
     }
 }

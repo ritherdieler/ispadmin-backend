@@ -43,11 +43,9 @@ class WhatsAppConversationService(
     private val log = LoggerFactory.getLogger(WhatsAppConversationService::class.java)
 
     fun buildAutoReplyButtons(subscription: Subscription?): List<WhatsAppService.InteractiveButtonOption> {
-        return listOf(
-            WhatsAppService.InteractiveButtonOption(BUTTON_REPORT_FAULT, "Reportar averia"),
-            WhatsAppService.InteractiveButtonOption(BUTTON_DEBT, "Ver deuda"),
-            WhatsAppService.InteractiveButtonOption(BUTTON_ADVISOR, "Asesor")
-        )
+        return WhatsAppBotMenuCatalog.mainMenu.map {
+            WhatsAppService.InteractiveButtonOption(it.id, it.title)
+        }
     }
 
     fun buildGreetingBody(subscription: Subscription?): String {
@@ -62,28 +60,33 @@ class WhatsAppConversationService(
         return sendMainMenu(phone, subscription)
     }
 
-    fun sendMainMenu(phone: String, subscription: Subscription?): AutoReplyResult {
-        return sendMainMenuInternal(phone, includeGreeting = false)
+    fun sendMainMenu(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
+        return sendMainMenuInternal(phone, includeGreeting = false, contextMessageId = contextMessageId)
     }
 
     fun sendMainMenu(
         phone: String,
         subscription: Subscription?,
-        includeGreeting: Boolean
+        includeGreeting: Boolean,
+        contextMessageId: String? = null
     ): AutoReplyResult {
-        return sendMainMenuInternal(phone, includeGreeting = includeGreeting)
+        return sendMainMenuInternal(
+            phone = phone,
+            includeGreeting = includeGreeting,
+            contextMessageId = contextMessageId
+        )
     }
 
-    fun sendMainMenuForNavigation(phone: String, subscription: Subscription?): AutoReplyResult {
-        return sendMainMenuInternal(phone, includeGreeting = false)
-    }
-
-    fun sendBackNavigation(phone: String, subscription: Subscription?): AutoReplyResult {
-        return if (chatStateService.currentStep(phone) == WhatsAppConversationStep.SUPPORT_DIAG) {
-            sendSupportEntryMenu(phone, subscription)
-        } else {
-            sendMainMenuForNavigation(phone, subscription)
-        }
+    fun sendMainMenuForNavigation(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
+        return sendMainMenuInternal(phone, includeGreeting = false, contextMessageId = contextMessageId)
     }
 
     fun handleButtonReply(
@@ -102,18 +105,14 @@ class WhatsAppConversationService(
             )
             BUTTON_DEBT -> buildDebtResponse(subscription)
             BUTTON_PAID -> buildPaidResponse(subscription)
+            BUTTON_PAYMENT_PROOF -> buildPaymentProofRequest(subscription)
             BUTTON_INSTALLATION -> buildInstallationHandoverResponse()
             BUTTON_ADVISOR -> handleHumanEscalation(
                 subscription = subscription,
                 phone = phone,
                 messageText = sourceText,
             )
-            else -> handleSupportOrTechnicalIssue(
-                subscription = subscription,
-                phone = phone,
-                messageText = sourceText,
-                fromButton = true
-            )
+            else -> invalidInteractiveSelectionText()
         }
     }
 
@@ -123,6 +122,29 @@ class WhatsAppConversationService(
 
     fun hasPendingInteractiveMenu(phone: String): Boolean {
         return chatStateService.hasPendingInteractiveMenu(phone)
+    }
+
+    fun resolvePendingTextSelection(
+        phone: String,
+        subscription: Subscription?,
+        messageText: String?
+    ): String? {
+        val options = when (chatStateService.currentStep(phone)) {
+            WhatsAppConversationStep.MAIN_MENU -> WhatsAppBotMenuCatalog.mainMenu
+            WhatsAppConversationStep.SUPPORT_MENU -> supportEntryButtons(supportProfile(subscription)).map {
+                WhatsAppInteractiveOption(it.id, it.title)
+            }
+            WhatsAppConversationStep.SUPPORT_DIAG -> {
+                val issue = SupportIssue.byCode(currentSupportIssueCode(phone)) ?: return null
+                diagnosticQuestion(subscription, issue).buttons.map {
+                    WhatsAppInteractiveOption(it.id, it.title)
+                }
+            }
+            WhatsAppConversationStep.DEBT_VIEW -> WhatsAppBotMenuCatalog.debtMenu
+            WhatsAppConversationStep.AWAITING_PAYMENT_PROOF -> WhatsAppBotMenuCatalog.paymentProofMenu
+            else -> return null
+        }
+        return WhatsAppBotTextSelectionResolver.resolve(messageText, options)
     }
 
     fun handleSupportDiagnosticReply(
@@ -158,22 +180,29 @@ class WhatsAppConversationService(
         return buildSupportEntryMenu(subscription)
     }
 
-    fun sendSupportEntryMenu(phone: String, subscription: Subscription?): AutoReplyResult {
+    fun sendSupportEntryMenu(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
         val profile = supportProfile(subscription)
         val bodyText = supportEntryBody(profile)
         return sendInteractiveOptions(
             phone = phone,
             bodyText = bodyText,
-            options = withGlobalNavigation(supportEntryButtons(profile)),
+            options = supportEntryButtons(profile),
             marker = "[SUPPORT_MENU:${profile.code}] ",
-            currentStep = WhatsAppConversationStep.SUPPORT_MENU
+            currentStep = WhatsAppConversationStep.SUPPORT_MENU,
+            footerText = WhatsAppBotMenuCatalog.GLOBAL_COMMANDS_FOOTER,
+            contextMessageId = contextMessageId
         )
     }
 
     fun sendSupportDiagnosticQuestion(
         phone: String,
         subscription: Subscription?,
-        buttonReplyId: String?
+        buttonReplyId: String?,
+        contextMessageId: String? = null
     ): AutoReplyResult {
         val profile = supportProfile(subscription)
         val issue = supportIssueForButton(profile, buttonReplyId)
@@ -182,10 +211,12 @@ class WhatsAppConversationService(
         return sendInteractiveOptions(
             phone = phone,
             bodyText = question.text,
-            options = withGlobalNavigation(question.buttons),
+            options = question.buttons,
             marker = "[SUPPORT_DIAG:${issue.code}] ",
             currentStep = WhatsAppConversationStep.SUPPORT_DIAG,
-            stepMetadata = "issue=${issue.code}"
+            stepMetadata = "issue=${issue.code}",
+            footerText = WhatsAppBotMenuCatalog.GLOBAL_COMMANDS_FOOTER,
+            contextMessageId = contextMessageId
         )
     }
 
@@ -213,29 +244,85 @@ class WhatsAppConversationService(
     }
 
     fun isSupportEntryButton(buttonReplyId: String?): Boolean {
-        return buttonReplyId.orEmpty().startsWith(ISSUE_BUTTON_PREFIX)
+        return WhatsAppBotMenuCatalog.isSupportIssue(buttonReplyId)
     }
 
     fun isSupportDiagnosticButton(buttonReplyId: String?): Boolean {
-        return buttonReplyId.orEmpty().startsWith(DIAG_BUTTON_PREFIX)
+        return WhatsAppBotMenuCatalog.isSupportDiagnostic(buttonReplyId)
     }
 
     fun invalidInteractiveSelectionText(): String {
         return "Para continuar, toca una opción del menú en pantalla 👇"
     }
 
-    fun sendDebtResponseMenu(phone: String, subscription: Subscription?): AutoReplyResult {
+    fun sendDebtResponseMenu(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
         val bodyText = buildDebtResponse(subscription)
         return sendInteractiveOptions(
             phone = phone,
             bodyText = bodyText,
-            options = listOf(
-                WhatsAppService.InteractiveButtonOption(BUTTON_HOME, "🏠 Menú inicio"),
-                WhatsAppService.InteractiveButtonOption(BUTTON_ADVISOR, "🙋 Asesor")
-            ),
+            options = WhatsAppBotMenuCatalog.debtMenu.map {
+                WhatsAppService.InteractiveButtonOption(it.id, it.title)
+            },
             marker = "[DEUDA] ",
-            currentStep = WhatsAppConversationStep.DEBT_VIEW
+            currentStep = WhatsAppConversationStep.DEBT_VIEW,
+            footerText = WhatsAppBotMenuCatalog.PAYMENT_PROOF_FOOTER,
+            contextMessageId = contextMessageId
         )
+    }
+
+    fun sendPaymentProofRequest(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
+        return sendInteractiveOptions(
+            phone = phone,
+            bodyText = buildPaymentProofRequest(subscription),
+            options = WhatsAppBotMenuCatalog.paymentProofMenu.map {
+                WhatsAppService.InteractiveButtonOption(it.id, it.title)
+            },
+            marker = "[COMPROBANTE] ",
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF,
+            footerText = WhatsAppBotMenuCatalog.PAYMENT_PROOF_FOOTER,
+            contextMessageId = contextMessageId
+        )
+    }
+
+    fun sendPaidStatusMenu(
+        phone: String,
+        subscription: Subscription?,
+        contextMessageId: String? = null
+    ): AutoReplyResult {
+        return sendInteractiveOptions(
+            phone = phone,
+            bodyText = buildPaidResponse(subscription),
+            options = WhatsAppBotMenuCatalog.paymentProofMenu.map {
+                WhatsAppService.InteractiveButtonOption(it.id, it.title)
+            },
+            marker = "[YA_PAGUE] ",
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF,
+            footerText = WhatsAppBotMenuCatalog.PAYMENT_PROOF_FOOTER,
+            contextMessageId = contextMessageId
+        )
+    }
+
+    fun buildPaymentProofRequest(subscription: Subscription?): String {
+        val cfg = whatsAppProperties.autoReply
+        return """
+            |📎 Para registrar tu pago, envíanos tu comprobante como *foto* o *PDF* en este mismo chat.
+            |
+            |Recuerda que puedes pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
+            |Al recibirlo lo validaremos y actualizaremos tu cuenta.
+        """.trimMargin()
+    }
+
+    fun buildPaymentProofReminder(): String {
+        return "Seguimos esperando tu comprobante 📎 Envíalo como foto o PDF en este chat, " +
+            "o toca *Menú principal* si necesitas otra cosa."
     }
 
     fun buildDebtResponse(subscription: Subscription?): String {
@@ -759,28 +846,21 @@ class WhatsAppConversationService(
         }
     }
 
-    private fun sendMainMenuInternal(phone: String, includeGreeting: Boolean): AutoReplyResult {
-        val bodyText = buildMainMenuBody(includeGreeting)
-        return try {
-            val result = whatsAppService.sendInteractiveListMessage(
-                phoneNumber = phone,
-                bodyText = bodyText,
-                buttonText = "Ver opciones",
-                sectionTitle = "Menú principal",
-                rows = buildMainMenuRows()
-            )
-            if (result.success) {
-                chatStateService.setCurrentStep(phone, WhatsAppConversationStep.MAIN_MENU)
-            }
-            AutoReplyResult(
-                success = result.success,
-                messageText = "[MAIN_MENU] $bodyText",
-                metaMessageId = result.metaMessageId
-            )
-        } catch (e: Exception) {
-            log.warn("Conversation: no se pudo enviar menu principal interactivo: ${e.message}")
-            AutoReplyResult(success = false, messageText = bodyText, metaMessageId = null)
-        }
+    private fun sendMainMenuInternal(
+        phone: String,
+        includeGreeting: Boolean,
+        contextMessageId: String?
+    ): AutoReplyResult {
+        return sendInteractiveOptions(
+            phone = phone,
+            bodyText = buildMainMenuBody(includeGreeting),
+            options = buildAutoReplyButtons(null),
+            marker = "[MAIN_MENU] ",
+            currentStep = WhatsAppConversationStep.MAIN_MENU,
+            footerText = WhatsAppBotMenuCatalog.GLOBAL_COMMANDS_FOOTER,
+            contextMessageId = contextMessageId,
+            descriptions = WhatsAppBotMenuCatalog.mainMenuDescriptions
+        )
     }
 
     private fun buildAdvisorClosureMessage(): String {
@@ -819,14 +899,19 @@ class WhatsAppConversationService(
         options: List<WhatsAppService.InteractiveButtonOption>,
         marker: String,
         currentStep: WhatsAppConversationStep? = null,
-        stepMetadata: String? = null
+        stepMetadata: String? = null,
+        footerText: String? = null,
+        contextMessageId: String? = null,
+        descriptions: Map<String, String> = emptyMap()
     ): AutoReplyResult {
         return try {
             val result = if (options.size <= 3) {
                 whatsAppService.sendInteractiveReplyButtons(
                     phoneNumber = phone,
                     bodyText = bodyText,
-                    buttons = options
+                    buttons = options,
+                    footerText = footerText,
+                    contextMessageId = contextMessageId
                 )
             } else {
                 whatsAppService.sendInteractiveListMessage(
@@ -837,9 +922,12 @@ class WhatsAppConversationService(
                     rows = options.map {
                         WhatsAppService.InteractiveListOption(
                             id = it.id,
-                            title = it.title
+                            title = it.title,
+                            description = descriptions[it.id]
                         )
-                    }
+                    },
+                    footerText = footerText,
+                    contextMessageId = contextMessageId
                 )
             }
             if (result.success && currentStep != null) {
@@ -854,31 +942,6 @@ class WhatsAppConversationService(
             log.warn("Conversation: no se pudo enviar opciones interactivas: ${e.message}")
             AutoReplyResult(success = false, messageText = marker + bodyText, metaMessageId = null)
         }
-    }
-
-    private fun buildMainMenuRows(): List<WhatsAppService.InteractiveListOption> {
-        return listOf(
-            WhatsAppService.InteractiveListOption(
-                id = BUTTON_REPORT_FAULT,
-                title = "🛠️ Avería",
-                description = "Internet, TV Cable o ambos servicios"
-            ),
-            WhatsAppService.InteractiveListOption(
-                id = BUTTON_DEBT,
-                title = "💳 Deuda",
-                description = "Saldo pendiente y medios de pago"
-            ),
-            WhatsAppService.InteractiveListOption(
-                id = BUTTON_INSTALLATION,
-                title = "📦 Instalación",
-                description = "Nueva instalación o traslado"
-            ),
-            WhatsAppService.InteractiveListOption(
-                id = BUTTON_ADVISOR,
-                title = "🙋 Asesor",
-                description = "Transferencia a atención humana"
-            )
-        )
     }
 
     private fun buildSupportEntryMenu(subscription: Subscription?): String {
@@ -1197,19 +1260,20 @@ class WhatsAppConversationService(
     )
 
     companion object {
-        const val BUTTON_DEBT = "ver_deuda"
-        const val BUTTON_PAID = "ya_pague"
-        const val BUTTON_SUPPORT = "soporte"
-        const val BUTTON_REPORT_FAULT = "reportar_averia"
-        const val BUTTON_INSTALLATION = "solicitud_instalacion"
-        const val BUTTON_ADVISOR = "hablar_asesor"
-        const val BUTTON_BACK = "nav_back"
-        const val BUTTON_HOME = "nav_home"
+        const val BUTTON_DEBT = WhatsAppBotMenuCatalog.DEBT
+        const val BUTTON_PAID = WhatsAppBotMenuCatalog.PAID
+        const val BUTTON_PAYMENT_PROOF = WhatsAppBotMenuCatalog.PAYMENT_PROOF
+        const val BUTTON_SUPPORT = WhatsAppBotMenuCatalog.SUPPORT_LEGACY
+        const val BUTTON_REPORT_FAULT = WhatsAppBotMenuCatalog.REPORT_FAULT
+        const val BUTTON_INSTALLATION = WhatsAppBotMenuCatalog.INSTALLATION_LEGACY
+        const val BUTTON_ADVISOR = WhatsAppBotMenuCatalog.ADVISOR
+        const val BUTTON_BACK = WhatsAppBotMenuCatalog.BACK
+        const val BUTTON_HOME = WhatsAppBotMenuCatalog.HOME
         const val MESSAGE_TYPE_AUTO_REPLY = "AUTO_REPLY"
         const val MESSAGE_TYPE_OPERATOR_REPLY = "OPERATOR_REPLY"
         const val MESSAGE_TYPE_OPERATOR_MEDIA = "OPERATOR_MEDIA"
-        private const val ISSUE_BUTTON_PREFIX = "support_issue_"
-        private const val DIAG_BUTTON_PREFIX = "support_diag_"
+        private const val ISSUE_BUTTON_PREFIX = WhatsAppBotMenuCatalog.SUPPORT_ISSUE_PREFIX
+        private const val DIAG_BUTTON_PREFIX = WhatsAppBotMenuCatalog.SUPPORT_DIAG_PREFIX
         private val ISSUE_META_REGEX = Regex("""(?:^|;)issue=([A-Z0-9_]+)""")
     }
 }
