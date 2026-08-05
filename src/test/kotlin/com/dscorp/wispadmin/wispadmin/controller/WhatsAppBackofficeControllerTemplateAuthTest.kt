@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.mock.web.MockHttpServletRequest
 
 class WhatsAppBackofficeControllerTemplateAuthTest {
@@ -99,13 +100,15 @@ class WhatsAppBackofficeControllerTemplateAuthTest {
 
     @Test
     fun `sendManualTemplateMessage allowed for ADMIN`() {
-        every { templateMessageSender.sendPaymentReminderTemplate(any()) } returns WhatsAppTestSendResponseDto(
-            success = true,
-            message = "ok",
-            recipient = "51999999999",
-            senderPhoneNumberId = "1234",
-            metaResponse = "{}",
-            deliveryHint = ""
+        every { templateMessageSender.sendPaymentReminderTemplate(any()) } returns ResponseEntity.ok(
+            WhatsAppTestSendResponseDto(
+                success = true,
+                message = "ok",
+                recipient = "51999999999",
+                senderPhoneNumberId = "1234",
+                metaResponse = "{}",
+                deliveryHint = ""
+            )
         )
         val response = controller.sendManualTemplateMessage(
             WhatsAppTemplateTestMessageRequest(
