@@ -41,6 +41,8 @@ class WhatsAppConversationQueryServiceTest {
         templateSyncService = templateSyncService,
         whatsAppProperties = whatsAppProperties
     )
+    private val userRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.UserRepository>()
+    private val operatorDisplayNameResolver = WhatsAppOperatorDisplayNameResolver(userRepository)
 
     private lateinit var service: WhatsAppConversationQueryService
 
@@ -54,10 +56,12 @@ class WhatsAppConversationQueryServiceTest {
             paymentRepository = paymentRepository,
             crmConversationRepository = crmConversationRepository,
             crmTicketLinkService = crmTicketLinkService,
-            templateDisplayService = templateDisplayService
+            templateDisplayService = templateDisplayService,
+            operatorDisplayNameResolver = operatorDisplayNameResolver,
         )
         every { crmTicketLinkService.listTicketsForPhone(any()) } returns emptyList()
         every { syncedTemplateRepository.findByName(any()) } returns null
+        every { userRepository.findByUsernameLowerIn(any()) } returns emptyList()
     }
 
     private fun stubEmptyLocalPhoneVariant(internationalPhone: String) {
@@ -316,6 +320,41 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals("PAYMENT_REMINDER", thread[0].templateCode)
         assertEquals("SENT", thread[0].deliveryStatus)
         assertEquals("Recordatorio", thread[0].body)
+    }
+
+    @Test
+    fun `getThread enriches operatorDisplayName from user profile`() {
+        val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppMessageLog(
+                id = 9,
+                phone = phone,
+                message = "Recordatorio",
+                messageType = "PAYMENT_REMINDER",
+                status = "SENT",
+                operatorUsername = "Edwin10",
+                createdAt = LocalDateTime.of(2026, 7, 25, 9, 0),
+            ),
+        )
+        every { userRepository.findByUsernameLowerIn(listOf("edwin10")) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.User(
+                name = "Edwin",
+                lastName = "Escobal",
+                username = "Edwin10",
+            ),
+        )
+
+        val thread = service.getThread(phone).messages
+
+        assertEquals(1, thread.size)
+        assertEquals("Edwin10", thread[0].operatorUsername)
+        assertEquals("Edwin Escobal", thread[0].operatorDisplayName)
     }
 
     @Test

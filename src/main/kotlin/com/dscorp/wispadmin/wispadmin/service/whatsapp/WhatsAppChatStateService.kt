@@ -14,7 +14,8 @@ data class WhatsAppInboundSession(
     val botPaused: Boolean,
     val isNewOrExpired: Boolean,
     val lastInteractionAt: LocalDateTime?,
-    val currentStep: WhatsAppConversationStep
+    val currentStep: WhatsAppConversationStep,
+    val autoResumedFromAdvisorWait: Boolean = false
 )
 
 @Service
@@ -34,11 +35,32 @@ class WhatsAppChatStateService(
         val current = chatStateRepository.findByPhone(normalized)
 
         if (current != null && isPaused(current)) {
+            if (!isAdvisorWaitExpired(current, now)) {
+                return WhatsAppInboundSession(
+                    botPaused = true,
+                    isNewOrExpired = false,
+                    lastInteractionAt = current.lastInteractionAt,
+                    currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
+                    autoResumedFromAdvisorWait = false
+                )
+            }
+
+            val previousInteraction = current.lastInteractionAt ?: current.updatedAt
+            val resumed = current.copy(
+                status = WhatsAppChatStatus.BOT_ACTIVE,
+                currentStep = WhatsAppConversationStep.MAIN_MENU,
+                botPaused = false,
+                metadata = mergeMetadata(current.metadata, "auto_resume_advisor_wait"),
+                lastInteractionAt = now,
+                updatedAt = now
+            )
+            chatStateRepository.save(resumed)
             return WhatsAppInboundSession(
-                botPaused = true,
-                isNewOrExpired = false,
-                lastInteractionAt = current.lastInteractionAt,
-                currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR
+                botPaused = false,
+                isNewOrExpired = true,
+                lastInteractionAt = previousInteraction,
+                currentStep = WhatsAppConversationStep.MAIN_MENU,
+                autoResumedFromAdvisorWait = true
             )
         }
 
@@ -244,6 +266,24 @@ class WhatsAppChatStateService(
         return state.botPaused ||
             state.status == WhatsAppChatStatus.ESPERANDO_ASESOR ||
             state.currentStep == WhatsAppConversationStep.ESPERANDO_ASESOR
+    }
+
+    private fun isAdvisorWaitExpired(state: WhatsAppChatState, now: LocalDateTime): Boolean {
+        val waitTimeoutMinutes = whatsAppProperties.autoReply.advisorWaitTimeoutMinutes.coerceAtLeast(1).toLong()
+        val pausedAt = state.updatedAt
+        return pausedAt.isBefore(now.minusMinutes(waitTimeoutMinutes))
+    }
+
+    private fun mergeMetadata(current: String?, marker: String): String {
+        val cleaned = current
+            ?.replace(Regex(""";?auto_resume_advisor_wait"""), "")
+            ?.trim()
+            ?.trim(';')
+            .orEmpty()
+        return listOfNotNull(
+            cleaned.takeIf { it.isNotBlank() },
+            marker
+        ).joinToString(";").take(500)
     }
 
     private fun normalizePhone(phone: String): String = phone.filter { it.isDigit() }

@@ -47,6 +47,8 @@ class WhatsAppConversationServiceTest {
     private val whatsAppProperties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties()
     }
+    private val userRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.UserRepository>(relaxed = true)
+    private val operatorDisplayNameResolver = WhatsAppOperatorDisplayNameResolver(userRepository)
 
     private lateinit var service: WhatsAppConversationService
 
@@ -65,7 +67,8 @@ class WhatsAppConversationServiceTest {
             crmConversationService = crmConversationService,
             mediaDownloadService = mediaDownloadService,
             templateDeliveryService = templateDeliveryService,
-            templateDisplayService = templateDisplayService
+            templateDisplayService = templateDisplayService,
+            operatorDisplayNameResolver = operatorDisplayNameResolver,
         )
         every { templateDisplayService.displayStoredMessage(any(), any()) } answers { firstArg() }
         every { chatStateService.currentStep(any()) } returns null

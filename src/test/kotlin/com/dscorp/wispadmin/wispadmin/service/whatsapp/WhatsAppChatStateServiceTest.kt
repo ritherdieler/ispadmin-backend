@@ -23,6 +23,7 @@ class WhatsAppChatStateServiceTest {
     private val properties = WhatsAppProperties().apply {
         autoReply = WhatsAppAutoReplyProperties().apply {
             sessionTimeoutMinutes = 10
+            advisorWaitTimeoutMinutes = 120
         }
     }
 
@@ -86,7 +87,8 @@ class WhatsAppChatStateServiceTest {
             status = WhatsAppChatStatus.ESPERANDO_ASESOR,
             currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
             botPaused = true,
-            lastInteractionAt = LocalDateTime.now().minusMinutes(20)
+            lastInteractionAt = LocalDateTime.now().minusMinutes(20),
+            updatedAt = LocalDateTime.now().minusMinutes(20)
         )
         every { repository.findByPhone(phone) } returns previous
 
@@ -94,7 +96,57 @@ class WhatsAppChatStateServiceTest {
 
         assertTrue(session.botPaused)
         assertFalse(session.isNewOrExpired)
+        assertFalse(session.autoResumedFromAdvisorWait)
         assertEquals(WhatsAppConversationStep.ESPERANDO_ASESOR, session.currentStep)
         verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `paused client under advisor wait timeout stays paused`() {
+        val phone = "51902354183"
+        val previous = WhatsAppChatState(
+            phone = phone,
+            status = WhatsAppChatStatus.ESPERANDO_ASESOR,
+            currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
+            botPaused = true,
+            lastInteractionAt = LocalDateTime.now().minusMinutes(119),
+            updatedAt = LocalDateTime.now().minusMinutes(119)
+        )
+        every { repository.findByPhone(phone) } returns previous
+
+        val session = service.beginInboundInteraction(phone)
+
+        assertTrue(session.botPaused)
+        assertFalse(session.isNewOrExpired)
+        assertFalse(session.autoResumedFromAdvisorWait)
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `paused client after advisor wait timeout auto resumes and starts main menu session`() {
+        val phone = "51902354183"
+        val previous = WhatsAppChatState(
+            phone = phone,
+            status = WhatsAppChatStatus.ESPERANDO_ASESOR,
+            currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
+            botPaused = true,
+            metadata = "support_diagnostic",
+            lastInteractionAt = LocalDateTime.now().minusMinutes(130),
+            updatedAt = LocalDateTime.now().minusMinutes(121)
+        )
+        val savedSlot = slot<WhatsAppChatState>()
+        every { repository.findByPhone(phone) } returns previous
+        every { repository.save(capture(savedSlot)) } answers { firstArg() }
+
+        val session = service.beginInboundInteraction(phone)
+
+        assertFalse(session.botPaused)
+        assertTrue(session.isNewOrExpired)
+        assertTrue(session.autoResumedFromAdvisorWait)
+        assertEquals(WhatsAppConversationStep.MAIN_MENU, session.currentStep)
+        assertEquals(WhatsAppChatStatus.BOT_ACTIVE, savedSlot.captured.status)
+        assertEquals(WhatsAppConversationStep.MAIN_MENU, savedSlot.captured.currentStep)
+        assertFalse(savedSlot.captured.botPaused)
+        assertTrue(savedSlot.captured.metadata?.contains("auto_resume_advisor_wait") == true)
     }
 }

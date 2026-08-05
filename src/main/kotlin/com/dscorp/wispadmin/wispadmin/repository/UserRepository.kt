@@ -13,6 +13,9 @@ interface UserRepository : JpaRepository<User, Int> {
 
     fun findByUsernameIgnoreCase(username: String): User?
 
+    @Query("select u from User u where lower(u.username) in :usernames")
+    fun findByUsernameLowerIn(usernames: Collection<String>): List<User>
+
 
 //    get technicians by type
     @Query("select u from User u where u.type=:type and u.verified=true")

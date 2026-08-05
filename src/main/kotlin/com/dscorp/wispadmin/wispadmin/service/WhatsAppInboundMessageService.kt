@@ -84,6 +84,13 @@ class WhatsAppInboundMessageService(
         val subscription = conversationService.findSubscriptionByPhone(payload.phone)
         notifySecretaryInbound(payload.phone, subscription?.getFullName())
         val session = chatStateService.beginInboundInteraction(payload.phone)
+        if (session.autoResumedFromAdvisorWait) {
+            try {
+                handoffService.resumeBotAndTakeControl(payload.phone, "auto_resume_advisor_wait")
+            } catch (e: Exception) {
+                log.warn("Auto-resume Meta/handoff sync failed phone={}: {}", payload.phone, e.message)
+            }
+        }
 
         val csatHandled = try {
             csatSurveyService.tryHandleInbound(

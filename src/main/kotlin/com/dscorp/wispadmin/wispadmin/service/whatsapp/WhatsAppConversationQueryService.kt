@@ -39,7 +39,8 @@ class WhatsAppConversationQueryService(
     private val paymentRepository: PaymentRepository,
     private val crmConversationRepository: CrmConversationRepository,
     private val crmTicketLinkService: CrmTicketLinkService,
-    private val templateDisplayService: WhatsAppTemplateDisplayService
+    private val templateDisplayService: WhatsAppTemplateDisplayService,
+    private val operatorDisplayNameResolver: WhatsAppOperatorDisplayNameResolver,
 ) {
 
     fun listConversations(filter: WhatsAppConversationFilter): List<WhatsAppConversationSummaryDto> {
@@ -160,7 +161,7 @@ class WhatsAppConversationQueryService(
         val pageDesc = mergedDesc.take(pageSize)
         val messages = pageDesc.sortedBy { it.createdAt }
         return WhatsAppThreadPageDto(
-            messages = messages,
+            messages = operatorDisplayNameResolver.enrichMessages(messages),
             hasMore = hasMore,
             nextBefore = messages.firstOrNull()?.createdAt
         )

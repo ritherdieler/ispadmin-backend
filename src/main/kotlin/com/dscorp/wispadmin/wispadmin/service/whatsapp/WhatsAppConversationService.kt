@@ -36,7 +36,8 @@ class WhatsAppConversationService(
     private val crmConversationService: CrmConversationService,
     private val mediaDownloadService: WhatsAppMediaDownloadService,
     private val templateDeliveryService: WhatsAppTemplateDeliveryService,
-    private val templateDisplayService: WhatsAppTemplateDisplayService
+    private val templateDisplayService: WhatsAppTemplateDisplayService,
+    private val operatorDisplayNameResolver: WhatsAppOperatorDisplayNameResolver,
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppConversationService::class.java)
@@ -397,7 +398,7 @@ class WhatsAppConversationService(
                 createdAt = now
             )
         )
-        return saved.toThreadMessage(templateDisplayService)
+        return saved.toEnrichedThreadMessage()
     }
 
     fun sendOperatorMedia(
@@ -504,7 +505,7 @@ class WhatsAppConversationService(
                 createdAt = now
             )
         )
-        return saved.toThreadMessage(templateDisplayService)
+        return saved.toEnrichedThreadMessage()
     }
 
     fun sendOperatorTemplate(
@@ -555,7 +556,7 @@ class WhatsAppConversationService(
 
         chatStateService.markWaitingForAdvisor(phone, "operator_template")
         crmConversationService.touchOutbound(phone)
-        return saved.toThreadMessage(templateDisplayService)
+        return saved.toEnrichedThreadMessage()
     }
 
     fun retryFailedOutbound(
@@ -1185,6 +1186,9 @@ class WhatsAppConversationService(
             .joinToString(" ")
             .ifBlank { "cliente" }
     }
+
+    private fun WhatsAppMessageLog.toEnrichedThreadMessage(): WhatsAppThreadMessageDto =
+        operatorDisplayNameResolver.enrichMessage(toThreadMessage(templateDisplayService))
 
     data class AutoReplyResult(
         val success: Boolean,

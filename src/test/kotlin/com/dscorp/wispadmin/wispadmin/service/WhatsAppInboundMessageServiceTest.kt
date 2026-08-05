@@ -484,4 +484,52 @@ class WhatsAppInboundMessageServiceTest {
             )
         }
     }
+
+    @Test
+    fun `auto resumed advisor wait sends main menu and syncs handoff`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-auto-resume",
+            phone = "51902354183",
+            messageText = "hola",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 77) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = true,
+            lastInteractionAt = LocalDateTime.now().minusHours(3),
+            currentStep = WhatsAppConversationStep.MAIN_MENU,
+            autoResumedFromAdvisorWait = true
+        )
+        every {
+            handoffService.resumeBotAndTakeControl(payload.phone, "auto_resume_advisor_wait")
+        } returns WhatsAppHandoffResult(botPaused = false, metaTransferred = false)
+        every {
+            conversationService.sendMainMenu(payload.phone, null, true)
+        } returns WhatsAppConversationService.AutoReplyResult(
+            success = true,
+            messageText = "[MAIN_MENU] Bienvenida",
+            metaMessageId = "wamid.main-menu-auto"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) {
+            handoffService.resumeBotAndTakeControl(payload.phone, "auto_resume_advisor_wait")
+        }
+        verify(exactly = 1) { conversationService.sendMainMenu(payload.phone, null, true) }
+    }
 }

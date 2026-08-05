@@ -31,6 +31,7 @@ data class WhatsAppThreadMessageDto(
     val createdAt: LocalDateTime,
     val replyToLogId: Int?,
     val operatorUsername: String?,
+    val operatorDisplayName: String? = null,
     val templateCode: String? = null,
     val retryCount: Int? = null
 )
