@@ -33,6 +33,9 @@
 | **CRM Omnicanal WhatsApp — Fase 6 (CSAT / inconformidades)** | [crm-omnicanal-fase6-csat.md](./crm-omnicanal-fase6-csat.md) |
 | **CRM Omnicanal WhatsApp — Fase 7 (métricas operativas)** | [crm-omnicanal-fase7-metricas.md](./crm-omnicanal-fase7-metricas.md) |
 | **WhatsApp Meta Cloud API (límites + analytics)** | [whatsapp-meta-cloud-api.md](./whatsapp-meta-cloud-api.md) |
+| **Bot WhatsApp — refactor de menú Meta** | [whatsapp-bot-menu-meta-refactor-2026-08-05.md](./whatsapp-bot-menu-meta-refactor-2026-08-05.md) |
+| **Bot WhatsApp — comprobante guiado + máquina de estados** | [whatsapp-bot-comprobante-maquina-estados-2026-08-05.md](./whatsapp-bot-comprobante-maquina-estados-2026-08-05.md) |
+| **Bot WhatsApp — autoreanudación tras espera de asesor** | [whatsapp-bot-auto-resume-advisor-wait-2026-08-05.md](./whatsapp-bot-auto-resume-advisor-wait-2026-08-05.md) |
 | Acceso MySQL producción (túnel SSH) | [vps-mysql-access.md](./vps-mysql-access.md) |
 | **Secretos y `.env` en el VPS** | [vps-secrets-management.md](./vps-secrets-management.md) (regla: `.cursor/rules/documentar-secretos-env.mdc`) |
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |
