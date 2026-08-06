@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
+import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
@@ -35,7 +36,7 @@ class WhatsAppAnalyticsService(
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
         val responded = inbound.size
 
-        val conversion = conversion(from, to, windowDays, templateCode)
+        val conversion = conversionFromLogs(logs, from, to, windowDays)
         val deliveryDenominator = if (confirmed > 0) confirmed else accepted
 
         return WhatsAppAnalyticsOverview(
@@ -73,9 +74,12 @@ class WhatsAppAnalyticsService(
             .filter { operatorUsername.isNullOrBlank() || it.operatorUsername == operatorUsername }
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
         val costPerCategory = estimatedCostPerCategory(from, to)
+        val paymentsBySubscription = loadPaymentsBySubscription(logs, windowDays)
 
         return logs.groupBy { it.campaignId!! }
-            .map { (campaignId, entries) -> buildCampaignAnalytics(campaignId, entries, inbound, windowDays, costPerCategory) }
+            .map { (campaignId, entries) ->
+                buildCampaignAnalytics(campaignId, entries, inbound, windowDays, costPerCategory, paymentsBySubscription)
+            }
             .sortedByDescending { it.startedAt }
     }
 
@@ -93,7 +97,8 @@ class WhatsAppAnalyticsService(
         val to = logs.maxOf { it.createdAt }.plusSeconds(1)
         val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
         val costPerCategory = estimatedCostPerCategory(from, to)
-        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays, costPerCategory)
+        val paymentsBySubscription = loadPaymentsBySubscription(logs, windowDays)
+        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays, costPerCategory, paymentsBySubscription)
 
         return WhatsAppCampaignDetail(
             summary = summary,
@@ -129,7 +134,8 @@ class WhatsAppAnalyticsService(
         entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
         inbound: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage>,
         windowDays: Int,
-        costPerCategory: Map<String, Double>
+        costPerCategory: Map<String, Double>,
+        paymentsBySubscription: Map<Int, List<Payment>>
     ): WhatsAppCampaignAnalytics {
         val accepted = entries.count { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
         val sent = accepted
@@ -146,10 +152,10 @@ class WhatsAppAnalyticsService(
                 phones.contains(msg.phone) && !msg.createdAt.isBefore(startedAt)
             }
         }
-        val conversionAmount = computeRecoveredAmount(entries, windowDays)
+        val conversionAmount = computeRecoveredAmount(entries, windowDays, paymentsBySubscription)
         val paid = if (conversionAmount > 0.0) {
             entries.count { entry ->
-                entry.subscriptionId != null && hasPaidInWindow(entry, windowDays)
+                entry.subscriptionId != null && hasPaidInWindow(entry, windowDays, paymentsBySubscription)
             }.coerceAtMost(sent)
         } else {
             0
@@ -206,31 +212,42 @@ class WhatsAppAnalyticsService(
 
     fun conversion(from: LocalDateTime, to: LocalDateTime, windowDays: Int = 7, templateCode: String? = null): WhatsAppConversionAnalytics {
         val logs = messageLogRepository.findByCreatedAtBetween(from, to)
-            .filter { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT && it.subscriptionId != null }
             .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
+        return conversionFromLogs(logs, from, to, windowDays)
+    }
+
+    private fun conversionFromLogs(
+        logs: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
+        from: LocalDateTime,
+        to: LocalDateTime,
+        windowDays: Int
+    ): WhatsAppConversionAnalytics {
+        val filteredLogs = logs.filter {
+            it.status == WhatsAppTemplateDeliveryService.STATUS_SENT && it.subscriptionId != null
+        }
+        val paymentsBySubscription = loadPaymentsBySubscription(filteredLogs, windowDays)
 
         var converted = 0
         var recoveredAmount = 0.0
         val byTemplate = linkedMapOf<String, TemplateConversionAccumulator>()
 
-        logs.forEach { log ->
-            val subscriptionId = log.subscriptionId ?: return@forEach
+        filteredLogs.forEach { log ->
             val templateCode = log.messageType
             val bucket = byTemplate.getOrPut(templateCode) {
                 TemplateConversionAccumulator(templateCode, labelForTemplate(templateCode))
             }
             bucket.sent++
 
-            if (hasPaidInWindow(log, windowDays)) {
+            if (hasPaidInWindow(log, windowDays, paymentsBySubscription)) {
                 converted++
                 bucket.converted++
-                val amount = recoveredForLog(log, windowDays)
+                val amount = recoveredForLog(log, windowDays, paymentsBySubscription)
                 recoveredAmount += amount
                 bucket.recoveredAmount += amount
             }
         }
 
-        val sent = logs.size
+        val sent = filteredLogs.size
         return WhatsAppConversionAnalytics(
             from = from,
             to = to,
@@ -252,25 +269,40 @@ class WhatsAppAnalyticsService(
         )
     }
 
+    private fun loadPaymentsBySubscription(
+        logs: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
+        windowDays: Int
+    ): Map<Int, List<Payment>> {
+        val subscriptionIds = logs.mapNotNull { it.subscriptionId }.distinct()
+        if (subscriptionIds.isEmpty()) return emptyMap()
+        val minFrom = logs.minOf { it.createdAt }
+        val maxTo = logs.maxOf { it.createdAt }.plusDays(windowDays.toLong())
+        return paymentRepository
+            .findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(subscriptionIds, minFrom, maxTo)
+            .mapNotNull { payment -> payment.subscription?.id?.let { it to payment } }
+            .groupBy({ it.first }, { it.second })
+    }
+
     private fun computeRecoveredAmount(
         entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
-        windowDays: Int
+        windowDays: Int,
+        paymentsBySubscription: Map<Int, List<Payment>>
     ): Double {
         return entries
             .filter { it.status == WhatsAppTemplateDeliveryService.STATUS_SENT }
-            .sumOf { recoveredForLog(it, windowDays) }
+            .sumOf { recoveredForLog(it, windowDays, paymentsBySubscription) }
     }
 
     private fun recoveredForLog(
         log: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog,
-        windowDays: Int
+        windowDays: Int,
+        paymentsBySubscription: Map<Int, List<Payment>>
     ): Double {
         val subscriptionId = log.subscriptionId ?: return 0.0
         val windowEnd = log.createdAt.plusDays(windowDays.toLong())
-        return paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId)
+        return paymentsBySubscription[subscriptionId].orEmpty()
             .filter { payment ->
-                payment.paid &&
-                    payment.paymentDateDatetime != null &&
+                payment.paymentDateDatetime != null &&
                     !payment.paymentDateDatetime!!.isBefore(log.createdAt) &&
                     !payment.paymentDateDatetime!!.isAfter(windowEnd)
             }
@@ -279,9 +311,10 @@ class WhatsAppAnalyticsService(
 
     private fun hasPaidInWindow(
         log: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog,
-        windowDays: Int
+        windowDays: Int,
+        paymentsBySubscription: Map<Int, List<Payment>>
     ): Boolean {
-        return recoveredForLog(log, windowDays) > 0.0
+        return recoveredForLog(log, windowDays, paymentsBySubscription) > 0.0
     }
 
     private fun labelForTemplate(templateCode: String): String? {

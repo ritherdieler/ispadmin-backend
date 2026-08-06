@@ -251,6 +251,12 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     fun findBySubscriptionIdIn(subscriptionIds: Collection<Int>): List<Payment>
 
+    fun findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(
+        subscriptionIds: Collection<Int>,
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): List<Payment>
+
     @Query("SELECT p FROM Payment p LEFT JOIN FETCH p.responsible WHERE p.subscription.id IN :ids")
     fun findBySubscriptionIdInFetchResponsible(@Param("ids") ids: Collection<Int>): List<Payment>
 
