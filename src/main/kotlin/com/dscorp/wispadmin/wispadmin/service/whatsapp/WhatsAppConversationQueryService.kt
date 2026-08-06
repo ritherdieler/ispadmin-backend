@@ -44,8 +44,21 @@ class WhatsAppConversationQueryService(
 ) {
 
     fun listConversations(filter: WhatsAppConversationFilter): List<WhatsAppConversationSummaryDto> {
-        val inbound = loadInbound(filter.dateFrom, filter.dateTo)
-        val outbound = loadOutbound(filter.dateFrom, filter.dateTo)
+        val hasDateRange = filter.dateFrom != null && filter.dateTo != null
+        val inbound: List<WhatsAppInboundMessage>
+        val outbound: List<WhatsAppMessageLog>
+        if (hasDateRange) {
+            inbound = inboundMessageRepository.findByCreatedAtBetween(filter.dateFrom!!, filter.dateTo!!)
+            outbound = messageLogRepository.findByCreatedAtBetween(filter.dateFrom, filter.dateTo!!)
+        } else {
+            val activeVariants = inboundMessageRepository.findRecentActivePhones(RECENT_PHONE_RANK_LIMIT)
+                .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
+                .distinct()
+                .flatMap { PeruvianWhatsAppPhone.queryVariants(it) }
+                .distinct()
+            inbound = if (activeVariants.isEmpty()) emptyList() else inboundMessageRepository.findByPhoneIn(activeVariants)
+            outbound = if (activeVariants.isEmpty()) emptyList() else messageLogRepository.findByPhoneIn(activeVariants)
+        }
 
         val phones = (
             inbound.map { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) } +
@@ -169,17 +182,17 @@ class WhatsAppConversationQueryService(
 
     fun getContext(phone: String): WhatsAppConversationContextDto {
         val phones = PeruvianWhatsAppPhone.queryVariants(phone)
-        val latestInbound = phones
-            .flatMap { inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc(it) }
+        val latestInbound = inboundMessageRepository.findTop1ByPhoneInOrderByCreatedAtDesc(phones)
             .maxByOrNull { it.createdAt }
         val subscription = latestInbound?.subscriptionId?.let { subscriptionRepository.findById(it).orElse(null) }
             ?: findSubscriptionByPhone(phone)
 
         val pending = subscription?.payments?.filter { !it.paid }.orEmpty()
-        val window = pickBestServiceWindow(phones.map { serviceWindowService.getServiceWindow(it) })
+        val serviceWindows = serviceWindowService.getServiceWindows(phones)
+        val window = pickBestServiceWindow(phones.mapNotNull { serviceWindows[it] })
             ?: serviceWindowService.getServiceWindow(phone)
-        val recentLogs = phones
-            .flatMap { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc(it) }
+        val recentLogs = messageLogRepository
+            .findByPhoneInOrderByCreatedAtDesc(phones, PageRequest.of(0, 10))
             .distinctBy { it.id }
             .sortedByDescending { it.createdAt }
             .take(10)
@@ -201,8 +214,7 @@ class WhatsAppConversationQueryService(
         }
 
         val recentPayments = subscription?.id?.let { subscriptionId ->
-            paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId)
-                .take(5)
+            paymentRepository.findTop5BySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId)
                 .mapNotNull { payment ->
                     val paymentId = payment.id ?: return@mapNotNull null
                     WhatsAppConversationRecentPaymentDto(
@@ -283,22 +295,6 @@ class WhatsAppConversationQueryService(
             conversationHistory = conversationHistory,
             tickets = tickets
         )
-    }
-
-    private fun loadInbound(dateFrom: LocalDateTime?, dateTo: LocalDateTime?): List<WhatsAppInboundMessage> {
-        return if (dateFrom != null && dateTo != null) {
-            inboundMessageRepository.findByCreatedAtBetween(dateFrom, dateTo)
-        } else {
-            inboundMessageRepository.findTop500ByOrderByCreatedAtDesc()
-        }
-    }
-
-    private fun loadOutbound(dateFrom: LocalDateTime?, dateTo: LocalDateTime?): List<WhatsAppMessageLog> {
-        return if (dateFrom != null && dateTo != null) {
-            messageLogRepository.findByCreatedAtBetween(dateFrom, dateTo)
-        } else {
-            messageLogRepository.findTop500ByOrderByCreatedAtDesc()
-        }
     }
 
     private fun fetchInboundRecent(
@@ -396,6 +392,8 @@ class WhatsAppConversationQueryService(
     }
 
     companion object {
+        private const val RECENT_PHONE_RANK_LIMIT = 500
+
         fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
             WhatsAppThreadMessageMapper.inboundHasMedia(inbound)
     }

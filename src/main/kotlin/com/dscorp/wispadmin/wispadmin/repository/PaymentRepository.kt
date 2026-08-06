@@ -262,6 +262,8 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     fun findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId: Int): List<Payment>
 
+    fun findTop5BySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId: Int): List<Payment>
+
     fun findBySubscriptionIdIn(subscriptionIds: Collection<Int>): List<Payment>
 
     fun findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(

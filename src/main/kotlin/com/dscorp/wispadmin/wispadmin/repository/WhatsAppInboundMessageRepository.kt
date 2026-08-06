@@ -3,6 +3,9 @@ package com.dscorp.wispadmin.wispadmin.repository
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.LocalDateTime
 
 interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessage, Int> {
@@ -38,9 +41,33 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     fun findTop1ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppInboundMessage>
 
+    fun findTop1ByPhoneInOrderByCreatedAtDesc(phones: Collection<String>): List<WhatsAppInboundMessage>
+
+    fun findByPhoneIn(phones: Collection<String>): List<WhatsAppInboundMessage>
+
     fun findByPhoneAndReadAtIsNull(phone: String): List<WhatsAppInboundMessage>
 
     fun countByPhone(phone: String): Long
 
     fun countByPhoneAndCreatedAtAfter(phone: String, createdAt: LocalDateTime): Long
+
+    @Query(
+        value = """
+        SELECT phone FROM (
+            SELECT phone, MAX(created_at) AS last_at
+            FROM whatsapp_inbound_message
+            GROUP BY phone
+            UNION ALL
+            SELECT phone, MAX(created_at) AS last_at
+            FROM whatsapp_message_log
+            WHERE phone IS NOT NULL
+            GROUP BY phone
+        ) combined
+        GROUP BY phone
+        ORDER BY MAX(last_at) DESC
+        LIMIT :limit
+    """,
+        nativeQuery = true
+    )
+    fun findRecentActivePhones(@Param("limit") limit: Int): List<String>
 }
