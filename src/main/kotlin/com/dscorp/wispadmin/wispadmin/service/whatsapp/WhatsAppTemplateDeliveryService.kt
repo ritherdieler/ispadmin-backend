@@ -175,6 +175,17 @@ object WhatsAppMessageErrors {
             errorMessage.contains("401 Unauthorized", ignoreCase = true) ->
                 "Token de WhatsApp invalido o vencido."
 
+            errorMessage.contains("130429") ||
+                errorMessage.contains("rate limit", ignoreCase = true) ->
+                "Meta limito la velocidad de envio (throughput). Espera unos segundos y reintenta con un lote mas pequeno."
+
+            errorMessage.contains("131049") ->
+                "Meta no entrego el mensaje: el usuario ya recibio demasiados mensajes de marketing hoy."
+
+            errorMessage.contains("131056") ||
+                errorMessage.contains("pair rate", ignoreCase = true) ->
+                "Meta limito envios al mismo numero. Espera antes de reenviar a ese cliente."
+
             errorMessage.contains("Unsupported post request", ignoreCase = true) ->
                 "Phone Number ID de WhatsApp incorrecto o sin permisos para este token."
 

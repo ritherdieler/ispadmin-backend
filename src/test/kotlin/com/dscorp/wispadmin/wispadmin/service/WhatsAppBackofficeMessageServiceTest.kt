@@ -4,21 +4,33 @@ import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDefinition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WelcomeTemplateContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.doAnswer
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.reset
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
 import java.time.LocalDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class WhatsAppBackofficeMessageServiceTest {
 
@@ -33,6 +45,14 @@ class WhatsAppBackofficeMessageServiceTest {
 
     @BeforeEach
     fun setUp() {
+        reset(
+            paymentRepository,
+            subscriptionRepository,
+            whatsAppMessageLogRepository,
+            syncedTemplateRepository,
+            templateDeliveryService
+        )
+        whatsAppProperties.backoffice.batchConcurrency = 8
         service = WhatsAppBackofficeMessageService(
             paymentRepository = paymentRepository,
             subscriptionRepository = subscriptionRepository,
@@ -40,6 +60,163 @@ class WhatsAppBackofficeMessageServiceTest {
             syncedTemplateRepository = syncedTemplateRepository,
             whatsAppProperties = whatsAppProperties,
             templateDeliveryService = templateDeliveryService
+        )
+    }
+
+    @Test
+    fun `sendSelected aggregates partial failures with clientName and keeps target order`() {
+        stubPaymentRow(1, 10, "Ana", "Lopez", "987654321")
+        stubPaymentRow(2, 11, "Bruno", "Diaz", "987654322")
+        stubPaymentRow(3, 12, "Carla", "Ruiz", "987654323")
+
+        stubHasSentToday { paymentId -> paymentId == 2 }
+
+        doAnswer { invocation ->
+            val paymentId = invocation.getArgument<Int?>(5)
+            if (paymentId == 3) {
+                throw RuntimeException("Meta API 500: boom")
+            }
+            WhatsAppMessageLog(
+                paymentId = paymentId,
+                subscriptionId = invocation.getArgument(6),
+                phone = invocation.getArgument(2),
+                messageType = "PAYMENT_REMINDER",
+                message = "ok",
+                status = WhatsAppTemplateDeliveryService.STATUS_SENT
+            )
+        }.`when`(templateDeliveryService).deliverTemplate(
+            anyNonNull(WhatsAppTemplateDefinition::class.java),
+            anyNonNull(Subscription::class.java),
+            ArgumentMatchers.anyString(),
+            nullableArg(Payment::class.java),
+            nullableArg(Payment::class.java),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(WelcomeTemplateContext::class.java),
+            nullableArg(String::class.java),
+            nullableArg(String::class.java)
+        )
+
+        val result = service.sendSelected(
+            WhatsAppTemplateCode.PAYMENT_REMINDER.name,
+            listOf(1, 2, 3),
+            operatorUsername = "admin"
+        )
+
+        assertEquals(1, result.sent)
+        assertEquals(1, result.skipped)
+        assertEquals(1, result.failed)
+        assertEquals(listOf(1, 2, 3), result.details.map { it.targetId })
+        assertEquals("Ana Lopez", result.details[0].clientName)
+        assertEquals(WhatsAppTemplateDeliveryService.STATUS_SENT, result.details[0].status)
+        assertEquals("Bruno Diaz", result.details[1].clientName)
+        assertEquals(WhatsAppTemplateDeliveryService.STATUS_SKIPPED, result.details[1].status)
+        assertEquals("Carla Ruiz", result.details[2].clientName)
+        assertEquals(WhatsAppTemplateDeliveryService.STATUS_FAILED, result.details[2].status)
+    }
+
+    @Test
+    fun `sendSelected never throws when one deliverTemplate fails`() {
+        stubPaymentRow(1, 10, "Ana", "Lopez", "987654321")
+        stubPaymentRow(2, 11, "Bruno", "Diaz", "987654322")
+
+        stubHasSentToday { false }
+
+        doThrow(RuntimeException("Meta down"))
+            .`when`(templateDeliveryService)
+            .deliverTemplate(
+                anyNonNull(WhatsAppTemplateDefinition::class.java),
+                anyNonNull(Subscription::class.java),
+                ArgumentMatchers.anyString(),
+                nullableArg(Payment::class.java),
+                nullableArg(Payment::class.java),
+                nullableArg(Int::class.javaObjectType),
+                nullableArg(Int::class.javaObjectType),
+                nullableArg(WelcomeTemplateContext::class.java),
+                nullableArg(String::class.java),
+                nullableArg(String::class.java)
+            )
+
+        val result = service.sendSelected(
+            WhatsAppTemplateCode.PAYMENT_REMINDER.name,
+            listOf(1, 2)
+        )
+
+        assertEquals(0, result.sent)
+        assertEquals(2, result.failed)
+        assertEquals(2, result.details.size)
+        assertTrue(result.details.all { it.status == WhatsAppTemplateDeliveryService.STATUS_FAILED })
+        assertTrue(result.details.all { !it.clientName.isNullOrBlank() })
+    }
+
+    @Test
+    fun `sendSelected respects batch concurrency limit`() {
+        whatsAppProperties.backoffice.batchConcurrency = 2
+        service = WhatsAppBackofficeMessageService(
+            paymentRepository = paymentRepository,
+            subscriptionRepository = subscriptionRepository,
+            whatsAppMessageLogRepository = whatsAppMessageLogRepository,
+            syncedTemplateRepository = syncedTemplateRepository,
+            whatsAppProperties = whatsAppProperties,
+            templateDeliveryService = templateDeliveryService
+        )
+
+        (1..4).forEach { id ->
+            stubPaymentRow(id, id + 100, "Client", "N$id", "98765432$id")
+        }
+
+        stubHasSentToday { false }
+
+        val inFlight = AtomicInteger(0)
+        val maxInFlight = AtomicInteger(0)
+        val started = CountDownLatch(4)
+
+        doAnswer { invocation ->
+            val current = inFlight.incrementAndGet()
+            maxInFlight.updateAndGet { maxOf(it, current) }
+            started.countDown()
+            Thread.sleep(80)
+            inFlight.decrementAndGet()
+            WhatsAppMessageLog(
+                paymentId = invocation.getArgument(5),
+                subscriptionId = invocation.getArgument(6),
+                phone = invocation.getArgument(2),
+                messageType = "PAYMENT_REMINDER",
+                message = "ok",
+                status = WhatsAppTemplateDeliveryService.STATUS_SENT
+            )
+        }.`when`(templateDeliveryService).deliverTemplate(
+            anyNonNull(WhatsAppTemplateDefinition::class.java),
+            anyNonNull(Subscription::class.java),
+            ArgumentMatchers.anyString(),
+            nullableArg(Payment::class.java),
+            nullableArg(Payment::class.java),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(WelcomeTemplateContext::class.java),
+            nullableArg(String::class.java),
+            nullableArg(String::class.java)
+        )
+
+        val result = service.sendSelected(
+            WhatsAppTemplateCode.PAYMENT_REMINDER.name,
+            listOf(1, 2, 3, 4)
+        )
+
+        assertTrue(started.await(5, TimeUnit.SECONDS))
+        assertEquals(4, result.sent)
+        assertTrue(maxInFlight.get() <= 2, "maxInFlight=${maxInFlight.get()}")
+        verify(templateDeliveryService, times(4)).deliverTemplate(
+            anyNonNull(WhatsAppTemplateDefinition::class.java),
+            anyNonNull(Subscription::class.java),
+            ArgumentMatchers.anyString(),
+            nullableArg(Payment::class.java),
+            nullableArg(Payment::class.java),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(WelcomeTemplateContext::class.java),
+            nullableArg(String::class.java),
+            nullableArg(String::class.java)
         )
     }
 
@@ -161,4 +338,47 @@ class WhatsAppBackofficeMessageServiceTest {
             LocalDateTime.of(2026, 7, 20, 0, 0),
         )
     }
+
+    private fun stubPaymentRow(
+        paymentId: Int,
+        subscriptionId: Int,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        paid: Boolean = false
+    ) {
+        @Suppress("UNCHECKED_CAST")
+        val row = arrayOf(
+            paymentId,
+            subscriptionId,
+            firstName,
+            lastName,
+            phone,
+            50.0,
+            null,
+            LocalDateTime.of(2026, 7, 1, 0, 0),
+            null,
+            paid,
+        ) as Array<Any>
+        `when`(paymentRepository.findWhatsAppPaymentRowById(paymentId)).thenReturn(listOf(row))
+    }
+
+    private fun stubHasSentToday(predicate: (Int) -> Boolean) {
+        `when`(
+            whatsAppMessageLogRepository.existsByPaymentIdAndMessageTypeAndStatusAndCreatedAtBetween(
+                ArgumentMatchers.anyInt(),
+                ArgumentMatchers.anyString(),
+                ArgumentMatchers.anyString(),
+                anyNonNull(LocalDateTime::class.java),
+                anyNonNull(LocalDateTime::class.java)
+            )
+        ).thenAnswer { invocation ->
+            predicate(invocation.getArgument(0))
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> anyNonNull(type: Class<T>): T = ArgumentMatchers.any(type) as T
+
+    private fun <T> nullableArg(type: Class<T>): T? = ArgumentMatchers.nullable(type)
 }

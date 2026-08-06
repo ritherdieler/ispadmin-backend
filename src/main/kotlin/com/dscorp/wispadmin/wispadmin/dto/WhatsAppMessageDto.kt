@@ -66,6 +66,7 @@ data class WhatsAppMessageResultDto(
     val paymentId: Int?,
     val subscriptionId: Int?,
     val phone: String?,
+    val clientName: String? = null,
     val status: String,
     val reason: String?
 )

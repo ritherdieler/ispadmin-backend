@@ -53,6 +53,7 @@ class WhatsAppProperties {
 class WhatsAppBackofficeProperties {
     var validationPaidDays: Int = 7
     var welcomeInstalledDays: Int = 30
+    var batchConcurrency: Int = 8
 }
 
 class WhatsAppWelcomeOnRegistrationProperties {

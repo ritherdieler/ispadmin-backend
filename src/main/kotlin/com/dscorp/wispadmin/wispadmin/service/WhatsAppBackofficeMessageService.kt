@@ -25,6 +25,12 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDefinition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -106,8 +112,33 @@ class WhatsAppBackofficeMessageService(
             return emptyBatchResult(definition.messageType)
         }
 
-        val details = uniqueTargetIds.map { targetId ->
-            attemptSend(definition, targetId, campaignId, operatorUsername)
+        val concurrency = whatsAppProperties.backoffice.batchConcurrency.coerceAtLeast(1)
+        val details = runBlocking {
+            val semaphore = Semaphore(concurrency)
+            uniqueTargetIds.map { targetId ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        try {
+                            attemptSend(definition, targetId, campaignId, operatorUsername)
+                        } catch (e: Exception) {
+                            WhatsAppMessageResultDto(
+                                targetId = targetId,
+                                targetType = definition.targetType.name,
+                                paymentId = if (definition.targetType == WhatsAppTargetType.PAYMENT) targetId else null,
+                                subscriptionId = if (definition.targetType == WhatsAppTargetType.SUBSCRIPTION) {
+                                    targetId
+                                } else {
+                                    null
+                                },
+                                phone = null,
+                                clientName = null,
+                                status = WhatsAppTemplateDeliveryService.STATUS_FAILED,
+                                reason = e.message ?: "No se pudo enviar el mensaje."
+                            )
+                        }
+                    }
+                }
+            }.awaitAll()
         }
 
         return WhatsAppMessageBatchResultDto(
@@ -174,27 +205,46 @@ class WhatsAppBackofficeMessageService(
         operatorUsername: String? = null
     ): WhatsAppMessageResultDto {
         val row = paymentRepository.findWhatsAppPaymentRowById(paymentId).firstOrNull()
-            ?: return skippedPaymentResult(paymentId, null, null, "Factura no encontrada.")
+            ?: return skippedPaymentResult(paymentId, null, null, null, "Factura no encontrada.")
 
         val context = paymentContextFromRow(row)
         val payment = context.payment
         val subscription = context.subscription
         val subscriptionId = subscription.id
         val phone = subscription.phone
+        val clientName = subscription.getFullName()
 
         val validationError = validatePhone(subscription, phone)
         if (validationError != null) {
-            return skippedPaymentResult(paymentId, subscriptionId, phone, validationError)
+            return skippedPaymentResult(paymentId, subscriptionId, phone, clientName, validationError)
         }
 
         if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER && payment.paid) {
-            return skippedPaymentResult(paymentId, subscriptionId, phone, "La factura ya se encuentra pagada.")
+            return skippedPaymentResult(
+                paymentId,
+                subscriptionId,
+                phone,
+                clientName,
+                "La factura ya se encuentra pagada."
+            )
         }
         if (definition.code == WhatsAppTemplateCode.PAYMENT_VALIDATION && !payment.paid) {
-            return skippedPaymentResult(paymentId, subscriptionId, phone, "La factura no esta marcada como pagada.")
+            return skippedPaymentResult(
+                paymentId,
+                subscriptionId,
+                phone,
+                clientName,
+                "La factura no esta marcada como pagada."
+            )
         }
         if (definition.code == WhatsAppTemplateCode.PAYMENT_VALIDATION && payment.paymentDateDatetime == null) {
-            return skippedPaymentResult(paymentId, subscriptionId, phone, "La factura no tiene fecha de pago registrada.")
+            return skippedPaymentResult(
+                paymentId,
+                subscriptionId,
+                phone,
+                clientName,
+                "La factura no tiene fecha de pago registrada."
+            )
         }
 
         return try {
@@ -210,12 +260,13 @@ class WhatsAppBackofficeMessageService(
                 campaignId = campaignId,
                 operatorUsername = operatorUsername
             )
-            sentPaymentResult(paymentId, subscription.id, phone)
+            sentPaymentResult(paymentId, subscription.id, phone, clientName)
         } catch (e: IllegalStateException) {
             skippedPaymentResult(
                 paymentId,
                 subscriptionId,
                 phone,
+                clientName,
                 e.message ?: "Ya se envio un mensaje de este tipo hoy."
             )
         } catch (e: Exception) {
@@ -223,6 +274,7 @@ class WhatsAppBackofficeMessageService(
                 paymentId,
                 subscriptionId,
                 phone,
+                clientName,
                 e.message ?: "No se pudo enviar el mensaje."
             )
         }
@@ -235,20 +287,26 @@ class WhatsAppBackofficeMessageService(
         operatorUsername: String? = null
     ): WhatsAppMessageResultDto {
         val row = subscriptionRepository.findWhatsAppSubscriptionRowById(subscriptionId).firstOrNull()
-            ?: return skippedSubscriptionResult(subscriptionId, null, "Cliente no encontrado.")
+            ?: return skippedSubscriptionResult(subscriptionId, null, null, "Cliente no encontrado.")
 
         val subscription = subscriptionFromRow(row)
         val phone = subscription.phone
+        val clientName = subscription.getFullName()
         val validationError = validatePhone(subscription, phone)
         if (validationError != null) {
-            return skippedSubscriptionResult(subscriptionId, phone, validationError)
+            return skippedSubscriptionResult(subscriptionId, phone, clientName, validationError)
         }
 
         if (definition.code == WhatsAppTemplateCode.SERVICE_CUT_NOTICE &&
             subscription.serviceStatus != ServiceStatus.CUT_OFF &&
             subscription.isServiceCutOff != true
         ) {
-            return skippedSubscriptionResult(subscriptionId, phone, "El cliente no tiene servicio cortado.")
+            return skippedSubscriptionResult(
+                subscriptionId,
+                phone,
+                clientName,
+                "El cliente no tiene servicio cortado."
+            )
         }
 
         val oldestUnpaid = if (definition.code == WhatsAppTemplateCode.SERVICE_CUT_NOTICE) {
@@ -256,6 +314,7 @@ class WhatsAppBackofficeMessageService(
                 ?: return skippedSubscriptionResult(
                     subscriptionId,
                     phone,
+                    clientName,
                     "El cliente no tiene facturas pendientes."
                 )
         } else {
@@ -275,17 +334,19 @@ class WhatsAppBackofficeMessageService(
                 campaignId = campaignId,
                 operatorUsername = operatorUsername
             )
-            sentSubscriptionResult(subscriptionId, phone)
+            sentSubscriptionResult(subscriptionId, phone, clientName)
         } catch (e: IllegalStateException) {
             skippedSubscriptionResult(
                 subscriptionId,
                 phone,
+                clientName,
                 e.message ?: "Ya se envio un mensaje de este tipo hoy."
             )
         } catch (e: Exception) {
             failedSubscriptionResult(
                 subscriptionId,
                 phone,
+                clientName,
                 e.message ?: "No se pudo enviar el mensaje."
             )
         }
@@ -720,68 +781,101 @@ class WhatsAppBackofficeMessageService(
         details = emptyList()
     )
 
-    private fun sentPaymentResult(paymentId: Int, subscriptionId: Int?, phone: String) =
+    private fun sentPaymentResult(
+        paymentId: Int,
+        subscriptionId: Int?,
+        phone: String,
+        clientName: String?
+    ) =
         WhatsAppMessageResultDto(
             targetId = paymentId,
             targetType = WhatsAppTargetType.PAYMENT.name,
             paymentId = paymentId,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_SENT,
             reason = "Mensaje enviado correctamente."
         )
 
-    private fun skippedPaymentResult(paymentId: Int, subscriptionId: Int?, phone: String?, reason: String) =
+    private fun skippedPaymentResult(
+        paymentId: Int,
+        subscriptionId: Int?,
+        phone: String?,
+        clientName: String?,
+        reason: String
+    ) =
         WhatsAppMessageResultDto(
             targetId = paymentId,
             targetType = WhatsAppTargetType.PAYMENT.name,
             paymentId = paymentId,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_SKIPPED,
             reason = reason
         )
 
-    private fun failedPaymentResult(paymentId: Int, subscriptionId: Int?, phone: String?, reason: String) =
+    private fun failedPaymentResult(
+        paymentId: Int,
+        subscriptionId: Int?,
+        phone: String?,
+        clientName: String?,
+        reason: String
+    ) =
         WhatsAppMessageResultDto(
             targetId = paymentId,
             targetType = WhatsAppTargetType.PAYMENT.name,
             paymentId = paymentId,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_FAILED,
             reason = reason
         )
 
-    private fun sentSubscriptionResult(subscriptionId: Int, phone: String) =
+    private fun sentSubscriptionResult(subscriptionId: Int, phone: String, clientName: String?) =
         WhatsAppMessageResultDto(
             targetId = subscriptionId,
             targetType = WhatsAppTargetType.SUBSCRIPTION.name,
             paymentId = null,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_SENT,
             reason = "Mensaje enviado correctamente."
         )
 
-    private fun skippedSubscriptionResult(subscriptionId: Int, phone: String?, reason: String) =
+    private fun skippedSubscriptionResult(
+        subscriptionId: Int,
+        phone: String?,
+        clientName: String?,
+        reason: String
+    ) =
         WhatsAppMessageResultDto(
             targetId = subscriptionId,
             targetType = WhatsAppTargetType.SUBSCRIPTION.name,
             paymentId = null,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_SKIPPED,
             reason = reason
         )
 
-    private fun failedSubscriptionResult(subscriptionId: Int, phone: String?, reason: String) =
+    private fun failedSubscriptionResult(
+        subscriptionId: Int,
+        phone: String?,
+        clientName: String?,
+        reason: String
+    ) =
         WhatsAppMessageResultDto(
             targetId = subscriptionId,
             targetType = WhatsAppTargetType.SUBSCRIPTION.name,
             paymentId = null,
             subscriptionId = subscriptionId,
             phone = phone,
+            clientName = clientName,
             status = WhatsAppTemplateDeliveryService.STATUS_FAILED,
             reason = reason
         )
