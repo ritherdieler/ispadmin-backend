@@ -16,7 +16,11 @@ import javax.persistence.Table
         Index(name = "uk_whatsapp_message_log_meta_message_id", columnList = "metaMessageId", unique = true),
         Index(name = "idx_wa_message_log_phone_created", columnList = "phone,createdAt"),
         Index(name = "idx_wa_message_log_created", columnList = "createdAt"),
-        Index(name = "idx_wa_message_log_callback_id", columnList = "callbackId")
+        Index(name = "idx_wa_message_log_callback_id", columnList = "callbackId"),
+        Index(name = "idx_wa_message_log_subscription_type_created", columnList = "subscriptionId,messageType,createdAt"),
+        Index(name = "idx_wa_message_log_payment_type_created", columnList = "paymentId,messageType,createdAt"),
+        Index(name = "idx_wa_message_log_campaign_id", columnList = "campaignId"),
+        Index(name = "idx_wa_message_log_type_created", columnList = "messageType,createdAt")
     ]
 )
 data class WhatsAppMessageLog(

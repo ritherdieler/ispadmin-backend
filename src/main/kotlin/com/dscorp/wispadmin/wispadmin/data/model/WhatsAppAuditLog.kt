@@ -15,7 +15,8 @@ import javax.persistence.Table
     indexes = [
         Index(name = "idx_wa_audit_created", columnList = "createdAt"),
         Index(name = "idx_wa_audit_action", columnList = "action"),
-        Index(name = "idx_wa_audit_operator", columnList = "operatorUsername")
+        Index(name = "idx_wa_audit_operator", columnList = "operatorUsername"),
+        Index(name = "idx_wa_audit_action_created", columnList = "action,createdAt")
     ]
 )
 data class WhatsAppAuditLog(
