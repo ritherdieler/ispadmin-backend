@@ -382,7 +382,7 @@ class WhatsAppBackofficeController(
         val windowDays = (periodDays ?: 7).coerceAtLeast(1)
         val detail = analyticsService.campaignDetail(campaignId, windowDays, templateCode, operatorUsername)
             ?: return ResponseEntity.notFound().build()
-        val logs = messageLogRepository.findByCampaignId(campaignId).map { it.toDto() }
+        val logs = detail.logs.map { it.toDto() }
         return ResponseEntity.ok(detail.toFrontendDto(logs))
     }
 

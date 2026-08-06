@@ -30,9 +30,10 @@ object WhatsAppMetaAnalyticsParser {
             }
         }
 
+        val templateNamesById = templateRepository.findAllById(aggregated.keys).associate { it.metaTemplateId to it.name }
+
         return aggregated.values.map { metrics ->
-            val templateName = templateRepository.findById(metrics.templateId).orElse(null)?.name
-                ?: metrics.templateId
+            val templateName = templateNamesById[metrics.templateId] ?: metrics.templateId
             WhatsAppMetaTemplateAnalyticsItemDto(
                 templateId = metrics.templateId,
                 templateName = templateName,

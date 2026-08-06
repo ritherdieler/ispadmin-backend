@@ -53,7 +53,11 @@ class WhatsAppBackofficeMessageService(
 ) {
 
     fun listTemplates(): List<WhatsAppTemplateOptionDto> {
-        return WhatsAppTemplateCatalog.all().map(::toTemplateOptionDto)
+        val definitions = WhatsAppTemplateCatalog.all()
+        val syncedByName = syncedTemplateRepository
+            .findByNameIn(definitions.map { it.metaName })
+            .associateBy { it.name }
+        return definitions.map { toTemplateOptionDto(it, syncedByName[it.metaName]) }
     }
 
     fun listCandidates(templateCode: String): WhatsAppMessageCandidatesResponseDto {
@@ -716,8 +720,10 @@ class WhatsAppBackofficeMessageService(
         return null
     }
 
-    private fun toTemplateOptionDto(definition: WhatsAppTemplateDefinition): WhatsAppTemplateOptionDto {
-        val synced = syncedTemplateRepository.findByName(definition.metaName)
+    private fun toTemplateOptionDto(
+        definition: WhatsAppTemplateDefinition,
+        synced: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppSyncedTemplate?
+    ): WhatsAppTemplateOptionDto {
         return WhatsAppTemplateOptionDto(
             code = definition.messageType,
             metaName = definition.metaName,

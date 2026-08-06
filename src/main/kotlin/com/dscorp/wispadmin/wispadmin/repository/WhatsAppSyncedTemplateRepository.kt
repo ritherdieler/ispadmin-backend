@@ -7,5 +7,7 @@ interface WhatsAppSyncedTemplateRepository : JpaRepository<WhatsAppSyncedTemplat
 
     fun findByName(name: String): WhatsAppSyncedTemplate?
 
+    fun findByNameIn(names: Collection<String>): List<WhatsAppSyncedTemplate>
+
     fun findAllByOrderByNameAsc(): List<WhatsAppSyncedTemplate>
 }

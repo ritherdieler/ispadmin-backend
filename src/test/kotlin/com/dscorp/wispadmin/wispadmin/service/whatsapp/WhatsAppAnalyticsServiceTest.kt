@@ -135,6 +135,53 @@ class WhatsAppAnalyticsServiceTest {
     }
 
     @Test
+    fun `campaigns calcula responded por telefono indexando inbound una sola vez para todas las campanas`() {
+        val from = LocalDateTime.now().minusDays(7)
+        val to = LocalDateTime.now()
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    phone = "51900000001",
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    createdAt = from.plusHours(1)
+                ),
+                WhatsAppMessageLog(
+                    campaignId = "camp-2",
+                    phone = "51900000002",
+                    status = "SENT",
+                    metaMessageId = "w2",
+                    createdAt = from.plusHours(1)
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-1",
+                    phone = "51900000001",
+                    createdAt = from.plusHours(2)
+                ),
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-2",
+                    phone = "51900000001",
+                    createdAt = from.plusHours(3)
+                ),
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-3",
+                    phone = "51900000002",
+                    createdAt = from.plusHours(2)
+                )
+            )
+        )
+        val campaigns = service.campaigns(from, to).associateBy { it.campaignId }
+
+        assertEquals(2, campaigns.getValue("camp-1").responded)
+        assertEquals(1, campaigns.getValue("camp-2").responded)
+    }
+
+    @Test
     fun `campaigns filters by templateCode`() {
         val from = LocalDateTime.now().minusDays(7)
         val to = LocalDateTime.now()
@@ -212,6 +259,8 @@ class WhatsAppAnalyticsServiceTest {
         assertEquals("camp-1", detail?.summary?.campaignId)
         assertEquals(1, detail?.summary?.accepted)
         assertEquals(1, detail?.messages?.size)
+        assertEquals(1, detail?.logs?.size)
+        assertEquals("w1", detail?.logs?.first()?.metaMessageId)
     }
 
     @Test

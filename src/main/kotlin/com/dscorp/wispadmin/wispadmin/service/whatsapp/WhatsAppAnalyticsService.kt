@@ -72,13 +72,13 @@ class WhatsAppAnalyticsService(
             .filter { !it.campaignId.isNullOrBlank() }
             .filter { templateCode.isNullOrBlank() || it.messageType == templateCode }
             .filter { operatorUsername.isNullOrBlank() || it.operatorUsername == operatorUsername }
-        val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
+        val inboundByPhone = inboundMessageRepository.findByCreatedAtBetween(from, to).groupBy { it.phone }
         val costPerCategory = estimatedCostPerCategory(from, to)
         val paymentsBySubscription = loadPaymentsBySubscription(logs, windowDays)
 
         return logs.groupBy { it.campaignId!! }
             .map { (campaignId, entries) ->
-                buildCampaignAnalytics(campaignId, entries, inbound, windowDays, costPerCategory, paymentsBySubscription)
+                buildCampaignAnalytics(campaignId, entries, inboundByPhone, windowDays, costPerCategory, paymentsBySubscription)
             }
             .sortedByDescending { it.startedAt }
     }
@@ -95,14 +95,16 @@ class WhatsAppAnalyticsService(
         if (logs.isEmpty()) return null
         val from = logs.minOf { it.createdAt }
         val to = logs.maxOf { it.createdAt }.plusSeconds(1)
-        val inbound = inboundMessageRepository.findByCreatedAtBetween(from, to)
+        val inboundByPhone = inboundMessageRepository.findByCreatedAtBetween(from, to).groupBy { it.phone }
         val costPerCategory = estimatedCostPerCategory(from, to)
         val paymentsBySubscription = loadPaymentsBySubscription(logs, windowDays)
-        val summary = buildCampaignAnalytics(campaignId, logs, inbound, windowDays, costPerCategory, paymentsBySubscription)
+        val summary = buildCampaignAnalytics(campaignId, logs, inboundByPhone, windowDays, costPerCategory, paymentsBySubscription)
+        val sortedLogs = logs.sortedByDescending { it.createdAt }
 
         return WhatsAppCampaignDetail(
             summary = summary,
-            messages = logs.sortedByDescending { it.createdAt }.map { it.toAnalyticsRow() }
+            messages = sortedLogs.map { it.toAnalyticsRow() },
+            logs = sortedLogs
         )
     }
 
@@ -132,7 +134,7 @@ class WhatsAppAnalyticsService(
     private fun buildCampaignAnalytics(
         campaignId: String,
         entries: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog>,
-        inbound: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage>,
+        inboundByPhone: Map<String, List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage>>,
         windowDays: Int,
         costPerCategory: Map<String, Double>,
         paymentsBySubscription: Map<Int, List<Payment>>
@@ -148,8 +150,8 @@ class WhatsAppAnalyticsService(
         val responded = if (startedAt == null) {
             0
         } else {
-            inbound.count { msg ->
-                phones.contains(msg.phone) && !msg.createdAt.isBefore(startedAt)
+            phones.sumOf { phone ->
+                inboundByPhone[phone].orEmpty().count { !it.createdAt.isBefore(startedAt) }
             }
         }
         val conversionAmount = computeRecoveredAmount(entries, windowDays, paymentsBySubscription)
@@ -406,7 +408,8 @@ class WhatsAppAnalyticsService(
 
     data class WhatsAppCampaignDetail(
         val summary: WhatsAppCampaignAnalytics?,
-        val messages: List<WhatsAppMessageAnalyticsRow>
+        val messages: List<WhatsAppMessageAnalyticsRow>,
+        val logs: List<com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog> = emptyList()
     )
 
     data class WhatsAppAnalyticsDailyPoint(

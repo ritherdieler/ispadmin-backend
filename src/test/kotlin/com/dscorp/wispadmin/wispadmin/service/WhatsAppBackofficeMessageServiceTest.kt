@@ -323,6 +323,14 @@ class WhatsAppBackofficeMessageServiceTest {
     }
 
     @Test
+    fun `listTemplates consulta plantillas sincronizadas en una sola query batch`() {
+        service.listTemplates()
+
+        verify(syncedTemplateRepository, times(1)).findByNameIn(ArgumentMatchers.anyCollection())
+        verify(syncedTemplateRepository, never()).findByName(ArgumentMatchers.anyString())
+    }
+
+    @Test
     fun `listTemplates marks manual send only for payment reminder and validation`() {
         val templates = service.listTemplates()
 
