@@ -31,7 +31,7 @@ class Payment(
     var method: String? = "",
     var amountPaid: Double? = null,
     var paid: Boolean,
-    @ManyToOne @JoinColumn(name = "subscription_id")
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "subscription_id")
     var subscription: Subscription? = null,
     //user who made the payment
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "responsible_user_id")

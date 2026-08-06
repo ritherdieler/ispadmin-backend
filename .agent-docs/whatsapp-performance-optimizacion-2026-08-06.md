@@ -1,13 +1,56 @@
-# WhatsApp — Optimización de rendimiento backend (fases 1, 2, 3, 5, 6 y 7)
+# WhatsApp — Optimización de rendimiento backend (fases 1–8)
 
-Implementación de `/Users/sergiocarrillo/.cursor/plans/optimización_rendimiento_whatsapp_0a721245.plan.md`, alcance: fases **1, 2, 3, 5, 6 y 7**. Quedan fuera de este trabajo (a cargo de otro equipo):
+Implementación de `/Users/sergiocarrillo/.cursor/plans/optimización_rendimiento_whatsapp_0a721245.plan.md`, alcance backend: fases **1, 2, 3, 4, 5, 6, 7 y 8**.
 
-- **Fase 4** (envío async del webhook / pipeline de bot en cola separada).
-- **Fase 8** (`Payment.subscription` a `FetchType.LAZY`).
+Cada fase con TDD (test rojo → verde) y commits separados cuando aplica.
 
-Cada fase se implementó con TDD (test que falla primero, verificando con Mockito/MockK cuántas veces se invoca un repositorio, luego implementación mínima para pasarlo) y quedó en un commit independiente.
+## Fase 4 — Envío masivo async + prefetch batch (2026-08-06)
 
-## Fase 1 — Índices de BD + tuning Hibernate/HikariCP
+**Problema:** `sendSelected` hacía N queries `findWhatsAppPaymentRowById` y bloqueaba el hilo Tomcat con `runBlocking` hasta terminar todo el lote.
+
+**Fix:**
+
+- `PaymentRepository.findWhatsAppPaymentRowsByIds`: una query antes del loop paralelo; mapa `id → row` en `executeSendSelected`.
+- `WhatsAppBatchSendJobService`: job en `whatsAppBatchTaskExecutor`; progreso vía STOMP `BATCH_PROGRESS` (`CrmEventPublisher.BATCH_PROGRESS`) y estado en memoria.
+- Feature flag `whatsapp.backoffice.async-batch-send` (default `false` en prod/dev). Con flag activo y más de un destinatario: `POST /whatsapp/messages/selected` → **202 Accepted** + `WhatsAppBatchSendAcceptedDto` (`campaignId`, `total`, `templateCode`, `status=RUNNING`).
+- `GET /whatsapp/batch/{campaignId}/status` → `WhatsAppBatchSendStatusDto` (conteos + detalle acumulado).
+- Ruta síncrona legacy sin flag: mismo contrato 200 + `WhatsAppMessageBatchResultDto`; mantiene semáforo `batchConcurrency`.
+
+**Tests:** `WhatsAppBatchSendJobServiceTest`, prefetch batch en `WhatsAppBackofficeMessageServiceTest`.
+
+**Propiedades:**
+
+```properties
+whatsapp.backoffice.async-batch-send=false
+```
+
+## Fase 6 (complemento) — Webhook inbound en pipeline separado + chat state (2026-08-06)
+
+La fase 6 original incluía `markAllRead` batch (commit `4fb8c4b`). En esta entrega:
+
+- `WhatsAppWebhookService`: mensajes entrantes → `scheduleInboundProcessing` (no `processInboundMessage` síncrono en el hilo del webhook).
+- `WhatsAppInboundMessageService`: persistencia rápida sin descarga de media (`persistInboundShell`); media + bot/LLM/reply en `whatsAppInboundPipelineExecutor`.
+- `WhatsAppChatStateService.runWithPipelineState`: carga única de estado por hilo de pipeline; `resolveState` / `persistState` evitan N `findByPhone` dentro del mismo inbound.
+
+**Propiedades:**
+
+```properties
+whatsapp.inbound-pipeline.timeout-seconds=120
+```
+
+(Reservado para acotar el pipeline; el executor dedicado ya desacopla el camino crítico del webhook.)
+
+**Tests:** `WhatsAppWebhookServiceTest` (verifica `scheduleInboundProcessing`).
+
+## Fase 8 — `Payment.subscription` LAZY (2026-08-06)
+
+- `Payment.kt`: `@ManyToOne(fetch = FetchType.LAZY)` en `subscription`.
+- Auditoría `payment.subscription` en producción: `WhatsAppBackofficeMessageService` (candidatos vía filas SQL, no entidad), `MikrotikService` (métodos `@Transactional`), `WhatsAppAnalyticsService`.
+- Analytics: `findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription` con `JOIN FETCH` para agrupar sin N+1 ni `LazyInitializationException`.
+
+**Test:** `PaymentSubscriptionFetchTypeTest`.
+
+## Fases 1–7 (resumen previo)
 
 ### Índices nuevos (`db/migration/V14__whatsapp_performance_indexes.sql` + anotaciones `@Index` en las entidades)
 
@@ -146,25 +189,33 @@ spring.datasource.hikari.minimum-idle=5
 - `service/WhatsAppInboundMessageService.kt`
 - `service/whatsapp/WhatsAppMetaAnalyticsParser.kt`
 - `controller/WhatsAppBackofficeController.kt`
+- `service/whatsapp/WhatsAppBatchSendJobService.kt` (fase 4)
+- `config/WhatsAppAsyncConfig.kt` (fases 4/6)
+- `dto/WhatsAppBatchSendDto.kt` (fase 4)
+- `service/WhatsAppWebhookService.kt` (fase 6)
+- `service/whatsapp/WhatsAppChatStateService.kt` (fase 6)
+- `data/model/Payment.kt` (fase 8)
+- `service/whatsapp/CrmEventPublisher.kt` (`BATCH_PROGRESS`, fase 4)
 
 **Tests (nuevos o actualizados):**
 
-- `data/model/WhatsAppPerformanceIndexesTest.kt` (nuevo)
-- `config/WhatsAppPerformancePropertiesTest.kt` (nuevo)
+- `data/model/WhatsAppPerformanceIndexesTest.kt`
+- `config/WhatsAppPerformancePropertiesTest.kt`
 - `service/whatsapp/WhatsAppAnalyticsServiceTest.kt`
 - `service/WhatsAppBackofficeMessageServiceTest.kt`
 - `service/whatsapp/WhatsAppConversationQueryServiceTest.kt`
 - `service/whatsapp/WhatsAppConversationServiceTest.kt`
 - `service/WhatsAppInboundMessageServiceTest.kt`
 - `service/whatsapp/WhatsAppMetaAnalyticsParserTest.kt`
-
-No se tocaron `WhatsAppWebhookService.kt` (fase 4, envío async, fuera de alcance) ni `Payment.kt`/`Subscription.kt` para el `FetchType` de la relación `subscription` (fase 8, fuera de alcance).
+- `service/whatsapp/WhatsAppBatchSendJobServiceTest.kt` (fase 4)
+- `data/model/PaymentSubscriptionFetchTypeTest.kt` (fase 8)
+- `service/WhatsAppWebhookServiceTest.kt` (fase 6)
 
 ## Resultado de pruebas
 
-- Suite completa: **865 tests**. Con todas las fases aplicadas, la única diferencia frente al baseline previo al trabajo son los tests nuevos agregados en cada fase.
-- Fallas observadas en la corrida de la suite completa (16 failures + 2 errors): **todas preexistentes y no relacionadas** con estos cambios — `OltInventorySyncServiceTest` / `OltInventorySyncServiceProxySafetyTest` (flakiness por estado compartido/orden de ejecución entre tests del módulo OLT, confirmado porque pasan en verde al ejecutarse en aislamiento), `HuaweiCliSessionReadTest.readUntil falla rapido si la sesion SSH muere durante el comando` y `CrmConversationServiceTest.markPendingOnHandoff creates or updates conversation` (fallas base ya presentes antes de iniciar este trabajo).
-- Todos los tests de WhatsApp (analytics, backoffice message service, conversation query/service, inbound message service, meta analytics parser, índices/propiedades de performance) pasan en verde tanto de forma aislada como dentro de la suite completa.
+- Suite completa: **870 tests** (5 tests nuevos en fases 4/6/8).
+- Fallas **preexistentes, no regresiones WhatsApp**: `HuaweiCliSessionReadTest.readUntil falla rapido si la sesion SSH muere durante el comando` (1 failure), `CrmConversationServiceTest.markPendingOnHandoff creates or updates conversation` (1 error MockK). No fallos OLT en esta corrida.
+- Tests WhatsApp/batch async (`WhatsAppBatchSendJobServiceTest`, `WhatsAppBackofficeMessageServiceTest` prefetch, `WhatsAppWebhookServiceTest`, `WhatsAppInboundMessageServiceTest`, `WhatsAppAnalyticsServiceTest`, `PaymentSubscriptionFetchTypeTest`, `WhatsAppChatStateServiceTest`): **en verde**.
 
 ## Commits
 
@@ -176,10 +227,8 @@ No se tocaron `WhatsAppWebhookService.kt` (fase 4, envío async, fuera de alcanc
 | 5 | `4464f85` | `perf(whatsapp): eliminar N+1 en bandeja de conversaciones y contexto (fase 5)` |
 | 6 | `4fb8c4b` | `perf(whatsapp): markAllRead con UPDATE batch y conteo de no leidos sin cargar filas (fase 6)` |
 | 7 | `c13e719` | `perf(whatsapp): eliminar N+1 en plantillas, analytics de Meta y detalle de campana (fase 7)` |
+| 4 | `3fa36df` | `perf(whatsapp): envio masivo async con prefetch batch y progreso BATCH_PROGRESS (fase 4)` |
+| 6b | `e4f1726` | `perf(whatsapp): pipeline inbound en executor separado y chat state por hilo (fase 6)` |
+| 8 | `8c1ea9e` | `perf(whatsapp): Payment.subscription LAZY con JOIN FETCH en analytics (fase 8)` |
 
-Rama de trabajo: `perf/whatsapp-fases-1-2-3-5-6-7`.
-
-## Fuera de alcance (a cargo de otro equipo)
-
-- **Fase 4** — Envío async del webhook (persistir inbound y responder rápido, procesar pipeline de bot/LLM/media en cola separada con timeout). Se evaluó un scope reducido (timeout acotado dentro de la corrutina ya asíncrona de `processPayloadAsync`) pero se descartó por el riesgo de romper la cobertura de tests existente que asume ejecución síncrona de `processInboundMessage`; se deja íntegramente para el otro equipo.
-- **Fase 8** — Cambiar `Payment.subscription` a `FetchType.LAZY`. No se tocó `Payment.kt` ni `Subscription.kt`.
+Rama de trabajo: `perf/whatsapp-fases-1-2-3-5-6-7` (continúa con fases 4, 6b y 8).

@@ -280,9 +280,12 @@ class WhatsAppAnalyticsService(
         val minFrom = logs.minOf { it.createdAt }
         val maxTo = logs.maxOf { it.createdAt }.plusDays(windowDays.toLong())
         return paymentRepository
-            .findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(subscriptionIds, minFrom, maxTo)
-            .mapNotNull { payment -> payment.subscription?.id?.let { it to payment } }
-            .groupBy({ it.first }, { it.second })
+            .findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+                subscriptionIds,
+                minFrom,
+                maxTo
+            )
+            .groupBy { payment -> requireNotNull(payment.subscription?.id) }
     }
 
     private fun computeRecoveredAmount(

@@ -531,7 +531,7 @@ class WhatsAppAnalyticsServiceTest {
 
         service.conversion(from, to)
 
-        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(
+        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
             anyCollection(),
             anyLocalDateTime(),
             anyLocalDateTime()
@@ -557,7 +557,7 @@ class WhatsAppAnalyticsServiceTest {
             )
         )
         `when`(
-            paymentRepository.findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(
+            paymentRepository.findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
                 anyCollection(),
                 anyLocalDateTime(),
                 anyLocalDateTime()
@@ -596,7 +596,7 @@ class WhatsAppAnalyticsServiceTest {
 
         service.campaigns(from, to)
 
-        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(
+        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
             anyCollection(),
             anyLocalDateTime(),
             anyLocalDateTime()
