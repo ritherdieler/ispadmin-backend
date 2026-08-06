@@ -15,4 +15,10 @@ object WhatsAppMessagingLimitTiers {
         if (tier == null) return null
         return LIMITS[tier.uppercase()]
     }
+
+    fun resolveDailyLimit(tier: String?, override: Int?): Int? {
+        val overrideLimit = override?.takeIf { it > 0 }
+        if (overrideLimit != null) return overrideLimit
+        return dailyLimitFor(tier)
+    }
 }

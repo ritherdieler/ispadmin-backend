@@ -25,6 +25,7 @@ class WhatsAppProperties {
     var inboundAlert: WhatsAppInboundAlertProperties = WhatsAppInboundAlertProperties()
     var handover: WhatsAppHandoverProperties = WhatsAppHandoverProperties()
     var mediaStorageDir: String = "./data/whatsapp/media"
+    var messagingDailyLimitOverride: Int = 0
 
     fun businessAccountUrl(): String {
         return "${graphApiBaseUrl()}/$businessAccountId"

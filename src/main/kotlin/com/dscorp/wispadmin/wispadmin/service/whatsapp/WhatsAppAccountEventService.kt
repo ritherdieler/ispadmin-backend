@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
+import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppAccountEvent
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppAccountAlertDto
@@ -16,7 +17,8 @@ class WhatsAppAccountEventService(
     private val accountEventRepository: WhatsAppAccountEventRepository,
     private val messageLogRepository: WhatsAppMessageLogRepository,
     private val syncedTemplateRepository: WhatsAppSyncedTemplateRepository,
-    private val metaAnalyticsClient: WhatsAppMetaAnalyticsClient
+    private val metaAnalyticsClient: WhatsAppMetaAnalyticsClient,
+    private val whatsAppProperties: WhatsAppProperties
 ) {
 
     companion object {
@@ -73,7 +75,10 @@ class WhatsAppAccountEventService(
 
         val phoneHealthNode = metaAnalyticsClient.fetchPhoneNumberHealth()
         val messagingLimitTier = WhatsAppMetaAnalyticsClient.parseMessagingLimitTier(phoneHealthNode)
-        val messagingLimit = WhatsAppMessagingLimitTiers.dailyLimitFor(messagingLimitTier)
+        val messagingLimit = WhatsAppMessagingLimitTiers.resolveDailyLimit(
+            messagingLimitTier,
+            whatsAppProperties.messagingDailyLimitOverride
+        )
         val liveQualityRating = WhatsAppMetaAnalyticsClient.parseQualityRating(phoneHealthNode)
         val resolvedQuality = latestQuality ?: liveQualityRating
 

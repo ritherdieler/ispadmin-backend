@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
+import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppAccountEventRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
@@ -20,12 +21,14 @@ class WhatsAppAccountEventServiceTest {
     private val syncedTemplateRepository = mockk<WhatsAppSyncedTemplateRepository>()
     private val metaAnalyticsClient = mockk<WhatsAppMetaAnalyticsClient>()
     private val objectMapper = ObjectMapper()
+    private val whatsAppProperties = WhatsAppProperties()
 
     private val service = WhatsAppAccountEventService(
         accountEventRepository,
         messageLogRepository,
         syncedTemplateRepository,
-        metaAnalyticsClient
+        metaAnalyticsClient,
+        whatsAppProperties
     )
 
     private fun stubBaseline(phoneHealthJson: String, sentLogsCount: Int, totalLogsCount: Int = sentLogsCount) {
@@ -112,5 +115,18 @@ class WhatsAppAccountEventServiceTest {
         val health = service.getAccountHealth()
 
         assertTrue(health.alerts.none { it.type == "MESSAGING_LIMIT_NEAR" || it.type == "MESSAGING_LIMIT_REACHED" })
+    }
+
+    @Test
+    fun `getAccountHealth prefers messaging daily limit override over Meta tier`() {
+        whatsAppProperties.messagingDailyLimitOverride = 2000
+        stubBaseline("""{"messaging_limit_tier":"TIER_250","quality_rating":"GREEN"}""", sentLogsCount = 430)
+
+        val health = service.getAccountHealth()
+
+        assertEquals(2000, health.messagingLimit)
+        assertEquals("TIER_250", health.messagingLimitTier)
+        assertEquals(430, health.messagingUsedToday)
+        assertTrue(health.alerts.none { it.type == "MESSAGING_LIMIT_REACHED" })
     }
 }
