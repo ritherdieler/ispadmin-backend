@@ -49,6 +49,8 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     fun countByPhone(phone: String): Long
 
+    fun countByPhoneAndReadAtIsNull(phone: String): Long
+
     fun countByPhoneAndCreatedAtAfter(phone: String, createdAt: LocalDateTime): Long
 
     @Query(
@@ -70,4 +72,8 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
         nativeQuery = true
     )
     fun findRecentActivePhones(@Param("limit") limit: Int): List<String>
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE WhatsAppInboundMessage m SET m.readAt = :readAt WHERE m.id IN :ids AND m.readAt IS NULL")
+    fun markReadByIds(@Param("ids") ids: Collection<Int>, @Param("readAt") readAt: LocalDateTime): Int
 }

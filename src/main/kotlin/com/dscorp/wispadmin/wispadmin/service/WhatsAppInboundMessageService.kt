@@ -180,7 +180,7 @@ class WhatsAppInboundMessageService(
                 ?: inbound.buttonReplyTitle
                 ?: inbound.messageType
             val hasMedia = WhatsAppConversationQueryService.inboundHasMedia(inbound)
-            val unreadCount = inboundMessageRepository.findByPhoneAndReadAtIsNull(inbound.phone).size
+            val unreadCount = inboundMessageRepository.countByPhoneAndReadAtIsNull(inbound.phone).toInt()
             crmEventPublisher.publish(
                 eventType = CrmEventPublisher.MESSAGE_RECEIVED,
                 payload = mapOf(

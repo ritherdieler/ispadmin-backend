@@ -630,8 +630,8 @@ class WhatsAppConversationServiceTest {
     fun `markAllRead persists readAt for all unread inbound of phone`() {
         val phone = "51902354183"
         val unread = listOf(
-            WhatsAppInboundMessage(id = 1, metaMessageId = "m1", phone = phone, readAt = null),
-            WhatsAppInboundMessage(id = 2, metaMessageId = "m2", phone = phone, readAt = null)
+            WhatsAppInboundMessage(id = 1, metaMessageId = "m1", phone = phone, readAt = null, createdAt = LocalDateTime.now().minusMinutes(5)),
+            WhatsAppInboundMessage(id = 2, metaMessageId = "m2", phone = phone, readAt = null, createdAt = LocalDateTime.now())
         )
         every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } answers {
             val queried = firstArg<String>()
@@ -644,13 +644,53 @@ class WhatsAppConversationServiceTest {
             recipient = null,
             senderPhoneNumberId = "123"
         )
-        every { inboundMessageRepository.save(any()) } answers { firstArg() }
+        every { inboundMessageRepository.markReadByIds(any(), any()) } returns 2
 
         val result = service.markAllRead(phone)
 
         assertEquals(2, result.markedCount)
         assertTrue(result.success)
-        verify(exactly = 2) { inboundMessageRepository.save(match { it.readAt != null }) }
+        verify(exactly = 1) { inboundMessageRepository.markReadByIds(match { it.toSet() == setOf(1, 2) }, any()) }
+        verify(exactly = 0) { inboundMessageRepository.save(any()) }
+    }
+
+    @Test
+    fun `markAllRead llama markMessageAsRead una sola vez para el mensaje mas reciente`() {
+        val phone = "51902354183"
+        val unread = listOf(
+            WhatsAppInboundMessage(id = 1, metaMessageId = "m1", phone = phone, readAt = null, createdAt = LocalDateTime.now().minusMinutes(5)),
+            WhatsAppInboundMessage(id = 2, metaMessageId = "m2", phone = phone, readAt = null, createdAt = LocalDateTime.now())
+        )
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } answers {
+            val queried = firstArg<String>()
+            if (queried == phone || queried == "902354183") unread else emptyList()
+        }
+        every { whatsAppService.markMessageAsRead(any()) } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = null,
+            recipient = null,
+            senderPhoneNumberId = "123"
+        )
+        every { inboundMessageRepository.markReadByIds(any(), any()) } returns 2
+
+        service.markAllRead(phone)
+
+        verify(exactly = 1) { whatsAppService.markMessageAsRead(any()) }
+        verify(exactly = 1) { whatsAppService.markMessageAsRead("m2") }
+    }
+
+    @Test
+    fun `markAllRead no hace nada si no hay mensajes no leidos`() {
+        val phone = "51902354183"
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } returns emptyList()
+
+        val result = service.markAllRead(phone)
+
+        assertEquals(0, result.markedCount)
+        assertTrue(result.success)
+        verify(exactly = 0) { whatsAppService.markMessageAsRead(any()) }
+        verify(exactly = 0) { inboundMessageRepository.markReadByIds(any(), any()) }
     }
 
     @Test

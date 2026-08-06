@@ -116,7 +116,7 @@ class WhatsAppInboundMessageServiceTest {
         )
         every { handoffService.pauseBotAndPassToAdvisor(any(), any()) } returns
             WhatsAppHandoffResult(botPaused = true, metaTransferred = false)
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } returns emptyList()
+        every { inboundMessageRepository.countByPhoneAndReadAtIsNull(any()) } returns 0L
         every { crmConversationService.touchInbound(any(), any()) } answers {
             CrmConversation(
                 id = 99L,
@@ -758,9 +758,7 @@ class WhatsAppInboundMessageServiceTest {
         }
         every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
         every { conversationService.hasRecentOperatorReply(payload.phone) } returns true
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(payload.phone) } returns listOf(
-            WhatsAppInboundMessage(id = 99, phone = payload.phone, metaMessageId = payload.metaMessageId)
-        )
+        every { inboundMessageRepository.countByPhoneAndReadAtIsNull(payload.phone) } returns 1L
 
         service.processInboundMessage(payload)
 
