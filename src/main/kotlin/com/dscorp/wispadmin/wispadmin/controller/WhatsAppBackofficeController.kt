@@ -619,7 +619,7 @@ class WhatsAppBackofficeController(
         @RequestBody request: WhatsAppConversationTemplateBody,
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
-        forbiddenUnlessAdmin(httpRequest)?.let { return it }
+        // Ownership enforced in sendOperatorTemplate via assertCanReply (assignee or ADMIN).
         return try {
             val operator = resolveOperator(httpRequest)
             val result = conversationService.sendOperatorTemplate(

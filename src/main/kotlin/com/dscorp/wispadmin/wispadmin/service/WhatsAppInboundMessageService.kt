@@ -27,6 +27,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntentRout
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppIntentClassifier
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayload
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTicketDescriptionFormatter
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmConstants
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage
 import com.google.firebase.messaging.FirebaseMessaging
@@ -605,12 +606,10 @@ class WhatsAppInboundMessageService(
                 "CABLE_INTERRUPTION", "TV_NO_SIGNAL", "TV_INTERFERENCE", "DECODER_ERROR" -> "Otros"
                 else -> "Sin Conexión a Internet"
             }
-            val diag = buttonReplyId?.substringAfterLast('_').orEmpty()
-            val description = buildString {
-                append("Averia WhatsApp")
-                if (!issueCode.isNullOrBlank()) append(" · ").append(issueCode)
-                if (diag.isNotBlank()) append(" · diagnostico=").append(diag)
-            }
+            val description = WhatsAppTicketDescriptionFormatter.buildHumanReadableTicketDescription(
+                issueCode = issueCode,
+                buttonReplyId = buttonReplyId,
+            )
             val conversation = crmConversationService.getByPhone(phone)
             crmTicketLinkService.createGuidedFaultTicket(
                 phone = phone,

@@ -602,9 +602,7 @@ class WhatsAppConversationService(
         agentId: Int? = null,
         isAdmin: Boolean = false
     ): WhatsAppThreadMessageDto {
-        if (!isAdmin) {
-            throw CrmConversationForbiddenException("Solo ADMIN puede enviar plantillas.")
-        }
+        // Assignee (e.g. SECRETARY) or ADMIN may send HSM templates from an owned thread.
         crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
         val definition = WhatsAppTemplateCatalog.getByCodeString(templateCode)
         val subscription = findSubscriptionByPhone(phone)

@@ -86,15 +86,31 @@ class WhatsAppBackofficeControllerTemplateAuthTest {
     }
 
     @Test
-    fun `sendConversationTemplate forbidden for SECRETARY`() {
+    fun `sendConversationTemplate allowed for SECRETARY when service accepts ownership`() {
+        every {
+            conversationService.sendOperatorTemplate(
+                phone = "51999999999",
+                templateCode = "PAYMENT_REMINDER",
+                operatorUsername = "sec",
+                agentId = 2,
+                isAdmin = false
+            )
+        } returns mockk(relaxed = true)
+
         val response = controller.sendConversationTemplate(
             "51999999999",
             WhatsAppConversationTemplateBody(templateCode = "PAYMENT_REMINDER"),
             secretaryRequest()
         )
-        assertEquals(HttpStatus.FORBIDDEN, response.statusCode)
-        verify(exactly = 0) {
-            conversationService.sendOperatorTemplate(any(), any(), any(), any(), any())
+        assertEquals(HttpStatus.OK, response.statusCode)
+        verify(exactly = 1) {
+            conversationService.sendOperatorTemplate(
+                phone = "51999999999",
+                templateCode = "PAYMENT_REMINDER",
+                operatorUsername = "sec",
+                agentId = 2,
+                isAdmin = false
+            )
         }
     }
 

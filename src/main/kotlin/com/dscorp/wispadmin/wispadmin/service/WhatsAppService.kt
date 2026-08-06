@@ -2,7 +2,6 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianWhatsAppPhone
-import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppDocumentPayload
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveAction
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveActionButton
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveButton
@@ -15,7 +14,6 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveListSection
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveReplyBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppInteractiveText
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMarkReadBody
-import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMediaIdPayload
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMediaMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMessageContext
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppPassThreadControlBody
@@ -34,6 +32,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveListOp
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveMessageValidator
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveOption
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveSection
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaMessagePayloadBuilder
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateButtonParameter
@@ -51,12 +50,17 @@ import org.springframework.web.client.RestTemplate
 @Service
 class WhatsAppService(
     private val whatsAppProperties: WhatsAppProperties,
-    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
+    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor,
 ) {
 
     private val log = LoggerFactory.getLogger(this::class.java)
-    private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
+    private var restTemplate: RestTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
     private val objectMapper = ObjectMapper()
+
+    /** Replaces the HTTP client for unit tests backed by MockRestServiceServer. */
+    internal fun useRestTemplate(template: RestTemplate) {
+        restTemplate = template
+    }
 
     fun sendTextMessage(
         phoneNumber: String,
@@ -125,37 +129,15 @@ class WhatsAppService(
         if (!whatsAppProperties.isConfigured()) {
             throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
         }
-        val type = when (kind) {
-            WhatsAppOutboundMediaKind.IMAGE -> "image"
-            WhatsAppOutboundMediaKind.DOCUMENT -> "document"
-            WhatsAppOutboundMediaKind.AUDIO -> "audio"
-        }
-        val context = contextMessageId?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
-        val trimmedCaption = caption?.trim()?.takeIf { it.isNotEmpty() }?.take(1024)
-        val body = when (kind) {
-            WhatsAppOutboundMediaKind.IMAGE -> WhatsAppMediaMessageBody(
-                to = normalizePhoneNumber(phoneNumber),
-                type = type,
-                context = context,
-                image = WhatsAppMediaIdPayload(id = mediaId, caption = trimmedCaption)
-            )
-            WhatsAppOutboundMediaKind.DOCUMENT -> WhatsAppMediaMessageBody(
-                to = normalizePhoneNumber(phoneNumber),
-                type = type,
-                context = context,
-                document = WhatsAppDocumentPayload(
-                    id = mediaId,
-                    caption = trimmedCaption,
-                    filename = filename?.takeIf { it.isNotBlank() }
-                )
-            )
-            WhatsAppOutboundMediaKind.AUDIO -> WhatsAppMediaMessageBody(
-                to = normalizePhoneNumber(phoneNumber),
-                type = type,
-                context = context,
-                audio = WhatsAppMediaIdPayload(id = mediaId)
-            )
-        }
+        val body = WhatsAppMediaMessagePayloadBuilder.build(
+            phoneNumber = phoneNumber,
+            kind = kind,
+            mediaId = mediaId,
+            caption = caption,
+            filename = filename,
+            contextMessageId = contextMessageId,
+            normalizePhone = ::normalizePhoneNumber,
+        )
         return postToMeta(body)
     }
 
