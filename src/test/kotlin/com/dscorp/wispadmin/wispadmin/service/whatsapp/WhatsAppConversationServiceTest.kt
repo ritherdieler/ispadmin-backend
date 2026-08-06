@@ -498,7 +498,65 @@ class WhatsAppConversationServiceTest {
     }
 
     @Test
-    fun `sendOperatorTemplate forbidden when not admin`() {
+    fun `sendOperatorTemplate allows non-admin assignee when assertCanReply passes`() {
+        val phone = "51902354183"
+        val subscription = Subscription(
+            firstName = "Ana",
+            lastName = "Lopez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 10 }
+        every { subscriptionRepository.findByNormalizedPhone("902354183") } returns listOf(subscription)
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(10)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 5, 31, 0, 0)
+            ).apply { id = 99 }
+        )
+        every {
+            templateDeliveryService.deliverTemplate(
+                definition = any(),
+                subscription = subscription,
+                phone = phone,
+                payment = any(),
+                oldestUnpaidPayment = any(),
+                paymentId = 99,
+                subscriptionId = 10,
+                welcomeContext = null,
+                operatorUsername = "secretaria1"
+            )
+        } returns WhatsAppMessageLog(
+            id = 102,
+            phone = phone,
+            messageType = "PAYMENT_REMINDER",
+            status = "SENT",
+            message = "preview",
+            operatorUsername = "secretaria1"
+        )
+
+        val result = service.sendOperatorTemplate(
+            phone = phone,
+            templateCode = "PAYMENT_REMINDER",
+            operatorUsername = "secretaria1",
+            agentId = 7,
+            isAdmin = false
+        )
+
+        assertEquals("outbound:102", result.id)
+        verify { crmConversationService.assertCanReply(phone, 7, false) }
+    }
+
+    @Test
+    fun `sendOperatorTemplate forbidden when assertCanReply rejects non-assignee`() {
+        every {
+            crmConversationService.assertCanReply("51902354183", 7, false)
+        } throws CrmConversationForbiddenException("Debes tomar la conversacion antes de responder")
+
         val ex = assertThrows(CrmConversationForbiddenException::class.java) {
             service.sendOperatorTemplate(
                 phone = "51902354183",
@@ -508,8 +566,20 @@ class WhatsAppConversationServiceTest {
                 isAdmin = false
             )
         }
-        assertEquals("Solo ADMIN puede enviar plantillas.", ex.message)
-        verify(exactly = 0) { crmConversationService.assertCanReply(any(), any(), any()) }
+        assertEquals("Debes tomar la conversacion antes de responder", ex.message)
+        verify(exactly = 0) {
+            templateDeliveryService.deliverTemplate(
+                definition = any(),
+                subscription = any(),
+                phone = any(),
+                payment = any(),
+                oldestUnpaidPayment = any(),
+                paymentId = any(),
+                subscriptionId = any(),
+                welcomeContext = any(),
+                operatorUsername = any()
+            )
+        }
     }
 
     @Test
@@ -563,7 +633,10 @@ class WhatsAppConversationServiceTest {
             WhatsAppInboundMessage(id = 1, metaMessageId = "m1", phone = phone, readAt = null),
             WhatsAppInboundMessage(id = 2, metaMessageId = "m2", phone = phone, readAt = null)
         )
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(phone) } returns unread
+        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } answers {
+            val queried = firstArg<String>()
+            if (queried == phone || queried == "902354183") unread else emptyList()
+        }
         every { whatsAppService.markMessageAsRead(any()) } returns WhatsAppSendResult(
             success = true,
             metaResponse = "{}",
