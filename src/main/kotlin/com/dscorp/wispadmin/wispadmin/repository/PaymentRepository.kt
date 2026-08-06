@@ -34,14 +34,27 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     @Query(
         value = """
-        SELECT p.*
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
+        INNER JOIN subscription s ON s.id = p.subscription_id
         ORDER BY p.billing_date_datetime ASC, p.id ASC
+        LIMIT :limit
     """,
         nativeQuery = true
     )
-    fun findAllReminderCandidatePayments(): List<Payment>
+    fun findReminderCandidatePaymentRows(
+        @Param("limit") limit: Int
+    ): List<Array<Any>>
 
     @Query(
         value = """

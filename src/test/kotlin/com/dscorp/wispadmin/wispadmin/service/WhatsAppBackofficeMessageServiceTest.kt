@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
-import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
@@ -24,6 +23,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -222,11 +222,11 @@ class WhatsAppBackofficeMessageServiceTest {
 
     @Test
     fun `listCandidates partitions valid and invalid phones for payment reminder`() {
-        `when`(paymentRepository.findAllReminderCandidatePayments()).thenReturn(
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
             listOf(
-                reminderPayment(id = 1, subscriptionId = 10, phone = "987654321"),
-                reminderPayment(id = 2, subscriptionId = 11, phone = "12345"),
-                reminderPayment(id = 3, subscriptionId = 12, phone = null),
+                reminderRow(paymentId = 1, subscriptionId = 10, phone = "987654321"),
+                reminderRow(paymentId = 2, subscriptionId = 11, phone = "12345"),
+                reminderRow(paymentId = 3, subscriptionId = 12, phone = null),
             )
         )
 
@@ -242,21 +242,70 @@ class WhatsAppBackofficeMessageServiceTest {
     }
 
     @Test
-    fun `listCandidates returns all rows without limit`() {
-        val payments = (1..250).map { index ->
-            reminderPayment(
-                id = index,
+    fun `listCandidates returns all rows up to the configured limit`() {
+        val rows = (1..250).map { index ->
+            reminderRow(
+                paymentId = index,
                 subscriptionId = index + 1000,
                 phone = if (index % 2 == 0) "987654321" else "invalid",
             )
         }
-        `when`(paymentRepository.findAllReminderCandidatePayments()).thenReturn(payments)
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(rows)
 
         val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
 
         assertEquals(125, response.candidates.size)
         assertEquals(125, response.invalidPhones.size)
         assertEquals(250, response.totals.valid + response.totals.invalid)
+    }
+
+    @Test
+    fun `listCandidates for reminder aplica limite alineado al daily-limit configurado`() {
+        whatsAppProperties.messagingDailyLimitOverride = 2000
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(emptyList())
+
+        service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
+
+        verify(paymentRepository, times(1)).findReminderCandidatePaymentRows(2000)
+    }
+
+    @Test
+    fun `listCandidates for reminder consulta hasSentToday en una sola query batch para N candidatos`() {
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
+            listOf(
+                reminderRow(paymentId = 1, subscriptionId = 10, phone = "987654321"),
+                reminderRow(paymentId = 2, subscriptionId = 11, phone = "987654322"),
+                reminderRow(paymentId = 3, subscriptionId = 12, phone = "987654323"),
+            )
+        )
+        `when`(
+            whatsAppMessageLogRepository.findPaymentIdsSentToday(
+                ArgumentMatchers.anyCollection(),
+                ArgumentMatchers.anyString(),
+                ArgumentMatchers.anyString(),
+                anyNonNull(LocalDateTime::class.java),
+                anyNonNull(LocalDateTime::class.java)
+            )
+        ).thenReturn(setOf(2))
+
+        val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
+
+        verify(whatsAppMessageLogRepository, times(1)).findPaymentIdsSentToday(
+            ArgumentMatchers.anyCollection(),
+            ArgumentMatchers.anyString(),
+            ArgumentMatchers.anyString(),
+            anyNonNull(LocalDateTime::class.java),
+            anyNonNull(LocalDateTime::class.java)
+        )
+        verify(whatsAppMessageLogRepository, never()).existsByPaymentIdAndMessageTypeAndStatusAndCreatedAtBetween(
+            ArgumentMatchers.anyInt(),
+            ArgumentMatchers.anyString(),
+            ArgumentMatchers.anyString(),
+            anyNonNull(LocalDateTime::class.java),
+            anyNonNull(LocalDateTime::class.java)
+        )
+        assertTrue(response.candidates.first { it.targetId == 2 }.alreadySentToday)
+        assertFalse(response.candidates.first { it.targetId == 1 }.alreadySentToday)
     }
 
     @Test
@@ -308,21 +357,19 @@ class WhatsAppBackofficeMessageServiceTest {
         assertEquals(1, response.totals.invalid)
     }
 
-    private fun reminderPayment(id: Int, subscriptionId: Int, phone: String?): Payment {
-        val subscription = Subscription(
-            firstName = "Juan",
-            lastName = "Perez",
-            phone = phone,
-            equipmentCondition = EquipmentCondition.LOAN,
-        ).apply { this.id = subscriptionId }
-
-        return Payment(
-            discountAmount = 0.0,
-            paid = false,
-            amountToPay = 50.0,
-            billingDateDatetime = LocalDateTime.of(2026, 7, 1, 0, 0),
-            subscription = subscription,
-        ).apply { this.id = id }
+    @Suppress("UNCHECKED_CAST")
+    private fun reminderRow(paymentId: Int, subscriptionId: Int, phone: String?): Array<Any> {
+        return arrayOf(
+            paymentId,
+            subscriptionId,
+            "Juan",
+            "Perez",
+            phone,
+            50.0,
+            null,
+            LocalDateTime.of(2026, 7, 1, 0, 0),
+            null,
+        ) as Array<Any>
     }
 
     private fun validationRow(paymentId: Int, subscriptionId: Int, phone: String): Array<Any> {

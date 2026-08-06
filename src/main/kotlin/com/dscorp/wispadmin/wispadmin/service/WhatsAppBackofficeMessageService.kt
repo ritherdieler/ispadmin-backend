@@ -70,13 +70,16 @@ class WhatsAppBackofficeMessageService(
         val tomorrowStart = todayStart.plusDays(1)
 
         val partition = when (definition.code) {
-            WhatsAppTemplateCode.PAYMENT_REMINDER ->
-                partitionPaymentEntities(
+            WhatsAppTemplateCode.PAYMENT_REMINDER -> {
+                val limit = whatsAppProperties.messagingDailyLimitOverride.takeIf { it > 0 }
+                    ?: DEFAULT_REMINDER_CANDIDATE_LIMIT
+                partitionPaymentRows(
                     definition = definition,
-                    payments = paymentRepository.findAllReminderCandidatePayments(),
+                    rows = paymentRepository.findReminderCandidatePaymentRows(limit),
                     todayStart = todayStart,
                     tomorrowStart = tomorrowStart
                 )
+            }
 
             WhatsAppTemplateCode.PAYMENT_VALIDATION -> {
                 val since = LocalDate.now()
@@ -384,56 +387,6 @@ class WhatsAppBackofficeMessageService(
         )
     }
 
-    private fun partitionPaymentEntities(
-        definition: WhatsAppTemplateDefinition,
-        payments: List<Payment>,
-        todayStart: LocalDateTime,
-        tomorrowStart: LocalDateTime
-    ): Pair<List<WhatsAppMessageCandidateDto>, List<WhatsAppInvalidPhoneCandidateDto>> {
-        val candidates = mutableListOf<WhatsAppMessageCandidateDto>()
-        val invalidPhones = mutableListOf<WhatsAppInvalidPhoneCandidateDto>()
-
-        payments.forEach { payment ->
-            val paymentId = payment.id ?: return@forEach
-            val subscription = payment.subscription ?: return@forEach
-            val subscriptionId = subscription.id ?: return@forEach
-            val clientName = subscription.getFullName()
-            val phone = subscription.phone
-            val phoneReason = phoneInvalidReason(phone)
-
-            if (phoneReason != null) {
-                invalidPhones += WhatsAppInvalidPhoneCandidateDto(
-                    subscriptionId = subscriptionId,
-                    targetId = paymentId,
-                    targetType = definition.targetType.name,
-                    clientName = clientName,
-                    phone = phone?.takeIf { it.isNotBlank() },
-                    reason = phoneReason
-                )
-                return@forEach
-            }
-
-            candidates += WhatsAppMessageCandidateDto(
-                targetType = definition.targetType.name,
-                targetId = paymentId,
-                paymentId = paymentId,
-                subscriptionId = subscriptionId,
-                clientName = clientName,
-                phone = phone!!,
-                amount = when (definition.code) {
-                    WhatsAppTemplateCode.PAYMENT_VALIDATION -> payment.amountPaid ?: payment.amountToPay
-                    else -> payment.amountToPay
-                },
-                billingDate = payment.billingDateDatetime.format(DATE_FORMAT),
-                paymentDate = payment.paymentDateDatetime?.format(DATE_FORMAT),
-                installationDate = null,
-                alreadySentToday = hasSentToday(definition, paymentId, todayStart, tomorrowStart)
-            )
-        }
-
-        return candidates to invalidPhones
-    }
-
     private fun partitionPaymentRows(
         definition: WhatsAppTemplateDefinition,
         rows: List<Array<Any>>,
@@ -442,6 +395,11 @@ class WhatsAppBackofficeMessageService(
     ): Pair<List<WhatsAppMessageCandidateDto>, List<WhatsAppInvalidPhoneCandidateDto>> {
         val candidates = mutableListOf<WhatsAppMessageCandidateDto>()
         val invalidPhones = mutableListOf<WhatsAppInvalidPhoneCandidateDto>()
+
+        val validPaymentIds = rows.mapNotNull { row ->
+            row.intAt(0).takeIf { phoneInvalidReason(row.stringAt(4)) == null }
+        }
+        val sentTodayPaymentIds = paymentIdsSentToday(definition, validPaymentIds, todayStart, tomorrowStart)
 
         rows.forEach { row ->
             val paymentId = row.intAt(0)
@@ -478,11 +436,27 @@ class WhatsAppBackofficeMessageService(
                 billingDate = billingDate,
                 paymentDate = paymentDate,
                 installationDate = null,
-                alreadySentToday = hasSentToday(definition, paymentId, todayStart, tomorrowStart)
+                alreadySentToday = sentTodayPaymentIds.contains(paymentId)
             )
         }
 
         return candidates to invalidPhones
+    }
+
+    private fun paymentIdsSentToday(
+        definition: WhatsAppTemplateDefinition,
+        paymentIds: Collection<Int>,
+        todayStart: LocalDateTime,
+        tomorrowStart: LocalDateTime
+    ): Set<Int> {
+        if (paymentIds.isEmpty()) return emptySet()
+        return whatsAppMessageLogRepository.findPaymentIdsSentToday(
+            paymentIds,
+            definition.messageType,
+            WhatsAppTemplateDeliveryService.STATUS_SENT,
+            todayStart,
+            tomorrowStart
+        )
     }
 
     private fun phoneInvalidReason(phone: String?): String? {
@@ -882,6 +856,7 @@ class WhatsAppBackofficeMessageService(
 
     companion object {
         private const val DEFAULT_CANDIDATE_LIMIT = 200
+        private const val DEFAULT_REMINDER_CANDIDATE_LIMIT = 2000
 
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     }

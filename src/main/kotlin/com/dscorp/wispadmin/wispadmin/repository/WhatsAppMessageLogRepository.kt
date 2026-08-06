@@ -3,6 +3,8 @@ package com.dscorp.wispadmin.wispadmin.repository
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.LocalDateTime
 
 interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> {
@@ -52,6 +54,10 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findTop10ByPhoneOrderByCreatedAtDesc(phone: String): List<WhatsAppMessageLog>
 
+    fun findByPhoneInOrderByCreatedAtDesc(phones: Collection<String>, pageable: Pageable): List<WhatsAppMessageLog>
+
+    fun findByPhoneIn(phones: Collection<String>): List<WhatsAppMessageLog>
+
     fun findByPaymentIdOrderByCreatedAtDesc(paymentId: Int): List<WhatsAppMessageLog>
 
     fun findByMetaMessageId(metaMessageId: String): WhatsAppMessageLog?
@@ -86,4 +92,38 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         from: LocalDateTime,
         to: LocalDateTime
     ): List<WhatsAppMessageLog>
+
+    @Query(
+        """
+        SELECT DISTINCT l.paymentId FROM WhatsAppMessageLog l
+        WHERE l.paymentId IN :paymentIds
+          AND l.messageType = :messageType
+          AND l.status = :status
+          AND l.createdAt BETWEEN :startDate AND :endDate
+        """
+    )
+    fun findPaymentIdsSentToday(
+        @Param("paymentIds") paymentIds: Collection<Int>,
+        @Param("messageType") messageType: String,
+        @Param("status") status: String,
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Set<Int>
+
+    @Query(
+        """
+        SELECT DISTINCT l.subscriptionId FROM WhatsAppMessageLog l
+        WHERE l.subscriptionId IN :subscriptionIds
+          AND l.messageType = :messageType
+          AND l.status = :status
+          AND l.createdAt BETWEEN :startDate AND :endDate
+        """
+    )
+    fun findSubscriptionIdsSentToday(
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>,
+        @Param("messageType") messageType: String,
+        @Param("status") status: String,
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): Set<Int>
 }
