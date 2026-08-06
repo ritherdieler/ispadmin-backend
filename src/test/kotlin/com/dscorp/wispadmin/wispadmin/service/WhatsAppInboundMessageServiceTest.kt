@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import java.util.concurrent.Executor
 
 class WhatsAppInboundMessageServiceTest {
 
@@ -92,8 +93,13 @@ class WhatsAppInboundMessageServiceTest {
             crmEventPublisher = crmEventPublisher,
             crmConversationService = crmConversationService,
             crmTicketLinkService = crmTicketLinkService,
-            csatSurveyService = csatSurveyService
+            csatSurveyService = csatSurveyService,
+            inboundPipelineExecutor = Executor { command -> command.run() }
         )
+        every { chatStateService.runWithPipelineState(any(), any()) } answers {
+            val block = secondArg<() -> Unit>()
+            block.invoke()
+        }
         every { csatSurveyService.tryHandleInbound(any(), any(), any(), any(), any()) } returns false
         every { chatStateService.isBotPaused(any()) } returns false
         every { chatStateService.beginInboundInteraction(any()) } returns WhatsAppInboundSession(
