@@ -46,7 +46,8 @@ class WhatsAppBackofficeControllerTemplateAuthTest {
             handoffService = mockk(relaxed = true),
             csvExportService = mockk(relaxed = true),
             auditService = mockk(relaxed = true),
-            crmEventPublisher = mockk<CrmEventPublisher>(relaxed = true)
+            crmEventPublisher = mockk<CrmEventPublisher>(relaxed = true),
+            batchSendJobService = mockk(relaxed = true)
         )
     }
 

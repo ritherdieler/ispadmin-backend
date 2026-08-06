@@ -34,7 +34,8 @@ class WhatsAppEventsControllerTest {
         handoffService = mockk(relaxed = true),
         csvExportService = mockk(relaxed = true),
         auditService = mockk(relaxed = true),
-        crmEventPublisher = crmEventPublisher
+        crmEventPublisher = crmEventPublisher,
+        batchSendJobService = mockk(relaxed = true)
     )
     private val mockMvc = MockMvcBuilders.standaloneSetup(controller).build()
 

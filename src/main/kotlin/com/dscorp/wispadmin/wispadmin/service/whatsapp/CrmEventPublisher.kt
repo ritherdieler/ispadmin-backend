@@ -69,6 +69,7 @@ class CrmEventPublisher(
         const val MESSAGE_RECEIVED = "MESSAGE_RECEIVED"
         const val MESSAGE_STATUS = "MESSAGE_STATUS"
         const val CONVERSATION_UPDATED = "CONVERSATION_UPDATED"
+        const val BATCH_PROGRESS = "BATCH_PROGRESS"
         private const val MAX_CATCH_UP = 500
     }
 }

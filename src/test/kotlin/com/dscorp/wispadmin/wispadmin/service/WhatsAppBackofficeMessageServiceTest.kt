@@ -42,9 +42,11 @@ class WhatsAppBackofficeMessageServiceTest {
     private val templateDeliveryService = mock(WhatsAppTemplateDeliveryService::class.java)
 
     private lateinit var service: WhatsAppBackofficeMessageService
+    private val paymentRowsById = mutableMapOf<Int, Array<Any>>()
 
     @BeforeEach
     fun setUp() {
+        paymentRowsById.clear()
         reset(
             paymentRepository,
             subscriptionRepository,
@@ -53,6 +55,11 @@ class WhatsAppBackofficeMessageServiceTest {
             templateDeliveryService
         )
         whatsAppProperties.backoffice.batchConcurrency = 8
+        `when`(paymentRepository.findWhatsAppPaymentRowsByIds(ArgumentMatchers.anyList())).thenAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            val ids = invocation.getArgument<List<Int>>(0)
+            ids.mapNotNull { paymentRowsById[it] }
+        }
         service = WhatsAppBackofficeMessageService(
             paymentRepository = paymentRepository,
             subscriptionRepository = subscriptionRepository,
@@ -218,6 +225,43 @@ class WhatsAppBackofficeMessageServiceTest {
             nullableArg(String::class.java),
             nullableArg(String::class.java)
         )
+    }
+
+    @Test
+    fun `sendSelected prefetch payment rows in a single batch query`() {
+        stubPaymentRow(1, 10, "Ana", "Lopez", "987654321")
+        stubPaymentRow(2, 11, "Bruno", "Diaz", "987654322")
+        stubHasSentToday { false }
+
+        doAnswer { invocation ->
+            WhatsAppMessageLog(
+                paymentId = invocation.getArgument(5),
+                subscriptionId = invocation.getArgument(6),
+                phone = invocation.getArgument(2),
+                messageType = "PAYMENT_REMINDER",
+                message = "ok",
+                status = WhatsAppTemplateDeliveryService.STATUS_SENT
+            )
+        }.`when`(templateDeliveryService).deliverTemplate(
+            anyNonNull(WhatsAppTemplateDefinition::class.java),
+            anyNonNull(Subscription::class.java),
+            ArgumentMatchers.anyString(),
+            nullableArg(Payment::class.java),
+            nullableArg(Payment::class.java),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(Int::class.javaObjectType),
+            nullableArg(WelcomeTemplateContext::class.java),
+            nullableArg(String::class.java),
+            nullableArg(String::class.java)
+        )
+
+        service.sendSelected(
+            WhatsAppTemplateCode.PAYMENT_REMINDER.name,
+            listOf(1, 2)
+        )
+
+        verify(paymentRepository, times(1)).findWhatsAppPaymentRowsByIds(listOf(1, 2))
+        verify(paymentRepository, never()).findWhatsAppPaymentRowById(ArgumentMatchers.anyInt())
     }
 
     @Test
@@ -402,8 +446,26 @@ class WhatsAppBackofficeMessageServiceTest {
         phone: String,
         paid: Boolean = false
     ) {
+        val row = paymentRowArray(paymentId, subscriptionId, firstName, lastName, phone, paid)
+        paymentRowsById[paymentId] = row
+        `when`(paymentRepository.findWhatsAppPaymentRowById(paymentId)).thenReturn(listOf(row))
+    }
+
+    private fun stubPaymentRowsBatch(rows: List<Array<Any>>) {
+        val ids = rows.map { (it[0] as Number).toInt() }
+        `when`(paymentRepository.findWhatsAppPaymentRowsByIds(ids)).thenReturn(rows)
+    }
+
+    private fun paymentRowArray(
+        paymentId: Int,
+        subscriptionId: Int,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        paid: Boolean = false
+    ): Array<Any> {
         @Suppress("UNCHECKED_CAST")
-        val row = arrayOf(
+        return arrayOf(
             paymentId,
             subscriptionId,
             firstName,
@@ -415,7 +477,6 @@ class WhatsAppBackofficeMessageServiceTest {
             null,
             paid,
         ) as Array<Any>
-        `when`(paymentRepository.findWhatsAppPaymentRowById(paymentId)).thenReturn(listOf(row))
     }
 
     private fun stubHasSentToday(predicate: (Int) -> Boolean) {

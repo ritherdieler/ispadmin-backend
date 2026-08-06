@@ -119,20 +119,55 @@ class WhatsAppBackofficeMessageService(
             return emptyBatchResult(definition.messageType)
         }
 
+        return executeSendSelected(
+            templateCode = templateCode,
+            targetIds = uniqueTargetIds,
+            campaignId = campaignId,
+            operatorUsername = operatorUsername,
+            onEachResult = null
+        )
+    }
+
+    fun executeSendSelected(
+        templateCode: String,
+        targetIds: List<Int>,
+        campaignId: String?,
+        operatorUsername: String?,
+        onEachResult: ((WhatsAppMessageResultDto) -> Unit)?
+    ): WhatsAppMessageBatchResultDto {
+        val definition = WhatsAppTemplateCatalog.getByCodeString(templateCode)
+        val uniqueTargetIds = targetIds.distinct()
+        if (uniqueTargetIds.isEmpty()) {
+            return emptyBatchResult(definition.messageType)
+        }
+
+        val paymentRowsById = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.PAYMENT) {
+            paymentRepository.findWhatsAppPaymentRowsByIds(uniqueTargetIds)
+                .associateBy { row -> row.intAt(0) }
+        } else {
+            emptyMap()
+        }
+
         val concurrency = whatsAppProperties.backoffice.batchConcurrency.coerceAtLeast(1)
         val details = runBlocking {
             val semaphore = Semaphore(concurrency)
             uniqueTargetIds.map { targetId ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
-                        try {
-                            attemptSend(definition, targetId, campaignId, operatorUsername)
+                        val result = try {
+                            attemptSend(
+                                definition = definition,
+                                targetId = targetId,
+                                campaignId = campaignId,
+                                operatorUsername = operatorUsername,
+                                prefetchedPaymentRow = paymentRowsById[targetId]
+                            )
                         } catch (e: Exception) {
                             WhatsAppMessageResultDto(
                                 targetId = targetId,
                                 targetType = definition.targetType.name,
-                                paymentId = if (definition.targetType == WhatsAppTargetType.PAYMENT) targetId else null,
-                                subscriptionId = if (definition.targetType == WhatsAppTargetType.SUBSCRIPTION) {
+                                paymentId = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.PAYMENT) targetId else null,
+                                subscriptionId = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.SUBSCRIPTION) {
                                     targetId
                                 } else {
                                     null
@@ -143,6 +178,8 @@ class WhatsAppBackofficeMessageService(
                                 reason = e.message ?: "No se pudo enviar el mensaje."
                             )
                         }
+                        onEachResult?.invoke(result)
+                        result
                     }
                 }
             }.awaitAll()
@@ -197,10 +234,17 @@ class WhatsAppBackofficeMessageService(
         definition: WhatsAppTemplateDefinition,
         targetId: Int,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        prefetchedPaymentRow: Array<Any>? = null
     ): WhatsAppMessageResultDto {
         return when (definition.targetType) {
-            WhatsAppTargetType.PAYMENT -> attemptSendPayment(definition, targetId, campaignId, operatorUsername)
+            WhatsAppTargetType.PAYMENT -> attemptSendPayment(
+                definition,
+                targetId,
+                campaignId,
+                operatorUsername,
+                prefetchedPaymentRow
+            )
             WhatsAppTargetType.SUBSCRIPTION -> attemptSendSubscription(definition, targetId, campaignId, operatorUsername)
         }
     }
@@ -209,9 +253,11 @@ class WhatsAppBackofficeMessageService(
         definition: WhatsAppTemplateDefinition,
         paymentId: Int,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        prefetchedPaymentRow: Array<Any>? = null
     ): WhatsAppMessageResultDto {
-        val row = paymentRepository.findWhatsAppPaymentRowById(paymentId).firstOrNull()
+        val row = prefetchedPaymentRow
+            ?: paymentRepository.findWhatsAppPaymentRowById(paymentId).firstOrNull()
             ?: return skippedPaymentResult(paymentId, null, null, null, "Factura no encontrada.")
 
         val context = paymentContextFromRow(row)

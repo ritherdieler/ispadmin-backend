@@ -158,6 +158,27 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     @Query(
         value = """
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime,
+            p.paid
+        FROM payment p
+        INNER JOIN subscription s ON s.id = p.subscription_id
+        WHERE p.id IN :paymentIds
+        """,
+        nativeQuery = true
+    )
+    fun findWhatsAppPaymentRowsByIds(@Param("paymentIds") paymentIds: Collection<Int>): List<Array<Any>>
+
+    @Query(
+        value = """
         SELECT COALESCE(SUM(p.amount_to_pay), 0)
         FROM payment p
         WHERE p.paid = false
@@ -270,6 +291,20 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         subscriptionIds: Collection<Int>,
         startDate: LocalDateTime,
         endDate: LocalDateTime
+    ): List<Payment>
+
+    @Query(
+        """
+        SELECT p FROM Payment p JOIN FETCH p.subscription
+        WHERE p.subscription.id IN :subscriptionIds
+          AND p.paid = true
+          AND p.paymentDateDatetime BETWEEN :startDate AND :endDate
+        """
+    )
+    fun findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>,
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
     ): List<Payment>
 
     @Query("SELECT p FROM Payment p LEFT JOIN FETCH p.responsible WHERE p.subscription.id IN :ids")
