@@ -76,6 +76,70 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("SELECT COUNT(s) FROM Subscription s WHERE s.serviceStatus = :serviceStatus")
     fun countByServiceStatus(serviceStatus: ServiceStatus): Long
 
+    @Query("SELECT COUNT(s) FROM Subscription s WHERE s.serviceStatus != 'CANCELLED'")
+    fun countNonCancelledSubscriptions(): Long
+
+    @Query(
+        "SELECT COUNT(s) FROM Subscription s WHERE s.subscriptionDatetime >= :startDate AND s.subscriptionDatetime < :endDate"
+    )
+    fun countBySubscriptionDatetimeBetween(startDate: LocalDateTime, endDate: LocalDateTime): Long
+
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        INNER JOIN FETCH s.plan
+        WHERE s.serviceStatus != 'CANCELLED' AND s.plan IS NOT NULL
+        """
+    )
+    fun findAllWithPlanForMassBilling(): List<Subscription>
+
+    @Query(
+        """
+        SELECT s.id FROM Subscription s
+        INNER JOIN s.plan
+        WHERE s.serviceStatus != 'CANCELLED' AND s.plan IS NOT NULL
+        """
+    )
+    fun findBillableSubscriptionIdsForMassBilling(): List<Int>
+
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        INNER JOIN FETCH s.plan
+        WHERE s.id = :id
+        """
+    )
+    fun findWithPlanByIdForMassBilling(id: Int): Optional<Subscription>
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE Subscription s SET
+            s.serviceStatus = 'ACTIVE',
+            s.isPaymentCommit = false,
+            s.paymentCommitmentDateDatetime = null,
+            s.isReactivation = false,
+            s.reactivationDateDatetime = null
+        WHERE s.id = :id
+        """
+    )
+    fun applyMassBillingInvoiceSubscriptionState(id: Int)
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE Subscription s SET
+            s.serviceStatus = 'CANCELLED',
+            s.cancellationDateDatetime = :cancellationAt,
+            s.isPaymentCommit = false,
+            s.paymentCommitmentDateDatetime = null,
+            s.isReactivation = false,
+            s.reactivationDateDatetime = null
+        WHERE s.id = :id
+        """
+    )
+    fun applyMassBillingCancellation(id: Int, cancellationAt: LocalDateTime)
+
     //get debtors from last month
     @Query("SELECT distinct s FROM Subscription s inner join s.payments p WHERE p.paid = false AND p.billingDateDatetime >= ?1 AND p.billingDateDatetime < ?2")
     fun getDebtorsFromLastMonth(startDate: LocalDateTime, endDate: LocalDateTime): List<Subscription>

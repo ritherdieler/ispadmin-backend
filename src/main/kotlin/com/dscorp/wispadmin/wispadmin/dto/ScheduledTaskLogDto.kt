@@ -50,6 +50,10 @@ private fun getTaskTypeName(taskType: ScheduledTaskType): String {
         ScheduledTaskType.CUT_INTERNET_SERVICE_CANCELLED -> "Corte de Servicio - Cancelados"
         ScheduledTaskType.GENERATE_ADDRESS_LIST_CANCELLED -> "Generación de Address List (Cancelados)"
         ScheduledTaskType.CREATE_SUBSCRIPTIONS_QUEUE -> "Creación de Queues de Suscripciones"
+        ScheduledTaskType.MONTHLY_BILLING_CLOSE -> "Cierre mensual (resumen)"
+        ScheduledTaskType.MONTHLY_CLOSE_SUBSCRIPTION_SNAPSHOT -> "Cierre mensual - snapshot suscripciones"
+        ScheduledTaskType.MONTHLY_CLOSE_COLLECTS_SNAPSHOT -> "Cierre mensual - snapshot recaudación"
+        ScheduledTaskType.MONTHLY_CLOSE_MASS_BILLING -> "Cierre mensual - facturación masiva"
     }
 }
 

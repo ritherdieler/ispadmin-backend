@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.ScheduledTaskType
 import com.dscorp.wispadmin.wispadmin.data.model.TaskExecutionStatus
 import com.dscorp.wispadmin.wispadmin.dto.AddressListGenerationResultDto
 import com.dscorp.wispadmin.wispadmin.dto.CutServiceResultDto
+import com.dscorp.wispadmin.wispadmin.dto.MonthlyBillingCloseResultDto
 import com.dscorp.wispadmin.wispadmin.repository.ScheduledTaskLogRepository
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import com.google.gson.Gson
@@ -170,6 +171,33 @@ class ScheduledTaskLogService(
         )
 
         logger.info("📊 Log guardado: $message")
+
+        return repository.save(taskLog)
+    }
+
+    fun logMonthlyBillingClose(result: MonthlyBillingCloseResultDto): ScheduledTaskLog {
+        logger.info("Guardando log de ejecución: MONTHLY_BILLING_CLOSE")
+
+        val processed = (result.massBilling.detail["processedCount"] as? Number)?.toInt() ?: 0
+        val created = (result.massBilling.detail["invoicesCreated"] as? Number)?.toInt() ?: 0
+        val cancelled = (result.massBilling.detail["cancelledCount"] as? Number)?.toInt() ?: 0
+
+        val taskLog = ScheduledTaskLog(
+            taskType = ScheduledTaskType.MONTHLY_BILLING_CLOSE,
+            executionDate = LocalDateTime.now(),
+            processedCount = processed,
+            createdCount = created,
+            deletedCount = cancelled,
+            errorCount = listOf(
+                result.subscriptionSnapshot,
+                result.collectsSnapshot,
+                result.massBilling,
+            ).count { it.status == TaskExecutionStatus.FAILED },
+            status = result.overallStatus,
+            message = result.message,
+            detailedResult = gson.toJson(result),
+            errorMessage = result.errorMessage,
+        )
 
         return repository.save(taskLog)
     }
