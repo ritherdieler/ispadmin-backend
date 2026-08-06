@@ -164,8 +164,8 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SELECT COALESCE(SUM(p.discount_amount), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.payment_date_datetime >= :startDate
-          AND p.payment_date_datetime < :endDate
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )
@@ -193,8 +193,8 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         SELECT COALESCE(SUM(p.amount_paid), 0)
         FROM payment p
         WHERE p.paid = true
-          AND p.payment_date_datetime >= :startDate
-          AND p.payment_date_datetime < :endDate
+          AND p.billing_date_datetime >= :startDate
+          AND p.billing_date_datetime < :endDate
         """,
         nativeQuery = true
     )

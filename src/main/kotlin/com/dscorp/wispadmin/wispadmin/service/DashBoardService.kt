@@ -72,13 +72,13 @@ class DashBoardService(
             
             val totalRaisedFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.getTotalRaisedBetween") {
-                    paymentRepository.getTotalRaisedBetween(currentMonthStart, nextMonthStart)
+                    paymentRepository.getTotalRaisedBetween(billingCycleStart, billingCycleEnd)
                 }
             }
             
             val totalDiscountFuture = CompletableFuture.supplyAsync {
                 performanceMonitor.measureTime("paymentRepository.getTotalDiscountsBetween") {
-                    paymentRepository.getTotalDiscountsBetween(currentMonthStart, nextMonthStart)
+                    paymentRepository.getTotalDiscountsBetween(billingCycleStart, billingCycleEnd)
                 }
             }
             
@@ -236,8 +236,8 @@ class DashBoardService(
         val billingCycleStart = currentMonthStart.minusDays(1)
         val billingCycleEnd = nextMonthStart.minusDays(1)
         val grossRevenue = paymentRepository.getGrossRevenueBetween(billingCycleStart, billingCycleEnd)
-        val totalRaised = paymentRepository.getTotalRaisedBetween(currentMonthStart, nextMonthStart)
-        val totalDiscount = paymentRepository.getTotalDiscountsBetween(currentMonthStart, nextMonthStart)
+        val totalRaised = paymentRepository.getTotalRaisedBetween(billingCycleStart, billingCycleEnd)
+        val totalDiscount = paymentRepository.getTotalDiscountsBetween(billingCycleStart, billingCycleEnd)
         val totalToCollect = paymentRepository.calculateTotalToCollectBetween(billingCycleStart, billingCycleEnd)
 
         val grossRevenueHistory = paymentRepository.getTop6GrossRevenueHistory()
