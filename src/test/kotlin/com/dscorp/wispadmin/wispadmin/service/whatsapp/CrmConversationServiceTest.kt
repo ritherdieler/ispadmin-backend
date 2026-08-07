@@ -264,6 +264,9 @@ class CrmConversationServiceTest {
         every {
             conversationRepository.findByPhoneAndChannel("51922222222", CrmChannel.WHATSAPP)
         } returns null
+        every {
+            conversationRepository.findByPhoneAndChannel("922222222", CrmChannel.WHATSAPP)
+        } returns null
         every { conversationRepository.save(any()) } answers {
             firstArg<CrmConversation>().copy(id = 20L)
         }

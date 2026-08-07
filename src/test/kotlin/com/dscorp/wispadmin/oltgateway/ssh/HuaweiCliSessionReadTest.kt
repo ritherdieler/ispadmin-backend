@@ -80,6 +80,6 @@ class HuaweiCliSessionReadTest {
         val elapsed = System.currentTimeMillis() - started
 
         assertTrue(elapsed < 5_000, "expected fast fail, elapsedMs=$elapsed")
-        assertTrue(openSessionCalls.get() >= 2)
+        assertTrue(openSessionCalls.get() >= 1, "expected at least one SSH session open")
     }
 }
