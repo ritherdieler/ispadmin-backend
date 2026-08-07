@@ -6,6 +6,25 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
 
 object WhatsAppThreadMessageMapper {
 
+    /**
+     * Reactions must never appear as standalone thread bubbles (historical orphans included).
+     */
+    fun isRenderableInbound(inbound: WhatsAppInboundMessage): Boolean {
+        val type = inbound.messageType.trim()
+        if (type.equals("reaction", ignoreCase = true)) return false
+        val text = inbound.messageText?.trim().orEmpty()
+        if (text.equals("[reaction]", ignoreCase = true)) return false
+        return true
+    }
+
+    fun isRenderableThreadMessage(dto: WhatsAppThreadMessageDto): Boolean {
+        val type = dto.messageType.trim()
+        if (type.equals("reaction", ignoreCase = true)) return false
+        val body = dto.body?.trim().orEmpty()
+        if (body.equals("[reaction]", ignoreCase = true)) return false
+        return true
+    }
+
     fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
         !inbound.mediaStoredPath.isNullOrBlank() || !inbound.mediaId.isNullOrBlank()
 
@@ -24,25 +43,36 @@ object WhatsAppThreadMessageMapper {
         replyToLogId = replyToLogId,
         operatorUsername = null,
         templateCode = null,
-        retryCount = null
+        retryCount = null,
+        reactionEmoji = agentReactionEmoji,
+        editedAt = null,
+        deletedAt = null,
+        metaMessageId = metaMessageId?.takeIf { it.isNotBlank() },
     )
 
     fun WhatsAppMessageLog.toThreadMessage(display: WhatsAppTemplateDisplayService) = WhatsAppThreadMessageDto(
         id = "outbound:$id",
         direction = "OUTBOUND",
-        body = display.displayStoredMessage(message, messageType),
+        body = if (deletedAt != null) null else display.displayStoredMessage(message, messageType),
         messageType = messageType,
         buttonReplyTitle = null,
-        hasMedia = outboundHasMedia(this),
-        mediaId = id.takeIf { outboundHasMedia(this) },
+        hasMedia = outboundHasMedia(this) && deletedAt == null,
+        mediaId = id.takeIf { outboundHasMedia(this) && deletedAt == null },
         mediaMimeType = mediaMimeType,
         mediaFilename = mediaFilename,
-        deliveryStatus = deliveryStatus ?: status.takeIf { it.isNotBlank() },
+        deliveryStatus = when {
+            deletedAt != null -> "DELETED"
+            else -> deliveryStatus ?: status.takeIf { it.isNotBlank() }
+        },
         createdAt = createdAt,
         replyToLogId = replyToLogId,
         operatorUsername = operatorUsername,
         templateCode = resolveTemplateCode(messageType),
-        retryCount = retryCount
+        retryCount = retryCount,
+        reactionEmoji = customerReactionEmoji,
+        editedAt = editedAt,
+        deletedAt = deletedAt,
+        metaMessageId = metaMessageId?.takeIf { it.isNotBlank() },
     )
 
     fun outboundHasMedia(log: WhatsAppMessageLog): Boolean =

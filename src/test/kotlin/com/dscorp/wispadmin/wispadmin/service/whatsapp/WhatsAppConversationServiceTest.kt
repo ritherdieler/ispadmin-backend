@@ -69,6 +69,7 @@ class WhatsAppConversationServiceTest {
             templateDeliveryService = templateDeliveryService,
             templateDisplayService = templateDisplayService,
             operatorDisplayNameResolver = operatorDisplayNameResolver,
+            crmEventPublisher = mockk(relaxed = true),
         )
         every { templateDisplayService.displayStoredMessage(any(), any()) } answers { firstArg() }
         every { chatStateService.currentStep(any()) } returns null
@@ -895,5 +896,197 @@ class WhatsAppConversationServiceTest {
         )
 
         assertEquals(service.invalidInteractiveSelectionText(), response)
+    }
+
+    @Test
+    fun `reactToInboundMessage sends Meta reaction and persists agent emoji`() {
+        val inbound = WhatsAppInboundMessage(
+            id = 9,
+            metaMessageId = "wamid.IN.9",
+            phone = "51902354183",
+            messageText = "Hola",
+            messageType = "text",
+        )
+        every { inboundMessageRepository.findByMetaMessageId("wamid.IN.9") } returns inbound
+        every { inboundMessageRepository.save(any()) } answers { firstArg() }
+        every {
+            whatsAppService.sendReaction("51902354183", "wamid.IN.9", "👍")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.react",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123",
+        )
+
+        val dto = service.reactToInboundMessage(wamid = "wamid.IN.9", emoji = "👍", isAdmin = true)
+
+        assertEquals("👍", inbound.agentReactionEmoji)
+        assertEquals("👍", dto.reactionEmoji)
+        assertEquals("inbound:9", dto.id)
+        verify { whatsAppService.sendReaction("51902354183", "wamid.IN.9", "👍") }
+    }
+
+    @Test
+    fun `editOutboundMessage soft-edits within window`() {
+        val created = LocalDateTime.now().minusMinutes(5)
+        val log = WhatsAppMessageLog(
+            id = 3,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.3",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Original",
+            createdAt = created,
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.3") } returns log
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.editOutboundMessage(wamid = "wamid.OUT.3", text = "Editado", isAdmin = true)
+
+        assertEquals("Original", log.originalMessage)
+        assertEquals("Editado", log.message)
+        assertNotNull(log.editedAt)
+        assertEquals("Editado", dto.body)
+        assertNotNull(dto.editedAt)
+    }
+
+    @Test
+    fun `deleteOutboundMessage soft-deletes within window`() {
+        val created = LocalDateTime.now().minusHours(2)
+        val log = WhatsAppMessageLog(
+            id = 4,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.4",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Borrar",
+            createdAt = created,
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.4") } returns log
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.deleteOutboundMessage(wamid = "wamid.OUT.4", isAdmin = true)
+
+        assertNotNull(log.deletedAt)
+        assertEquals("DELETED", dto.deliveryStatus)
+        assertNotNull(dto.deletedAt)
+    }
+
+    @Test
+    fun `editOutboundMessage rejects after 15 minutes`() {
+        val log = WhatsAppMessageLog(
+            id = 5,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.5",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Viejo",
+            createdAt = LocalDateTime.now().minusMinutes(20),
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.5") } returns log
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.editOutboundMessage(wamid = "wamid.OUT.5", text = "X", isAdmin = true)
+        }
+        assertEquals(WhatsAppMessageMutationPolicy.EDIT_EXPIRED_MESSAGE, ex.message)
+        verify(exactly = 0) { messageLogRepository.save(any()) }
+    }
+
+    @Test
+    fun `deleteOutboundMessage rejects after 24 hours`() {
+        val log = WhatsAppMessageLog(
+            id = 6,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.6",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Antiguo",
+            createdAt = LocalDateTime.now().minusHours(25),
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.6") } returns log
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.deleteOutboundMessage(wamid = "wamid.OUT.6", isAdmin = true)
+        }
+        assertEquals(WhatsAppMessageMutationPolicy.DELETE_EXPIRED_MESSAGE, ex.message)
+        verify(exactly = 0) { messageLogRepository.save(any()) }
+    }
+
+    @Test
+    fun `editOutboundMessage resolves by local outbound id when wamid missing`() {
+        val created = LocalDateTime.now().minusMinutes(2)
+        val log = WhatsAppMessageLog(
+            id = 88,
+            phone = "51902354183",
+            metaMessageId = null,
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Sin wamid",
+            createdAt = created,
+        )
+        every { messageLogRepository.findByMetaMessageId("outbound:88") } returns null
+        every { messageLogRepository.findById(88) } returns java.util.Optional.of(log)
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.editOutboundMessage(wamid = "outbound:88", text = "Editado local", isAdmin = true)
+
+        assertEquals("Editado local", log.message)
+        assertEquals("outbound:88", dto.id)
+        assertNotNull(log.editedAt)
+    }
+
+    @Test
+    fun `deleteOutboundMessage resolves by numeric local id`() {
+        val created = LocalDateTime.now().minusHours(1)
+        val log = WhatsAppMessageLog(
+            id = 89,
+            phone = "51902354183",
+            metaMessageId = null,
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Borrar local",
+            createdAt = created,
+        )
+        every { messageLogRepository.findByMetaMessageId("89") } returns null
+        every { messageLogRepository.findById(89) } returns java.util.Optional.of(log)
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.deleteOutboundMessage(wamid = "89", isAdmin = true)
+
+        assertNotNull(log.deletedAt)
+        assertEquals("DELETED", dto.deliveryStatus)
+    }
+
+    @Test
+    fun `editOutboundMessage throws 400-style message when identifier unknown`() {
+        every { messageLogRepository.findByMetaMessageId("wamid.MISSING") } returns null
+        every { inboundMessageRepository.findByMetaMessageId("wamid.MISSING") } returns null
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.editOutboundMessage(wamid = "wamid.MISSING", text = "X", isAdmin = true)
+        }
+        assertEquals(WhatsAppMessageMutationPolicy.NO_LOCAL_OUTBOUND_RECORD, ex.message)
+    }
+
+    @Test
+    fun `editOutboundMessage rejects when only inbound exists for numeric id`() {
+        every { messageLogRepository.findByMetaMessageId("123") } returns null
+        every { messageLogRepository.findById(123) } returns java.util.Optional.empty()
+        every { inboundMessageRepository.findById(123) } returns java.util.Optional.of(
+            WhatsAppInboundMessage(
+                id = 123,
+                metaMessageId = "wamid.IN.123",
+                phone = "51902354183",
+                messageText = "Hola",
+                messageType = "text",
+            )
+        )
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.editOutboundMessage(wamid = "123", text = "X", isAdmin = true)
+        }
+        assertEquals(WhatsAppMessageMutationPolicy.NO_LOCAL_OUTBOUND_RECORD, ex.message)
+        verify { inboundMessageRepository.findById(123) }
     }
 }

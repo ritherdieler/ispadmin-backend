@@ -59,5 +59,9 @@ data class WhatsAppInboundMessage(
 
     var readAt: LocalDateTime? = null,
 
-    var createdAt: LocalDateTime = LocalDateTime.now()
+    var createdAt: LocalDateTime = LocalDateTime.now(),
+
+    /** Emoji reaction applied by an agent/business on this inbound message. */
+    @Column(name = "agent_reaction_emoji", length = 16)
+    var agentReactionEmoji: String? = null
 )

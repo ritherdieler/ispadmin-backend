@@ -109,6 +109,7 @@ class WhatsAppConversationQueryService(
                     lastMessagePreview = lastPreview,
                     lastMessageAt = lastAt,
                     lastInboundAt = lastInbound?.createdAt,
+                    lastOutboundAt = lastOutbound?.createdAt,
                     unreadCount = unreadCount,
                     identified = subscriptionId != null,
                     serviceWindowActive = window.open,
@@ -152,9 +153,12 @@ class WhatsAppConversationQueryService(
         val outboundRecent = fetchOutboundRecent(phones, dateFrom, upperBound, before, pageable, fetchSize)
 
         val mergedDesc = (
-            inboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage() } } +
+            inboundRecent
+                .filter { WhatsAppThreadMessageMapper.isRenderableInbound(it) }
+                .map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage() } } +
                 outboundRecent.map { with(WhatsAppThreadMessageMapper) { it.toThreadMessage(templateDisplayService) } }
             )
+            .filter { WhatsAppThreadMessageMapper.isRenderableThreadMessage(it) }
             .sortedByDescending { it.createdAt }
             .distinctBy { it.id }
         val hasMore = mergedDesc.size > pageSize

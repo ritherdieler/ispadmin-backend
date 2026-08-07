@@ -9,6 +9,7 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepositor
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmInboxQueuePolicy
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBotAction
@@ -64,7 +65,55 @@ class WhatsAppInboundMessageService(
         processInboundMessage(payload)
     }
 
+    /**
+     * Handles Meta webhook reactions without opening the 24h window or running the bot FSM.
+     * Updates the target message emoji in-place — never inserts a new inbound/log row.
+     */
+    fun processInboundReaction(payload: WhatsAppInboundPayload) {
+        try {
+            val targetWamid = payload.reactionMessageId?.takeIf { it.isNotBlank() } ?: return
+            val emoji = payload.reactionEmoji.orEmpty()
+            val outbound = messageLogRepository.findByMetaMessageId(targetWamid)
+            if (outbound != null) {
+                outbound.customerReactionEmoji = emoji.takeIf { it.isNotBlank() }
+                messageLogRepository.save(outbound)
+                crmEventPublisher.publish(
+                    eventType = CrmEventPublisher.MESSAGE_REACTION,
+                    payload = mapOf(
+                        "phone" to payload.phone,
+                        "threadMessageId" to "outbound:${outbound.id}",
+                        "metaMessageId" to targetWamid,
+                        "emoji" to emoji,
+                        "direction" to "INBOUND_REACTION",
+                    ),
+                )
+                return
+            }
+            val inbound = inboundMessageRepository.findByMetaMessageId(targetWamid) ?: return
+            inbound.agentReactionEmoji = emoji.takeIf { it.isNotBlank() }
+            inboundMessageRepository.save(inbound)
+            crmEventPublisher.publish(
+                eventType = CrmEventPublisher.MESSAGE_REACTION,
+                payload = mapOf(
+                    "phone" to payload.phone,
+                    "threadMessageId" to "inbound:${inbound.id}",
+                    "metaMessageId" to targetWamid,
+                    "emoji" to emoji,
+                    "direction" to "OUTBOUND_REACTION",
+                ),
+            )
+        } catch (e: Exception) {
+            log.warn("Webhook reaction ignored phone={}: {}", payload.phone, e.message)
+        }
+    }
+
     fun processInboundMessage(payload: WhatsAppInboundPayload) {
+        // Defense in depth: reactions must never create a chat bubble row.
+        if (payload.messageType.equals("reaction", ignoreCase = true)) {
+            processInboundReaction(payload)
+            return
+        }
+
         val replyToLogId = conversationService.resolveReplyToLogId(payload.contextMessageId)
         val mediaStoredPath = payload.mediaId?.let {
             mediaDownloadService.downloadAndStore(it, payload.mediaMimeType)
@@ -214,7 +263,14 @@ class WhatsAppInboundMessageService(
                     "conversationId" to crmConversation?.id,
                     "status" to crmConversation?.status?.name,
                     "assignedAgentId" to crmConversation?.assignedAgentId,
-                    "priority" to crmConversation?.priority
+                    "priority" to crmConversation?.priority,
+                    "lastInboundAt" to crmConversation?.lastInboundAt?.toString(),
+                    "lastOutboundAt" to crmConversation?.lastOutboundAt?.toString(),
+                    "awaitingAgent" to CrmInboxQueuePolicy.belongsInUnattendedQueue(
+                        status = crmConversation?.status?.name,
+                        lastInboundAt = crmConversation?.lastInboundAt,
+                        lastOutboundAt = crmConversation?.lastOutboundAt,
+                    )
                 )
             )
         } catch (e: Exception) {

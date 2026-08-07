@@ -295,6 +295,73 @@ class WhatsAppConversationQueryServiceTest {
     }
 
     @Test
+    fun `getThread excludes historical inbound reaction rows`() {
+        val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppInboundMessage(
+                id = 1,
+                metaMessageId = "wamid.text",
+                phone = phone,
+                messageText = "Hola",
+                messageType = "text",
+                createdAt = LocalDateTime.of(2026, 8, 6, 10, 0),
+            ),
+            WhatsAppInboundMessage(
+                id = 2,
+                metaMessageId = "wamid.reaction.orphan",
+                phone = phone,
+                messageText = null,
+                messageType = "reaction",
+                createdAt = LocalDateTime.of(2026, 8, 6, 10, 1),
+            ),
+        )
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+
+        val thread = service.getThread(phone).messages
+        assertEquals(1, thread.size)
+        assertEquals("inbound:1", thread[0].id)
+        assertTrue(thread.none { it.messageType.equals("reaction", ignoreCase = true) })
+    }
+
+    @Test
+    fun `getThread excludes historical rows whose body is literal reaction placeholder`() {
+        val phone = "51902354183"
+        stubEmptyLocalPhoneVariant(phone)
+        every {
+            inboundMessageRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns listOf(
+            WhatsAppInboundMessage(
+                id = 3,
+                metaMessageId = "wamid.ok",
+                phone = phone,
+                messageText = "Hola",
+                messageType = "text",
+                createdAt = LocalDateTime.of(2026, 8, 6, 10, 0),
+            ),
+            WhatsAppInboundMessage(
+                id = 4,
+                metaMessageId = "wamid.legacy.reaction",
+                phone = phone,
+                messageText = "[reaction]",
+                messageType = "text",
+                createdAt = LocalDateTime.of(2026, 8, 6, 10, 1),
+            ),
+        )
+        every {
+            messageLogRepository.findByPhoneOrderByCreatedAtDesc(phone, any<Pageable>())
+        } returns emptyList()
+
+        val thread = service.getThread(phone).messages
+        assertEquals(1, thread.size)
+        assertEquals("inbound:3", thread[0].id)
+    }
+
+    @Test
     fun `getThread maps outbound templateCode from messageType`() {
         val phone = "51902354183"
         stubEmptyLocalPhoneVariant(phone)

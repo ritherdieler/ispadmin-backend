@@ -17,6 +17,8 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepositor
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppConversationReplyBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppConversationTemplateBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppEditMessageBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppReactMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppSelectedRemindersRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppSendMessagesRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateTestMessageRequest
@@ -46,14 +48,17 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateSyncService
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
+import org.slf4j.LoggerFactory
 import org.springframework.core.io.FileSystemResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -88,6 +93,9 @@ class WhatsAppBackofficeController(
     private val auditService: WhatsAppAuditService,
     private val crmEventPublisher: CrmEventPublisher
 ) {
+    companion object {
+        private val logger = LoggerFactory.getLogger(WhatsAppBackofficeController::class.java)
+    }
 
     @GetMapping("/events")
     fun listEvents(
@@ -154,6 +162,89 @@ class WhatsAppBackofficeController(
             return it as ResponseEntity<WhatsAppTestSendResponseDto>
         }
         return templateMessageSender.sendPaymentReminderTemplate(request)
+    }
+
+    @PostMapping("/messages/{wamid:.+}/react")
+    fun reactToMessage(
+        @PathVariable wamid: String,
+        @RequestBody request: WhatsAppReactMessageBody,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(
+                conversationService.reactToInboundMessage(
+                    wamid = wamid,
+                    emoji = request.emoji,
+                    agentId = resolveUserId(httpRequest),
+                    isAdmin = resolveUserType(httpRequest) == "ADMIN",
+                )
+            )
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al reaccionar")))
+        }
+    }
+
+    @PutMapping("/messages/{wamid:.+}")
+    fun editMessage(
+        @PathVariable wamid: String,
+        @RequestBody request: WhatsAppEditMessageBody,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        logger.info(
+            "Intento de mutación de mensaje - URI: {}, Key recibida: {}",
+            httpRequest.requestURI,
+            wamid,
+        )
+        return try {
+            ResponseEntity.ok(
+                conversationService.editOutboundMessage(
+                    wamid = wamid,
+                    text = request.resolvedText,
+                    agentId = resolveUserId(httpRequest),
+                    isAdmin = resolveUserType(httpRequest) == "ADMIN",
+                )
+            )
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al editar")))
+        }
+    }
+
+    @DeleteMapping("/messages/{wamid:.+}")
+    fun deleteMessage(
+        @PathVariable wamid: String,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        logger.info(
+            "Intento de mutación de mensaje - URI: {}, Key recibida: {}",
+            httpRequest.requestURI,
+            wamid,
+        )
+        return try {
+            ResponseEntity.ok(
+                conversationService.deleteOutboundMessage(
+                    wamid = wamid,
+                    agentId = resolveUserId(httpRequest),
+                    isAdmin = resolveUserType(httpRequest) == "ADMIN",
+                )
+            )
+        } catch (e: CrmConversationForbiddenException) {
+            ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to (e.message ?: "No autorizado")))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Solicitud invalida")))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to (e.message ?: "Error al eliminar")))
+        }
     }
 
     @GetMapping("/registration-status")

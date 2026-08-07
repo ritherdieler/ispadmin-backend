@@ -39,7 +39,7 @@ class CsatSurveyServiceTest {
     private val eventPublisher = mockk<CrmEventPublisher>(relaxed = true)
     private val props = CrmCsatProperties().apply {
         enabled = true
-        templateName = "csat_survey_v1"
+        templateName = "csat_survey_uti"
         templateLanguage = "es_PE"
         expireHours = 72
         maxRetries = 3
@@ -146,7 +146,7 @@ class CsatSurveyServiceTest {
         verify(exactly = 1) {
             whatsAppService.sendTemplateMessageWithMetaResponse(
                 phoneNumber = "999111222",
-                templateName = "csat_survey_v1",
+                templateName = "csat_survey_uti",
                 languageCode = "es_PE",
                 parameters = any()
             )

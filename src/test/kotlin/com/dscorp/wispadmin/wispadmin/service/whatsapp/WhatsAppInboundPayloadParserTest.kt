@@ -93,4 +93,18 @@ class WhatsAppInboundPayloadParserTest {
         assertEquals("media-sticker-1", payload.mediaId)
         assertEquals("image/webp", payload.mediaMimeType)
     }
+
+    @Test
+    fun `parse reaction extracts target wamid and emoji`() {
+        val node = mapper.readTree("""
+            {
+              "id":"wamid.reaction.1","from":"51902354183","type":"reaction",
+              "reaction":{"message_id":"wamid.OUTBOUND.99","emoji":"❤️"}
+            }
+        """.trimIndent())
+        val payload = WhatsAppInboundPayloadParser.parse(node)!!
+        assertEquals("reaction", payload.messageType)
+        assertEquals("wamid.OUTBOUND.99", payload.reactionMessageId)
+        assertEquals("❤️", payload.reactionEmoji)
+    }
 }

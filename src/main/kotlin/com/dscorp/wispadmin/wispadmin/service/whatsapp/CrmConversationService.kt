@@ -337,9 +337,23 @@ class CrmConversationService(
     }
 
     @Transactional
-    fun touchOutbound(phone: String) {
-        val existing = findWhatsAppConversation(phone) ?: return
+    fun touchOutbound(phone: String, createIfMissing: Boolean = false) {
         val now = LocalDateTime.now()
+        val existing = findWhatsAppConversation(phone)
+        if (existing == null) {
+            if (!createIfMissing) return
+            conversationRepository.save(
+                CrmConversation(
+                    channel = CrmChannel.WHATSAPP,
+                    phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
+                    status = CrmConversationStatus.NEW,
+                    lastOutboundAt = now,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
+            return
+        }
         existing.lastOutboundAt = now
         existing.updatedAt = now
         conversationRepository.save(existing)

@@ -77,7 +77,7 @@ object WhatsAppTemplateCatalog {
         ),
         WhatsAppTemplateDefinition(
             code = WhatsAppTemplateCode.PAYMENT_VALIDATION,
-            metaName = "payment_validation_gigaperu",
+            metaName = "payment_validation_u",
             label = "Validacion de pago",
             description = "Pagos registrados recientemente",
             targetType = WhatsAppTargetType.PAYMENT,
@@ -89,7 +89,7 @@ object WhatsAppTemplateCatalog {
         ),
         WhatsAppTemplateDefinition(
             code = WhatsAppTemplateCode.SERVICE_CUT_NOTICE,
-            metaName = "service_cut_notice_gigaperu",
+            metaName = "service_cut_notice_uti",
             label = "Aviso de corte",
             description = "Clientes con servicio cortado",
             targetType = WhatsAppTargetType.SUBSCRIPTION,
@@ -101,7 +101,7 @@ object WhatsAppTemplateCatalog {
         ),
         WhatsAppTemplateDefinition(
             code = WhatsAppTemplateCode.WELCOME_CUSTOMER,
-            metaName = "welcome_customer_gigaperu",
+            metaName = "welcome_customer_uti",
             label = "Bienvenida",
             description = "Clientes activos con instalacion reciente",
             targetType = WhatsAppTargetType.SUBSCRIPTION,
