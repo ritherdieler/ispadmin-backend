@@ -38,6 +38,7 @@ class WhatsAppConversationService(
     private val templateDeliveryService: WhatsAppTemplateDeliveryService,
     private val templateDisplayService: WhatsAppTemplateDisplayService,
     private val operatorDisplayNameResolver: WhatsAppOperatorDisplayNameResolver,
+    private val crmEventPublisher: CrmEventPublisher,
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppConversationService::class.java)
@@ -466,6 +467,16 @@ class WhatsAppConversationService(
             throw Exception(sendResult.metaResponse.ifBlank { "No se pudo enviar el mensaje por WhatsApp." })
         }
 
+        val metaMessageId = sendResult.metaMessageId?.takeIf { it.isNotBlank() }
+            ?: WhatsAppMetaResponseParser.extractMessageId(sendResult.metaResponse)
+        if (metaMessageId.isNullOrBlank()) {
+            log.warn(
+                "Operator reply sent without Meta wamid phone={} metaResponse={}",
+                phone,
+                sendResult.metaResponse.take(500),
+            )
+        }
+
         chatStateService.markWaitingForAdvisor(phone, "operator_reply")
         crmConversationService.touchOutbound(phone)
 
@@ -477,7 +488,7 @@ class WhatsAppConversationService(
                 phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 messageType = MESSAGE_TYPE_OPERATOR_REPLY,
                 status = "SENT",
-                metaMessageId = sendResult.metaMessageId,
+                metaMessageId = metaMessageId,
                 message = trimmed,
                 operatorUsername = operatorUsername,
                 replyToLogId = replyContext.replyToLogId,
@@ -574,13 +585,15 @@ class WhatsAppConversationService(
         val now = LocalDateTime.now()
         val preview = caption?.trim()?.takeIf { it.isNotEmpty() }
             ?: "[${kind.name}] ${safeFilename}"
+        val metaMessageId = sendResult.metaMessageId?.takeIf { it.isNotBlank() }
+            ?: WhatsAppMetaResponseParser.extractMessageId(sendResult.metaResponse)
         val saved = messageLogRepository.save(
             WhatsAppMessageLog(
                 subscriptionId = subscription?.id,
                 phone = PeruvianWhatsAppPhone.canonicalStoragePhone(phone),
                 messageType = MESSAGE_TYPE_OPERATOR_MEDIA,
                 status = "SENT",
-                metaMessageId = sendResult.metaMessageId,
+                metaMessageId = metaMessageId,
                 message = preview,
                 operatorUsername = operatorUsername,
                 replyToLogId = replyContext.replyToLogId,
@@ -703,6 +716,170 @@ class WhatsAppConversationService(
     fun resolveReplyToLogId(contextMessageId: String?): Int? {
         if (contextMessageId.isNullOrBlank()) return null
         return messageLogRepository.findByMetaMessageId(contextMessageId)?.id
+    }
+
+    /**
+     * Sends a Meta reaction to an inbound (customer) message and persists [agentReactionEmoji].
+     * Empty [emoji] clears the reaction (Meta contract).
+     */
+    fun reactToInboundMessage(
+        wamid: String,
+        emoji: String,
+        agentId: Int? = null,
+        isAdmin: Boolean = false,
+    ): WhatsAppThreadMessageDto {
+        val targetWamid = wamid.trim()
+        if (targetWamid.isBlank()) {
+            throw IllegalArgumentException("message_id (wamid) es obligatorio.")
+        }
+        val inbound = inboundMessageRepository.findByMetaMessageId(targetWamid)
+            ?: throw IllegalArgumentException("Mensaje no encontrado para reaccionar.")
+        crmConversationService.assertCanReply(phone = inbound.phone, agentId = agentId, isAdmin = isAdmin)
+
+        val sendResult = whatsAppService.sendReaction(
+            phoneNumber = inbound.phone,
+            wamid = targetWamid,
+            emoji = emoji,
+        )
+        if (!sendResult.success) {
+            throw Exception(sendResult.metaResponse.ifBlank { "No se pudo enviar la reaccion." })
+        }
+
+        inbound.agentReactionEmoji = emoji.takeIf { it.isNotBlank() }
+        inboundMessageRepository.save(inbound)
+        crmEventPublisher.publish(
+            eventType = CrmEventPublisher.MESSAGE_REACTION,
+            payload = mapOf(
+                "phone" to inbound.phone,
+                "threadMessageId" to "inbound:${inbound.id}",
+                "metaMessageId" to targetWamid,
+                "emoji" to emoji,
+                "direction" to "OUTBOUND_REACTION",
+            ),
+        )
+        return with(WhatsAppThreadMessageMapper) { inbound.toThreadMessage() }
+    }
+
+    /** Soft-edits outbound plain-text within the 15-minute window (local CRM only). */
+    fun editOutboundMessage(
+        wamid: String,
+        text: String,
+        agentId: Int? = null,
+        isAdmin: Boolean = false,
+    ): WhatsAppThreadMessageDto {
+        val log = requireOutboundLog(wamid)
+        val phone = log.phone?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("El mensaje saliente no tiene telefono.")
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
+        if (log.deletedAt != null) {
+            throw IllegalArgumentException("No se puede editar un mensaje eliminado.")
+        }
+        WhatsAppMessageMutationPolicy.requireEditableOutbound(
+            direction = "OUTBOUND",
+            messageType = log.messageType,
+            createdAt = log.createdAt,
+        )
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) {
+            throw IllegalArgumentException("El mensaje no puede estar vacio.")
+        }
+        if (log.originalMessage.isNullOrBlank()) {
+            log.originalMessage = log.message
+        }
+        log.message = trimmed
+        log.editedAt = LocalDateTime.now()
+        val saved = messageLogRepository.save(log)
+        publishMessageUpdated(saved)
+        return saved.toEnrichedThreadMessage()
+    }
+
+    /** Soft-deletes outbound within the 24-hour window (local CRM only). */
+    fun deleteOutboundMessage(
+        wamid: String,
+        agentId: Int? = null,
+        isAdmin: Boolean = false,
+    ): WhatsAppThreadMessageDto {
+        val log = requireOutboundLog(wamid)
+        val phone = log.phone?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("El mensaje saliente no tiene telefono.")
+        crmConversationService.assertCanReply(phone = phone, agentId = agentId, isAdmin = isAdmin)
+        if (log.deletedAt != null) {
+            return log.toEnrichedThreadMessage()
+        }
+        WhatsAppMessageMutationPolicy.requireDeletableOutbound(
+            direction = "OUTBOUND",
+            createdAt = log.createdAt,
+        )
+        log.deletedAt = LocalDateTime.now()
+        val saved = messageLogRepository.save(log)
+        publishMessageUpdated(saved)
+        return saved.toEnrichedThreadMessage()
+    }
+
+    private fun requireOutboundLog(messageKey: String): WhatsAppMessageLog {
+        val key = messageKey.trim()
+        if (key.isBlank()) {
+            throw IllegalArgumentException("message_id (wamid o id local) es obligatorio.")
+        }
+
+        // 1) Prefer Meta wamid on outbound log
+        messageLogRepository.findByMetaMessageId(key)?.let { return it }
+
+        // 2) Local PK on outbound log (outbound:N or numeric string → Int)
+        val outboundMatch = Regex("^outbound:(\\d+)$", RegexOption.IGNORE_CASE).matchEntire(key)
+        val localId: Int? = when {
+            outboundMatch != null -> outboundMatch.groupValues[1].toIntOrNull()
+            key.all { it.isDigit() } -> key.toIntOrNull()
+            else -> null
+        }
+        if (localId != null) {
+            messageLogRepository.findById(localId).orElse(null)?.let { return it }
+            // Also probe inbound table for diagnostics when key is a local id
+            val inboundById = inboundMessageRepository.findById(localId).orElse(null)
+            if (inboundById != null) {
+                log.info(
+                    "Mutación: key={} existe en whatsapp_inbound_message id={} pero no en whatsapp_message_log",
+                    key,
+                    localId,
+                )
+            }
+        } else if (!key.startsWith("wamid.", ignoreCase = true)) {
+            // Non-wamid / non-numeric key: still probe inbound by meta id
+            inboundMessageRepository.findByMetaMessageId(key)?.let { inbound ->
+                log.info(
+                    "Mutación: key={} existe en whatsapp_inbound_message id={} pero no en whatsapp_message_log",
+                    key,
+                    inbound.id,
+                )
+            }
+        } else {
+            inboundMessageRepository.findByMetaMessageId(key)?.let { inbound ->
+                log.info(
+                    "Mutación: key={} es wamid inbound id={} sin registro outbound local",
+                    key,
+                    inbound.id,
+                )
+            }
+        }
+
+        log.warn("Mensaje no encontrado con identifier: {}", key)
+        throw IllegalArgumentException(WhatsAppMessageMutationPolicy.NO_LOCAL_OUTBOUND_RECORD)
+    }
+
+    private fun publishMessageUpdated(log: WhatsAppMessageLog) {
+        crmEventPublisher.publish(
+            eventType = CrmEventPublisher.MESSAGE_UPDATED,
+            payload = mapOf(
+                "phone" to log.phone,
+                "threadMessageId" to "outbound:${log.id}",
+                "metaMessageId" to log.metaMessageId,
+                "body" to if (log.deletedAt != null) null else log.message,
+                "editedAt" to log.editedAt?.toString(),
+                "deletedAt" to log.deletedAt?.toString(),
+                "deliveryStatus" to if (log.deletedAt != null) "DELETED" else log.deliveryStatus,
+                "reactionEmoji" to log.customerReactionEmoji,
+            ),
+        )
     }
 
     private data class ReplyContext(

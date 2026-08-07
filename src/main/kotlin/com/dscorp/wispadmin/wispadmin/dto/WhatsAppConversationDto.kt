@@ -9,6 +9,7 @@ data class WhatsAppConversationSummaryDto(
     val lastMessagePreview: String?,
     val lastMessageAt: LocalDateTime,
     val lastInboundAt: LocalDateTime? = null,
+    val lastOutboundAt: LocalDateTime? = null,
     val unreadCount: Int,
     val identified: Boolean,
     val serviceWindowActive: Boolean,
@@ -33,8 +34,17 @@ data class WhatsAppThreadMessageDto(
     val operatorUsername: String?,
     val operatorDisplayName: String? = null,
     val templateCode: String? = null,
-    val retryCount: Int? = null
-)
+    val retryCount: Int? = null,
+    val reactionEmoji: String? = null,
+    val editedAt: LocalDateTime? = null,
+    val deletedAt: LocalDateTime? = null,
+    val metaMessageId: String? = null,
+) {
+    /** Alias for Meta Cloud API message id (same as [metaMessageId]). */
+    @get:com.fasterxml.jackson.annotation.JsonProperty("wamid")
+    val wamid: String?
+        get() = metaMessageId?.takeIf { it.isNotBlank() }
+}
 
 data class WhatsAppThreadPageDto(
     val messages: List<WhatsAppThreadMessageDto>,

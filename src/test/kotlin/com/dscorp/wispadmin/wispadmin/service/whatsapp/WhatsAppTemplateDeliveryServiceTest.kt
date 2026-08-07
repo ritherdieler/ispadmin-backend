@@ -15,6 +15,7 @@ import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WelcomeTemplateContext
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
+import org.springframework.beans.factory.ObjectProvider
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
@@ -31,6 +32,9 @@ class WhatsAppTemplateDeliveryServiceTest {
     private val syncedTemplateRepository = mock(WhatsAppSyncedTemplateRepository::class.java)
     private val marketingOptOutRepository = mock(WhatsAppMarketingOptOutRepository::class.java)
     private val templateSyncService = mock(WhatsAppTemplateSyncService::class.java)
+    @Suppress("UNCHECKED_CAST")
+    private val crmConversationServiceProvider =
+        mock(ObjectProvider::class.java) as ObjectProvider<CrmConversationService>
     private val whatsAppProperties = WhatsAppProperties().apply {
         apiVersion = "v21.0"
         accessToken = "token"
@@ -46,7 +50,8 @@ class WhatsAppTemplateDeliveryServiceTest {
         whatsAppService,
         messageLogRepository,
         templateDisplayService,
-        marketingOptOutRepository
+        marketingOptOutRepository,
+        crmConversationServiceProvider,
     )
 
     private val definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER)
@@ -80,10 +85,10 @@ class WhatsAppTemplateDeliveryServiceTest {
         doAnswer { invocation ->
             invocation.getArgument(0)
         }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
-        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+        `when`(syncedTemplateRepository.findByName("welcome_customer_uti")).thenReturn(
             WhatsAppSyncedTemplate(
                 metaTemplateId = "tpl-welcome",
-                name = "welcome_customer_gigaperu",
+                name = "welcome_customer_uti",
                 bodyText = "Hola {{customer_name}}, plan {{plan_name}} por {{plan_price}}."
             )
         )
@@ -144,10 +149,10 @@ class WhatsAppTemplateDeliveryServiceTest {
         doAnswer { invocation ->
             invocation.getArgument(0)
         }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
-        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+        `when`(syncedTemplateRepository.findByName("welcome_customer_uti")).thenReturn(
             WhatsAppSyncedTemplate(
                 metaTemplateId = "tpl-welcome",
-                name = "welcome_customer_gigaperu",
+                name = "welcome_customer_uti",
                 bodyText = "Hola {{customer_name}}."
             )
         )
@@ -202,10 +207,10 @@ class WhatsAppTemplateDeliveryServiceTest {
         doAnswer { invocation ->
             invocation.getArgument(0)
         }.`when`(messageLogRepository).save(org.mockito.ArgumentMatchers.any(WhatsAppMessageLog::class.java))
-        `when`(syncedTemplateRepository.findByName("welcome_customer_gigaperu")).thenReturn(
+        `when`(syncedTemplateRepository.findByName("welcome_customer_uti")).thenReturn(
             WhatsAppSyncedTemplate(
                 metaTemplateId = "tpl-welcome",
-                name = "welcome_customer_gigaperu",
+                name = "welcome_customer_uti",
                 bodyText = "Hola {{customer_name}}, plan {{plan_name}} por {{plan_price}}."
             )
         )

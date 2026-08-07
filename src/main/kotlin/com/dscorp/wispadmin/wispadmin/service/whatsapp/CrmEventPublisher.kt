@@ -68,6 +68,8 @@ class CrmEventPublisher(
         const val TOPIC_WHATSAPP = "/topic/whatsapp"
         const val MESSAGE_RECEIVED = "MESSAGE_RECEIVED"
         const val MESSAGE_STATUS = "MESSAGE_STATUS"
+        const val MESSAGE_REACTION = "MESSAGE_REACTION"
+        const val MESSAGE_UPDATED = "MESSAGE_UPDATED"
         const val CONVERSATION_UPDATED = "CONVERSATION_UPDATED"
         private const val MAX_CATCH_UP = 500
     }

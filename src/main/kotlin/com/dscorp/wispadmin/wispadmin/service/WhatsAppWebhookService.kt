@@ -247,16 +247,22 @@ class WhatsAppWebhookService(
 
         if (whatsAppWebhookEventRepository.existsByEventKey(eventKey)) return
 
+        val isReaction = payload.messageType.equals("reaction", ignoreCase = true)
         whatsAppWebhookEventRepository.save(
             WhatsAppWebhookEvent(
                 eventKey = eventKey,
-                eventType = "message",
+                eventType = if (isReaction) "reaction" else "message",
                 payloadSummary = message.toString().take(4000)
             )
         )
 
-        serviceWindowService.recordInbound(payload.phone)
+        if (isReaction) {
+            // Never insert into inbound/log tables — update target message emoji only.
+            whatsAppInboundMessageService.processInboundReaction(payload)
+            return
+        }
 
+        serviceWindowService.recordInbound(payload.phone)
         whatsAppInboundMessageService.processInboundMessage(payload)
     }
 

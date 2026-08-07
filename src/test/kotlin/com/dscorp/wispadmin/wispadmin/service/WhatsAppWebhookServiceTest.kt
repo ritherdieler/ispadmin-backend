@@ -49,6 +49,76 @@ class WhatsAppWebhookServiceTest {
     }
 
     @Test
+    fun `processPayload routes reaction to processInboundReaction and never processInboundMessage`() {
+        every { webhookEventRepository.existsByEventKey(any()) } returns false
+        every { webhookEventRepository.save(any()) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "messages",
+                  "value": {
+                    "messages": [{
+                      "id": "wamid.reaction.evt",
+                      "from": "51902354183",
+                      "type": "reaction",
+                      "reaction": { "message_id": "wamid.OUT.1", "emoji": "👍" }
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        verify(exactly = 1) {
+            inboundMessageService.processInboundReaction(
+                match {
+                    it.messageType == "reaction" &&
+                        it.reactionMessageId == "wamid.OUT.1" &&
+                        it.reactionEmoji == "👍"
+                }
+            )
+        }
+        verify(exactly = 0) { inboundMessageService.processInboundMessage(any()) }
+        verify(exactly = 0) { serviceWindowService.recordInbound(any()) }
+        // Reaction events must not open the service window or create message rows via processInboundMessage.
+    }
+
+    @Test
+    fun `processPayload reaction event does not call processInboundMessage even with blank emoji`() {
+        every { webhookEventRepository.existsByEventKey(any()) } returns false
+        every { webhookEventRepository.save(any()) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "messages",
+                  "value": {
+                    "messages": [{
+                      "id": "wamid.reaction.remove",
+                      "from": "51902354183",
+                      "type": "reaction",
+                      "reaction": { "message_id": "wamid.OUT.2", "emoji": "" }
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        verify(exactly = 1) { inboundMessageService.processInboundReaction(any()) }
+        verify(exactly = 0) { inboundMessageService.processInboundMessage(any()) }
+    }
+
+    @Test
     fun `processPayload updates delivery timestamps and conversation metadata`() {
         val log = WhatsAppMessageLog(
             id = 1,

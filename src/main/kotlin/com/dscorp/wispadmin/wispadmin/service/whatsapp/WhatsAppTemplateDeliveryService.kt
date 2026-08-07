@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMarketingOptOutRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppService
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
@@ -15,7 +16,8 @@ class WhatsAppTemplateDeliveryService(
     private val whatsAppService: WhatsAppService,
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
     private val templateDisplayService: WhatsAppTemplateDisplayService,
-    private val marketingOptOutRepository: WhatsAppMarketingOptOutRepository
+    private val marketingOptOutRepository: WhatsAppMarketingOptOutRepository,
+    private val crmConversationServiceProvider: ObjectProvider<CrmConversationService>,
 ) {
 
     fun deliverTemplate(
@@ -83,6 +85,10 @@ class WhatsAppTemplateDeliveryService(
                 callbackToken = callbackToken,
                 buttonParameter = buttonParameter
             )
+            // Proactive HSM must stamp lastOutboundAt so "Por atender" excludes unanswered templates.
+            runCatching {
+                crmConversationServiceProvider.ifAvailable?.touchOutbound(phone, createIfMissing = true)
+            }
             return persistLog(
                 paymentId = paymentId,
                 subscriptionId = subscriptionId,

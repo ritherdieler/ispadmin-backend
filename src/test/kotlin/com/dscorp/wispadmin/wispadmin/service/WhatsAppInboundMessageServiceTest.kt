@@ -831,4 +831,93 @@ class WhatsAppInboundMessageServiceTest {
             conversationService.sendMainMenu(payload.phone, null, true, payload.metaMessageId)
         }
     }
+
+    @Test
+    fun `processInboundReaction updates outbound emoji and never inserts inbound`() {
+        val outbound = WhatsAppMessageLog(
+            id = 55,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.55",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Hola",
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.55") } returns outbound
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundReaction(
+            WhatsAppInboundPayload(
+                metaMessageId = "wamid.reaction.1",
+                phone = "51902354183",
+                messageType = "reaction",
+                messageText = "😂",
+                reactionMessageId = "wamid.OUT.55",
+                reactionEmoji = "😂",
+            )
+        )
+
+        assertEquals("😂", outbound.customerReactionEmoji)
+        verify(exactly = 1) { messageLogRepository.save(outbound) }
+        verify(exactly = 0) { inboundMessageRepository.save(any()) }
+        verify {
+            crmEventPublisher.publish(
+                CrmEventPublisher.MESSAGE_REACTION,
+                match {
+                    it["threadMessageId"] == "outbound:55" &&
+                        it["emoji"] == "😂" &&
+                        it["metaMessageId"] == "wamid.OUT.55"
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `processInboundMessage with reaction type never inserts inbound row`() {
+        val outbound = WhatsAppMessageLog(
+            id = 77,
+            phone = "51902354183",
+            metaMessageId = "wamid.OUT.77",
+            messageType = "OPERATOR_REPLY",
+            status = "SENT",
+            message = "Hola",
+        )
+        every { messageLogRepository.findByMetaMessageId("wamid.OUT.77") } returns outbound
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+
+        service.processInboundMessage(
+            WhatsAppInboundPayload(
+                metaMessageId = "wamid.reaction.guard",
+                phone = "51902354183",
+                messageType = "reaction",
+                messageText = null,
+                reactionMessageId = "wamid.OUT.77",
+                reactionEmoji = "👍",
+            )
+        )
+
+        assertEquals("👍", outbound.customerReactionEmoji)
+        verify(exactly = 0) { inboundMessageRepository.save(any()) }
+        verify(exactly = 1) { messageLogRepository.save(outbound) }
+    }
+
+    @Test
+    fun `processInboundReaction discards when target wamid missing without insert`() {
+        every { messageLogRepository.findByMetaMessageId("wamid.MISSING") } returns null
+        every { inboundMessageRepository.findByMetaMessageId("wamid.MISSING") } returns null
+
+        service.processInboundReaction(
+            WhatsAppInboundPayload(
+                metaMessageId = "wamid.reaction.orphan",
+                phone = "51902354183",
+                messageType = "reaction",
+                messageText = null,
+                reactionMessageId = "wamid.MISSING",
+                reactionEmoji = "🔥",
+            )
+        )
+
+        verify(exactly = 0) { inboundMessageRepository.save(any()) }
+        verify(exactly = 0) { messageLogRepository.save(any()) }
+        verify(exactly = 0) { crmEventPublisher.publish(any(), any()) }
+    }
 }

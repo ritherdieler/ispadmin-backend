@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration
 @ConfigurationProperties(prefix = "crm.csat")
 class CrmCsatProperties {
     var enabled: Boolean = true
-    var templateName: String = "csat_survey_v1"
+    var templateName: String = "csat_survey_uti"
     var templateLanguage: String = "es_PE"
     var expireHours: Long = 72
     var maxRetries: Int = 3

@@ -17,6 +17,7 @@ import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMarkReadBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMediaMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppMessageContext
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppPassThreadControlBody
+import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppReactionMessageBody
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplate
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateComponent
 import com.dscorp.wispadmin.wispadmin.requestbody.WhatsAppTemplateLanguage
@@ -35,6 +36,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInteractiveSectio
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaMessagePayloadBuilder
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMetaResponseParser
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppReactionPayloadBuilder
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateButtonParameter
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -80,6 +82,27 @@ class WhatsAppService(
             context = contextMessageId?.takeIf { it.isNotBlank() }?.let { WhatsAppMessageContext(it) }
         )
 
+        return postToMeta(body)
+    }
+
+    /**
+     * Sends (or clears) an emoji reaction on a WhatsApp user message.
+     * Pass [emoji] as empty string to remove an existing reaction (Meta contract).
+     */
+    fun sendReaction(
+        phoneNumber: String,
+        wamid: String,
+        emoji: String,
+    ): WhatsAppSendResult {
+        if (!whatsAppProperties.isConfigured()) {
+            throw Exception("WhatsApp Cloud API no esta configurado correctamente.")
+        }
+        val body = WhatsAppReactionPayloadBuilder.build(
+            phoneNumber = phoneNumber,
+            wamid = wamid,
+            emoji = emoji,
+            normalizePhone = ::normalizePhoneNumber,
+        )
         return postToMeta(body)
     }
 
@@ -463,6 +486,7 @@ class WhatsAppService(
             is WhatsAppInteractiveReplyBody -> body.to
             is WhatsAppInteractiveListReplyBody -> body.to
             is WhatsAppMediaMessageBody -> body.to
+            is WhatsAppReactionMessageBody -> body.to
             else -> null
         }
     }

@@ -11,7 +11,10 @@ data class WhatsAppInboundPayload(
     val buttonReplyTitle: String? = null,
     val mediaId: String? = null,
     val mediaMimeType: String? = null,
-    val contextMessageId: String? = null
+    val contextMessageId: String? = null,
+    /** When type=reaction: wamid of the message being reacted to. */
+    val reactionMessageId: String? = null,
+    val reactionEmoji: String? = null,
 )
 
 object WhatsAppInboundPayloadParser {
@@ -102,6 +105,19 @@ object WhatsAppInboundPayloadParser {
                 mediaMimeType = message.path("document").path("mime_type").asText("application/octet-stream"),
                 contextMessageId = contextMessageId
             )
+            "reaction" -> {
+                val reaction = message.path("reaction")
+                WhatsAppInboundPayload(
+                    metaMessageId = wamid,
+                    phone = phone,
+                    messageType = "reaction",
+                    // Never treat the emoji as chat body — reactions update the target message only.
+                    messageText = null,
+                    contextMessageId = contextMessageId,
+                    reactionMessageId = reaction.path("message_id").asText(null),
+                    reactionEmoji = reaction.path("emoji").asText(""),
+                )
+            }
             else -> WhatsAppInboundPayload(
                 metaMessageId = wamid,
                 phone = phone,

@@ -91,5 +91,18 @@ data class WhatsAppMessageLog(
     var createdAt: LocalDateTime = LocalDateTime.now(),
 
     @Column(length = 64)
-    var callbackId: String? = null
+    var callbackId: String? = null,
+
+    /** Emoji reaction applied by the WhatsApp user on this outbound message. */
+    @Column(name = "customer_reaction_emoji", length = 16)
+    var customerReactionEmoji: String? = null,
+
+    @Column(name = "edited_at")
+    var editedAt: LocalDateTime? = null,
+
+    @Column(name = "deleted_at")
+    var deletedAt: LocalDateTime? = null,
+
+    @Column(name = "original_message", length = 1000)
+    var originalMessage: String? = null
 )

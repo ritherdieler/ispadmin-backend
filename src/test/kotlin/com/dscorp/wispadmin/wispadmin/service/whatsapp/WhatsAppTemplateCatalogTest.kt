@@ -16,9 +16,9 @@ class WhatsAppTemplateCatalogTest {
 
         assertEquals(4, templates.size)
         assertEquals("payment_reminder_gigaperu", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_REMINDER).metaName)
-        assertEquals("payment_validation_gigaperu", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_VALIDATION).metaName)
-        assertEquals("service_cut_notice_gigaperu", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.SERVICE_CUT_NOTICE).metaName)
-        assertEquals("welcome_customer_gigaperu", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER).metaName)
+        assertEquals("payment_validation_u", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_VALIDATION).metaName)
+        assertEquals("service_cut_notice_uti", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.SERVICE_CUT_NOTICE).metaName)
+        assertEquals("welcome_customer_uti", WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.WELCOME_CUSTOMER).metaName)
     }
 
     @Test
