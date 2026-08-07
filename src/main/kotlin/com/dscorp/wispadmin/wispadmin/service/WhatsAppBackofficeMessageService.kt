@@ -53,7 +53,11 @@ class WhatsAppBackofficeMessageService(
 ) {
 
     fun listTemplates(): List<WhatsAppTemplateOptionDto> {
-        return WhatsAppTemplateCatalog.all().map(::toTemplateOptionDto)
+        val definitions = WhatsAppTemplateCatalog.all()
+        val syncedByName = syncedTemplateRepository
+            .findByNameIn(definitions.map { it.metaName })
+            .associateBy { it.name }
+        return definitions.map { toTemplateOptionDto(it, syncedByName[it.metaName]) }
     }
 
     fun listCandidates(templateCode: String): WhatsAppMessageCandidatesResponseDto {
@@ -70,13 +74,16 @@ class WhatsAppBackofficeMessageService(
         val tomorrowStart = todayStart.plusDays(1)
 
         val partition = when (definition.code) {
-            WhatsAppTemplateCode.PAYMENT_REMINDER ->
-                partitionPaymentEntities(
+            WhatsAppTemplateCode.PAYMENT_REMINDER -> {
+                val limit = whatsAppProperties.messagingDailyLimitOverride.takeIf { it > 0 }
+                    ?: DEFAULT_REMINDER_CANDIDATE_LIMIT
+                partitionPaymentRows(
                     definition = definition,
-                    payments = paymentRepository.findAllReminderCandidatePayments(),
+                    rows = paymentRepository.findReminderCandidatePaymentRows(limit),
                     todayStart = todayStart,
                     tomorrowStart = tomorrowStart
                 )
+            }
 
             WhatsAppTemplateCode.PAYMENT_VALIDATION -> {
                 val since = LocalDate.now()
@@ -112,20 +119,55 @@ class WhatsAppBackofficeMessageService(
             return emptyBatchResult(definition.messageType)
         }
 
+        return executeSendSelected(
+            templateCode = templateCode,
+            targetIds = uniqueTargetIds,
+            campaignId = campaignId,
+            operatorUsername = operatorUsername,
+            onEachResult = null
+        )
+    }
+
+    fun executeSendSelected(
+        templateCode: String,
+        targetIds: List<Int>,
+        campaignId: String?,
+        operatorUsername: String?,
+        onEachResult: ((WhatsAppMessageResultDto) -> Unit)?
+    ): WhatsAppMessageBatchResultDto {
+        val definition = WhatsAppTemplateCatalog.getByCodeString(templateCode)
+        val uniqueTargetIds = targetIds.distinct()
+        if (uniqueTargetIds.isEmpty()) {
+            return emptyBatchResult(definition.messageType)
+        }
+
+        val paymentRowsById = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.PAYMENT) {
+            paymentRepository.findWhatsAppPaymentRowsByIds(uniqueTargetIds)
+                .associateBy { row -> row.intAt(0) }
+        } else {
+            emptyMap()
+        }
+
         val concurrency = whatsAppProperties.backoffice.batchConcurrency.coerceAtLeast(1)
         val details = runBlocking {
             val semaphore = Semaphore(concurrency)
             uniqueTargetIds.map { targetId ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
-                        try {
-                            attemptSend(definition, targetId, campaignId, operatorUsername)
+                        val result = try {
+                            attemptSend(
+                                definition = definition,
+                                targetId = targetId,
+                                campaignId = campaignId,
+                                operatorUsername = operatorUsername,
+                                prefetchedPaymentRow = paymentRowsById[targetId]
+                            )
                         } catch (e: Exception) {
                             WhatsAppMessageResultDto(
                                 targetId = targetId,
                                 targetType = definition.targetType.name,
-                                paymentId = if (definition.targetType == WhatsAppTargetType.PAYMENT) targetId else null,
-                                subscriptionId = if (definition.targetType == WhatsAppTargetType.SUBSCRIPTION) {
+                                paymentId = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.PAYMENT) targetId else null,
+                                subscriptionId = if (definition.targetType == com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType.SUBSCRIPTION) {
                                     targetId
                                 } else {
                                     null
@@ -136,6 +178,8 @@ class WhatsAppBackofficeMessageService(
                                 reason = e.message ?: "No se pudo enviar el mensaje."
                             )
                         }
+                        onEachResult?.invoke(result)
+                        result
                     }
                 }
             }.awaitAll()
@@ -190,10 +234,17 @@ class WhatsAppBackofficeMessageService(
         definition: WhatsAppTemplateDefinition,
         targetId: Int,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        prefetchedPaymentRow: Array<Any>? = null
     ): WhatsAppMessageResultDto {
         return when (definition.targetType) {
-            WhatsAppTargetType.PAYMENT -> attemptSendPayment(definition, targetId, campaignId, operatorUsername)
+            WhatsAppTargetType.PAYMENT -> attemptSendPayment(
+                definition,
+                targetId,
+                campaignId,
+                operatorUsername,
+                prefetchedPaymentRow
+            )
             WhatsAppTargetType.SUBSCRIPTION -> attemptSendSubscription(definition, targetId, campaignId, operatorUsername)
         }
     }
@@ -202,9 +253,11 @@ class WhatsAppBackofficeMessageService(
         definition: WhatsAppTemplateDefinition,
         paymentId: Int,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        prefetchedPaymentRow: Array<Any>? = null
     ): WhatsAppMessageResultDto {
-        val row = paymentRepository.findWhatsAppPaymentRowById(paymentId).firstOrNull()
+        val row = prefetchedPaymentRow
+            ?: paymentRepository.findWhatsAppPaymentRowById(paymentId).firstOrNull()
             ?: return skippedPaymentResult(paymentId, null, null, null, "Factura no encontrada.")
 
         val context = paymentContextFromRow(row)
@@ -384,56 +437,6 @@ class WhatsAppBackofficeMessageService(
         )
     }
 
-    private fun partitionPaymentEntities(
-        definition: WhatsAppTemplateDefinition,
-        payments: List<Payment>,
-        todayStart: LocalDateTime,
-        tomorrowStart: LocalDateTime
-    ): Pair<List<WhatsAppMessageCandidateDto>, List<WhatsAppInvalidPhoneCandidateDto>> {
-        val candidates = mutableListOf<WhatsAppMessageCandidateDto>()
-        val invalidPhones = mutableListOf<WhatsAppInvalidPhoneCandidateDto>()
-
-        payments.forEach { payment ->
-            val paymentId = payment.id ?: return@forEach
-            val subscription = payment.subscription ?: return@forEach
-            val subscriptionId = subscription.id ?: return@forEach
-            val clientName = subscription.getFullName()
-            val phone = subscription.phone
-            val phoneReason = phoneInvalidReason(phone)
-
-            if (phoneReason != null) {
-                invalidPhones += WhatsAppInvalidPhoneCandidateDto(
-                    subscriptionId = subscriptionId,
-                    targetId = paymentId,
-                    targetType = definition.targetType.name,
-                    clientName = clientName,
-                    phone = phone?.takeIf { it.isNotBlank() },
-                    reason = phoneReason
-                )
-                return@forEach
-            }
-
-            candidates += WhatsAppMessageCandidateDto(
-                targetType = definition.targetType.name,
-                targetId = paymentId,
-                paymentId = paymentId,
-                subscriptionId = subscriptionId,
-                clientName = clientName,
-                phone = phone!!,
-                amount = when (definition.code) {
-                    WhatsAppTemplateCode.PAYMENT_VALIDATION -> payment.amountPaid ?: payment.amountToPay
-                    else -> payment.amountToPay
-                },
-                billingDate = payment.billingDateDatetime.format(DATE_FORMAT),
-                paymentDate = payment.paymentDateDatetime?.format(DATE_FORMAT),
-                installationDate = null,
-                alreadySentToday = hasSentToday(definition, paymentId, todayStart, tomorrowStart)
-            )
-        }
-
-        return candidates to invalidPhones
-    }
-
     private fun partitionPaymentRows(
         definition: WhatsAppTemplateDefinition,
         rows: List<Array<Any>>,
@@ -442,6 +445,11 @@ class WhatsAppBackofficeMessageService(
     ): Pair<List<WhatsAppMessageCandidateDto>, List<WhatsAppInvalidPhoneCandidateDto>> {
         val candidates = mutableListOf<WhatsAppMessageCandidateDto>()
         val invalidPhones = mutableListOf<WhatsAppInvalidPhoneCandidateDto>()
+
+        val validPaymentIds = rows.mapNotNull { row ->
+            row.intAt(0).takeIf { phoneInvalidReason(row.stringAt(4)) == null }
+        }
+        val sentTodayPaymentIds = paymentIdsSentToday(definition, validPaymentIds, todayStart, tomorrowStart)
 
         rows.forEach { row ->
             val paymentId = row.intAt(0)
@@ -478,11 +486,27 @@ class WhatsAppBackofficeMessageService(
                 billingDate = billingDate,
                 paymentDate = paymentDate,
                 installationDate = null,
-                alreadySentToday = hasSentToday(definition, paymentId, todayStart, tomorrowStart)
+                alreadySentToday = sentTodayPaymentIds.contains(paymentId)
             )
         }
 
         return candidates to invalidPhones
+    }
+
+    private fun paymentIdsSentToday(
+        definition: WhatsAppTemplateDefinition,
+        paymentIds: Collection<Int>,
+        todayStart: LocalDateTime,
+        tomorrowStart: LocalDateTime
+    ): Set<Int> {
+        if (paymentIds.isEmpty()) return emptySet()
+        return whatsAppMessageLogRepository.findPaymentIdsSentToday(
+            paymentIds,
+            definition.messageType,
+            WhatsAppTemplateDeliveryService.STATUS_SENT,
+            todayStart,
+            tomorrowStart
+        )
     }
 
     private fun phoneInvalidReason(phone: String?): String? {
@@ -742,8 +766,10 @@ class WhatsAppBackofficeMessageService(
         return null
     }
 
-    private fun toTemplateOptionDto(definition: WhatsAppTemplateDefinition): WhatsAppTemplateOptionDto {
-        val synced = syncedTemplateRepository.findByName(definition.metaName)
+    private fun toTemplateOptionDto(
+        definition: WhatsAppTemplateDefinition,
+        synced: com.dscorp.wispadmin.wispadmin.data.model.WhatsAppSyncedTemplate?
+    ): WhatsAppTemplateOptionDto {
         return WhatsAppTemplateOptionDto(
             code = definition.messageType,
             metaName = definition.metaName,
@@ -882,6 +908,7 @@ class WhatsAppBackofficeMessageService(
 
     companion object {
         private const val DEFAULT_CANDIDATE_LIMIT = 200
+        private const val DEFAULT_REMINDER_CANDIDATE_LIMIT = 2000
 
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     }

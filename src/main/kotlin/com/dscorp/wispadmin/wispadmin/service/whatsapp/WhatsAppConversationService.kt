@@ -419,23 +419,31 @@ class WhatsAppConversationService(
         val unread = PeruvianWhatsAppPhone.queryVariants(phone)
             .flatMap { variant -> inboundMessageRepository.findByPhoneAndReadAtIsNull(variant) }
             .distinctBy { it.id }
+        if (unread.isEmpty()) {
+            return WhatsAppMarkAllReadResultDto(phone = phone, markedCount = 0, success = true)
+        }
+
         val now = LocalDateTime.now()
         var allMetaOk = true
-        unread.forEach { inbound ->
+        val latest = unread.maxByOrNull { it.createdAt }
+        if (latest != null) {
             try {
-                if (!whatsAppService.markMessageAsRead(inbound.metaMessageId).success) {
+                if (!whatsAppService.markMessageAsRead(latest.metaMessageId).success) {
                     allMetaOk = false
                 }
             } catch (e: Exception) {
                 allMetaOk = false
-                log.warn("Conversation: mark-all-read fallo para ${inbound.metaMessageId}: ${e.message}")
+                log.warn("Conversation: mark-all-read fallo para ${latest.metaMessageId}: ${e.message}")
             }
-            inboundMessageRepository.save(inbound.copy(readAt = now))
         }
+
+        val ids = unread.mapNotNull { it.id }
+        inboundMessageRepository.markReadByIds(ids, now)
+
         return WhatsAppMarkAllReadResultDto(
             phone = phone,
             markedCount = unread.size,
-            success = allMetaOk || unread.isNotEmpty()
+            success = allMetaOk
         )
     }
 

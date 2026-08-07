@@ -43,6 +43,7 @@ class WhatsAppMessageMutationControllerTest {
         csvExportService = mockk(relaxed = true),
         auditService = mockk(relaxed = true),
         crmEventPublisher = crmEventPublisher,
+        batchSendJobService = mockk(relaxed = true),
     )
     private val mockMvc = MockMvcBuilders.standaloneSetup(controller).build()
 

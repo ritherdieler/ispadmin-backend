@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.dto.CrmRealtimeEventDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppBatchSendAcceptedDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppBatchSendStatusDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationContextDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMarkAllReadResultDto
@@ -31,6 +33,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmEventPublisher
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAccountEventService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAnalyticsService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppAuditService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBatchSendJobService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBackofficeQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
@@ -91,7 +94,8 @@ class WhatsAppBackofficeController(
     private val handoffService: WhatsAppHandoffService,
     private val csvExportService: WhatsAppCsvExportService,
     private val auditService: WhatsAppAuditService,
-    private val crmEventPublisher: CrmEventPublisher
+    private val crmEventPublisher: CrmEventPublisher,
+    private val batchSendJobService: WhatsAppBatchSendJobService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(WhatsAppBackofficeController::class.java)
@@ -122,13 +126,36 @@ class WhatsAppBackofficeController(
         httpRequest: HttpServletRequest
     ): ResponseEntity<Any> {
         forbiddenUnlessAdmin(httpRequest)?.let { return it }
+        val targetIds = request.targetIds.distinct()
+        if (whatsAppProperties.backoffice.asyncBatchSend && targetIds.size > 1) {
+            val accepted = batchSendJobService.enqueueSendSelected(
+                templateCode = request.templateCode,
+                targetIds = targetIds,
+                operatorUsername = resolveOperator(httpRequest)
+            )
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(accepted)
+        }
         return ResponseEntity.ok(
             messageService.sendSelected(
                 templateCode = request.templateCode,
-                targetIds = request.targetIds,
+                targetIds = targetIds,
                 operatorUsername = resolveOperator(httpRequest)
             )
         )
+    }
+
+    @GetMapping("/batch/{campaignId}/status")
+    fun getBatchSendStatus(
+        @PathVariable campaignId: String,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<WhatsAppBatchSendStatusDto> {
+        forbiddenUnlessAdmin(httpRequest)?.let {
+            @Suppress("UNCHECKED_CAST")
+            return it as ResponseEntity<WhatsAppBatchSendStatusDto>
+        }
+        val status = batchSendJobService.getBatchStatus(campaignId)
+            ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(status)
     }
 
     @GetMapping("/reminder-candidates")
@@ -473,7 +500,7 @@ class WhatsAppBackofficeController(
         val windowDays = (periodDays ?: 7).coerceAtLeast(1)
         val detail = analyticsService.campaignDetail(campaignId, windowDays, templateCode, operatorUsername)
             ?: return ResponseEntity.notFound().build()
-        val logs = messageLogRepository.findByCampaignId(campaignId).map { it.toDto() }
+        val logs = detail.logs.map { it.toDto() }
         return ResponseEntity.ok(detail.toFrontendDto(logs))
     }
 

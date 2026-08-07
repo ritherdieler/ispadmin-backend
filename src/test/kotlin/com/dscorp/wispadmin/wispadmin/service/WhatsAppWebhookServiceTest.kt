@@ -84,8 +84,44 @@ class WhatsAppWebhookServiceTest {
             )
         }
         verify(exactly = 0) { inboundMessageService.processInboundMessage(any()) }
+        verify(exactly = 0) { inboundMessageService.scheduleInboundProcessing(any()) }
         verify(exactly = 0) { serviceWindowService.recordInbound(any()) }
-        // Reaction events must not open the service window or create message rows via processInboundMessage.
+    }
+
+    @Test
+    fun `processPayload schedules inbound pipeline instead of synchronous processing`() {
+        every { webhookEventRepository.existsByEventKey(any()) } returns false
+        every { webhookEventRepository.save(any()) } answers { firstArg() }
+
+        service.processPayload(
+            """
+            {
+              "object": "whatsapp_business_account",
+              "entry": [{
+                "changes": [{
+                  "field": "messages",
+                  "value": {
+                    "messages": [{
+                      "id": "wamid.inbound1",
+                      "from": "51987654321",
+                      "timestamp": "1700000000",
+                      "type": "text",
+                      "text": { "body": "hola" }
+                    }]
+                  }
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        verify(exactly = 1) { serviceWindowService.recordInbound("51987654321", any()) }
+        verify(exactly = 1) {
+            inboundMessageService.scheduleInboundProcessing(
+                match { it.phone == "51987654321" && it.metaMessageId == "wamid.inbound1" }
+            )
+        }
+        verify(exactly = 0) { inboundMessageService.processInboundMessage(any()) }
     }
 
     @Test
@@ -116,6 +152,7 @@ class WhatsAppWebhookServiceTest {
 
         verify(exactly = 1) { inboundMessageService.processInboundReaction(any()) }
         verify(exactly = 0) { inboundMessageService.processInboundMessage(any()) }
+        verify(exactly = 0) { inboundMessageService.scheduleInboundProcessing(any()) }
     }
 
     @Test

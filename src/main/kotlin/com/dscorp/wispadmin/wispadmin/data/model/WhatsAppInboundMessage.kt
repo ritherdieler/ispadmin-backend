@@ -9,7 +9,8 @@ import javax.persistence.*
     indexes = [
         Index(name = "idx_wainbound_phone", columnList = "phone"),
         Index(name = "idx_wainbound_subscription", columnList = "subscriptionId"),
-        Index(name = "idx_wainbound_created", columnList = "createdAt")
+        Index(name = "idx_wainbound_created", columnList = "createdAt"),
+        Index(name = "idx_wa_inbound_phone_read_at", columnList = "phone,readAt")
     ]
 )
 data class WhatsAppInboundMessage(

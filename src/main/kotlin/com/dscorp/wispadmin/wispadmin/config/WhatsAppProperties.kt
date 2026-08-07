@@ -24,6 +24,7 @@ class WhatsAppProperties {
     var autoReply: WhatsAppAutoReplyProperties = WhatsAppAutoReplyProperties()
     var inboundAlert: WhatsAppInboundAlertProperties = WhatsAppInboundAlertProperties()
     var handover: WhatsAppHandoverProperties = WhatsAppHandoverProperties()
+    var inboundPipeline: WhatsAppInboundPipelineProperties = WhatsAppInboundPipelineProperties()
     var mediaStorageDir: String = "./data/whatsapp/media"
     var messagingDailyLimitOverride: Int = 0
 
@@ -55,6 +56,11 @@ class WhatsAppBackofficeProperties {
     var validationPaidDays: Int = 7
     var welcomeInstalledDays: Int = 30
     var batchConcurrency: Int = 8
+    var asyncBatchSend: Boolean = false
+}
+
+class WhatsAppInboundPipelineProperties {
+    var timeoutSeconds: Int = 120
 }
 
 class WhatsAppWelcomeOnRegistrationProperties {

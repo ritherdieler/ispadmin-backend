@@ -7,7 +7,15 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import com.dscorp.wispadmin.wispadmin.data.model.Payment
+import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
+import org.mockito.ArgumentMatchers.anyCollection
+import org.mockito.ArgumentMatchers.anyList
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -127,6 +135,53 @@ class WhatsAppAnalyticsServiceTest {
     }
 
     @Test
+    fun `campaigns calcula responded por telefono indexando inbound una sola vez para todas las campanas`() {
+        val from = LocalDateTime.now().minusDays(7)
+        val to = LocalDateTime.now()
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    phone = "51900000001",
+                    status = "SENT",
+                    metaMessageId = "w1",
+                    createdAt = from.plusHours(1)
+                ),
+                WhatsAppMessageLog(
+                    campaignId = "camp-2",
+                    phone = "51900000002",
+                    status = "SENT",
+                    metaMessageId = "w2",
+                    createdAt = from.plusHours(1)
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-1",
+                    phone = "51900000001",
+                    createdAt = from.plusHours(2)
+                ),
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-2",
+                    phone = "51900000001",
+                    createdAt = from.plusHours(3)
+                ),
+                com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage(
+                    metaMessageId = "in-3",
+                    phone = "51900000002",
+                    createdAt = from.plusHours(2)
+                )
+            )
+        )
+        val campaigns = service.campaigns(from, to).associateBy { it.campaignId }
+
+        assertEquals(2, campaigns.getValue("camp-1").responded)
+        assertEquals(1, campaigns.getValue("camp-2").responded)
+    }
+
+    @Test
     fun `campaigns filters by templateCode`() {
         val from = LocalDateTime.now().minusDays(7)
         val to = LocalDateTime.now()
@@ -204,6 +259,8 @@ class WhatsAppAnalyticsServiceTest {
         assertEquals("camp-1", detail?.summary?.campaignId)
         assertEquals(1, detail?.summary?.accepted)
         assertEquals(1, detail?.messages?.size)
+        assertEquals(1, detail?.logs?.size)
+        assertEquals("w1", detail?.logs?.first()?.metaMessageId)
     }
 
     @Test
@@ -424,5 +481,139 @@ class WhatsAppAnalyticsServiceTest {
 
         assertEquals(1, series.size)
         assertEquals(1, series[0].accepted)
+    }
+
+    private fun subscription(id: Int) = Subscription(
+        firstName = "Juan",
+        lastName = "Perez",
+        phone = "987654321",
+        equipmentCondition = EquipmentCondition.LOAN
+    ).apply { this.id = id }
+
+    private fun anyLocalDateTime(): LocalDateTime =
+        org.mockito.ArgumentMatchers.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+
+    private fun paidPayment(subscriptionId: Int, amountPaid: Double, paymentDate: LocalDateTime) = Payment(
+        discountAmount = 0.0,
+        paid = true,
+        amountToPay = amountPaid,
+        amountPaid = amountPaid,
+        paymentDateDatetime = paymentDate,
+        subscription = subscription(subscriptionId)
+    )
+
+    @Test
+    fun `conversion consulta pagos en una sola query batch para varios logs de la misma suscripcion`() {
+        val from = LocalDateTime.of(2026, 8, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 8, 3, 0, 0)
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    subscriptionId = 10,
+                    metaMessageId = "w1",
+                    createdAt = from.plusHours(1)
+                ),
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    subscriptionId = 10,
+                    metaMessageId = "w2",
+                    createdAt = from.plusHours(2)
+                ),
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    subscriptionId = 20,
+                    metaMessageId = "w3",
+                    createdAt = from.plusHours(3)
+                )
+            )
+        )
+
+        service.conversion(from, to)
+
+        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+            anyCollection(),
+            anyLocalDateTime(),
+            anyLocalDateTime()
+        )
+        verify(paymentRepository, never()).findBySubscriptionIdOrderByBillingDateDatetimeDesc(
+            org.mockito.ArgumentMatchers.anyInt()
+        )
+    }
+
+    @Test
+    fun `conversion calcula recoveredAmount a partir de los pagos cargados en batch`() {
+        val from = LocalDateTime.of(2026, 8, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 8, 3, 0, 0)
+        val createdAt = from.plusHours(1)
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    status = "SENT",
+                    subscriptionId = 10,
+                    metaMessageId = "w1",
+                    createdAt = createdAt
+                )
+            )
+        )
+        `when`(
+            paymentRepository.findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+                anyCollection(),
+                anyLocalDateTime(),
+                anyLocalDateTime()
+            )
+        ).thenReturn(listOf(paidPayment(10, 50.0, createdAt.plusHours(2))))
+
+        val result = service.conversion(from, to)
+
+        assertEquals(1, result.converted)
+        assertEquals(50.0, result.recoveredAmount, 0.0001)
+    }
+
+    @Test
+    fun `campaigns consulta pagos en una sola query batch para todas las campanas`() {
+        val from = LocalDateTime.of(2026, 8, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 8, 3, 0, 0)
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(
+                WhatsAppMessageLog(
+                    campaignId = "camp-1",
+                    status = "SENT",
+                    subscriptionId = 10,
+                    metaMessageId = "w1",
+                    createdAt = from.plusHours(1)
+                ),
+                WhatsAppMessageLog(
+                    campaignId = "camp-2",
+                    status = "SENT",
+                    subscriptionId = 20,
+                    metaMessageId = "w2",
+                    createdAt = from.plusHours(2)
+                )
+            )
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(emptyList())
+
+        service.campaigns(from, to)
+
+        verify(paymentRepository, times(1)).findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+            anyCollection(),
+            anyLocalDateTime(),
+            anyLocalDateTime()
+        )
+    }
+
+    @Test
+    fun `overview no vuelve a consultar messageLogRepository dentro de conversion`() {
+        val from = LocalDateTime.now().minusDays(7)
+        val to = LocalDateTime.now()
+        `when`(messageLogRepository.findByCreatedAtBetween(from, to)).thenReturn(
+            listOf(WhatsAppMessageLog(status = "SENT", subscriptionId = 10, metaMessageId = "w1"))
+        )
+        `when`(inboundMessageRepository.findByCreatedAtBetween(from, to)).thenReturn(emptyList())
+
+        service.overview(from, to)
+
+        verify(messageLogRepository, times(1)).findByCreatedAtBetween(from, to)
     }
 }

@@ -5,9 +5,9 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepositor
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import java.util.Optional
 
 class WhatsAppMetaAnalyticsParserTest {
 
@@ -16,7 +16,7 @@ class WhatsAppMetaAnalyticsParserTest {
 
     @Test
     fun `parseTemplateAnalytics aggregates sent delivered read and clicked`() {
-        every { templateRepository.findById("123") } returns Optional.of(
+        every { templateRepository.findAllById(any()) } returns listOf(
             WhatsAppSyncedTemplate(metaTemplateId = "123", name = "payment_reminder_gigaperu")
         )
 
@@ -44,6 +44,7 @@ class WhatsAppMetaAnalyticsParserTest {
         assertEquals(8, items.first().delivered)
         assertEquals(5, items.first().read)
         assertEquals(3, items.first().clicked)
+        verify(exactly = 1) { templateRepository.findAllById(any()) }
     }
 
     @Test
@@ -139,7 +140,7 @@ class WhatsAppMetaAnalyticsParserTest {
 
     @Test
     fun `parseTemplateAnalytics reads template_analytics edge response`() {
-        every { templateRepository.findById("2632273056924580") } returns Optional.of(
+        every { templateRepository.findAllById(any()) } returns listOf(
             WhatsAppSyncedTemplate(metaTemplateId = "2632273056924580", name = "payment_reminder_gigaperu")
         )
 

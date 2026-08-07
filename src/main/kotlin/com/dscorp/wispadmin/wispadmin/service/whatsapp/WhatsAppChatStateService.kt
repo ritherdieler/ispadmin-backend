@@ -24,15 +24,27 @@ class WhatsAppChatStateService(
     private val whatsAppProperties: WhatsAppProperties
 ) {
 
+    private val pipelineState = ThreadLocal<WhatsAppChatState?>()
+
+    fun runWithPipelineState(phone: String, block: () -> Unit) {
+        val normalized = normalizePhone(phone)
+        try {
+            pipelineState.set(chatStateRepository.findByPhone(normalized))
+            block()
+        } finally {
+            pipelineState.remove()
+        }
+    }
+
     fun isBotPaused(phone: String): Boolean {
-        val state = chatStateRepository.findByPhone(normalizePhone(phone)) ?: return false
+        val state = resolveState(phone) ?: return false
         return isPaused(state)
     }
 
     fun beginInboundInteraction(phone: String): WhatsAppInboundSession {
         val normalized = normalizePhone(phone)
         val now = LocalDateTime.now()
-        val current = chatStateRepository.findByPhone(normalized)
+        val current = resolveState(phone)
 
         if (current != null && isPaused(current)) {
             if (!isAdvisorWaitExpired(current, now)) {
@@ -54,7 +66,8 @@ class WhatsAppChatStateService(
                 lastInteractionAt = now,
                 updatedAt = now
             )
-            chatStateRepository.save(resumed)
+            persistState(resumed)
+            pipelineState.set(resumed)
             return WhatsAppInboundSession(
                 botPaused = false,
                 isNewOrExpired = true,
@@ -90,7 +103,8 @@ class WhatsAppChatStateService(
             createdAt = now,
             updatedAt = now
         )
-        chatStateRepository.save(state)
+        persistState(state)
+        pipelineState.set(state)
 
         return WhatsAppInboundSession(
             botPaused = false,
@@ -103,7 +117,7 @@ class WhatsAppChatStateService(
     fun markWaitingForAdvisor(phone: String, metadata: String? = null): WhatsAppChatState {
         val normalized = normalizePhone(phone)
         val now = LocalDateTime.now()
-        val current = chatStateRepository.findByPhone(normalized)
+        val current = resolveState(phone)
         val state = current?.copy(
             status = WhatsAppChatStatus.ESPERANDO_ASESOR,
             currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
@@ -121,13 +135,13 @@ class WhatsAppChatStateService(
             createdAt = now,
             updatedAt = now
         )
-        return chatStateRepository.save(state)
+        return persistState(state)
     }
 
     fun resumeBot(phone: String, metadata: String? = null): WhatsAppChatState {
         val normalized = normalizePhone(phone)
         val now = LocalDateTime.now()
-        val current = chatStateRepository.findByPhone(normalized)
+        val current = resolveState(phone)
         val state = current?.copy(
             status = WhatsAppChatStatus.BOT_ACTIVE,
             currentStep = WhatsAppConversationStep.MAIN_MENU,
@@ -145,7 +159,7 @@ class WhatsAppChatStateService(
             createdAt = now,
             updatedAt = now
         )
-        return chatStateRepository.save(state)
+        return persistState(state)
     }
 
     fun setCurrentStep(
@@ -159,7 +173,7 @@ class WhatsAppChatStateService(
 
         val normalized = normalizePhone(phone)
         val now = LocalDateTime.now()
-        val current = chatStateRepository.findByPhone(normalized)
+        val current = resolveState(phone)
         val state = current?.copy(
             status = WhatsAppChatStatus.BOT_ACTIVE,
             currentStep = currentStep,
@@ -176,19 +190,19 @@ class WhatsAppChatStateService(
             createdAt = now,
             updatedAt = now
         )
-        return chatStateRepository.save(state)
+        return persistState(state)
     }
 
     fun currentStep(phone: String): WhatsAppConversationStep? {
-        return chatStateRepository.findByPhone(normalizePhone(phone))?.currentStep
+        return resolveState(phone)?.currentStep
     }
 
     fun getMetadata(phone: String): String? {
-        return chatStateRepository.findByPhone(normalizePhone(phone))?.metadata
+        return resolveState(phone)?.metadata
     }
 
     fun hasPendingInteractiveMenu(phone: String): Boolean {
-        val state = chatStateRepository.findByPhone(normalizePhone(phone)) ?: return false
+        val state = resolveState(phone) ?: return false
         if (isPaused(state)) return false
         return state.currentStep in setOf(
             WhatsAppConversationStep.MAIN_MENU,
@@ -200,7 +214,7 @@ class WhatsAppChatStateService(
     }
 
     fun hasPendingSupportDiagnostic(phone: String): Boolean {
-        val state = chatStateRepository.findByPhone(normalizePhone(phone)) ?: return false
+        val state = resolveState(phone) ?: return false
         if (isPaused(state)) return false
         return state.currentStep in setOf(
             WhatsAppConversationStep.SUPPORT_MENU,
@@ -221,14 +235,14 @@ class WhatsAppChatStateService(
     ): WhatsAppChatState = withContext(Dispatchers.IO) { setCurrentStep(phone, currentStep, metadata) }
 
     fun getUnknownRetryCount(phone: String): Int {
-        val meta = chatStateRepository.findByPhone(normalizePhone(phone))?.metadata ?: return 0
+        val meta = resolveState(phone)?.metadata ?: return 0
         return UNKNOWN_RETRY_REGEX.find(meta)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
     }
 
     fun incrementUnknownRetryCount(phone: String): Int {
         val normalized = normalizePhone(phone)
         val now = LocalDateTime.now()
-        val current = chatStateRepository.findByPhone(normalized)
+        val current = resolveState(phone)
         val next = getUnknownRetryCount(normalized) + 1
         val baseMeta = current?.metadata
             ?.replace(UNKNOWN_RETRY_REGEX, "")
@@ -247,20 +261,33 @@ class WhatsAppChatStateService(
                 createdAt = now,
                 updatedAt = now
             )
-        chatStateRepository.save(state)
+        persistState(state)
         return next
     }
 
     fun resetUnknownRetryCount(phone: String) {
         val normalized = normalizePhone(phone)
-        val current = chatStateRepository.findByPhone(normalized) ?: return
+        val current = resolveState(phone) ?: return
         val cleaned = current.metadata
             ?.replace(UNKNOWN_RETRY_REGEX, "")
             ?.trim()
             ?.trim(';')
             ?.ifBlank { null }
         if (cleaned == current.metadata) return
-        chatStateRepository.save(current.copy(metadata = cleaned, updatedAt = LocalDateTime.now()))
+        persistState(current.copy(metadata = cleaned, updatedAt = LocalDateTime.now()))
+    }
+
+    private fun resolveState(phone: String): WhatsAppChatState? {
+        pipelineState.get()?.let { return it }
+        return chatStateRepository.findByPhone(normalizePhone(phone))
+    }
+
+    private fun persistState(state: WhatsAppChatState): WhatsAppChatState {
+        val saved = chatStateRepository.save(state)
+        if (pipelineState.get() != null) {
+            pipelineState.set(saved)
+        }
+        return saved
     }
 
     private fun isPaused(state: WhatsAppChatState): Boolean {

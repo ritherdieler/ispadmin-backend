@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import java.util.concurrent.Executor
 
 class WhatsAppInboundMessageServiceTest {
 
@@ -92,8 +93,13 @@ class WhatsAppInboundMessageServiceTest {
             crmEventPublisher = crmEventPublisher,
             crmConversationService = crmConversationService,
             crmTicketLinkService = crmTicketLinkService,
-            csatSurveyService = csatSurveyService
+            csatSurveyService = csatSurveyService,
+            inboundPipelineExecutor = Executor { command -> command.run() }
         )
+        every { chatStateService.runWithPipelineState(any(), any()) } answers {
+            val block = secondArg<() -> Unit>()
+            block.invoke()
+        }
         every { csatSurveyService.tryHandleInbound(any(), any(), any(), any(), any()) } returns false
         every { chatStateService.isBotPaused(any()) } returns false
         every { chatStateService.beginInboundInteraction(any()) } returns WhatsAppInboundSession(
@@ -116,7 +122,7 @@ class WhatsAppInboundMessageServiceTest {
         )
         every { handoffService.pauseBotAndPassToAdvisor(any(), any()) } returns
             WhatsAppHandoffResult(botPaused = true, metaTransferred = false)
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(any()) } returns emptyList()
+        every { inboundMessageRepository.countByPhoneAndReadAtIsNull(any()) } returns 0L
         every { crmConversationService.touchInbound(any(), any()) } answers {
             CrmConversation(
                 id = 99L,
@@ -758,9 +764,7 @@ class WhatsAppInboundMessageServiceTest {
         }
         every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
         every { conversationService.hasRecentOperatorReply(payload.phone) } returns true
-        every { inboundMessageRepository.findByPhoneAndReadAtIsNull(payload.phone) } returns listOf(
-            WhatsAppInboundMessage(id = 99, phone = payload.phone, metaMessageId = payload.metaMessageId)
-        )
+        every { inboundMessageRepository.countByPhoneAndReadAtIsNull(payload.phone) } returns 1L
 
         service.processInboundMessage(payload)
 

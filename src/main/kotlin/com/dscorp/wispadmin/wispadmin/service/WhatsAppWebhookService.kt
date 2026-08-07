@@ -263,7 +263,7 @@ class WhatsAppWebhookService(
         }
 
         serviceWindowService.recordInbound(payload.phone)
-        whatsAppInboundMessageService.processInboundMessage(payload)
+        whatsAppInboundMessageService.scheduleInboundProcessing(payload)
     }
 
     private fun parseWebhookTimestamp(timestamp: String): LocalDateTime? {

@@ -35,8 +35,10 @@ import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.util.concurrent.Executor
 import java.util.concurrent.ConcurrentHashMap
 
 @Service
@@ -55,7 +57,8 @@ class WhatsAppInboundMessageService(
     private val crmEventPublisher: CrmEventPublisher,
     private val crmConversationService: CrmConversationService,
     private val crmTicketLinkService: CrmTicketLinkService,
-    private val csatSurveyService: CsatSurveyService
+    private val csatSurveyService: CsatSurveyService,
+    @Qualifier("whatsAppInboundPipelineExecutor") private val inboundPipelineExecutor: Executor
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppInboundMessageService::class.java)
@@ -107,19 +110,44 @@ class WhatsAppInboundMessageService(
         }
     }
 
-    fun processInboundMessage(payload: WhatsAppInboundPayload) {
-        // Defense in depth: reactions must never create a chat bubble row.
+    fun scheduleInboundProcessing(payload: WhatsAppInboundPayload) {
         if (payload.messageType.equals("reaction", ignoreCase = true)) {
             processInboundReaction(payload)
             return
         }
-
-        val replyToLogId = conversationService.resolveReplyToLogId(payload.contextMessageId)
-        val mediaStoredPath = payload.mediaId?.let {
-            mediaDownloadService.downloadAndStore(it, payload.mediaMimeType)
+        val saved = persistInboundShell(payload)
+        val inboundId = saved.id ?: return
+        inboundPipelineExecutor.execute {
+            chatStateService.runWithPipelineState(payload.phone) {
+                try {
+                    processInboundPipeline(inboundId, payload)
+                } catch (e: Exception) {
+                    log.error("Inbound pipeline failed phone={}: {}", payload.phone, e.message, e)
+                }
+            }
         }
+    }
 
-        val saved = inboundMessageRepository.save(
+    fun processInboundMessage(payload: WhatsAppInboundPayload) {
+        if (payload.messageType.equals("reaction", ignoreCase = true)) {
+            processInboundReaction(payload)
+            return
+        }
+        chatStateService.runWithPipelineState(payload.phone) {
+            val saved = enrichWithMedia(persistInboundShell(payload), payload)
+            completeInboundProcessing(saved, payload)
+        }
+    }
+
+    private fun processInboundPipeline(inboundId: Int, payload: WhatsAppInboundPayload) {
+        val saved = inboundMessageRepository.findById(inboundId).orElse(null) ?: return
+        val withMedia = enrichWithMedia(saved, payload)
+        completeInboundProcessing(withMedia, payload)
+    }
+
+    private fun persistInboundShell(payload: WhatsAppInboundPayload): WhatsAppInboundMessage {
+        val replyToLogId = conversationService.resolveReplyToLogId(payload.contextMessageId)
+        return inboundMessageRepository.save(
             WhatsAppInboundMessage(
                 metaMessageId = payload.metaMessageId,
                 phone = payload.phone,
@@ -129,14 +157,31 @@ class WhatsAppInboundMessageService(
                 buttonReplyTitle = payload.buttonReplyTitle,
                 mediaId = payload.mediaId,
                 mediaMimeType = payload.mediaMimeType,
-                mediaStoredPath = mediaStoredPath,
+                mediaStoredPath = null,
                 contextMessageId = payload.contextMessageId,
                 replyToLogId = replyToLogId,
                 processed = false,
                 replySent = false
             )
         )
+    }
 
+    private fun enrichWithMedia(
+        saved: WhatsAppInboundMessage,
+        payload: WhatsAppInboundPayload
+    ): WhatsAppInboundMessage {
+        val mediaStoredPath = payload.mediaId?.let {
+            mediaDownloadService.downloadAndStore(it, payload.mediaMimeType)
+        } ?: saved.mediaStoredPath
+        if (mediaStoredPath == saved.mediaStoredPath) {
+            return saved
+        }
+        return inboundMessageRepository.save(
+            saved.copy(mediaStoredPath = mediaStoredPath)
+        )
+    }
+
+    private fun completeInboundProcessing(saved: WhatsAppInboundMessage, payload: WhatsAppInboundPayload) {
         val subscription = conversationService.findSubscriptionByPhone(payload.phone)
         notifySecretaryInbound(payload.phone, subscription?.getFullName())
         val session = chatStateService.beginInboundInteraction(payload.phone)
@@ -229,7 +274,7 @@ class WhatsAppInboundMessageService(
                 ?: inbound.buttonReplyTitle
                 ?: inbound.messageType
             val hasMedia = WhatsAppConversationQueryService.inboundHasMedia(inbound)
-            val unreadCount = inboundMessageRepository.findByPhoneAndReadAtIsNull(inbound.phone).size
+            val unreadCount = inboundMessageRepository.countByPhoneAndReadAtIsNull(inbound.phone).toInt()
             crmEventPublisher.publish(
                 eventType = CrmEventPublisher.MESSAGE_RECEIVED,
                 payload = mapOf(

@@ -96,7 +96,11 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `listConversations groups by phone with unread and last preview`() {
         val now = LocalDateTime.of(2026, 7, 25, 10, 0)
-        every { inboundMessageRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf(
+            "51911111111",
+            "51922222222"
+        )
+        every { inboundMessageRepository.findByPhoneIn(any()) } returns listOf(
             WhatsAppInboundMessage(
                 id = 1,
                 metaMessageId = "in-1",
@@ -129,7 +133,7 @@ class WhatsAppConversationQueryServiceTest {
                 readAt = now
             )
         )
-        every { messageLogRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+        every { messageLogRepository.findByPhoneIn(any()) } returns listOf(
             WhatsAppMessageLog(
                 id = 100,
                 phone = "51911111111",
@@ -168,6 +172,9 @@ class WhatsAppConversationQueryServiceTest {
 
         verify(exactly = 1) { serviceWindowService.getServiceWindows(any()) }
         verify(exactly = 0) { serviceWindowService.getServiceWindow(any()) }
+        verify(exactly = 1) { inboundMessageRepository.findRecentActivePhones(any()) }
+        verify(exactly = 0) { inboundMessageRepository.findTop500ByOrderByCreatedAtDesc() }
+        verify(exactly = 0) { messageLogRepository.findTop500ByOrderByCreatedAtDesc() }
         assertEquals(2, result.size)
         assertEquals("51922222222", result[0].phone)
         assertEquals("Otro", result[0].lastMessagePreview)
@@ -191,7 +198,11 @@ class WhatsAppConversationQueryServiceTest {
     @Test
     fun `listConversations ordena por lastInboundAt y no por outbound del bot`() {
         val now = LocalDateTime.of(2026, 8, 4, 15, 0)
-        every { inboundMessageRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf(
+            "51911111111",
+            "51922222222"
+        )
+        every { inboundMessageRepository.findByPhoneIn(any()) } returns listOf(
             WhatsAppInboundMessage(
                 id = 1,
                 metaMessageId = "in-old",
@@ -209,7 +220,7 @@ class WhatsAppConversationQueryServiceTest {
                 readAt = null
             )
         )
-        every { messageLogRepository.findTop500ByOrderByCreatedAtDesc() } returns listOf(
+        every { messageLogRepository.findByPhoneIn(any()) } returns listOf(
             WhatsAppMessageLog(
                 id = 100,
                 phone = "51911111111",
@@ -228,6 +239,21 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(now.minusMinutes(20), result[0].lastInboundAt)
         assertEquals(now.minusHours(2), result[1].lastInboundAt)
         assertEquals(now.minusMinutes(1), result[1].lastMessageAt)
+    }
+
+    @Test
+    fun `listConversations con rango de fechas sigue usando findByCreatedAtBetween sin rankear telefonos`() {
+        val from = LocalDateTime.of(2026, 7, 1, 0, 0)
+        val to = LocalDateTime.of(2026, 7, 31, 23, 59)
+        every { inboundMessageRepository.findByCreatedAtBetween(from, to) } returns emptyList()
+        every { messageLogRepository.findByCreatedAtBetween(from, to) } returns emptyList()
+        every { subscriptionRepository.findAllById(emptyList()) } returns emptyList()
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val result = service.listConversations(WhatsAppConversationFilter(dateFrom = from, dateTo = to))
+
+        verify(exactly = 0) { inboundMessageRepository.findRecentActivePhones(any()) }
+        assertEquals(0, result.size)
     }
 
     @Test
@@ -557,7 +583,7 @@ class WhatsAppConversationQueryServiceTest {
             Payment(discountAmount = 0.0, paid = true, amountToPay = 10.0, billingDateDatetime = LocalDateTime.now())
         )
 
-        every { inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc(phone) } returns listOf(
+        every { inboundMessageRepository.findTop1ByPhoneInOrderByCreatedAtDesc(any()) } returns listOf(
             WhatsAppInboundMessage(
                 id = 1,
                 metaMessageId = "in-1",
@@ -566,22 +592,21 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = LocalDateTime.now()
             )
         )
-        every { inboundMessageRepository.findTop1ByPhoneOrderByCreatedAtDesc("902354183") } returns emptyList()
         every { subscriptionRepository.findById(7) } returns Optional.of(subscription)
         every { subscriptionRepository.findByNormalizedPhone("902354183") } returns listOf(subscription)
-        every { serviceWindowService.getServiceWindow(phone) } returns
-            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+        every { serviceWindowService.getServiceWindows(any()) } returns mapOf(
+            phone to WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
                 phone = phone,
                 open = true,
                 expiresAt = LocalDateTime.now().plusHours(5)
-            )
-        every { serviceWindowService.getServiceWindow("902354183") } returns
-            WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+            ),
+            "902354183" to WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
                 phone = "902354183",
                 open = false,
                 expiresAt = null
             )
-        every { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc(phone) } returns listOf(
+        )
+        every { messageLogRepository.findByPhoneInOrderByCreatedAtDesc(any(), any()) } returns listOf(
             WhatsAppMessageLog(
                 id = 9,
                 phone = phone,
@@ -590,13 +615,16 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = LocalDateTime.now()
             )
         )
-        every { messageLogRepository.findTop10ByPhoneOrderByCreatedAtDesc("902354183") } returns emptyList()
-        every { paymentRepository.findBySubscriptionIdOrderByBillingDateDatetimeDesc(7) } returns emptyList()
+        every { paymentRepository.findTop5BySubscriptionIdOrderByBillingDateDatetimeDesc(7) } returns emptyList()
         every { crmConversationRepository.findBySubscriptionIdOrderByLastInboundAtDesc(7) } returns emptyList()
         every { crmConversationRepository.findByPhoneAndChannel(any(), any()) } returns null
 
         val context = service.getContext(phone)
 
+        verify(exactly = 1) { inboundMessageRepository.findTop1ByPhoneInOrderByCreatedAtDesc(any()) }
+        verify(exactly = 1) { serviceWindowService.getServiceWindows(any()) }
+        verify(exactly = 0) { serviceWindowService.getServiceWindow(any()) }
+        verify(exactly = 1) { messageLogRepository.findByPhoneInOrderByCreatedAtDesc(any(), any()) }
         assertEquals(phone, context.phone)
         assertEquals(7, context.subscription?.id)
         assertEquals("ACTIVE", context.subscription?.status)

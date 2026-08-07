@@ -34,14 +34,27 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     @Query(
         value = """
-        SELECT p.*
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
+        INNER JOIN subscription s ON s.id = p.subscription_id
         ORDER BY p.billing_date_datetime ASC, p.id ASC
+        LIMIT :limit
     """,
         nativeQuery = true
     )
-    fun findAllReminderCandidatePayments(): List<Payment>
+    fun findReminderCandidatePaymentRows(
+        @Param("limit") limit: Int
+    ): List<Array<Any>>
 
     @Query(
         value = """
@@ -142,6 +155,27 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         nativeQuery = true
     )
     fun findWhatsAppPaymentRowById(@Param("paymentId") paymentId: Int): List<Array<Any>>
+
+    @Query(
+        value = """
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            p.amount_to_pay,
+            p.amount_paid,
+            p.billing_date_datetime,
+            p.payment_date_datetime,
+            p.paid
+        FROM payment p
+        INNER JOIN subscription s ON s.id = p.subscription_id
+        WHERE p.id IN :paymentIds
+        """,
+        nativeQuery = true
+    )
+    fun findWhatsAppPaymentRowsByIds(@Param("paymentIds") paymentIds: Collection<Int>): List<Array<Any>>
 
     @Query(
         value = """
@@ -249,7 +283,29 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
 
     fun findBySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId: Int): List<Payment>
 
+    fun findTop5BySubscriptionIdOrderByBillingDateDatetimeDesc(subscriptionId: Int): List<Payment>
+
     fun findBySubscriptionIdIn(subscriptionIds: Collection<Int>): List<Payment>
+
+    fun findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetween(
+        subscriptionIds: Collection<Int>,
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): List<Payment>
+
+    @Query(
+        """
+        SELECT p FROM Payment p JOIN FETCH p.subscription
+        WHERE p.subscription.id IN :subscriptionIds
+          AND p.paid = true
+          AND p.paymentDateDatetime BETWEEN :startDate AND :endDate
+        """
+    )
+    fun findBySubscriptionIdInAndPaidTrueAndPaymentDateDatetimeBetweenFetchSubscription(
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>,
+        @Param("startDate") startDate: LocalDateTime,
+        @Param("endDate") endDate: LocalDateTime
+    ): List<Payment>
 
     @Query("SELECT p FROM Payment p LEFT JOIN FETCH p.responsible WHERE p.subscription.id IN :ids")
     fun findBySubscriptionIdInFetchResponsible(@Param("ids") ids: Collection<Int>): List<Payment>
