@@ -239,7 +239,46 @@ class CrmConversationServiceTest {
 
         assertEquals("RESOLVED", result.status)
         assertNull(result.assignedAgentId)
+        assertEquals(7, result.resolvedByAgentId)
+        assertEquals("Agent One", result.resolvedByAgentName)
         verify { handoffService.resumeBotAndTakeControl("51999999999", "crm_resolved") }
+        verify {
+            assignmentEventRepository.save(match {
+                it.eventType == CrmAssignmentEventType.RESOLVE &&
+                    it.fromUserId == 7 &&
+                    it.toUserId == 7
+            })
+        }
+    }
+
+    @Test
+    fun `admin resolve sets resolvedBy to admin not previous assignee`() {
+        val conversation = pendingConversation(id = 16L).copy(
+            status = CrmConversationStatus.ASSIGNED,
+            assignedAgentId = 7,
+            phone = "51966666666"
+        )
+        every { conversationRepository.findById(16L) } returns Optional.of(conversation)
+        every { conversationRepository.save(any()) } answers { firstArg() }
+
+        val result = service.resolve(
+            conversationId = 16L,
+            agentId = 99,
+            operatorUsername = "admin1",
+            isAdmin = true,
+            resumeBot = false,
+            note = null
+        )
+
+        assertEquals(99, result.resolvedByAgentId)
+        assertEquals("Agent One", result.resolvedByAgentName)
+        verify {
+            assignmentEventRepository.save(match {
+                it.eventType == CrmAssignmentEventType.RESOLVE &&
+                    it.fromUserId == 7 &&
+                    it.toUserId == 99
+            })
+        }
     }
 
     @Test

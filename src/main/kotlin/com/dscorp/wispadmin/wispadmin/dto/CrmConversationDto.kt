@@ -10,6 +10,8 @@ data class CrmConversationDto(
     val status: String,
     val assignedAgentId: Int?,
     val assignedAgentName: String?,
+    val resolvedByAgentId: Int? = null,
+    val resolvedByAgentName: String? = null,
     val priority: Int,
     val claimedAt: LocalDateTime?,
     val resolvedAt: LocalDateTime?,

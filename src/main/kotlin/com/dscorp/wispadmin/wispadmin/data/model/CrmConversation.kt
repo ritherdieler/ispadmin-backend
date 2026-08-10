@@ -69,6 +69,9 @@ data class CrmConversation(
     var resolvedAt: LocalDateTime? = null,
 
     @Column
+    var resolvedByAgentId: Int? = null,
+
+    @Column
     var lastInboundAt: LocalDateTime? = null,
 
     @Column

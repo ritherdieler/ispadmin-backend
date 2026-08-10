@@ -445,6 +445,7 @@ class WhatsAppConversationQueryService(
                 crmConversationId = crm?.id,
                 crmStatus = status,
                 assignedAgentId = crm?.assignedAgentId,
+                resolvedByAgentId = crm?.resolvedByAgentId,
                 crmResolvedAt = crm?.resolvedAt
             )
         }
@@ -537,6 +538,7 @@ class WhatsAppConversationQueryService(
                 crmConversationId = crm?.id,
                 crmStatus = crm?.status?.name,
                 assignedAgentId = crm?.assignedAgentId,
+                resolvedByAgentId = crm?.resolvedByAgentId,
                 crmResolvedAt = crm?.resolvedAt
             )
         }

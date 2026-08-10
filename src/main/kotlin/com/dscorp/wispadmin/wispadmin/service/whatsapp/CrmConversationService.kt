@@ -169,13 +169,14 @@ class CrmConversationService(
         conversation.status = CrmConversationStatus.RESOLVED
         conversation.assignedAgentId = null
         conversation.resolvedAt = now
+        conversation.resolvedByAgentId = agentId
         conversation.updatedAt = now
         val saved = conversationRepository.save(conversation)
         recordAssignment(
             conversationId = conversationId,
             type = CrmAssignmentEventType.RESOLVE,
             fromUserId = previous,
-            toUserId = null,
+            toUserId = agentId,
             note = note
         )
         if (resumeBot) {
@@ -454,6 +455,8 @@ class CrmConversationService(
             "status" to conversation.status.name,
             "assignedAgentId" to conversation.assignedAgentId,
             "assignedAgentName" to conversation.assignedAgentId?.let { agentName(it) },
+            "resolvedByAgentId" to conversation.resolvedByAgentId,
+            "resolvedByAgentName" to conversation.resolvedByAgentId?.let { agentName(it) },
             "priority" to conversation.priority,
             "subscriptionId" to conversation.subscriptionId,
             "claimedAt" to conversation.claimedAt?.toString(),
@@ -475,6 +478,8 @@ class CrmConversationService(
             status = status.name,
             assignedAgentId = assignedAgentId,
             assignedAgentName = assignedAgentId?.let { agentName(it) },
+            resolvedByAgentId = resolvedByAgentId,
+            resolvedByAgentName = resolvedByAgentId?.let { agentName(it) },
             priority = priority,
             claimedAt = claimedAt,
             resolvedAt = resolvedAt,

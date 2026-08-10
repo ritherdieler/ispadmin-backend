@@ -20,6 +20,8 @@ data class WhatsAppConversationSummaryDto(
     val crmConversationId: Long? = null,
     val crmStatus: String? = null,
     val assignedAgentId: Int? = null,
+    val resolvedByAgentId: Int? = null,
+    val resolvedByAgentName: String? = null,
     val crmResolvedAt: LocalDateTime? = null
 )
 
