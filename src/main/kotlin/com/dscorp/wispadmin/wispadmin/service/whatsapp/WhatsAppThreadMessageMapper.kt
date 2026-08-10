@@ -28,6 +28,18 @@ object WhatsAppThreadMessageMapper {
     fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
         !inbound.mediaStoredPath.isNullOrBlank() || !inbound.mediaId.isNullOrBlank()
 
+    fun inboundIsPaymentProof(inbound: WhatsAppInboundMessage): Boolean {
+        val type = inbound.messageType.trim().lowercase()
+        if (type == "image") return true
+        if (type != "document") return false
+        val mime = inbound.mediaMimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+        return mime == "application/pdf"
+    }
+
     fun WhatsAppInboundMessage.toThreadMessage() = WhatsAppThreadMessageDto(
         id = "inbound:$id",
         direction = "INBOUND",

@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
+import com.dscorp.wispadmin.wispadmin.data.model.CrmChannel
+import com.dscorp.wispadmin.wispadmin.data.model.CrmConversation
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppInboundMessage
 import com.dscorp.wispadmin.wispadmin.data.model.WhatsAppMessageLog
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationContextDto
@@ -8,9 +10,10 @@ import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationInstallationOrderD
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationPendingDebtDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationRecentPaymentDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSubscriptionDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationPageDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationTicketItemDto
-import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadMessageDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppInboxViewCountsDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppThreadPageDto
 import com.dscorp.wispadmin.wispadmin.dto.toDto
 import com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository
@@ -20,6 +23,7 @@ import com.dscorp.wispadmin.wispadmin.repository.WhatsAppInboundMessageRepositor
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
+import java.sql.Timestamp
 import java.time.LocalDateTime
 
 data class WhatsAppConversationFilter(
@@ -27,7 +31,10 @@ data class WhatsAppConversationFilter(
     val dateFrom: LocalDateTime? = null,
     val dateTo: LocalDateTime? = null,
     val unreadOnly: Boolean = false,
-    val limit: Int = 50
+    val limit: Int = 50,
+    val view: WhatsAppInboxView = WhatsAppInboxView.ALL,
+    val agentId: Int? = null,
+    val cursor: LocalDateTime? = null
 )
 
 @Service
@@ -43,107 +50,125 @@ class WhatsAppConversationQueryService(
     private val operatorDisplayNameResolver: WhatsAppOperatorDisplayNameResolver,
 ) {
 
-    fun listConversations(filter: WhatsAppConversationFilter): List<WhatsAppConversationSummaryDto> {
+    fun listConversations(filter: WhatsAppConversationFilter): WhatsAppConversationPageDto {
+        val pageSize = filter.limit.coerceIn(1, 100)
         val hasDateRange = filter.dateFrom != null && filter.dateTo != null
-        val inbound: List<WhatsAppInboundMessage>
-        val outbound: List<WhatsAppMessageLog>
         if (hasDateRange) {
-            inbound = inboundMessageRepository.findByCreatedAtBetween(filter.dateFrom!!, filter.dateTo!!)
-            outbound = messageLogRepository.findByCreatedAtBetween(filter.dateFrom, filter.dateTo!!)
-        } else {
-            val activeVariants = inboundMessageRepository.findRecentActivePhones(RECENT_PHONE_RANK_LIMIT)
+            val items = listConversationsWithDateRange(filter, pageSize)
+            return WhatsAppConversationPageDto(items = items, hasMore = false, nextCursor = null)
+        }
+
+        if (
+            filter.view == WhatsAppInboxView.ALL &&
+            filter.search.isNullOrBlank() &&
+            !filter.unreadOnly
+        ) {
+            return listAllViewPage(filter, pageSize)
+        }
+
+        return listFilteredViewPage(filter, pageSize)
+    }
+
+    private fun listAllViewPage(
+        filter: WhatsAppConversationFilter,
+        pageSize: Int
+    ): WhatsAppConversationPageDto {
+        val fetchLimit = pageSize + 1
+        val rankedPhones = fetchRankedPhones(fetchLimit, filter.cursor)
+        if (rankedPhones.isEmpty()) {
+            return WhatsAppConversationPageDto(items = emptyList(), hasMore = false, nextCursor = null)
+        }
+        val canonicalPhones = rankedPhones
+            .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
+            .distinct()
+        val summaries = buildSummariesForPhones(canonicalPhones)
+        val sorted = filterAndSortSummaries(summaries, filter)
+        val page = sorted.take(pageSize)
+        val hasMore = sorted.size > pageSize || rankedPhones.size > pageSize
+        val nextCursor = if (hasMore) page.lastOrNull()?.lastMessageAt else null
+        return WhatsAppConversationPageDto(items = page, hasMore = hasMore, nextCursor = nextCursor)
+    }
+
+    private fun listFilteredViewPage(
+        filter: WhatsAppConversationFilter,
+        pageSize: Int
+    ): WhatsAppConversationPageDto {
+        val accumulated = LinkedHashMap<String, WhatsAppConversationSummaryDto>()
+        var rankCursor = filter.cursor
+        var exhausted = false
+        var rounds = 0
+        while (accumulated.size <= pageSize && !exhausted && rounds < MAX_VIEW_SCAN_ROUNDS) {
+            rounds++
+            val rankedPhones = fetchRankedPhones(PHONE_SCAN_BATCH, rankCursor)
+            if (rankedPhones.isEmpty()) {
+                exhausted = true
+                break
+            }
+            val canonicalPhones = rankedPhones
                 .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
                 .distinct()
-                .flatMap { PeruvianWhatsAppPhone.queryVariants(it) }
-                .distinct()
-            inbound = if (activeVariants.isEmpty()) emptyList() else inboundMessageRepository.findByPhoneIn(activeVariants)
-            outbound = if (activeVariants.isEmpty()) emptyList() else messageLogRepository.findByPhoneIn(activeVariants)
+            val summaries = buildSummariesForPhones(canonicalPhones)
+            filterAndSortSummaries(summaries, filter).forEach { summary ->
+                accumulated.putIfAbsent(summary.phone, summary)
+            }
+            rankCursor = batchRankCursor(rankedPhones, summaries) ?: rankCursor
+            if (rankedPhones.size < PHONE_SCAN_BATCH) {
+                exhausted = true
+            }
         }
+        val sorted = accumulated.values.sortedWith(conversationSortComparator())
+        val page = sorted.take(pageSize)
+        val hasMore = sorted.size > pageSize || !exhausted
+        val nextCursor = if (hasMore) page.lastOrNull()?.lastMessageAt else null
+        return WhatsAppConversationPageDto(items = page, hasMore = hasMore, nextCursor = nextCursor)
+    }
 
-        val phones = (
-            inbound.map { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) } +
-                outbound.mapNotNull { it.phone?.let { p -> PeruvianWhatsAppPhone.canonicalConversationKey(p) } }
-            ).distinct()
-        val inboundByPhone = inbound.groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) }
-        val outboundByPhone = outbound
-            .filter { it.phone != null }
-            .groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone!!) }
-
-        val subscriptionIds = inbound.mapNotNull { it.subscriptionId }.distinct()
-        val subscriptions = if (subscriptionIds.isEmpty()) {
-            emptyMap()
+    private fun fetchRankedPhones(limit: Int, cursor: LocalDateTime?): List<String> =
+        if (cursor == null) {
+            inboundMessageRepository.findRecentActivePhones(limit)
         } else {
-            subscriptionRepository.findAllById(subscriptionIds).associateBy { it.id }
+            inboundMessageRepository.findRecentActivePhonesBefore(limit, cursor)
         }
-        val serviceWindows = serviceWindowService.getServiceWindows(
-            phones.flatMap { PeruvianWhatsAppPhone.queryVariants(it) }.distinct()
+
+    private fun batchRankCursor(
+        rankedPhones: List<String>,
+        summaries: List<WhatsAppConversationSummaryDto>
+    ): LocalDateTime? {
+        val byPhone = summaries.associateBy { it.phone }
+        return rankedPhones
+            .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
+            .mapNotNull { byPhone[it]?.lastMessageAt }
+            .minOrNull()
+    }
+
+    fun getInboxViewCounts(agentId: Int?): WhatsAppInboxViewCountsDto {
+        val phones = inboundMessageRepository.findRecentActivePhones(RECENT_PHONE_RANK_LIMIT)
+            .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
+            .distinct()
+        val summaries = if (phones.isEmpty()) emptyList() else buildSummariesForPhones(phones)
+        fun count(view: WhatsAppInboxView) =
+            summaries.count {
+                WhatsAppInboxViewPolicy.matchesView(
+                    view = view,
+                    status = it.crmStatus,
+                    assignedAgentId = it.assignedAgentId,
+                    currentAgentId = agentId,
+                    lastInboundAt = it.lastInboundAt,
+                    lastOutboundAt = it.lastOutboundAt,
+                    hasPendingReceipt = it.hasPendingReceipt
+                )
+            }.toLong()
+
+        return WhatsAppInboxViewCountsDto(
+            queue = count(WhatsAppInboxView.QUEUE),
+            mine = count(WhatsAppInboxView.MINE),
+            team = count(WhatsAppInboxView.TEAM),
+            receipts = count(WhatsAppInboxView.RECEIPTS),
+            resolved = count(WhatsAppInboxView.RESOLVED),
+            all = summaries.size.toLong(),
+            totalUnread = inboundMessageRepository.countAllUnread(),
+            conversationsWithUnread = inboundMessageRepository.countPhonesWithUnread()
         )
-
-        return phones.asSequence()
-            .mapNotNull { phone ->
-                val phoneInbound = inboundByPhone[phone].orEmpty()
-                val phoneOutbound = outboundByPhone[phone].orEmpty()
-                if (phoneInbound.isEmpty() && phoneOutbound.isEmpty()) return@mapNotNull null
-
-                val lastInbound = phoneInbound.maxByOrNull { it.createdAt }
-                val lastOutbound = phoneOutbound.maxByOrNull { it.createdAt }
-                val lastAt = listOfNotNull(lastInbound?.createdAt, lastOutbound?.createdAt).maxOrNull()
-                    ?: return@mapNotNull null
-
-                val lastPreview = when {
-                    lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt)) ->
-                        templateDisplayService.displayStoredMessage(lastOutbound.message, lastOutbound.messageType)
-                    else -> lastInbound?.messageText ?: lastInbound?.buttonReplyTitle
-                }
-
-                val subscriptionId = phoneInbound.mapNotNull { it.subscriptionId }.lastOrNull()
-                    ?: lastInbound?.subscriptionId
-                val subscription = subscriptionId?.let { subscriptions[it] }
-                val window = pickBestServiceWindow(
-                    PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
-                )
-                    ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
-                        phone = phone,
-                        open = false,
-                        expiresAt = null
-                    )
-                val unreadCount = phoneInbound.count { it.readAt == null }
-                val lastButtonReplyId = phoneInbound
-                    .asSequence()
-                    .filter { !it.buttonReplyId.isNullOrBlank() }
-                    .maxByOrNull { it.createdAt }
-                    ?.buttonReplyId
-                val lastHasMedia = phoneInbound.any { inboundHasMedia(it) }
-
-                WhatsAppConversationSummaryDto(
-                    phone = phone,
-                    clientName = subscription?.getFullName()?.trim()?.takeIf { it.isNotBlank() && !it.contains("null") },
-                    subscriptionId = subscriptionId,
-                    lastMessagePreview = lastPreview,
-                    lastMessageAt = lastAt,
-                    lastInboundAt = lastInbound?.createdAt,
-                    lastOutboundAt = lastOutbound?.createdAt,
-                    unreadCount = unreadCount,
-                    identified = subscriptionId != null,
-                    serviceWindowActive = window.open,
-                    serviceWindowExpiresAt = window.expiresAt,
-                    lastButtonReplyId = lastButtonReplyId,
-                    lastHasMedia = lastHasMedia
-                )
-            }
-            .filter { summary ->
-                filter.search.isNullOrBlank() ||
-                    summary.phone.contains(filter.search!!) ||
-                    summary.clientName?.contains(filter.search, ignoreCase = true) == true ||
-                    summary.lastMessagePreview?.contains(filter.search, ignoreCase = true) == true
-            }
-            .filter { !filter.unreadOnly || it.unreadCount > 0 }
-            .sortedWith(
-                compareByDescending<WhatsAppConversationSummaryDto> { it.lastInboundAt ?: LocalDateTime.MIN }
-                    .thenByDescending { it.lastMessageAt }
-            )
-            .take(filter.limit.coerceIn(1, 500))
-            .toList()
     }
 
     fun getThread(
@@ -257,7 +282,7 @@ class WhatsAppConversationQueryService(
                 phones.firstNotNullOfOrNull { variant ->
                     crmConversationRepository.findByPhoneAndChannel(
                         variant,
-                        com.dscorp.wispadmin.wispadmin.data.model.CrmChannel.WHATSAPP
+                        CrmChannel.WHATSAPP
                     )
                 }
             ).map {
@@ -299,6 +324,280 @@ class WhatsAppConversationQueryService(
             conversationHistory = conversationHistory,
             tickets = tickets
         )
+    }
+
+    private fun listConversationsWithDateRange(
+        filter: WhatsAppConversationFilter,
+        pageSize: Int
+    ): List<WhatsAppConversationSummaryDto> {
+        val inbound = inboundMessageRepository.findByCreatedAtBetween(filter.dateFrom!!, filter.dateTo!!)
+        val outbound = messageLogRepository.findByCreatedAtBetween(filter.dateFrom, filter.dateTo!!)
+        val phones = (
+            inbound.map { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) } +
+                outbound.mapNotNull { it.phone?.let { p -> PeruvianWhatsAppPhone.canonicalConversationKey(p) } }
+            ).distinct()
+        if (phones.isEmpty()) return emptyList()
+        val summaries = buildSummariesFromLoadedMessages(phones, inbound, outbound)
+        return applyListFilters(summaries, filter, pageSize)
+    }
+
+    private fun buildSummariesForPhones(canonicalPhones: List<String>): List<WhatsAppConversationSummaryDto> {
+        val variants = canonicalPhones.flatMap { PeruvianWhatsAppPhone.queryVariants(it) }.distinct()
+        if (variants.isEmpty()) return emptyList()
+
+        val latestInbound = inboundMessageRepository.findLatestInboundByPhoneIn(variants)
+        val latestOutbound = messageLogRepository.findLatestOutboundByPhoneIn(variants)
+        val unreadRows = inboundMessageRepository.countUnreadByPhoneIn(variants)
+        val mediaRows = inboundMessageRepository.findLatestMediaAtByPhoneIn(variants)
+        val subscriptionRows = inboundMessageRepository.findLatestSubscriptionIdByPhoneIn(variants)
+        val buttonRows = inboundMessageRepository.findLatestButtonReplyIdByPhoneIn(variants)
+        val crmByPhone = loadCrmByPhones(variants)
+
+        val inboundByCanonical = latestInbound.groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.createdAt } }
+        val outboundByCanonical = latestOutbound
+            .filter { it.phone != null }
+            .groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone!!) }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.createdAt } }
+        val unreadByCanonical = unreadRows.associate { row ->
+            PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to (row[1] as Number).toInt()
+        }
+        val mediaAtByCanonical = mediaRows.associate { row ->
+            PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to toLocalDateTime(row[1])
+        }
+        val subscriptionByCanonical = subscriptionRows.associate { row ->
+            PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to (row[1] as Number).toInt()
+        }
+        val buttonByCanonical = buttonRows.associate { row ->
+            PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to row[1]?.toString()
+        }
+
+        val subscriptionIds = subscriptionByCanonical.values.distinct()
+        val namesById = if (subscriptionIds.isEmpty()) {
+            emptyMap()
+        } else {
+            subscriptionRepository.findNameProjectionsByIdIn(subscriptionIds).associate { projection ->
+                projection.getId() to listOfNotNull(projection.getFirstName(), projection.getLastName())
+                    .joinToString(" ")
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.contains("null") }
+            }
+        }
+
+        val serviceWindows = serviceWindowService.getServiceWindows(variants)
+        val previewInputs = canonicalPhones.mapNotNull { phone ->
+            val lastInbound = inboundByCanonical[phone]
+            val lastOutbound = outboundByCanonical[phone]
+            if (lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt))) {
+                phone to (lastOutbound.message to lastOutbound.messageType)
+            } else {
+                null
+            }
+        }
+        val renderedPreviews = templateDisplayService.displayStoredMessages(previewInputs.map { it.second })
+        val previewByPhone = previewInputs.mapIndexed { index, (phone, _) -> phone to renderedPreviews[index] }.toMap()
+
+        return canonicalPhones.mapNotNull { phone ->
+            val lastInbound = inboundByCanonical[phone]
+            val lastOutbound = outboundByCanonical[phone]
+            if (lastInbound == null && lastOutbound == null) return@mapNotNull null
+            val lastAt = listOfNotNull(lastInbound?.createdAt, lastOutbound?.createdAt).maxOrNull()
+                ?: return@mapNotNull null
+            val lastInboundAt = lastInbound?.createdAt
+            val lastOutboundAt = lastOutbound?.createdAt
+            val lastPreview = when {
+                lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt)) ->
+                    previewByPhone[phone]
+                else -> lastInbound?.messageText ?: lastInbound?.buttonReplyTitle
+            }
+            val subscriptionId = subscriptionByCanonical[phone] ?: lastInbound?.subscriptionId
+            val crm = pickBestCrm(phone, crmByPhone)
+            val status = crm?.status?.name
+            val latestMediaAt = mediaAtByCanonical[phone]
+            val pendingReceipt = WhatsAppInboxViewPolicy.hasPendingReceipt(
+                status = status,
+                resolvedAt = crm?.resolvedAt,
+                latestMediaAt = latestMediaAt
+            )
+            val window = pickBestServiceWindow(
+                PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
+            ) ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                phone = phone,
+                open = false,
+                expiresAt = null
+            )
+
+            WhatsAppConversationSummaryDto(
+                phone = phone,
+                clientName = subscriptionId?.let { namesById[it] },
+                subscriptionId = subscriptionId,
+                lastMessagePreview = lastPreview,
+                lastMessageAt = lastAt,
+                lastInboundAt = lastInboundAt,
+                lastOutboundAt = lastOutboundAt,
+                unreadCount = unreadByCanonical[phone] ?: 0,
+                identified = subscriptionId != null,
+                serviceWindowActive = window.open,
+                serviceWindowExpiresAt = window.expiresAt,
+                lastButtonReplyId = buttonByCanonical[phone],
+                lastHasMedia = latestMediaAt != null,
+                hasPendingReceipt = pendingReceipt,
+                crmConversationId = crm?.id,
+                crmStatus = status,
+                assignedAgentId = crm?.assignedAgentId,
+                crmResolvedAt = crm?.resolvedAt
+            )
+        }
+    }
+
+    private fun buildSummariesFromLoadedMessages(
+        canonicalPhones: List<String>,
+        inbound: List<WhatsAppInboundMessage>,
+        outbound: List<WhatsAppMessageLog>
+    ): List<WhatsAppConversationSummaryDto> {
+        val inboundByPhone = inbound.groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) }
+        val outboundByPhone = outbound
+            .filter { it.phone != null }
+            .groupBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone!!) }
+        val variants = canonicalPhones.flatMap { PeruvianWhatsAppPhone.queryVariants(it) }.distinct()
+        val crmByPhone = loadCrmByPhones(variants)
+        val subscriptionIds = inbound.mapNotNull { it.subscriptionId }.distinct()
+        val namesById = if (subscriptionIds.isEmpty()) {
+            emptyMap()
+        } else {
+            subscriptionRepository.findNameProjectionsByIdIn(subscriptionIds).associate { projection ->
+                projection.getId() to listOfNotNull(projection.getFirstName(), projection.getLastName())
+                    .joinToString(" ")
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.contains("null") }
+            }
+        }
+        val serviceWindows = serviceWindowService.getServiceWindows(variants)
+        val previewInputs = canonicalPhones.mapNotNull { phone ->
+            val lastInbound = inboundByPhone[phone].orEmpty().maxByOrNull { it.createdAt }
+            val lastOutbound = outboundByPhone[phone].orEmpty().maxByOrNull { it.createdAt }
+            if (lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt))) {
+                phone to (lastOutbound.message to lastOutbound.messageType)
+            } else null
+        }
+        val renderedPreviews = templateDisplayService.displayStoredMessages(previewInputs.map { it.second })
+        val previewByPhone = previewInputs.mapIndexed { index, (phone, _) -> phone to renderedPreviews[index] }.toMap()
+
+        return canonicalPhones.mapNotNull { phone ->
+            val phoneInbound = inboundByPhone[phone].orEmpty()
+            val phoneOutbound = outboundByPhone[phone].orEmpty()
+            if (phoneInbound.isEmpty() && phoneOutbound.isEmpty()) return@mapNotNull null
+            val lastInbound = phoneInbound.maxByOrNull { it.createdAt }
+            val lastOutbound = phoneOutbound.maxByOrNull { it.createdAt }
+            val lastAt = listOfNotNull(lastInbound?.createdAt, lastOutbound?.createdAt).maxOrNull()
+                ?: return@mapNotNull null
+            val lastPreview = when {
+                lastOutbound != null && (lastInbound == null || !lastOutbound.createdAt.isBefore(lastInbound.createdAt)) ->
+                    previewByPhone[phone]
+                else -> lastInbound?.messageText ?: lastInbound?.buttonReplyTitle
+            }
+            val subscriptionId = phoneInbound.mapNotNull { it.subscriptionId }.lastOrNull()
+                ?: lastInbound?.subscriptionId
+            val crm = pickBestCrm(phone, crmByPhone)
+            val latestMediaAt = phoneInbound
+                .filter { inboundIsPaymentProof(it) }
+                .maxByOrNull { it.createdAt }
+                ?.createdAt
+            val pendingReceipt = WhatsAppInboxViewPolicy.hasPendingReceipt(
+                status = crm?.status?.name,
+                resolvedAt = crm?.resolvedAt,
+                latestMediaAt = latestMediaAt
+            )
+            val window = pickBestServiceWindow(
+                PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
+            ) ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
+                phone = phone,
+                open = false,
+                expiresAt = null
+            )
+            WhatsAppConversationSummaryDto(
+                phone = phone,
+                clientName = subscriptionId?.let { namesById[it] },
+                subscriptionId = subscriptionId,
+                lastMessagePreview = lastPreview,
+                lastMessageAt = lastAt,
+                lastInboundAt = lastInbound?.createdAt,
+                lastOutboundAt = lastOutbound?.createdAt,
+                unreadCount = phoneInbound.count { it.readAt == null },
+                identified = subscriptionId != null,
+                serviceWindowActive = window.open,
+                serviceWindowExpiresAt = window.expiresAt,
+                lastButtonReplyId = phoneInbound
+                    .asSequence()
+                    .filter { !it.buttonReplyId.isNullOrBlank() }
+                    .maxByOrNull { it.createdAt }
+                    ?.buttonReplyId,
+                lastHasMedia = latestMediaAt != null,
+                hasPendingReceipt = pendingReceipt,
+                crmConversationId = crm?.id,
+                crmStatus = crm?.status?.name,
+                assignedAgentId = crm?.assignedAgentId,
+                crmResolvedAt = crm?.resolvedAt
+            )
+        }
+    }
+
+    private fun conversationSortComparator(): Comparator<WhatsAppConversationSummaryDto> =
+        compareByDescending<WhatsAppConversationSummaryDto> { it.lastInboundAt ?: LocalDateTime.MIN }
+            .thenByDescending { it.lastMessageAt }
+
+    private fun filterAndSortSummaries(
+        summaries: List<WhatsAppConversationSummaryDto>,
+        filter: WhatsAppConversationFilter
+    ): List<WhatsAppConversationSummaryDto> =
+        summaries.asSequence()
+            .filter {
+                WhatsAppInboxViewPolicy.matchesView(
+                    view = filter.view,
+                    status = it.crmStatus,
+                    assignedAgentId = it.assignedAgentId,
+                    currentAgentId = filter.agentId,
+                    lastInboundAt = it.lastInboundAt,
+                    lastOutboundAt = it.lastOutboundAt,
+                    hasPendingReceipt = it.hasPendingReceipt
+                )
+            }
+            .filter { summary ->
+                filter.search.isNullOrBlank() ||
+                    summary.phone.contains(filter.search!!) ||
+                    summary.clientName?.contains(filter.search, ignoreCase = true) == true ||
+                    summary.lastMessagePreview?.contains(filter.search, ignoreCase = true) == true
+            }
+            .filter { !filter.unreadOnly || it.unreadCount > 0 }
+            .sortedWith(conversationSortComparator())
+            .toList()
+
+    private fun applyListFilters(
+        summaries: List<WhatsAppConversationSummaryDto>,
+        filter: WhatsAppConversationFilter,
+        pageSize: Int
+    ): List<WhatsAppConversationSummaryDto> =
+        filterAndSortSummaries(summaries, filter).take(pageSize)
+
+    private fun loadCrmByPhones(variants: Collection<String>): Map<String, CrmConversation> {
+        if (variants.isEmpty()) return emptyMap()
+        return crmConversationRepository.findByChannelAndPhoneIn(CrmChannel.WHATSAPP, variants)
+            .associateBy { PeruvianWhatsAppPhone.canonicalConversationKey(it.phone) }
+    }
+
+    private fun pickBestCrm(phone: String, crmByPhone: Map<String, CrmConversation>): CrmConversation? {
+        PeruvianWhatsAppPhone.queryVariants(phone).forEach { variant ->
+            crmByPhone[PeruvianWhatsAppPhone.canonicalConversationKey(variant)]?.let { return it }
+        }
+        return crmByPhone[phone]
+    }
+
+    private fun toLocalDateTime(value: Any?): LocalDateTime? = when (value) {
+        null -> null
+        is LocalDateTime -> value
+        is Timestamp -> value.toLocalDateTime()
+        is java.util.Date -> Timestamp(value.time).toLocalDateTime()
+        else -> null
     }
 
     private fun fetchInboundRecent(
@@ -397,8 +696,13 @@ class WhatsAppConversationQueryService(
 
     companion object {
         private const val RECENT_PHONE_RANK_LIMIT = 500
+        private const val PHONE_SCAN_BATCH = 100
+        private const val MAX_VIEW_SCAN_ROUNDS = 20
 
         fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
             WhatsAppThreadMessageMapper.inboundHasMedia(inbound)
+
+        fun inboundIsPaymentProof(inbound: WhatsAppInboundMessage): Boolean =
+            WhatsAppThreadMessageMapper.inboundIsPaymentProof(inbound)
     }
 }

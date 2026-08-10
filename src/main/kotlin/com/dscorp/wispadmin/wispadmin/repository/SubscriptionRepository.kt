@@ -745,4 +745,18 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun findWhatsAppSubscriptionRowById(@Param("subscriptionId") subscriptionId: Int): List<Array<Any>>
 
+    @Query(
+        """
+        SELECT s.id AS id, s.firstName AS firstName, s.lastName AS lastName
+        FROM Subscription s
+        WHERE s.id IN :ids
+        """
+    )
+    fun findNameProjectionsByIdIn(@Param("ids") ids: Collection<Int>): List<SubscriptionNameProjection>
+}
+
+interface SubscriptionNameProjection {
+    fun getId(): Int
+    fun getFirstName(): String?
+    fun getLastName(): String?
 }

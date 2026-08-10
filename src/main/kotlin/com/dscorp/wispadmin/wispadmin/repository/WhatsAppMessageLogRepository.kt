@@ -58,6 +58,22 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
 
     fun findByPhoneIn(phones: Collection<String>): List<WhatsAppMessageLog>
 
+    @Query(
+        value = """
+        SELECT m.*
+        FROM whatsapp_message_log m
+        INNER JOIN (
+            SELECT phone, MAX(created_at) AS max_at
+            FROM whatsapp_message_log
+            WHERE phone IN (:phones)
+            GROUP BY phone
+        ) latest ON latest.phone = m.phone AND latest.max_at = m.created_at
+        WHERE m.phone IN (:phones)
+        """,
+        nativeQuery = true
+    )
+    fun findLatestOutboundByPhoneIn(@Param("phones") phones: Collection<String>): List<WhatsAppMessageLog>
+
     fun findByPaymentIdOrderByCreatedAtDesc(paymentId: Int): List<WhatsAppMessageLog>
 
     fun findByMetaMessageId(metaMessageId: String): WhatsAppMessageLog?

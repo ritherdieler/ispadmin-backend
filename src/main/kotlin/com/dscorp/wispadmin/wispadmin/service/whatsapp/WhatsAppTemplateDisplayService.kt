@@ -43,10 +43,43 @@ class WhatsAppTemplateDisplayService(
         )
     }
 
+    fun displayStoredMessages(messages: List<Pair<String?, String?>>): List<String?> {
+        if (messages.isEmpty()) return emptyList()
+        val metaNames = messages.mapNotNull { (stored, _) ->
+            stored?.let { bodyRenderer.parseLegacyPreview(it)?.first }
+        }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val bodiesByName = loadBodiesByName(metaNames)
+        return messages.map { (stored, type) ->
+            if (stored.isNullOrBlank()) return@map stored
+            bodyRenderer.buildDisplayMessage(
+                storedMessage = stored,
+                messageType = type,
+                bodyTextForMetaName = { metaName ->
+                    val key = metaName.trim()
+                    if (key.isEmpty()) return@buildDisplayMessage null
+                    bodiesByName[key] ?: resolveBodyText(key)
+                }
+            )
+        }
+    }
+
     fun resolveBodyText(metaName: String): String? {
-        readBodyFromDb(metaName)?.let { return it }
+        val key = metaName.trim()
+        if (key.isEmpty()) return null
+        readBodyFromDb(key)?.let { return it }
         triggerCatalogSyncIfNeeded()
-        return readBodyFromDb(metaName)
+        return readBodyFromDb(key)
+    }
+
+    private fun loadBodiesByName(metaNames: Collection<String>): Map<String, String?> {
+        if (metaNames.isEmpty()) return emptyMap()
+        val found = syncedTemplateRepository.findByNameIn(metaNames.toList()).associate { template ->
+            template.name to template.bodyText?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        return metaNames.associateWith { name -> found[name] }
     }
 
     private fun readBodyFromDb(metaName: String): String? =

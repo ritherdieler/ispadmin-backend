@@ -181,7 +181,13 @@ class CrmConversationService(
         if (resumeBot) {
             handoffService.resumeBotAndTakeControl(saved.phone, "crm_resolved")
         }
-        publishUpdated(saved, operatorUsername)
+        publishUpdated(
+            saved,
+            operatorUsername,
+            extra = mapOf(
+                "hasPendingReceipt" to false
+            )
+        )
         return saved.toDto()
     }
 
@@ -203,7 +209,6 @@ class CrmConversationService(
         conversation.status = CrmConversationStatus.REOPENED
         conversation.assignedAgentId = null
         conversation.claimedAt = null
-        conversation.resolvedAt = null
         conversation.updatedAt = LocalDateTime.now()
         val saved = conversationRepository.save(conversation)
         recordAssignment(
@@ -243,7 +248,6 @@ class CrmConversationService(
                 existing.claimedAt = null
             }
             existing.subscriptionId = subscriptionId ?: existing.subscriptionId
-            existing.resolvedAt = null
             existing.updatedAt = now
             if (!handoffSummary.isNullOrBlank()) {
                 existing.handoffSummary = handoffSummary.take(4000)
@@ -326,7 +330,6 @@ class CrmConversationService(
                 existing.status = CrmConversationStatus.REOPENED
                 existing.assignedAgentId = null
                 existing.claimedAt = null
-                existing.resolvedAt = null
             }
             existing.subscriptionId = subscriptionId ?: existing.subscriptionId
             existing.lastInboundAt = now

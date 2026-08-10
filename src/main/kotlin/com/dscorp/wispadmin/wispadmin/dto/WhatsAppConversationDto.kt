@@ -15,7 +15,29 @@ data class WhatsAppConversationSummaryDto(
     val serviceWindowActive: Boolean,
     val serviceWindowExpiresAt: LocalDateTime?,
     val lastButtonReplyId: String? = null,
-    val lastHasMedia: Boolean = false
+    val lastHasMedia: Boolean = false,
+    val hasPendingReceipt: Boolean = false,
+    val crmConversationId: Long? = null,
+    val crmStatus: String? = null,
+    val assignedAgentId: Int? = null,
+    val crmResolvedAt: LocalDateTime? = null
+)
+
+data class WhatsAppConversationPageDto(
+    val items: List<WhatsAppConversationSummaryDto>,
+    val hasMore: Boolean,
+    val nextCursor: LocalDateTime? = null
+)
+
+data class WhatsAppInboxViewCountsDto(
+    val queue: Long,
+    val mine: Long,
+    val team: Long,
+    val receipts: Long,
+    val resolved: Long,
+    val all: Long,
+    val totalUnread: Long,
+    val conversationsWithUnread: Long
 )
 
 data class WhatsAppThreadMessageDto(

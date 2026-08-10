@@ -27,6 +27,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntent
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntentRouter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppIntentClassifier
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundPayload
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboxViewPolicy
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppMediaDownloadService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTicketDescriptionFormatter
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmConstants
@@ -252,8 +253,17 @@ class WhatsAppInboundMessageService(
         publishInboundRealtimeEvents(finalized, subscription?.getFullName(), crmConversation)
     }
 
-    private fun isGlobalPaymentProof(payload: WhatsAppInboundPayload): Boolean =
-        payload.messageType == "image" || payload.messageType == "document"
+    private fun isGlobalPaymentProof(payload: WhatsAppInboundPayload): Boolean {
+        val type = payload.messageType.trim().lowercase()
+        if (type == "image") return true
+        if (type != "document") return false
+        val mime = payload.mediaMimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+        return mime == "application/pdf"
+    }
 
     private fun showTypingIndicator(payload: WhatsAppInboundPayload) {
         if (payload.messageType !in setOf("text", "button_reply", "image", "document")) return
@@ -273,7 +283,8 @@ class WhatsAppInboundMessageService(
             val preview = inbound.messageText
                 ?: inbound.buttonReplyTitle
                 ?: inbound.messageType
-            val hasMedia = WhatsAppConversationQueryService.inboundHasMedia(inbound)
+            val hasThreadMedia = WhatsAppConversationQueryService.inboundHasMedia(inbound)
+            val isPaymentProof = WhatsAppConversationQueryService.inboundIsPaymentProof(inbound)
             val unreadCount = inboundMessageRepository.countByPhoneAndReadAtIsNull(inbound.phone).toInt()
             crmEventPublisher.publish(
                 eventType = CrmEventPublisher.MESSAGE_RECEIVED,
@@ -284,7 +295,7 @@ class WhatsAppInboundMessageService(
                     "messageType" to inbound.messageType,
                     "body" to inbound.messageText,
                     "buttonReplyTitle" to inbound.buttonReplyTitle,
-                    "hasMedia" to hasMedia,
+                    "hasMedia" to hasThreadMedia,
                     "mediaId" to inbound.id,
                     "mediaMimeType" to inbound.mediaMimeType,
                     "replyToLogId" to inbound.replyToLogId,
@@ -293,30 +304,39 @@ class WhatsAppInboundMessageService(
                     "createdAt" to inbound.createdAt.toString()
                 )
             )
+            val conversationPayload = mutableMapOf<String, Any?>(
+                "phone" to inbound.phone,
+                "clientName" to clientName,
+                "subscriptionId" to inbound.subscriptionId,
+                "identified" to (inbound.subscriptionId != null),
+                "lastMessagePreview" to preview?.take(240),
+                "lastMessageAt" to inbound.createdAt.toString(),
+                "unreadCount" to unreadCount,
+                "lastButtonReplyId" to inbound.buttonReplyId,
+                "conversationId" to crmConversation?.id,
+                "status" to crmConversation?.status?.name,
+                "assignedAgentId" to crmConversation?.assignedAgentId,
+                "priority" to crmConversation?.priority,
+                "lastInboundAt" to crmConversation?.lastInboundAt?.toString(),
+                "lastOutboundAt" to crmConversation?.lastOutboundAt?.toString(),
+                "resolvedAt" to crmConversation?.resolvedAt?.toString(),
+                "awaitingAgent" to CrmInboxQueuePolicy.belongsInUnattendedQueue(
+                    status = crmConversation?.status?.name,
+                    lastInboundAt = crmConversation?.lastInboundAt,
+                    lastOutboundAt = crmConversation?.lastOutboundAt,
+                )
+            )
+            if (isPaymentProof) {
+                conversationPayload["lastHasMedia"] = true
+                conversationPayload["hasPendingReceipt"] = WhatsAppInboxViewPolicy.hasPendingReceipt(
+                    status = crmConversation?.status?.name,
+                    resolvedAt = crmConversation?.resolvedAt,
+                    latestMediaAt = inbound.createdAt
+                )
+            }
             crmEventPublisher.publish(
                 eventType = CrmEventPublisher.CONVERSATION_UPDATED,
-                payload = mapOf(
-                    "phone" to inbound.phone,
-                    "clientName" to clientName,
-                    "subscriptionId" to inbound.subscriptionId,
-                    "identified" to (inbound.subscriptionId != null),
-                    "lastMessagePreview" to preview?.take(240),
-                    "lastMessageAt" to inbound.createdAt.toString(),
-                    "unreadCount" to unreadCount,
-                    "lastButtonReplyId" to inbound.buttonReplyId,
-                    "lastHasMedia" to hasMedia,
-                    "conversationId" to crmConversation?.id,
-                    "status" to crmConversation?.status?.name,
-                    "assignedAgentId" to crmConversation?.assignedAgentId,
-                    "priority" to crmConversation?.priority,
-                    "lastInboundAt" to crmConversation?.lastInboundAt?.toString(),
-                    "lastOutboundAt" to crmConversation?.lastOutboundAt?.toString(),
-                    "awaitingAgent" to CrmInboxQueuePolicy.belongsInUnattendedQueue(
-                        status = crmConversation?.status?.name,
-                        lastInboundAt = crmConversation?.lastInboundAt,
-                        lastOutboundAt = crmConversation?.lastOutboundAt,
-                    )
-                )
+                payload = conversationPayload
             )
         } catch (e: Exception) {
             log.warn("No se pudo publicar evento CRM para inbound {}: {}", inbound.id, e.message)

@@ -243,6 +243,70 @@ class CrmConversationServiceTest {
     }
 
     @Test
+    fun `reopen keeps last resolvedAt`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val conversation = pendingConversation(id = 17L).copy(
+            status = CrmConversationStatus.RESOLVED,
+            assignedAgentId = null,
+            resolvedAt = resolvedAt,
+            phone = "51988888888"
+        )
+        every { conversationRepository.findById(17L) } returns Optional.of(conversation)
+        every { conversationRepository.save(any()) } answers { firstArg() }
+
+        val result = service.reopen(
+            conversationId = 17L,
+            agentId = 7,
+            operatorUsername = "agent7",
+            isAdmin = true,
+            note = null
+        )
+
+        assertEquals("REOPENED", result.status)
+        assertEquals(resolvedAt, result.resolvedAt)
+    }
+
+    @Test
+    fun `touchInbound from resolved keeps last resolvedAt`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val conversation = pendingConversation(id = 18L).copy(
+            status = CrmConversationStatus.RESOLVED,
+            resolvedAt = resolvedAt,
+            phone = "51977777777"
+        )
+        every { conversationRepository.findByPhoneAndChannel("51977777777", CrmChannel.WHATSAPP) } returns conversation
+        every { conversationRepository.findByPhoneAndChannel("977777777", CrmChannel.WHATSAPP) } returns null
+        every { conversationRepository.save(any()) } answers { firstArg() }
+
+        val result = service.touchInbound(phone = "51977777777", subscriptionId = null)
+
+        assertEquals(CrmConversationStatus.REOPENED, result.status)
+        assertEquals(resolvedAt, result.resolvedAt)
+    }
+
+    @Test
+    fun `markPendingOnHandoff keeps last resolvedAt`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val conversation = pendingConversation(id = 19L).copy(
+            status = CrmConversationStatus.RESOLVED,
+            resolvedAt = resolvedAt,
+            phone = "51966666666",
+            assignedAgentId = null
+        )
+        every { conversationRepository.findByPhoneAndChannel("51966666666", CrmChannel.WHATSAPP) } returns conversation
+        every { conversationRepository.findByPhoneAndChannel("966666666", CrmChannel.WHATSAPP) } returns null
+        every { conversationRepository.save(any()) } answers { firstArg() }
+
+        val result = service.markPendingOnHandoff(
+            phone = "51966666666",
+            subscriptionId = null,
+            reason = "human_escalation"
+        )
+
+        assertEquals(resolvedAt, result.resolvedAt)
+    }
+
+    @Test
     fun `assertCanReply allows assignee and admin only`() {
         val conversation = pendingConversation(id = 16L).copy(
             status = CrmConversationStatus.ASSIGNED,

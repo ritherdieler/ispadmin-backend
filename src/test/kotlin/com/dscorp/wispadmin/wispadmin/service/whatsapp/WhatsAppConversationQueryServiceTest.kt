@@ -17,6 +17,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -61,8 +62,22 @@ class WhatsAppConversationQueryServiceTest {
         )
         every { crmTicketLinkService.listTicketsForPhone(any()) } returns emptyList()
         every { syncedTemplateRepository.findByName(any()) } returns null
+        every { syncedTemplateRepository.findByNameIn(any()) } returns emptyList()
         every { userRepository.findByUsernameLowerIn(any()) } returns emptyList()
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns emptyList()
+        every { inboundMessageRepository.countUnreadByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestMediaAtByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestSubscriptionIdByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestButtonReplyIdByPhoneIn(any()) } returns emptyList()
+        every { subscriptionRepository.findNameProjectionsByIdIn(any()) } returns emptyList()
     }
+
+    private fun nameProjection(id: Int, firstName: String?, lastName: String?) =
+        object : com.dscorp.wispadmin.wispadmin.repository.SubscriptionNameProjection {
+            override fun getId(): Int = id
+            override fun getFirstName(): String? = firstName
+            override fun getLastName(): String? = lastName
+        }
 
     private fun stubEmptyLocalPhoneVariant(internationalPhone: String) {
         if (!internationalPhone.startsWith("51") || internationalPhone.length != 11) return
@@ -100,16 +115,7 @@ class WhatsAppConversationQueryServiceTest {
             "51911111111",
             "51922222222"
         )
-        every { inboundMessageRepository.findByPhoneIn(any()) } returns listOf(
-            WhatsAppInboundMessage(
-                id = 1,
-                metaMessageId = "in-1",
-                phone = "51911111111",
-                messageText = "Hola",
-                subscriptionId = 10,
-                createdAt = now.minusMinutes(30),
-                readAt = null
-            ),
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
             WhatsAppInboundMessage(
                 id = 2,
                 metaMessageId = "in-2",
@@ -133,7 +139,7 @@ class WhatsAppConversationQueryServiceTest {
                 readAt = now
             )
         )
-        every { messageLogRepository.findByPhoneIn(any()) } returns listOf(
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns listOf(
             WhatsAppMessageLog(
                 id = 100,
                 phone = "51911111111",
@@ -143,15 +149,21 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = now.minusMinutes(9)
             )
         )
-        every { subscriptionRepository.findAllById(listOf(10)) } returns listOf(
-            Subscription(
-                id = 10,
-                firstName = "Ana",
-                lastName = "Lopez",
-                phone = "911111111",
-                serviceStatus = ServiceStatus.ACTIVE,
-                equipmentCondition = EquipmentCondition.LOAN
-            )
+        every { inboundMessageRepository.countUnreadByPhoneIn(any()) } returns listOf(
+            arrayOf("51911111111", 2L),
+            arrayOf("51922222222", 0L)
+        )
+        every { inboundMessageRepository.findLatestMediaAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51922222222", now.minusMinutes(5))
+        )
+        every { inboundMessageRepository.findLatestSubscriptionIdByPhoneIn(any()) } returns listOf(
+            arrayOf("51911111111", 10)
+        )
+        every { inboundMessageRepository.findLatestButtonReplyIdByPhoneIn(any()) } returns listOf(
+            arrayOf("51911111111", "soporte")
+        )
+        every { subscriptionRepository.findNameProjectionsByIdIn(listOf(10)) } returns listOf(
+            nameProjection(10, "Ana", "Lopez")
         )
         every {
             serviceWindowService.getServiceWindows(match { it.containsAll(listOf("51911111111", "51922222222")) })
@@ -173,26 +185,27 @@ class WhatsAppConversationQueryServiceTest {
         verify(exactly = 1) { serviceWindowService.getServiceWindows(any()) }
         verify(exactly = 0) { serviceWindowService.getServiceWindow(any()) }
         verify(exactly = 1) { inboundMessageRepository.findRecentActivePhones(any()) }
-        verify(exactly = 0) { inboundMessageRepository.findTop500ByOrderByCreatedAtDesc() }
-        verify(exactly = 0) { messageLogRepository.findTop500ByOrderByCreatedAtDesc() }
-        assertEquals(2, result.size)
-        assertEquals("51922222222", result[0].phone)
-        assertEquals("Otro", result[0].lastMessagePreview)
-        assertEquals(now.minusMinutes(5), result[0].lastInboundAt)
-        assertEquals(0, result[0].unreadCount)
-        assertFalse(result[0].identified)
-        assertTrue(result[0].lastHasMedia)
-        assertEquals(null, result[0].lastButtonReplyId)
+        verify(exactly = 0) { inboundMessageRepository.findByPhoneIn(any()) }
+        verify(exactly = 0) { messageLogRepository.findByPhoneIn(any()) }
+        verify(exactly = 0) { subscriptionRepository.findAllById(any<Iterable<Int>>()) }
+        assertEquals(2, result.items.size)
+        assertEquals("51922222222", result.items[0].phone)
+        assertEquals("Otro", result.items[0].lastMessagePreview)
+        assertEquals(now.minusMinutes(5), result.items[0].lastInboundAt)
+        assertEquals(0, result.items[0].unreadCount)
+        assertFalse(result.items[0].identified)
+        assertTrue(result.items[0].lastHasMedia)
+        assertEquals(null, result.items[0].lastButtonReplyId)
 
-        assertEquals("51911111111", result[1].phone)
-        assertEquals("Auto reply", result[1].lastMessagePreview)
-        assertEquals(now.minusMinutes(10), result[1].lastInboundAt)
-        assertEquals(2, result[1].unreadCount)
-        assertEquals("Ana Lopez", result[1].clientName)
-        assertTrue(result[1].identified)
-        assertTrue(result[1].serviceWindowActive)
-        assertEquals("soporte", result[1].lastButtonReplyId)
-        assertFalse(result[1].lastHasMedia)
+        assertEquals("51911111111", result.items[1].phone)
+        assertEquals("Auto reply", result.items[1].lastMessagePreview)
+        assertEquals(now.minusMinutes(10), result.items[1].lastInboundAt)
+        assertEquals(2, result.items[1].unreadCount)
+        assertEquals("Ana Lopez", result.items[1].clientName)
+        assertTrue(result.items[1].identified)
+        assertTrue(result.items[1].serviceWindowActive)
+        assertEquals("soporte", result.items[1].lastButtonReplyId)
+        assertFalse(result.items[1].lastHasMedia)
     }
 
     @Test
@@ -202,7 +215,7 @@ class WhatsAppConversationQueryServiceTest {
             "51911111111",
             "51922222222"
         )
-        every { inboundMessageRepository.findByPhoneIn(any()) } returns listOf(
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
             WhatsAppInboundMessage(
                 id = 1,
                 metaMessageId = "in-old",
@@ -220,7 +233,7 @@ class WhatsAppConversationQueryServiceTest {
                 readAt = null
             )
         )
-        every { messageLogRepository.findByPhoneIn(any()) } returns listOf(
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns listOf(
             WhatsAppMessageLog(
                 id = 100,
                 phone = "51911111111",
@@ -230,15 +243,14 @@ class WhatsAppConversationQueryServiceTest {
                 createdAt = now.minusMinutes(1)
             )
         )
-        every { subscriptionRepository.findAllById(emptyList()) } returns emptyList()
         every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
 
         val result = service.listConversations(WhatsAppConversationFilter(limit = 50))
 
-        assertEquals(listOf("51922222222", "51911111111"), result.map { it.phone })
-        assertEquals(now.minusMinutes(20), result[0].lastInboundAt)
-        assertEquals(now.minusHours(2), result[1].lastInboundAt)
-        assertEquals(now.minusMinutes(1), result[1].lastMessageAt)
+        assertEquals(listOf("51922222222", "51911111111"), result.items.map { it.phone })
+        assertEquals(now.minusMinutes(20), result.items[0].lastInboundAt)
+        assertEquals(now.minusHours(2), result.items[1].lastInboundAt)
+        assertEquals(now.minusMinutes(1), result.items[1].lastMessageAt)
     }
 
     @Test
@@ -247,13 +259,143 @@ class WhatsAppConversationQueryServiceTest {
         val to = LocalDateTime.of(2026, 7, 31, 23, 59)
         every { inboundMessageRepository.findByCreatedAtBetween(from, to) } returns emptyList()
         every { messageLogRepository.findByCreatedAtBetween(from, to) } returns emptyList()
-        every { subscriptionRepository.findAllById(emptyList()) } returns emptyList()
         every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
 
         val result = service.listConversations(WhatsAppConversationFilter(dateFrom = from, dateTo = to))
 
         verify(exactly = 0) { inboundMessageRepository.findRecentActivePhones(any()) }
-        assertEquals(0, result.size)
+        assertEquals(0, result.items.size)
+    }
+
+    @Test
+    fun `listConversations ranks with pageSize plus one for ALL view`() {
+        every { inboundMessageRepository.findRecentActivePhones(31) } returns emptyList()
+
+        service.listConversations(WhatsAppConversationFilter(limit = 30, view = WhatsAppInboxView.ALL))
+
+        verify(exactly = 1) { inboundMessageRepository.findRecentActivePhones(31) }
+    }
+
+    @Test
+    fun `listConversations ALL view paginates with cursor`() {
+        val t1 = LocalDateTime.of(2026, 8, 4, 10, 0)
+        val t2 = LocalDateTime.of(2026, 8, 4, 11, 0)
+        val t3 = LocalDateTime.of(2026, 8, 4, 12, 0)
+        every { inboundMessageRepository.findRecentActivePhones(3) } returns listOf(
+            "51933333333",
+            "51922222222",
+            "51911111111"
+        )
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(id = 1, metaMessageId = "a", phone = "51911111111", messageText = "A", createdAt = t1),
+            WhatsAppInboundMessage(id = 2, metaMessageId = "b", phone = "51922222222", messageText = "B", createdAt = t2),
+            WhatsAppInboundMessage(id = 3, metaMessageId = "c", phone = "51933333333", messageText = "C", createdAt = t3),
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val first = service.listConversations(
+            WhatsAppConversationFilter(limit = 2, view = WhatsAppInboxView.ALL)
+        )
+        assertEquals(listOf("51933333333", "51922222222"), first.items.map { it.phone })
+        assertTrue(first.hasMore)
+        assertEquals(t2, first.nextCursor)
+
+        every { inboundMessageRepository.findRecentActivePhonesBefore(3, t2) } returns listOf("51911111111")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(id = 1, metaMessageId = "a", phone = "51911111111", messageText = "A", createdAt = t1),
+        )
+
+        val second = service.listConversations(
+            WhatsAppConversationFilter(limit = 2, view = WhatsAppInboxView.ALL, cursor = t2)
+        )
+        assertEquals(listOf("51911111111"), second.items.map { it.phone })
+        assertFalse(second.hasMore)
+        assertNull(second.nextCursor)
+    }
+
+    @Test
+    fun `listConversations marks pending receipt only for media after resolve`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val oldMediaAt = resolvedAt.minusDays(1)
+        val textAt = resolvedAt.plusHours(2)
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf("51911111111")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(
+                id = 1,
+                metaMessageId = "in-text",
+                phone = "51911111111",
+                messageText = "hola",
+                createdAt = textAt,
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestMediaAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51911111111", oldMediaAt)
+        )
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.CrmConversation(
+                id = 9,
+                phone = "51911111111",
+                status = com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus.REOPENED,
+                resolvedAt = resolvedAt,
+                lastInboundAt = textAt
+            )
+        )
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val all = service.listConversations(WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.ALL))
+        val receipts = service.listConversations(
+            WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.RECEIPTS)
+        )
+
+        assertEquals(1, all.items.size)
+        assertFalse(all.items[0].hasPendingReceipt)
+        assertTrue(all.items[0].lastHasMedia)
+        assertEquals(0, receipts.items.size)
+    }
+
+    @Test
+    fun `listConversations includes receipts when proof arrives after resolve`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val newMediaAt = resolvedAt.plusHours(3)
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf("51944444444")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(
+                id = 2,
+                metaMessageId = "in-img",
+                phone = "51944444444",
+                messageText = null,
+                messageType = "image",
+                mediaId = "media-1",
+                mediaMimeType = "image/jpeg",
+                createdAt = newMediaAt,
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestMediaAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51944444444", newMediaAt)
+        )
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.CrmConversation(
+                id = 10,
+                phone = "51944444444",
+                status = com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus.REOPENED,
+                resolvedAt = resolvedAt,
+                lastInboundAt = newMediaAt
+            )
+        )
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val receipts = service.listConversations(
+            WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.RECEIPTS)
+        )
+
+        assertEquals(1, receipts.items.size)
+        assertTrue(receipts.items[0].hasPendingReceipt)
+        assertTrue(receipts.items[0].lastHasMedia)
     }
 
     @Test

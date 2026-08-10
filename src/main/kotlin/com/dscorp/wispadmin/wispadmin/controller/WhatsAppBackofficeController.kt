@@ -4,7 +4,8 @@ import com.dscorp.wispadmin.wispadmin.dto.CrmRealtimeEventDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppBatchSendAcceptedDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppBatchSendStatusDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationContextDto
-import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationSummaryDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppConversationPageDto
+import com.dscorp.wispadmin.wispadmin.dto.WhatsAppInboxViewCountsDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMarkAllReadResultDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppMarkReadResultDto
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppTemplateSyncResultDto
@@ -38,6 +39,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppBackofficeQuerySe
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboxView
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppCsvExportService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundFilter
@@ -602,15 +604,20 @@ class WhatsAppBackofficeController(
         @RequestParam(required = false) to: String?,
         @RequestParam(required = false) unreadOnly: Boolean?,
         @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) view: String?,
+        @RequestParam(required = false) agentId: Int?,
+        @RequestParam(required = false) cursor: String?,
         httpRequest: HttpServletRequest
-    ): ResponseEntity<List<WhatsAppConversationSummaryDto>> {
+    ): ResponseEntity<WhatsAppConversationPageDto> {
         val range = resolveOptionalRange(dateFrom ?: from, dateTo ?: to)
+        val resolvedView = WhatsAppInboxView.fromParam(view)
         auditService.recordAccess(
             operatorUsername = resolveOperator(httpRequest),
             resource = "/whatsapp/conversations",
             details = listOfNotNull(
                 search?.takeIf { it.isNotBlank() }?.let { "search=${it.take(64)}" },
-                unreadOnly?.let { "unreadOnly=$it" }
+                unreadOnly?.let { "unreadOnly=$it" },
+                "view=$resolvedView"
             ).joinToString(";").ifBlank { null }
         )
         return ResponseEntity.ok(
@@ -620,9 +627,27 @@ class WhatsAppBackofficeController(
                     dateFrom = range?.first,
                     dateTo = range?.second,
                     unreadOnly = unreadOnly == true,
-                    limit = limit ?: 50
+                    limit = limit ?: 50,
+                    view = resolvedView,
+                    agentId = agentId ?: resolveUserId(httpRequest),
+                    cursor = cursor?.takeIf { it.isNotBlank() }?.let { LocalDateTime.parse(it) }
                 )
             )
+        )
+    }
+
+    @GetMapping("/conversations/view-counts")
+    fun conversationViewCounts(
+        @RequestParam(required = false) agentId: Int?,
+        httpRequest: HttpServletRequest
+    ): ResponseEntity<WhatsAppInboxViewCountsDto> {
+        auditService.recordAccess(
+            operatorUsername = resolveOperator(httpRequest),
+            resource = "/whatsapp/conversations/view-counts",
+            details = null
+        )
+        return ResponseEntity.ok(
+            conversationQueryService.getInboxViewCounts(agentId ?: resolveUserId(httpRequest))
         )
     }
 

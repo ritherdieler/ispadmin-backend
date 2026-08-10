@@ -28,6 +28,17 @@ interface CrmConversationRepository : JpaRepository<CrmConversation, Long> {
 
     fun findByStatusIn(statuses: Collection<CrmConversationStatus>): List<CrmConversation>
 
+    fun findByChannelAndPhoneIn(channel: CrmChannel, phones: Collection<String>): List<CrmConversation>
+
+    @Query(
+        """
+        SELECT c FROM CrmConversation c
+        WHERE c.channel = :channel
+        ORDER BY COALESCE(c.lastInboundAt, c.lastOutboundAt, c.updatedAt) DESC
+        """
+    )
+    fun findAllByChannelOrdered(@Param("channel") channel: CrmChannel): List<CrmConversation>
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(
         """
