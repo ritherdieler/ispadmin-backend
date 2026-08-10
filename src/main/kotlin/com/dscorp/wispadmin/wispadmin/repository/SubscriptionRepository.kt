@@ -252,6 +252,25 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun searchByNameOrLastName(name: String): List<Subscription>
 
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        WHERE LOWER(TRIM(COALESCE(s.firstName, ''))) LIKE LOWER(CONCAT('%', TRIM(:query), '%'))
+           OR LOWER(TRIM(COALESCE(s.lastName, ''))) LIKE LOWER(CONCAT('%', TRIM(:query), '%'))
+           OR LOWER(TRIM(COALESCE(s.businessName, ''))) LIKE LOWER(CONCAT('%', TRIM(:query), '%'))
+           OR LOWER(TRIM(COALESCE(s.dni, ''))) LIKE LOWER(CONCAT('%', TRIM(:query), '%'))
+           OR LOWER(TRIM(COALESCE(s.ruc, ''))) LIKE LOWER(CONCAT('%', TRIM(:query), '%'))
+           OR TRIM(COALESCE(s.dni, '')) = TRIM(:query)
+           OR TRIM(COALESCE(s.ruc, '')) = TRIM(:query)
+           OR CAST(s.id AS string) LIKE CONCAT('%', TRIM(:query), '%')
+        ORDER BY s.id DESC
+        """
+    )
+    fun searchForSmartMap(
+        @Param("query") query: String,
+        pageable: org.springframework.data.domain.Pageable,
+    ): List<Subscription>
+
 
     @Query("SELECT DISTINCT p FROM Subscription s JOIN s.payments p WHERE p.electronicPayerName LIKE %:electronicPayerName%")
     fun findByElectronicPayerName(electronicPayerName: String): List<Payment>

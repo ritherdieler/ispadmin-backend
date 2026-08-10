@@ -14,7 +14,11 @@ import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteAlternativesDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapRoadRouteDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapSuggestionDto
 import com.dscorp.wispadmin.wispadmin.dto.SmartMapSummaryDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapClientSearchDto
+import com.dscorp.wispadmin.wispadmin.dto.SmartMapCustomRouteRequestDto
+import com.dscorp.wispadmin.wispadmin.dto.TicketRouteLocationDto
 import com.dscorp.wispadmin.wispadmin.service.CollectionVisitService
+import com.dscorp.wispadmin.wispadmin.service.SmartMapCustomRouteService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapRoadRouteService
 import com.dscorp.wispadmin.wispadmin.service.SmartMapService
 import com.dscorp.wispadmin.wispadmin.smartmap.CollectionTravelMode
@@ -40,6 +44,7 @@ class SmartMapController(
     private val smartMapService: SmartMapService,
     private val smartMapRoadRouteService: SmartMapRoadRouteService,
     private val collectionVisitService: CollectionVisitService,
+    private val smartMapCustomRouteService: SmartMapCustomRouteService,
 ) {
 
     @GetMapping("/summary")
@@ -79,6 +84,47 @@ class SmartMapController(
     @GetMapping("/suggestions")
     fun getSuggestions(): ResponseEntity<List<SmartMapSuggestionDto>> =
         ResponseEntity.ok(smartMapService.getSuggestions())
+
+    @GetMapping("/customers/search")
+    fun searchCustomers(
+        @RequestParam(name = "query", required = false) query: String?,
+        @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): ResponseEntity<List<SmartMapClientSearchDto>> {
+        val term = query?.trim().orEmpty()
+        if (term.length < 2) {
+            return ResponseEntity.ok(emptyList())
+        }
+        return ResponseEntity.ok(smartMapCustomRouteService.searchCustomers(query = term, limit = limit))
+    }
+
+    @GetMapping("/tickets/open-locations")
+    fun listOpenTicketLocations(
+        @RequestParam(required = false) place: String?,
+        @RequestParam(required = false) userType: String?,
+    ): ResponseEntity<List<TicketRouteLocationDto>> {
+        if (!SmartMapAccessPolicy.canViewTickets(userType)) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "No autorizado para consultar tickets")
+        }
+        return ResponseEntity.ok(smartMapCustomRouteService.listOpenTicketLocations(place = place))
+    }
+
+    @PostMapping("/custom-route")
+    fun buildCustomRoute(
+        @Valid @RequestBody request: SmartMapCustomRouteRequestDto,
+    ): ResponseEntity<SmartMapCollectionRouteDto> {
+        val resolvedTravelMode = CollectionTravelMode.fromApiValue(request.travelMode)
+        return ResponseEntity.ok(
+            smartMapCustomRouteService.buildCustomRoute(
+                collectorLatitude = request.collectorLatitude,
+                collectorLongitude = request.collectorLongitude,
+                clientIds = request.clientIds,
+                includeRoadGeometry = request.includeRoadGeometry,
+                preserveManualOrder = request.preserveManualOrder,
+                travelMode = resolvedTravelMode,
+                collectorAccuracyMeters = request.collectorAccuracyMeters,
+            ),
+        )
+    }
 
     @GetMapping("/road-route")
     fun getRoadRoute(
