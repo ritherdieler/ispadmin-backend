@@ -582,7 +582,7 @@ class WhatsAppInboundMessageServiceTest {
     }
 
     @Test
-    fun `proof received while waiting confirms and returns to main menu`() {
+    fun `proof received while waiting confirms and moves to receipt review`() {
         val payload = WhatsAppInboundPayload(
             metaMessageId = "wamid.in-proof-pdf",
             phone = "51965754000",
@@ -622,8 +622,113 @@ class WhatsAppInboundMessageServiceTest {
 
         verify(exactly = 1) { whatsAppService.sendTextMessage(payload.phone, "Comprobante recibido") }
         verify(exactly = 1) {
-            chatStateService.setCurrentStep(payload.phone, WhatsAppConversationStep.MAIN_MENU)
+            chatStateService.setCurrentStep(payload.phone, WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW)
         }
+    }
+
+    @Test
+    fun `text after voucher soft acks without menu invalid`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-after-voucher",
+            phone = "51965754000",
+            messageText = "Muchas gracias",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 74) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW
+        )
+        every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns false
+        every { conversationService.buildReceiptPendingAckResponse() } returns
+            "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+        every {
+            whatsAppService.sendTextMessage(
+                payload.phone,
+                "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.voucher-pending",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { conversationService.buildReceiptPendingAckResponse() }
+        verify(exactly = 0) { conversationService.invalidInteractiveSelectionText() }
+        verify(exactly = 0) { conversationService.sendMainMenu(any(), any(), any(), any()) }
+        assertTrue(logSlot.captured.message!!.contains("[VOUCHER_PENDING]"))
+    }
+
+    @Test
+    fun `unknown text after voucher soft acks without opening main menu`() {
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-after-voucher-unknown",
+            phone = "51965754000",
+            messageText = "Por favor me manda mi boleta como siempre",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 75) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW
+        )
+        every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns false
+        every { conversationService.buildReceiptPendingAckResponse() } returns
+            "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+        every {
+            whatsAppService.sendTextMessage(
+                payload.phone,
+                "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.voucher-pending-2",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { conversationService.buildReceiptPendingAckResponse() }
+        verify(exactly = 0) { conversationService.sendMainMenu(any(), any(), any(), any()) }
+        assertTrue(logSlot.captured.message!!.contains("[VOUCHER_PENDING]"))
     }
 
     @Test

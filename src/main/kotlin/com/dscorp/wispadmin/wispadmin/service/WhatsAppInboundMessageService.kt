@@ -452,6 +452,13 @@ class WhatsAppInboundMessageService(
                 "[COMPROBANTE_PENDIENTE] "
             )
 
+            WhatsAppBotAction.ACK_RECEIPT_PENDING -> sendTextReply(
+                phone,
+                conversationService.buildReceiptPendingAckResponse(),
+                subscriptionId,
+                "[VOUCHER_PENDING] "
+            )
+
             WhatsAppBotAction.ESCALATE_TO_ADVISOR -> sendTextReply(
                 phone,
                 conversationService.handleButtonReply(
@@ -560,6 +567,22 @@ class WhatsAppInboundMessageService(
                 )
             }
             return reply
+        }
+
+        if (
+            session.currentStep == WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW &&
+            intent in setOf(
+                WhatsAppInboundIntent.ACK,
+                WhatsAppInboundIntent.GREETING,
+                WhatsAppInboundIntent.UNKNOWN
+            )
+        ) {
+            return handleBotEvent(
+                payload = payload,
+                subscription = subscription,
+                currentStep = session.currentStep,
+                event = WhatsAppBotEvent.UnmatchedText
+            )
         }
 
         if (!session.isNewOrExpired && chatStateService.hasPendingInteractiveMenu(payload.phone)) {

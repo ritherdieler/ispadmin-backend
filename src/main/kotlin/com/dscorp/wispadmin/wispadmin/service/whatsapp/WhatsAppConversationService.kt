@@ -393,6 +393,10 @@ class WhatsAppConversationService(
         return "Recibimos su comprobante. Nuestro equipo lo revisara a la brevedad y le confirmaremos. Gracias."
     }
 
+    fun buildReceiptPendingAckResponse(): String {
+        return "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+    }
+
     fun markInboundAsRead(inbound: WhatsAppInboundMessage): Boolean {
         val success = try {
             whatsAppService.markMessageAsRead(inbound.metaMessageId).success

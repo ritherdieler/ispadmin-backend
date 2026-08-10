@@ -36,7 +36,7 @@ El menú principal se envía como lista con cuatro opciones:
 
 Los submenús aceptan tanto pulsaciones como texto (`1`, `2`, `3`, `A`, `B`, `C` o el nombre de la opción). Los comandos `MENÚ` y `ASESOR` están disponibles durante todo el flujo.
 
-`Registrar pago` deja el chat en `AWAITING_PAYMENT_PROOF`: el bot pide una foto o PDF, confirma al recibirlo y vuelve al menú principal. Si llega texto mientras espera, recuerda que falta el archivo (`[COMPROBANTE_PENDIENTE]`).
+`Registrar pago` deja el chat en `AWAITING_PAYMENT_PROOF`: el bot pide una foto o PDF, confirma al recibirlo y pasa a `AWAITING_RECEIPT_REVIEW`. Si llega texto mientras espera el archivo, recuerda que falta (`[COMPROBANTE_PENDIENTE]`). Si el cliente escribe después del voucher (`ACK`/`GREETING`/`UNKNOWN`), responde un ACK suave (`[VOUCHER_PENDING]`) sin `MENU_INVALID` ni menú interactivo.
 
 Cualquier imagen o documento recibido se procesa como comprobante de pago en cualquier estado, incluso cuando el bot está pausado por espera de asesor.
 

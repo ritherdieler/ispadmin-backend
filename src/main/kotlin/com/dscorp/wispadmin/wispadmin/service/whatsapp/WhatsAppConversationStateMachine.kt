@@ -17,6 +17,7 @@ enum class WhatsAppBotAction(val sendsInteractiveMenu: Boolean) {
     REQUEST_PAYMENT_PROOF(true),
     CONFIRM_PAYMENT_PROOF(false),
     REMIND_PAYMENT_PROOF(false),
+    ACK_RECEIPT_PENDING(false),
     ESCALATE_TO_ADVISOR(false),
     INVALID_SELECTION(false)
 }
@@ -117,10 +118,10 @@ object WhatsAppConversationStateMachine {
     }
 
     private fun onPaymentProof(currentStep: WhatsAppConversationStep): WhatsAppBotTransition {
-        val nextStep = if (currentStep == WhatsAppConversationStep.AWAITING_PAYMENT_PROOF) {
-            WhatsAppConversationStep.MAIN_MENU
-        } else {
+        val nextStep = if (currentStep == WhatsAppConversationStep.ESPERANDO_ASESOR) {
             null
+        } else {
+            WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW
         }
         return WhatsAppBotTransition(
             action = WhatsAppBotAction.CONFIRM_PAYMENT_PROOF,
@@ -132,6 +133,9 @@ object WhatsAppConversationStateMachine {
         when (currentStep) {
             WhatsAppConversationStep.AWAITING_PAYMENT_PROOF -> WhatsAppBotTransition(
                 action = WhatsAppBotAction.REMIND_PAYMENT_PROOF
+            )
+            WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.ACK_RECEIPT_PENDING
             )
             else -> WhatsAppBotTransition(action = WhatsAppBotAction.INVALID_SELECTION)
         }

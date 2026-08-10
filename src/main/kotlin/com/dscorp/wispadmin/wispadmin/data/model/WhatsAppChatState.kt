@@ -25,6 +25,7 @@ enum class WhatsAppConversationStep {
     SUPPORT_DIAG,
     DEBT_VIEW,
     AWAITING_PAYMENT_PROOF,
+    AWAITING_RECEIPT_REVIEW,
     ESPERANDO_ASESOR
 }
 

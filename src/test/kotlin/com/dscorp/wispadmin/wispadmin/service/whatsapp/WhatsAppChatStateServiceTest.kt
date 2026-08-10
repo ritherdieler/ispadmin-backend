@@ -149,4 +149,32 @@ class WhatsAppChatStateServiceTest {
         assertFalse(savedSlot.captured.botPaused)
         assertTrue(savedSlot.captured.metadata?.contains("auto_resume_advisor_wait") == true)
     }
+
+    @Test
+    fun `receipt review step is not treated as pending interactive menu`() {
+        val phone = "51902354183"
+        every { repository.findByPhone(phone) } returns WhatsAppChatState(
+            phone = phone,
+            status = WhatsAppChatStatus.BOT_ACTIVE,
+            currentStep = WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW,
+            botPaused = false,
+            lastInteractionAt = LocalDateTime.now()
+        )
+
+        assertFalse(service.hasPendingInteractiveMenu(phone))
+    }
+
+    @Test
+    fun `awaiting payment proof is treated as pending interactive menu`() {
+        val phone = "51902354183"
+        every { repository.findByPhone(phone) } returns WhatsAppChatState(
+            phone = phone,
+            status = WhatsAppChatStatus.BOT_ACTIVE,
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF,
+            botPaused = false,
+            lastInteractionAt = LocalDateTime.now()
+        )
+
+        assertTrue(service.hasPendingInteractiveMenu(phone))
+    }
 }

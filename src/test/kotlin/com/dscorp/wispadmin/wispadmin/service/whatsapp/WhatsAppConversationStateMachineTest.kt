@@ -46,29 +46,44 @@ class WhatsAppConversationStateMachineTest {
     }
 
     @Test
-    fun `proof received while waiting confirms and returns to main menu`() {
+    fun `proof received while waiting confirms and moves to receipt review`() {
         val transition = machine.next(
             WhatsAppConversationStep.AWAITING_PAYMENT_PROOF,
             WhatsAppBotEvent.PaymentProofReceived
         )
 
         assertEquals(WhatsAppBotAction.CONFIRM_PAYMENT_PROOF, transition.action)
-        assertEquals(WhatsAppConversationStep.MAIN_MENU, transition.nextStep)
+        assertEquals(WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW, transition.nextStep)
         assertFalse(transition.action.sendsInteractiveMenu)
     }
 
     @Test
-    fun `proof received in any other step keeps current step`() {
+    fun `proof received outside advisor wait moves to receipt review`() {
         listOf(
             WhatsAppConversationStep.MAIN_MENU,
             WhatsAppConversationStep.SUPPORT_DIAG,
-            WhatsAppConversationStep.ESPERANDO_ASESOR
+            WhatsAppConversationStep.DEBT_VIEW
         ).forEach { step ->
             val transition = machine.next(step, WhatsAppBotEvent.PaymentProofReceived)
 
             assertEquals(WhatsAppBotAction.CONFIRM_PAYMENT_PROOF, transition.action)
-            assertNull(transition.nextStep, "step $step no debe cambiar al recibir comprobante")
+            assertEquals(
+                WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW,
+                transition.nextStep,
+                "step $step debe pasar a revision de comprobante"
+            )
         }
+    }
+
+    @Test
+    fun `proof received while waiting for advisor keeps current step`() {
+        val transition = machine.next(
+            WhatsAppConversationStep.ESPERANDO_ASESOR,
+            WhatsAppBotEvent.PaymentProofReceived
+        )
+
+        assertEquals(WhatsAppBotAction.CONFIRM_PAYMENT_PROOF, transition.action)
+        assertNull(transition.nextStep)
     }
 
     @Test
@@ -85,6 +100,18 @@ class WhatsAppConversationStateMachineTest {
         assertEquals(WhatsAppBotAction.REMIND_PAYMENT_PROOF, waiting.action)
         assertNull(waiting.nextStep)
         assertEquals(WhatsAppBotAction.INVALID_SELECTION, menu.action)
+    }
+
+    @Test
+    fun `unmatched text while awaiting receipt review soft acks without menu`() {
+        val transition = machine.next(
+            WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW,
+            WhatsAppBotEvent.UnmatchedText
+        )
+
+        assertEquals(WhatsAppBotAction.ACK_RECEIPT_PENDING, transition.action)
+        assertNull(transition.nextStep)
+        assertFalse(transition.action.sendsInteractiveMenu)
     }
 
     @Test
@@ -153,5 +180,6 @@ class WhatsAppConversationStateMachineTest {
         assertTrue(WhatsAppBotAction.REQUEST_PAYMENT_PROOF.sendsInteractiveMenu)
         assertFalse(WhatsAppBotAction.ESCALATE_TO_ADVISOR.sendsInteractiveMenu)
         assertFalse(WhatsAppBotAction.INVALID_SELECTION.sendsInteractiveMenu)
+        assertFalse(WhatsAppBotAction.ACK_RECEIPT_PENDING.sendsInteractiveMenu)
     }
 }
