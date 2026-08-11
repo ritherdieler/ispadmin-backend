@@ -250,9 +250,9 @@ class WhatsAppConversationServiceTest {
         val response = service.handleSupportDiagnosticReply(subscription, phone, "A")
 
         assertTrue(response.contains("[SUPPORT_CLOSED:ESPERANDO_ASESOR]"))
-        assertTrue(response.contains("Tu caso fue registrado"))
+        assertTrue(response.contains("caso fue registrado"))
         assertTrue(
-            response.contains("te atiende una persona") || response.contains("primera hora")
+            response.contains("le atiende una persona") || response.contains("primera hora")
         )
     }
 
@@ -770,7 +770,7 @@ class WhatsAppConversationServiceTest {
                 phoneNumber = "51902354183",
                 bodyText = any(),
                 buttons = capture(buttonsSlot),
-                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                footerText = "Puede enviar su comprobante como imagen o PDF",
                 contextMessageId = "wamid.in-proof"
             )
         } returns WhatsAppSendResult(
@@ -824,7 +824,7 @@ class WhatsAppConversationServiceTest {
                 phoneNumber = "51902354183",
                 bodyText = capture(bodySlot),
                 buttons = any(),
-                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                footerText = "Puede enviar su comprobante como imagen o PDF",
                 contextMessageId = null
             )
         } returns WhatsAppSendResult(
@@ -872,7 +872,7 @@ class WhatsAppConversationServiceTest {
                 phoneNumber = "51902354183",
                 bodyText = any(),
                 buttons = capture(buttonsSlot),
-                footerText = "Puedes enviar tu comprobante como imagen o PDF",
+                footerText = "Puede enviar su comprobante como imagen o PDF",
                 contextMessageId = "wamid.in-debt"
             )
         } returns WhatsAppSendResult(
@@ -1137,7 +1137,7 @@ class WhatsAppConversationServiceTest {
     fun `buildHumanHandoffClientMessage within hours promises immediate advisor`() {
         val fridayAfternoon = LocalDateTime.of(2026, 7, 31, 17, 0)
         val message = service.buildHumanHandoffClientMessage(fridayAfternoon)
-        assertTrue(message.contains("te atiende una persona"))
+        assertTrue(message.contains("le atiende una persona"))
         assertFalse(message.contains("primera hora"))
     }
 
@@ -1147,8 +1147,10 @@ class WhatsAppConversationServiceTest {
         val message = service.buildHumanHandoffClientMessage(fridayEvening)
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
-        assertTrue(message.contains("Tu caso fue registrado"))
-        assertFalse(message.contains("te atiende una persona de nuestro equipo por este mismo chat"))
+        assertTrue(message.contains("Su caso fue registrado"))
+        assertFalse(message.contains("le atiende una persona de nuestro equipo por este mismo chat"))
+        assertEquals(1, Regex("primera hora").findAll(message).count())
+        assertEquals(1, Regex(Regex.escape(whatsAppProperties.autoReply.secretaryHours)).findAll(message).count())
     }
 
     @Test
@@ -1159,6 +1161,17 @@ class WhatsAppConversationServiceTest {
     }
 
     @Test
+    fun `buildAfterHoursHandoffMessage is concise without repeating schedule`() {
+        val message = service.buildAfterHoursHandoffMessage()
+        assertTrue(message.startsWith("✅ Su caso fue registrado."))
+        assertTrue(message.contains("primera hora"))
+        assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertFalse(message.contains("Horario estimado de atencion"))
+        assertFalse(message.contains("Lun-Vie"))
+        assertEquals(1, Regex("primera hora").findAll(message).count())
+    }
+
+    @Test
     fun `buildVoucherReceivedResponse after hours uses first business hour follow-up`() {
         val sunday = LocalDateTime.of(2026, 7, 26, 10, 0)
         val message = service.buildVoucherReceivedResponse(sunday)
@@ -1166,6 +1179,8 @@ class WhatsAppConversationServiceTest {
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
         assertFalse(message.contains("a la brevedad"))
+        assertEquals(1, Regex("primera hora").findAll(message).count())
+        assertEquals(1, Regex(Regex.escape(whatsAppProperties.autoReply.secretaryHours)).findAll(message).count())
     }
 
     @Test
@@ -1178,10 +1193,56 @@ class WhatsAppConversationServiceTest {
     }
 
     @Test
-    fun `buildVoucherReceivedResponse within hours keeps immediate review copy`() {
+    fun `buildAfterHoursAckMessage confirms without registering a case`() {
+        val message = service.buildAfterHoursAckMessage()
+        assertTrue(message.contains("primera hora") || message.contains("Fuera de horario"))
+        assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertFalse(message.contains("Tu caso fue registrado"))
+        assertFalse(message.contains("caso fue registrado"))
+    }
+
+    @Test
+    fun `buildDebtResponse with unpaid balance does not thank for being up to date`() {
+        val subscription = Subscription(
+            firstName = "Ana",
+            lastName = "Lopez",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 10 }
+
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(10)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 5, 31, 0, 0)
+            )
+        )
+
+        val response = service.buildDebtResponse(subscription)
+        assertTrue(response.contains("50.00"))
+        assertFalse(response.contains("mantenerte al día", ignoreCase = true))
+        assertFalse(response.contains("mantenerte al dia", ignoreCase = true))
+        assertTrue(response.contains("regularizar") || response.contains("realizar su pago") || response.contains("BCP"))
+    }
+
+    @Test
+    fun `buildPaymentProofRequest uses usted`() {
+        val message = service.buildPaymentProofRequest(null)
+        assertTrue(message.contains("su comprobante"))
+        assertTrue(message.contains("su pago"))
+        assertFalse(message.contains("tu comprobante"))
+        assertFalse(message.contains("Envíanos tu"))
+    }
+
+    @Test
+    fun `buildVoucherReceivedResponse within hours uses usted`() {
         val fridayMorning = LocalDateTime.of(2026, 7, 31, 9, 0)
         val message = service.buildVoucherReceivedResponse(fridayMorning)
-        assertTrue(message.contains("a la brevedad"))
-        assertFalse(message.contains("primera hora"))
+        assertTrue(message.contains("su comprobante"))
+        assertTrue(message.contains("le confirmaremos") || message.contains("a la brevedad"))
     }
 }

@@ -78,9 +78,9 @@ class WhatsAppAutoReplyProperties {
     var ticketDedupHours: Int = 24
     var businessHours: String = "MON-FRI|08:00-17:30;SAT|08:00-12:30"
     var afterHoursMessage: String =
-        "Nuestro equipo atendera a la primera hora dentro del horario laboral (Lun-Vie 8:00 a 17:30; Sab 8:00 a 12:30). Deje su mensaje y le responderemos."
+        "Fuera de horario laboral: sera atendido a la primera hora."
     var afterHoursHumanFollowUpMessage: String =
-        "Fuera de horario laboral: sera atendido a la primera hora dentro del horario laboral."
+        "Fuera de horario laboral: sera atendido a la primera hora."
     var operatorSilenceMinutes: Int = 45
     var inboundBurstSeconds: Int = 30
     var menuCooldownMinutes: Int = 20

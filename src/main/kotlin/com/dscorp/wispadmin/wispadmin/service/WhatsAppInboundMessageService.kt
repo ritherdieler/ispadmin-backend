@@ -564,6 +564,9 @@ class WhatsAppInboundMessageService(
                 WhatsAppInboundIntent.UNKNOWN
             )
         ) {
+            if (!withinHours) {
+                return Pair(false, null)
+            }
             return handleBotEvent(
                 payload = payload,
                 subscription = subscription,
@@ -608,7 +611,7 @@ class WhatsAppInboundMessageService(
         if (!withinHours && intent == WhatsAppInboundIntent.ACK) {
             return sendTextReply(
                 payload.phone,
-                conversationService.buildAfterHoursHandoffMessage(),
+                conversationService.buildAfterHoursAckMessage(),
                 subscription?.id,
                 "[AFTER_HOURS] "
             )

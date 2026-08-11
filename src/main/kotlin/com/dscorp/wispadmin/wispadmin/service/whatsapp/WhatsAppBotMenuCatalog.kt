@@ -13,7 +13,7 @@ object WhatsAppBotMenuCatalog {
     const val SUPPORT_ISSUE_PREFIX = "support_issue_"
     const val SUPPORT_DIAG_PREFIX = "support_diag_"
     const val GLOBAL_COMMANDS_FOOTER = "Escribe MENÚ o ASESOR en cualquier momento"
-    const val PAYMENT_PROOF_FOOTER = "Puedes enviar tu comprobante como imagen o PDF"
+    const val PAYMENT_PROOF_FOOTER = "Puede enviar su comprobante como imagen o PDF"
 
     val mainMenu = listOf(
         WhatsAppInteractiveOption(REPORT_FAULT, "Reportar avería"),
@@ -25,8 +25,8 @@ object WhatsAppBotMenuCatalog {
     val mainMenuDescriptions = mapOf(
         REPORT_FAULT to "Internet o TV con problemas",
         DEBT to "Saldo pendiente y formas de pago",
-        PAYMENT_PROOF to "Adjunta tu voucher (foto o PDF)",
-        ADVISOR to "Te atiende una persona del equipo"
+        PAYMENT_PROOF to "Adjunte su voucher (foto o PDF)",
+        ADVISOR to "Le deriva con una persona del equipo"
     )
 
     val debtMenu = listOf(

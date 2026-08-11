@@ -36,6 +36,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -1073,5 +1074,94 @@ class WhatsAppInboundMessageServiceTest {
         verify(exactly = 1) { handoffService.pauseBotAndPassToAdvisor(payload.phone, "advisor_request") }
         assertTrue(logSlot.captured.message!!.contains("[ASESOR]"))
         assertTrue(logSlot.captured.message!!.contains("primera hora"))
+    }
+
+    @Test
+    fun `generic ack after hours sends short confirmation without case registered`() {
+        whatsAppProperties.autoReply.businessHours = "MON-SUN|00:00-00:00"
+        val ackText =
+            "Fuera de horario laboral: sera atendido a la primera hora.\nHorario: Lunes a viernes de 8:00 a.m. a 5:30 p.m."
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-ack-after-hours",
+            phone = "51902354183",
+            messageText = "ok",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 89) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.MAIN_MENU
+        )
+        every { conversationService.buildAfterHoursAckMessage() } returns ackText
+        every {
+            whatsAppService.sendTextMessage(payload.phone, ackText)
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.ack-after",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { conversationService.buildAfterHoursAckMessage() }
+        verify(exactly = 0) { conversationService.buildAfterHoursHandoffMessage() }
+        assertTrue(logSlot.captured.message!!.contains("[AFTER_HOURS]"))
+        assertFalse(logSlot.captured.message!!.contains("Tu caso fue registrado"))
+    }
+
+    @Test
+    fun `text after voucher outside hours does not soft ack again`() {
+        whatsAppProperties.autoReply.businessHours = "MON-SUN|00:00-00:00"
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-after-voucher-after-hours",
+            phone = "51965754000",
+            messageText = "Okey",
+            messageType = "text",
+            buttonReplyId = null,
+            buttonReplyTitle = null,
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 90) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.isInboundBurst(payload.phone) } returns false
+        every { chatStateService.beginInboundInteraction(payload.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW
+        )
+        every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns false
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 0) { conversationService.buildReceiptPendingAckResponse() }
+        verify(exactly = 0) { conversationService.buildReceiptPendingAckResponse(any()) }
+        verify(exactly = 0) { whatsAppService.sendTextMessage(any(), any()) }
+        verify(exactly = 0) { conversationService.buildAfterHoursAckMessage() }
     }
 }

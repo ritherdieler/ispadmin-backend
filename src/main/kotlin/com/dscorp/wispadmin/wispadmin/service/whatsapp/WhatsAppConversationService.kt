@@ -194,9 +194,8 @@ class WhatsAppConversationService(
         val followUp = whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage.trim()
         return """
             |$afterHoursLead
-            |
             |$followUp
-            |Horario estimado de atencion: $hours.
+            |Horario: $hours.
         """.trimMargin()
     }
 
@@ -342,16 +341,16 @@ class WhatsAppConversationService(
     fun buildPaymentProofRequest(subscription: Subscription?): String {
         val cfg = whatsAppProperties.autoReply
         return """
-            |📎 Para registrar tu pago, envíanos tu comprobante como *foto* o *PDF* en este mismo chat.
+            |📎 Para registrar su pago, envienos su comprobante como *foto* o *PDF* en este mismo chat.
             |
-            |Recuerda que puedes pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
-            |Al recibirlo lo validaremos y actualizaremos tu cuenta.
+            |Recuerde que puede pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
+            |Al recibirlo lo validaremos y actualizaremos su cuenta.
         """.trimMargin()
     }
 
     fun buildPaymentProofReminder(): String {
-        return "Seguimos esperando tu comprobante 📎 Envíalo como foto o PDF en este chat, " +
-            "o toca *Menú principal* si necesitas otra cosa."
+        return "Seguimos esperando su comprobante 📎 Envielo como foto o PDF en este chat, " +
+            "o toque *Menú principal* si necesita otra cosa."
     }
 
     fun buildDebtResponse(subscription: Subscription?): String {
@@ -370,14 +369,14 @@ class WhatsAppConversationService(
         val cfg = whatsAppProperties.autoReply
 
         return """
-            |📄 *Estado de tu cuenta:*
-            |Estimado(a) $clientName, tu saldo pendiente al día de hoy es S/ ${"%.2f".format(total)}.
+            |📄 *Estado de su cuenta:*
+            |Estimado(a) $clientName, su saldo pendiente al dia de hoy es S/ ${"%.2f".format(total)}.
             |
             |• Servicio: $planName
             |• Saldo pendiente: S/ ${"%.2f".format(total)}
             |• Fecha de vencimiento: $dueDate
             |
-            |Puedes realizar tu pago mediante CCI/BCP ${cfg.bcpAccount} o Yape/Plin al número ${cfg.yapePlin}. ¡Gracias por mantenerte al día!
+            |Puede regularizar su pago mediante CCI/BCP ${cfg.bcpAccount} o Yape/Plin al numero ${cfg.yapePlin}.
         """.trimMargin()
     }
 
@@ -1093,9 +1092,9 @@ class WhatsAppConversationService(
     private fun buildAdvisorClosureMessage(): String {
         val phones = whatsAppProperties.autoReply.secretaryPhoneList().joinToString(" / ")
         return """
-            |✅ Tu caso fue registrado. A partir de ahora te atiende una persona de nuestro equipo por este mismo chat. ⏱️
+            |✅ Su caso fue registrado. A partir de ahora le atiende una persona de nuestro equipo por este mismo chat. ⏱️
             |
-            |También puedes comunicarte con Secretaría: 📞 $phones
+            |También puede comunicarse con Secretaría: 📞 $phones
         """.trimMargin()
     }
 
@@ -1103,11 +1102,19 @@ class WhatsAppConversationService(
         val hours = whatsAppProperties.autoReply.secretaryHours
         val base = whatsAppProperties.autoReply.afterHoursMessage.trim()
         return """
-            |✅ Tu caso fue registrado.
+            |✅ Su caso fue registrado.
             |$base
-            |
-            |Horario estimado de atencion: $hours.
-            |Sera atendido a la primera hora dentro del horario laboral.
+            |Horario: $hours.
+        """.trimMargin()
+    }
+
+    fun buildAfterHoursAckMessage(): String {
+        val hours = whatsAppProperties.autoReply.secretaryHours
+        val followUp = whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage.trim()
+        return """
+            |Recibido. Gracias.
+            |$followUp
+            |Horario: $hours.
         """.trimMargin()
     }
 
