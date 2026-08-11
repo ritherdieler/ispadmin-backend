@@ -16,6 +16,8 @@ enum class CsatSurveyStatus {
     SCHEDULED,
     SENT,
     ANSWERED,
+    AWAITING_COMMENT,
+    COMPLETED,
     EXPIRED,
     FAILED
 }
@@ -45,7 +47,8 @@ enum class CsatDissatisfactionReason {
     indexes = [
         Index(name = "idx_csat_survey_status_next", columnList = "status, next_attempt_at"),
         Index(name = "idx_csat_survey_expires", columnList = "status, expires_at"),
-        Index(name = "idx_csat_survey_phone_status", columnList = "phone, status")
+        Index(name = "idx_csat_survey_phone_status", columnList = "phone, status"),
+        Index(name = "idx_csat_survey_comment_window", columnList = "status, comment_window_expires_at")
     ]
 )
 data class CsatSurvey(
@@ -115,6 +118,9 @@ data class CsatSurvey(
 
     @Column(name = "responded_at")
     var respondedAt: LocalDateTime? = null,
+
+    @Column(name = "comment_window_expires_at")
+    var commentWindowExpiresAt: LocalDateTime? = null,
 
     @Column(name = "last_error", length = 500)
     var lastError: String? = null,

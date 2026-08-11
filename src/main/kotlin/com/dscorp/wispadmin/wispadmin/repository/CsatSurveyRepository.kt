@@ -56,4 +56,18 @@ interface CsatSurveyRepository : JpaRepository<CsatSurvey, Long> {
     ): List<CsatSurvey>
 
     fun findByStatus(status: CsatSurveyStatus): List<CsatSurvey>
+
+    @Query(
+        """
+        SELECT s FROM CsatSurvey s
+        WHERE s.status = :status
+          AND s.commentWindowExpiresAt IS NOT NULL
+          AND s.commentWindowExpiresAt <= :now
+        ORDER BY s.commentWindowExpiresAt ASC
+        """
+    )
+    fun findCommentWindowExpired(
+        @Param("status") status: CsatSurveyStatus,
+        @Param("now") now: LocalDateTime
+    ): List<CsatSurvey>
 }

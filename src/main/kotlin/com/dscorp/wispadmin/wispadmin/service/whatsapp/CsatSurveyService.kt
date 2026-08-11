@@ -26,7 +26,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 import kotlin.math.round
 
 @Service
@@ -84,6 +83,7 @@ class CsatSurveyService(
         if (!properties.enabled) return
         val now = LocalDateTime.now()
         expireDue(now)
+        completeExpiredCommentWindows(now)
         val due = surveyRepository.findDueForSend(
             statuses = listOf(CsatSurveyStatus.SCHEDULED, CsatSurveyStatus.FAILED),
             now = now
@@ -133,13 +133,14 @@ class CsatSurveyService(
         }
         val survey = surveyRepository.findById(surveyId).orElse(null) ?: return null
         if (survey.phone != phone.trim()) return null
-        if (survey.status == CsatSurveyStatus.ANSWERED) return survey
+        if (survey.status in SCORE_CAPTURED_STATUSES) return survey
         if (survey.status == CsatSurveyStatus.EXPIRED || survey.status == CsatSurveyStatus.FAILED) return survey
 
         val now = LocalDateTime.now()
-        survey.status = CsatSurveyStatus.ANSWERED
+        survey.status = CsatSurveyStatus.AWAITING_COMMENT
         survey.score = score
         survey.respondedAt = now
+        survey.commentWindowExpiresAt = now.plusMinutes(properties.commentWindowMinutes)
         survey.updatedAt = now
         survey.nextAttemptAt = null
         if (metaMessageId.isNotBlank()) {
@@ -166,7 +167,6 @@ class CsatSurveyService(
 
         if (score <= properties.lowScoreThreshold) {
             ensureFollowUp(saved)
-            sendReasonPrompt(saved)
             eventPublisher.publish(
                 EVENT_LOW_SCORE,
                 mapOf(
@@ -176,9 +176,8 @@ class CsatSurveyService(
                     "score" to score
                 )
             )
-        } else {
-            sendThanks(saved.phone, score)
         }
+        sendCommentPrompt(saved.phone)
         return saved
     }
 
@@ -186,7 +185,7 @@ class CsatSurveyService(
         val surveys = surveyRepository.findByScheduledAtBetween(from, to)
         val scheduled = surveys.count { it.status == CsatSurveyStatus.SCHEDULED }.toLong()
         val sent = surveys.count { it.status == CsatSurveyStatus.SENT }.toLong()
-        val answered = surveys.count { it.status == CsatSurveyStatus.ANSWERED }.toLong()
+        val answered = surveys.count { it.status in ANSWERED_LIKE_STATUSES }.toLong()
         val expired = surveys.count { it.status == CsatSurveyStatus.EXPIRED }.toLong()
         val failed = surveys.count { it.status == CsatSurveyStatus.FAILED }.toLong()
         val deliveredLike = sent + answered + expired + failed
@@ -294,7 +293,7 @@ class CsatSurveyService(
     }
 
     private fun sendSurvey(survey: CsatSurvey, now: LocalDateTime) {
-        if (survey.status == CsatSurveyStatus.ANSWERED || survey.status == CsatSurveyStatus.EXPIRED) return
+        if (survey.status in TERMINAL_OR_CAPTURED_STATUSES) return
         if (survey.expiresAt.isBefore(now) || survey.expiresAt.isEqual(now)) {
             survey.status = CsatSurveyStatus.EXPIRED
             survey.nextAttemptAt = null
@@ -312,20 +311,16 @@ class CsatSurveyService(
         val windowOpen = serviceWindowService.getServiceWindow(survey.phone).open
         try {
             val result = if (windowOpen) {
-                val body = """
-                    |Gracias por contactarnos. Califique la atencion del ticket #${survey.ticketId}
-                    |(1 = muy mala, 5 = excelente).
-                """.trimMargin()
                 whatsAppService.sendInteractiveListMessage(
                     phoneNumber = survey.phone,
-                    bodyText = body,
-                    buttonText = "Calificar",
-                    sectionTitle = "Satisfaccion",
+                    bodyText = CsatSurveyMessages.interactiveBody(survey.ticketId),
+                    buttonText = CsatSurveyMessages.BUTTON_TEXT,
+                    sectionTitle = CsatSurveyMessages.SECTION_TITLE,
                     rows = (1..5).map { score ->
                         WhatsAppService.InteractiveListOption(
                             id = scoreButtonId(survey.id!!, score),
-                            title = "$score",
-                            description = scoreLabel(score)
+                            title = CsatSurveyMessages.scoreTitle(score),
+                            description = CsatSurveyMessages.scoreDescription(score)
                         )
                     }
                 )
@@ -399,6 +394,19 @@ class CsatSurveyService(
         }
     }
 
+    private fun completeExpiredCommentWindows(now: LocalDateTime) {
+        val expired = surveyRepository.findCommentWindowExpired(
+            status = CsatSurveyStatus.AWAITING_COMMENT,
+            now = now
+        )
+        expired.forEach { survey ->
+            survey.status = CsatSurveyStatus.COMPLETED
+            survey.commentWindowExpiresAt = null
+            survey.updatedAt = now
+            surveyRepository.save(survey)
+        }
+    }
+
     private fun ensureFollowUp(survey: CsatSurvey): CsatFollowUp {
         followUpRepository.findBySurveyId(survey.id!!)?.let { return it }
         val now = LocalDateTime.now()
@@ -445,61 +453,54 @@ class CsatSurveyService(
                 messageType = MESSAGE_TYPE_REASON
             )
         }
-        sendThanks(survey.phone, survey.score ?: 1)
     }
 
     private fun captureOptionalComment(phone: String, text: String, metaMessageId: String?): Boolean {
         val now = LocalDateTime.now()
         val candidates = surveyRepository.findByPhoneAndStatusIn(
             phone.trim(),
-            listOf(CsatSurveyStatus.ANSWERED)
+            listOf(CsatSurveyStatus.AWAITING_COMMENT)
         )
         val survey = candidates
             .filter { it.comment.isNullOrBlank() }
-            .filter { it.respondedAt != null }
-            .filter {
-                ChronoUnit.MINUTES.between(it.respondedAt, now) <= properties.commentWindowMinutes
+            .filter { candidate ->
+                val expiresAt = candidate.commentWindowExpiresAt
+                expiresAt == null || expiresAt.isAfter(now)
             }
-            .maxByOrNull { it.respondedAt!! }
+            .maxByOrNull { it.respondedAt ?: it.updatedAt }
             ?: return false
 
         if (!metaMessageId.isNullOrBlank()) {
             surveyRepository.findByCaptureIdempotencyKey("comment:$metaMessageId")?.let { return true }
         }
         survey.comment = text.take(1000)
+        survey.status = CsatSurveyStatus.COMPLETED
+        survey.commentWindowExpiresAt = null
         survey.updatedAt = now
         surveyRepository.save(survey)
+        sendFinalThanks(survey.phone)
         return true
     }
 
-    private fun sendReasonPrompt(survey: CsatSurvey) {
-        try {
-            whatsAppService.sendInteractiveListMessage(
-                phoneNumber = survey.phone,
-                bodyText = "Lamentamos su experiencia con el ticket #${survey.ticketId}. Indique el motivo principal:",
-                buttonText = "Motivo",
-                sectionTitle = "Inconformidad",
-                rows = CsatDissatisfactionReason.values().map { reason ->
-                    WhatsAppService.InteractiveListOption(
-                        id = reasonButtonId(survey.id!!, reason),
-                        title = reasonTitle(reason),
-                        description = null
-                    )
-                }
-            )
-        } catch (e: Exception) {
-            log.warn("CSAT reason prompt failed surveyId={}: {}", survey.id, e.message)
-        }
-    }
-
-    private fun sendThanks(phone: String, score: Int) {
+    private fun sendCommentPrompt(phone: String) {
         try {
             whatsAppService.sendTextMessage(
                 phoneNumber = phone,
-                message = "Gracias por su calificacion ($score/5). Su opinion nos ayuda a mejorar."
+                message = CsatSurveyMessages.COMMENT_PROMPT
             )
         } catch (e: Exception) {
-            log.warn("CSAT thanks failed phone={}: {}", phone, e.message)
+            log.warn("CSAT comment prompt failed phone={}: {}", phone, e.message)
+        }
+    }
+
+    private fun sendFinalThanks(phone: String) {
+        try {
+            whatsAppService.sendTextMessage(
+                phoneNumber = phone,
+                message = CsatSurveyMessages.FINAL_THANKS
+            )
+        } catch (e: Exception) {
+            log.warn("CSAT final thanks failed phone={}: {}", phone, e.message)
         }
     }
 
@@ -558,7 +559,7 @@ class CsatSurveyService(
             val answeredScores = items.mapNotNull { it.score }
             val sentCount = items.count {
                 it.status == CsatSurveyStatus.SENT ||
-                    it.status == CsatSurveyStatus.ANSWERED ||
+                    it.status in ANSWERED_LIKE_STATUSES ||
                     it.status == CsatSurveyStatus.EXPIRED ||
                     it.status == CsatSurveyStatus.FAILED
             }.toLong()
@@ -616,29 +617,28 @@ class CsatSurveyService(
         const val MESSAGE_TYPE_SURVEY = "CSAT_SURVEY"
         const val MESSAGE_TYPE_REASON = "CSAT_REASON"
         private val CLOSE_STATUSES = setOf(AssistanceTicketStatus.RESOLVED, AssistanceTicketStatus.CLOSED)
+        private val SCORE_CAPTURED_STATUSES = setOf(
+            CsatSurveyStatus.ANSWERED,
+            CsatSurveyStatus.AWAITING_COMMENT,
+            CsatSurveyStatus.COMPLETED
+        )
+        private val ANSWERED_LIKE_STATUSES = setOf(
+            CsatSurveyStatus.ANSWERED,
+            CsatSurveyStatus.AWAITING_COMMENT,
+            CsatSurveyStatus.COMPLETED
+        )
+        private val TERMINAL_OR_CAPTURED_STATUSES = setOf(
+            CsatSurveyStatus.ANSWERED,
+            CsatSurveyStatus.AWAITING_COMMENT,
+            CsatSurveyStatus.COMPLETED,
+            CsatSurveyStatus.EXPIRED
+        )
         private val scorePattern = Regex("^csat_s_(\\d+)_([1-5])$")
         private val reasonPattern = Regex("^csat_r_(\\d+)_([A-Z_]+)$")
 
         fun scoreButtonId(surveyId: Long, score: Int) = "csat_s_${surveyId}_$score"
         fun reasonButtonId(surveyId: Long, reason: CsatDissatisfactionReason) = "csat_r_${surveyId}_${reason.name}"
         fun sendKey(ticketId: Int, attempt: Int) = "CSAT-SEND-$ticketId-$attempt"
-
-        private fun scoreLabel(score: Int) = when (score) {
-            1 -> "Muy mala"
-            2 -> "Mala"
-            3 -> "Regular"
-            4 -> "Buena"
-            else -> "Excelente"
-        }
-
-        private fun reasonTitle(reason: CsatDissatisfactionReason) = when (reason) {
-            CsatDissatisfactionReason.PUNTUALIDAD -> "Puntualidad"
-            CsatDissatisfactionReason.TRATO -> "Trato"
-            CsatDissatisfactionReason.NO_RESUELTO -> "No resuelto"
-            CsatDissatisfactionReason.CALIDAD -> "Calidad"
-            CsatDissatisfactionReason.INCUMPLIMIENTO_VISITA -> "Incumpl. visita"
-            CsatDissatisfactionReason.OTRO -> "Otro"
-        }
 
         private fun round2(value: Double): Double = round(value * 100.0) / 100.0
     }
