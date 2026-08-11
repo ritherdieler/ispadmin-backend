@@ -439,12 +439,19 @@ class WhatsAppInboundMessageService(
                 conversationService.sendPaymentProofRequest(phone, subscription, payload.metaMessageId)
             )
 
-            WhatsAppBotAction.CONFIRM_PAYMENT_PROOF -> sendTextReply(
-                phone,
-                conversationService.buildVoucherReceivedResponse(),
-                subscriptionId,
-                "[VOUCHER] "
-            )
+            WhatsAppBotAction.CONFIRM_PAYMENT_PROOF -> {
+                if (conversationService.hasRecentVoucherAck(phone)) {
+                    log.info("Voucher ACK omitido por deduplicación reciente phone={}", phone)
+                    Pair(true, null)
+                } else {
+                    sendTextReply(
+                        phone,
+                        conversationService.buildVoucherReceivedResponse(),
+                        subscriptionId,
+                        "${WhatsAppConversationService.VOUCHER_ACK_MARKER} "
+                    )
+                }
+            }
 
             WhatsAppBotAction.REMIND_PAYMENT_PROOF -> sendTextReply(
                 phone,

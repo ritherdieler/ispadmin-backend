@@ -96,6 +96,13 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         createdAt: LocalDateTime
     ): Boolean
 
+    fun existsByPhoneAndMessageTypeAndMessageStartingWithAndCreatedAtAfter(
+        phone: String,
+        messageType: String,
+        message: String,
+        createdAt: LocalDateTime
+    ): Boolean
+
     fun existsByPhoneAndMessageTypeAndStatusAndCreatedAtAfter(
         phone: String,
         messageType: String,

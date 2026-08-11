@@ -174,6 +174,29 @@ class WhatsAppConversationStateMachineTest {
     }
 
     @Test
+    fun `stale diagnostic button outside SUPPORT_DIAG re shows main menu without handoff`() {
+        listOf(
+            WhatsAppConversationStep.MAIN_MENU,
+            WhatsAppConversationStep.ESPERANDO_ASESOR,
+            WhatsAppConversationStep.DEBT_VIEW,
+            WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+        ).forEach { step ->
+            val transition = machine.next(
+                step,
+                WhatsAppBotEvent.ButtonSelected("${WhatsAppBotMenuCatalog.SUPPORT_DIAG_PREFIX}fiber_red")
+            )
+
+            assertEquals(
+                WhatsAppBotAction.SHOW_MAIN_MENU,
+                transition.action,
+                "step $step no debe cerrar un diagnóstico viejo"
+            )
+            assertEquals(WhatsAppConversationStep.MAIN_MENU, transition.nextStep)
+            assertNull(transition.handoffReason)
+        }
+    }
+
+    @Test
     fun `advisor button escalates with handoff reason`() {
         val transition = machine.next(
             WhatsAppConversationStep.DEBT_VIEW,

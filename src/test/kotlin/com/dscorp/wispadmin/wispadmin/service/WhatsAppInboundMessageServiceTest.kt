@@ -112,6 +112,7 @@ class WhatsAppInboundMessageServiceTest {
         )
         every { chatStateService.hasPendingInteractiveMenu(any()) } returns false
         every { conversationService.resolvePendingTextSelection(any(), any(), any()) } returns null
+        every { conversationService.hasRecentVoucherAck(any()) } returns false
         every { chatStateService.getUnknownRetryCount(any()) } returns 0
         every { chatStateService.incrementUnknownRetryCount(any()) } returns 1
         every { chatStateService.resetUnknownRetryCount(any()) } returns Unit
@@ -523,6 +524,7 @@ class WhatsAppInboundMessageServiceTest {
             currentStep = WhatsAppConversationStep.ESPERANDO_ASESOR
         )
         every { conversationService.hasRecentOperatorReply(image.phone) } returns false
+        every { conversationService.hasRecentVoucherAck(image.phone) } returnsMany listOf(false, true)
         every { conversationService.buildVoucherReceivedResponse() } returns "Comprobante recibido"
         every {
             whatsAppService.sendTextMessage(image.phone, "Comprobante recibido")
@@ -534,12 +536,71 @@ class WhatsAppInboundMessageServiceTest {
             senderPhoneNumberId = "123"
         )
         every { messageLogRepository.save(any()) } answers { firstArg() }
+        every { chatStateService.setCurrentStep(any(), any()) } returns mockk(relaxed = true)
 
         service.processInboundMessage(image)
         service.processInboundMessage(pdf)
 
-        verify(exactly = 2) { conversationService.buildVoucherReceivedResponse() }
-        verify(exactly = 2) { whatsAppService.sendTextMessage(image.phone, "Comprobante recibido") }
+        verify(exactly = 1) { conversationService.buildVoucherReceivedResponse() }
+        verify(exactly = 1) { whatsAppService.sendTextMessage(image.phone, "Comprobante recibido") }
+    }
+
+    @Test
+    fun `second voucher within dedup window does not send another ACK`() {
+        val first = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-voucher-1",
+            phone = "51913075891",
+            messageText = null,
+            messageType = "image",
+            mediaId = "media-1",
+            mediaMimeType = "image/jpeg"
+        )
+        val second = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-voucher-2",
+            phone = "51913075891",
+            messageText = null,
+            messageType = "image",
+            mediaId = "media-2",
+            mediaMimeType = "image/jpeg"
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { mediaDownloadService.downloadAndStore(any(), any()) } returns "/tmp/v.jpg"
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = if (msg.metaMessageId == "wamid.in-voucher-1") 81 else 82) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(first.phone) } returns null
+        every { chatStateService.beginInboundInteraction(first.phone) } returns WhatsAppInboundSession(
+            botPaused = false,
+            isNewOrExpired = false,
+            lastInteractionAt = LocalDateTime.now(),
+            currentStep = WhatsAppConversationStep.AWAITING_PAYMENT_PROOF
+        )
+        every { conversationService.hasRecentOperatorReply(first.phone) } returns false
+        every { conversationService.hasRecentVoucherAck(first.phone) } returnsMany listOf(false, true)
+        every { conversationService.buildVoucherReceivedResponse() } returns "Recibimos su comprobante. Gracias."
+        every {
+            whatsAppService.sendTextMessage(first.phone, "Recibimos su comprobante. Gracias.")
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.voucher-ack-1",
+            recipient = first.phone,
+            senderPhoneNumberId = "123"
+        )
+        every { messageLogRepository.save(any()) } answers { firstArg() }
+        every { chatStateService.setCurrentStep(any(), any()) } returns mockk(relaxed = true)
+
+        service.processInboundMessage(first)
+        service.processInboundMessage(second)
+
+        verify(exactly = 1) { conversationService.buildVoucherReceivedResponse() }
+        verify(exactly = 1) {
+            whatsAppService.sendTextMessage(first.phone, "Recibimos su comprobante. Gracias.")
+        }
+        verify(exactly = 2) {
+            chatStateService.setCurrentStep(first.phone, WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW)
+        }
     }
 
     @Test
@@ -655,11 +716,11 @@ class WhatsAppInboundMessageServiceTest {
         )
         every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns false
         every { conversationService.buildReceiptPendingAckResponse() } returns
-            "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+            "Ya tenemos su comprobante en revisión. Un asesor le confirmará en breve. Gracias."
         every {
             whatsAppService.sendTextMessage(
                 payload.phone,
-                "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+                "Ya tenemos su comprobante en revisión. Un asesor le confirmará en breve. Gracias."
             )
         } returns WhatsAppSendResult(
             success = true,
@@ -708,11 +769,11 @@ class WhatsAppInboundMessageServiceTest {
         )
         every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns false
         every { conversationService.buildReceiptPendingAckResponse() } returns
-            "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+            "Ya tenemos su comprobante en revisión. Un asesor le confirmará en breve. Gracias."
         every {
             whatsAppService.sendTextMessage(
                 payload.phone,
-                "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+                "Ya tenemos su comprobante en revisión. Un asesor le confirmará en breve. Gracias."
             )
         } returns WhatsAppSendResult(
             success = true,
@@ -1080,7 +1141,7 @@ class WhatsAppInboundMessageServiceTest {
     fun `generic ack after hours sends short confirmation without case registered`() {
         whatsAppProperties.autoReply.businessHours = "MON-SUN|00:00-00:00"
         val ackText =
-            "Recibido, gracias.\n\nEn este momento estamos fuera de horario laboral. Le responderemos a primera hora.\n\nNuestro horario es de lunes a viernes de 8:00 a.m. a 5:30 p.m. y sabados de 8:00 a.m. a 12:30 p.m."
+            "Recibido, gracias.\n\nEn este momento estamos fuera de horario laboral. Le responderemos a primera hora.\n\nNuestro horario es de lunes a viernes de 8:00 a.m. a 5:30 p.m. y sábados de 8:00 a.m. a 12:30 p.m."
         val payload = WhatsAppInboundPayload(
             metaMessageId = "wamid.in-ack-after-hours",
             phone = "51902354183",

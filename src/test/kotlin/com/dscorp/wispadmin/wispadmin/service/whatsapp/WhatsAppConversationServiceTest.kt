@@ -137,8 +137,8 @@ class WhatsAppConversationServiceTest {
         } returns emptyList()
 
         val response = service.buildPaidResponse(subscription)
-        assertTrue(response.contains("ya esta registrado"))
-        assertTrue(response.contains("al dia"))
+        assertTrue(response.contains("ya está registrado"))
+        assertTrue(response.contains("al día"))
         assertTrue(response.contains("Gracias por su puntualidad"))
     }
 
@@ -251,7 +251,7 @@ class WhatsAppConversationServiceTest {
         val response = service.handleSupportDiagnosticReply(subscription, phone, "A")
 
         assertTrue(response.contains("[SUPPORT_CLOSED:ESPERANDO_ASESOR]"))
-        assertTrue(response.contains("caso quedo registrado"))
+        assertTrue(response.contains("caso quedó registrado"))
         assertTrue(
             response.contains("le atiende una persona") || response.contains("primera hora")
         )
@@ -712,6 +712,20 @@ class WhatsAppConversationServiceTest {
     }
 
     @Test
+    fun `hasRecentVoucherAck looks for recent VOUCHER auto reply`() {
+        every {
+            messageLogRepository.existsByPhoneAndMessageTypeAndMessageStartingWithAndCreatedAtAfter(
+                phone = "51913075891",
+                messageType = WhatsAppConversationService.MESSAGE_TYPE_AUTO_REPLY,
+                message = WhatsAppConversationService.VOUCHER_ACK_MARKER,
+                createdAt = any()
+            )
+        } returns true
+
+        assertTrue(service.hasRecentVoucherAck("51913075891"))
+    }
+
+    @Test
     fun `isInboundBurst when count is at least two`() {
         every {
             inboundMessageRepository.countByPhoneAndCreatedAtAfter("51902354183", any())
@@ -1139,8 +1153,9 @@ class WhatsAppConversationServiceTest {
         val fridayAfternoon = LocalDateTime.of(2026, 7, 31, 17, 0)
         val message = service.buildHumanHandoffClientMessage(fridayAfternoon)
         assertTrue(message.contains("le atiende una persona"))
-        assertTrue(message.contains("Su solicitud quedo registrada"))
-        assertFalse(message.contains("caso quedo registrado"))
+        assertTrue(message.contains("Su solicitud quedó registrada"))
+        assertFalse(message.contains("caso quedó registrado"))
+        assertTrue(message.contains("Si necesita algo más, escriba MENU."))
         assertFalse(message.contains("primera hora"))
     }
 
@@ -1150,9 +1165,10 @@ class WhatsAppConversationServiceTest {
         val message = service.buildHumanHandoffClientMessage(fridayEvening)
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
-        assertTrue(message.contains("Su solicitud quedo registrada"))
-        assertFalse(message.contains("caso quedo registrado"))
+        assertTrue(message.contains("Su solicitud quedó registrada"))
+        assertFalse(message.contains("caso quedó registrado"))
         assertFalse(message.contains("le atiende una persona de nuestro equipo por este mismo chat"))
+        assertTrue(message.contains("Si necesita algo más, escriba MENU."))
         assertEquals(1, Regex("primera hora").findAll(message).count())
         assertEquals(1, Regex(Regex.escape(whatsAppProperties.autoReply.secretaryHours)).findAll(message).count())
     }
@@ -1164,8 +1180,8 @@ class WhatsAppConversationServiceTest {
             now = fridayEvening,
             kind = WhatsAppHandoffCopyKind.SUPPORT_CASE
         )
-        assertTrue(message.contains("Su caso quedo registrado"))
-        assertFalse(message.contains("solicitud quedo registrada"))
+        assertTrue(message.contains("Su caso quedó registrado"))
+        assertFalse(message.contains("solicitud quedó registrada"))
     }
 
     @Test
@@ -1175,8 +1191,8 @@ class WhatsAppConversationServiceTest {
             now = fridayAfternoon,
             kind = WhatsAppHandoffCopyKind.INSTALLATION
         )
-        assertTrue(message.contains("solicitud de instalacion quedo registrada"))
-        assertFalse(message.contains("caso quedo registrado"))
+        assertTrue(message.contains("solicitud de instalación quedó registrada"))
+        assertFalse(message.contains("caso quedó registrado"))
     }
 
     @Test
@@ -1189,10 +1205,11 @@ class WhatsAppConversationServiceTest {
     @Test
     fun `buildAfterHoursHandoffMessage is concise without repeating schedule`() {
         val message = service.buildAfterHoursHandoffMessage()
-        assertTrue(message.startsWith("✅ Su solicitud quedo registrada."))
+        assertTrue(message.startsWith("✅ Su solicitud quedó registrada."))
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
         assertTrue(message.contains("Nuestro horario es de"))
+        assertTrue(message.contains("Si necesita algo más, escriba MENU."))
         assertFalse(message.contains("Horario estimado de atencion"))
         assertFalse(message.contains("Lun-Vie"))
         assertEquals(1, Regex("primera hora").findAll(message).count())
@@ -1239,6 +1256,8 @@ class WhatsAppConversationServiceTest {
         assertFalse(message.contains("Tu caso fue registrado"))
         assertFalse(message.contains("caso fue registrado"))
         assertFalse(message.contains("caso quedo registrado"))
+        assertFalse(message.contains("caso quedó registrado"))
+        assertTrue(message.contains("Si necesita algo más, escriba MENU."))
     }
 
     @Test
@@ -1323,8 +1342,71 @@ class WhatsAppConversationServiceTest {
     @Test
     fun `buildPaymentProofReminder uses natural usted copy`() {
         val message = service.buildPaymentProofReminder()
-        assertTrue(message.contains("Aun no hemos recibido su comprobante"))
-        assertTrue(message.contains("Menu principal"))
+        assertTrue(message.contains("Aún no hemos recibido su comprobante"))
+        assertTrue(message.contains("Menú principal"))
         assertFalse(message.contains("Seguimos esperando"))
+    }
+
+    @Test
+    fun `buildDebtResponse drops estimado and humanizes plan label`() {
+        val subscription = Subscription(
+            firstName = "Saul",
+            lastName = "Leon",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply {
+            id = 77
+            plan = com.dscorp.wispadmin.wispadmin.data.model.Plan(id = 1, name = "basico_wireless 50")
+        }
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(77)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 100.0,
+                billingDateDatetime = LocalDateTime.of(2026, 4, 30, 0, 0)
+            )
+        )
+
+        val response = service.buildDebtResponse(subscription)
+        assertTrue(response.contains("Saul Leon, su saldo pendiente al día de hoy"))
+        assertTrue(response.contains("Basico Wireless 50"))
+        assertFalse(response.contains("Estimado"))
+        assertFalse(response.contains("basico_wireless"))
+    }
+
+    @Test
+    fun `buildPaidResponse pluralizes pending invoices cleanly`() {
+        val subscription = Subscription(
+            firstName = "Saul",
+            lastName = "Leon",
+            phone = "902354183",
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        ).apply { id = 78 }
+        every {
+            paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(78)
+        } returns listOf(
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 4, 30, 0, 0)
+            ),
+            Payment(
+                discountAmount = 0.0,
+                paid = false,
+                amountToPay = 50.0,
+                billingDateDatetime = LocalDateTime.of(2026, 5, 31, 0, 0)
+            )
+        )
+
+        val response = service.buildPaidResponse(subscription, LocalDateTime.of(2026, 7, 31, 10, 0))
+        assertTrue(response.contains("Gracias por avisarnos, Saul."))
+        assertTrue(response.contains("2 facturas pendientes"))
+        assertFalse(response.contains("pendiente(s)"))
+        assertFalse(response.contains("Hola Saul"))
     }
 }

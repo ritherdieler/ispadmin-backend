@@ -36,8 +36,8 @@ data class WhatsAppBotTransition(
 
 /**
  * Tabla explícita de transiciones del bot de WhatsApp: (paso actual, evento) -> acción + paso siguiente.
- * Los callbacks de Meta siguen siendo válidos aunque el paso persistido haya caducado,
- * porque los botones antiguos permanecen pulsables en el chat del cliente.
+ * Menú principal, deuda y avería siguen válidos desde botones antiguos del chat.
+ * Las respuestas de diagnóstico solo cierran caso si el paso actual es SUPPORT_DIAG.
  */
 object WhatsAppConversationStateMachine {
 
@@ -81,11 +81,17 @@ object WhatsAppConversationStateMachine {
             nextStep = WhatsAppConversationStep.SUPPORT_DIAG
         )
 
-        WhatsAppBotMenuCatalog.isSupportDiagnostic(buttonId) -> WhatsAppBotTransition(
-            action = WhatsAppBotAction.CLOSE_SUPPORT_DIAGNOSTIC,
-            nextStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
-            handoffReason = "support_diagnostic"
-        )
+        WhatsAppBotMenuCatalog.isSupportDiagnostic(buttonId) -> when (currentStep) {
+            WhatsAppConversationStep.SUPPORT_DIAG -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.CLOSE_SUPPORT_DIAGNOSTIC,
+                nextStep = WhatsAppConversationStep.ESPERANDO_ASESOR,
+                handoffReason = "support_diagnostic"
+            )
+            else -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.SHOW_MAIN_MENU,
+                nextStep = WhatsAppConversationStep.MAIN_MENU
+            )
+        }
 
         buttonId == WhatsAppBotMenuCatalog.DEBT -> WhatsAppBotTransition(
             action = WhatsAppBotAction.SHOW_DEBT_MENU,

@@ -289,7 +289,7 @@ class WhatsAppConversationService(
     }
 
     fun invalidInteractiveSelectionText(): String {
-        return "Para continuar, seleccione una opcion del menu en pantalla 👇"
+        return "Para continuar, seleccione una opción del menú en pantalla 👇"
     }
 
     fun sendDebtResponseMenu(
@@ -350,7 +350,7 @@ class WhatsAppConversationService(
     fun buildPaymentProofRequest(subscription: Subscription?): String {
         val cfg = whatsAppProperties.autoReply
         return """
-            |📎 Para registrar su pago, envienos el comprobante como *foto* o *PDF* por este chat.
+            |📎 Para registrar su pago, envíenos el comprobante como *foto* o *PDF* por este chat.
             |
             |Puede pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
             |Cuando lo recibamos, lo validaremos y actualizaremos su cuenta.
@@ -358,8 +358,8 @@ class WhatsAppConversationService(
     }
 
     fun buildPaymentProofReminder(): String {
-        return "Aun no hemos recibido su comprobante 📎 Puede enviarlo como foto o PDF por este chat, " +
-            "o tocar *Menu principal* si necesita otra cosa."
+        return "Aún no hemos recibido su comprobante 📎 Puede enviarlo como foto o PDF por este chat, " +
+            "o tocar *Menú principal* si necesita otra cosa."
     }
 
     fun buildDebtResponse(subscription: Subscription?): String {
@@ -369,9 +369,11 @@ class WhatsAppConversationService(
         val unpaid = unpaidPayments(subscription.id)
         val total = unpaid.sumOf { it.amountToPay }
         val clientName = clientFullName(subscription)
-        val planName = subscription.plan?.name?.takeIf { it.isNotBlank() }
-            ?: subscription.installationType?.name
-            ?: "Servicio activo"
+        val planName = humanizeServiceLabel(
+            subscription.plan?.name?.takeIf { it.isNotBlank() }
+                ?: subscription.installationType?.name
+                ?: "Servicio activo"
+        )
         val dueDate = unpaid.firstOrNull()?.billingDateDatetime?.let { date ->
             "%02d/%02d/%04d".format(date.dayOfMonth, date.monthValue, date.year)
         } ?: "Sin vencimiento pendiente"
@@ -379,13 +381,13 @@ class WhatsAppConversationService(
 
         return """
             |📄 *Estado de su cuenta:*
-            |Estimado(a) $clientName, su saldo pendiente al dia de hoy es S/ ${"%.2f".format(total)}.
+            |$clientName, su saldo pendiente al día de hoy es S/ ${"%.2f".format(total)}.
             |
             |• Servicio: $planName
             |• Saldo pendiente: S/ ${"%.2f".format(total)}
             |• Fecha de vencimiento: $dueDate
             |
-            |Puede pagar por CCI/BCP ${cfg.bcpAccount} o Yape/Plin al ${cfg.yapePlin}. Cuando pague, envienos el comprobante por este chat.
+            |Puede pagar por CCI/BCP ${cfg.bcpAccount} o Yape/Plin al ${cfg.yapePlin}. Cuando pague, envíenos el comprobante por este chat.
         """.trimMargin()
     }
 
@@ -395,55 +397,59 @@ class WhatsAppConversationService(
         }
         val unpaid = unpaidPayments(subscription.id)
         val firstName = firstNameOf(subscription)
-        val greeting = if (firstName != null) "Hola $firstName," else "Hola,"
+        val thanks = if (firstName != null) {
+            "Gracias por avisarnos, $firstName."
+        } else {
+            "Gracias por avisarnos."
+        }
         val cutOffLine = if (subscription.serviceStatus == ServiceStatus.CUT_OFF) {
-            "\nSu servicio aparece cortado. Se reactivara cuando validemos el pago."
+            "\nSu servicio aparece cortado. Se reactivará cuando validemos el pago."
         } else {
             ""
         }
 
         if (unpaid.isEmpty()) {
             return """
-                |$greeting acabamos de revisar su cuenta: el pago ya esta registrado.
-                |Su cuenta esta al dia. Gracias por su puntualidad.$cutOffLine
+                |$thanks Acabamos de revisar su cuenta: el pago ya está registrado.
+                |Su cuenta está al día. Gracias por su puntualidad.$cutOffLine
             """.trimMargin()
         }
 
         val total = unpaid.sumOf { it.amountToPay }
         val count = unpaid.size
-        val word = if (count == 1) "factura" else "facturas"
+        val pendingLabel = if (count == 1) "1 factura pendiente" else "$count facturas pendientes"
         val oldest = unpaid.firstOrNull()?.let { formatBillingPeriod(it) }
 
         val base = """
-            |$greeting gracias por avisarnos.
+            |$thanks
             |
-            |Revisamos su cuenta y aun aparecen $count $word pendiente(s) por S/ ${"%.2f".format(total)}.
-            |${if (oldest != null) "Periodo mas antiguo: $oldest." else ""}
-            |Si ya realizo el pago, envie por este chat la foto o captura del voucher (Yape, Plin o BCP) para validarlo y actualizar su cuenta.
+            |Revisamos su cuenta y aún aparecen $pendingLabel por S/ ${"%.2f".format(total)}.
+            |${if (oldest != null) "Periodo más antiguo: $oldest." else ""}
+            |Si ya realizó el pago, envíe por este chat la foto o captura del voucher (Yape, Plin o BCP) para validarlo y actualizar su cuenta.
         """.trimMargin().replace(Regex("\n{3,}"), "\n\n")
 
         return buildHumanFollowUpClientMessage(
-            inHoursText = "$base\n\nNuestro equipo lo revisara en breve.$cutOffLine".trimEnd(),
+            inHoursText = "$base\n\nNuestro equipo lo revisará en breve.$cutOffLine".trimEnd(),
             afterHoursLead = "$base$cutOffLine".trimEnd(),
-            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo revisara a primera hora.",
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Cuando envíe el comprobante, un asesor lo revisará a primera hora.",
             now = now
         )
     }
 
     fun buildVoucherReceivedResponse(now: LocalDateTime? = null): String {
         return buildHumanFollowUpClientMessage(
-            inHoursText = "Recibimos su comprobante. Gracias. Nuestro equipo lo revisara en breve y le confirmaremos por este chat.",
+            inHoursText = "Recibimos su comprobante. Gracias. Nuestro equipo lo revisará en breve y le confirmaremos por este chat.",
             afterHoursLead = "Recibimos su comprobante. Gracias.",
-            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo revisara a primera hora.",
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo revisará a primera hora.",
             now = now
         )
     }
 
     fun buildReceiptPendingAckResponse(now: LocalDateTime? = null): String {
         return buildHumanFollowUpClientMessage(
-            inHoursText = "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias.",
-            afterHoursLead = "Ya tenemos su comprobante en revision. Gracias.",
-            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo confirmara a primera hora.",
+            inHoursText = "Ya tenemos su comprobante en revisión. Un asesor le confirmará en breve. Gracias.",
+            afterHoursLead = "Ya tenemos su comprobante en revisión. Gracias.",
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo confirmará a primera hora.",
             now = now
         )
     }
@@ -1069,6 +1075,16 @@ class WhatsAppConversationService(
         )
     }
 
+    fun hasRecentVoucherAck(phone: String): Boolean {
+        val since = LocalDateTime.now().minusMinutes(VOUCHER_ACK_DEDUP_MINUTES)
+        return messageLogRepository.existsByPhoneAndMessageTypeAndMessageStartingWithAndCreatedAtAfter(
+            phone = phone,
+            messageType = MESSAGE_TYPE_AUTO_REPLY,
+            message = VOUCHER_ACK_MARKER,
+            createdAt = since
+        )
+    }
+
     fun isInboundBurst(phone: String): Boolean {
         val seconds = whatsAppProperties.autoReply.inboundBurstSeconds.coerceAtLeast(1)
         val since = LocalDateTime.now().minusSeconds(seconds.toLong())
@@ -1078,9 +1094,9 @@ class WhatsAppConversationService(
 
     private fun buildMainMenuBody(includeGreeting: Boolean): String {
         return if (includeGreeting) {
-            "👋 Hola. Le atiende el asistente virtual de GigaFiber. ¿En que podemos ayudarle hoy?"
+            "👋 Hola. Le atiende el asistente virtual de GigaFiber. ¿En qué podemos ayudarle hoy?"
         } else {
-            "Seleccione una opcion para continuar 👇"
+            "Seleccione una opción para continuar 👇"
         }
     }
 
@@ -1106,7 +1122,9 @@ class WhatsAppConversationService(
         return """
             |✅ ${handoffRegisteredLead(kind)} A partir de ahora le atiende una persona de nuestro equipo por este mismo chat. ⏱️
             |
-            |Tambien puede llamar a Secretaria: 📞 $phones
+            |También puede llamar a Secretaría: 📞 $phones
+            |
+            |${menuContinueHint()}
         """.trimMargin()
     }
 
@@ -1120,6 +1138,8 @@ class WhatsAppConversationService(
             |$base
             |
             |${businessHoursSentence()}
+            |
+            |${menuContinueHint()}
         """.trimMargin()
     }
 
@@ -1130,15 +1150,21 @@ class WhatsAppConversationService(
             |En este momento estamos fuera de horario laboral. Le responderemos a primera hora.
             |
             |${businessHoursSentence()}
+            |
+            |${menuContinueHint()}
         """.trimMargin()
     }
 
     private fun handoffRegisteredLead(kind: WhatsAppHandoffCopyKind): String {
         return when (kind) {
-            WhatsAppHandoffCopyKind.ADVISOR_QUEUE -> "Su solicitud quedo registrada."
-            WhatsAppHandoffCopyKind.SUPPORT_CASE -> "Su caso quedo registrado."
-            WhatsAppHandoffCopyKind.INSTALLATION -> "Su solicitud de instalacion quedo registrada."
+            WhatsAppHandoffCopyKind.ADVISOR_QUEUE -> "Su solicitud quedó registrada."
+            WhatsAppHandoffCopyKind.SUPPORT_CASE -> "Su caso quedó registrado."
+            WhatsAppHandoffCopyKind.INSTALLATION -> "Su solicitud de instalación quedó registrada."
         }
+    }
+
+    private fun menuContinueHint(): String {
+        return "Si necesita algo más, escriba MENU."
     }
 
     private fun withGlobalNavigation(
@@ -1210,9 +1236,9 @@ class WhatsAppConversationService(
 
     private fun supportEntryBody(profile: SupportProfile): String {
         return when (profile) {
-            SupportProfile.COMBO -> "Seleccione que servicio presenta el problema:"
+            SupportProfile.COMBO -> "Seleccione qué servicio presenta el problema:"
             SupportProfile.CABLE_ONLY,
-            SupportProfile.INTERNET_ONLY -> "Seleccione el problema que esta teniendo:"
+            SupportProfile.INTERNET_ONLY -> "Seleccione el problema que está teniendo:"
         }
     }
 
@@ -1310,7 +1336,7 @@ class WhatsAppConversationService(
     private fun diagnosticQuestion(subscription: Subscription?, issue: SupportIssue): DiagnosticQuestion {
         return when {
             issue.service == SupportService.INTERNET && isFiber(subscription) -> DiagnosticQuestion(
-                text = "Por favor revise su modem. ¿De que color ve la luz del indicador LOS o PON en el frente?",
+                text = "Por favor revise su módem. ¿De qué color ve la luz del indicador LOS o PON en el frente?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_red", "🔴 Luz roja"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_green", "🟢 Verde / azul"),
@@ -1318,21 +1344,21 @@ class WhatsAppConversationService(
                 )
             )
             issue.service == SupportService.INTERNET && isCoaxial(subscription) -> DiagnosticQuestion(
-                text = "Por favor revise su modem. ¿La luz de ONLINE o INTERNET esta encendida fija?",
+                text = "Por favor revise su módem. ¿La luz de ONLINE o INTERNET está encendida fija?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}coax_fixed", "🟢 Sí, está fija"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}coax_blink", "🔴 No / Parpadea")
                 )
             )
             issue.service == SupportService.CABLE -> DiagnosticQuestion(
-                text = "¿Que pantalla o mensaje ve en su televisor?",
+                text = "¿Qué pantalla o mensaje ve en su televisor?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}tv_black", "📺 Pantalla negra"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}tv_error", "⚠️ Código error")
                 )
             )
             else -> DiagnosticQuestion(
-                text = "Por favor revise su modem. ¿De que color ve la luz del indicador LOS o PON en el frente?",
+                text = "Por favor revise su módem. ¿De qué color ve la luz del indicador LOS o PON en el frente?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_red", "🔴 Luz roja"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_green", "🟢 Verde / azul"),
@@ -1479,9 +1505,22 @@ class WhatsAppConversationService(
         val phones = whatsAppProperties.autoReply.secretaryPhoneList()
             .joinToString("\n") { "• $it" }
         return """
-            |No encontramos una cuenta asociada a este numero. Por favor comuniquese con Secretaria:
+            |No encontramos una cuenta asociada a este número. Por favor comuníquese con Secretaría:
             |$phones
         """.trimMargin()
+    }
+
+    private fun humanizeServiceLabel(raw: String): String {
+        return raw
+            .replace('_', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .split(' ')
+            .joinToString(" ") { word ->
+                word.replaceFirstChar { ch ->
+                    if (ch.isLowerCase()) ch.titlecase(Locale("es", "PE")) else ch.toString()
+                }
+            }
     }
 
     private fun unpaidPayments(subscriptionId: Int?): List<Payment> {
@@ -1530,6 +1569,8 @@ class WhatsAppConversationService(
         const val MESSAGE_TYPE_AUTO_REPLY = "AUTO_REPLY"
         const val MESSAGE_TYPE_OPERATOR_REPLY = "OPERATOR_REPLY"
         const val MESSAGE_TYPE_OPERATOR_MEDIA = "OPERATOR_MEDIA"
+        const val VOUCHER_ACK_MARKER = "[VOUCHER]"
+        private const val VOUCHER_ACK_DEDUP_MINUTES = 3L
         private const val ISSUE_BUTTON_PREFIX = WhatsAppBotMenuCatalog.SUPPORT_ISSUE_PREFIX
         private const val DIAG_BUTTON_PREFIX = WhatsAppBotMenuCatalog.SUPPORT_DIAG_PREFIX
         private val ISSUE_META_REGEX = Regex("""(?:^|;)issue=([A-Z0-9_]+)""")
