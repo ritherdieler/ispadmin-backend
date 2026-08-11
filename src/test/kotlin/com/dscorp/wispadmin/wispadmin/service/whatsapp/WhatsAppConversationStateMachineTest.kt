@@ -99,7 +99,31 @@ class WhatsAppConversationStateMachineTest {
 
         assertEquals(WhatsAppBotAction.REMIND_PAYMENT_PROOF, waiting.action)
         assertNull(waiting.nextStep)
-        assertEquals(WhatsAppBotAction.INVALID_SELECTION, menu.action)
+        assertEquals(WhatsAppBotAction.SHOW_MAIN_MENU, menu.action)
+        assertEquals(WhatsAppConversationStep.MAIN_MENU, menu.nextStep)
+    }
+
+    @Test
+    fun `unmatched text on menu steps re shows the current menu`() {
+        val support = machine.next(
+            WhatsAppConversationStep.SUPPORT_MENU,
+            WhatsAppBotEvent.UnmatchedText
+        )
+        val debt = machine.next(
+            WhatsAppConversationStep.DEBT_VIEW,
+            WhatsAppBotEvent.UnmatchedText
+        )
+        val diag = machine.next(
+            WhatsAppConversationStep.SUPPORT_DIAG,
+            WhatsAppBotEvent.UnmatchedText
+        )
+
+        assertEquals(WhatsAppBotAction.SHOW_SUPPORT_MENU, support.action)
+        assertEquals(WhatsAppConversationStep.SUPPORT_MENU, support.nextStep)
+        assertEquals(WhatsAppBotAction.SHOW_DEBT_MENU, debt.action)
+        assertEquals(WhatsAppConversationStep.DEBT_VIEW, debt.nextStep)
+        assertEquals(WhatsAppBotAction.SHOW_SUPPORT_MENU, diag.action)
+        assertEquals(WhatsAppConversationStep.SUPPORT_MENU, diag.nextStep)
     }
 
     @Test
@@ -162,15 +186,15 @@ class WhatsAppConversationStateMachineTest {
     }
 
     @Test
-    fun `unknown or null callback is rejected without changing step`() {
+    fun `unknown or null callback re shows main menu`() {
         listOf(null, "callback_antiguo").forEach { buttonId ->
             val transition = machine.next(
                 WhatsAppConversationStep.MAIN_MENU,
                 WhatsAppBotEvent.ButtonSelected(buttonId)
             )
 
-            assertEquals(WhatsAppBotAction.INVALID_SELECTION, transition.action)
-            assertNull(transition.nextStep)
+            assertEquals(WhatsAppBotAction.SHOW_MAIN_MENU, transition.action)
+            assertEquals(WhatsAppConversationStep.MAIN_MENU, transition.nextStep)
         }
     }
 

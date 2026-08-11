@@ -352,7 +352,7 @@ class WhatsAppInboundMessageServiceTest {
     }
 
     @Test
-    fun `unrelated text returns guardrail when interactive menu is pending`() {
+    fun `unrelated text with pending interactive menu re shows main menu`() {
         val payload = WhatsAppInboundPayload(
             metaMessageId = "wamid.in-4",
             phone = "51902354183",
@@ -373,26 +373,24 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
         every { conversationService.isInboundBurst(payload.phone) } returns false
         every { chatStateService.hasPendingInteractiveMenu(payload.phone) } returns true
-        every { conversationService.invalidInteractiveSelectionText() } returns
-            "Para continuar, por favor selecciona una de las opciones del menú en pantalla 👇"
         every {
-            whatsAppService.sendTextMessage(payload.phone, any())
-        } returns WhatsAppSendResult(
+            conversationService.sendMainMenuForNavigation(payload.phone, null, payload.metaMessageId)
+        } returns WhatsAppConversationService.AutoReplyResult(
             success = true,
-            metaResponse = "{}",
-            metaMessageId = "wamid.guardrail",
-            recipient = payload.phone,
-            senderPhoneNumberId = "123"
+            messageText = "[MAIN_MENU] Selecciona una opción para continuar",
+            metaMessageId = "wamid.main-reshow"
         )
         val logSlot = slot<WhatsAppMessageLog>()
         every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 0) { conversationService.sendSupportEntryMenu(any(), any(), any()) }
-        verify(exactly = 1) { conversationService.invalidInteractiveSelectionText() }
-        assertTrue(logSlot.captured.message!!.contains("[MENU_INVALID]"))
-        assertEquals("wamid.guardrail", logSlot.captured.metaMessageId)
+        verify(exactly = 0) { conversationService.invalidInteractiveSelectionText() }
+        verify(exactly = 1) {
+            conversationService.sendMainMenuForNavigation(payload.phone, null, payload.metaMessageId)
+        }
+        assertTrue(logSlot.captured.message!!.contains("[MAIN_MENU]"))
+        assertEquals("wamid.main-reshow", logSlot.captured.metaMessageId)
     }
 
     @Test

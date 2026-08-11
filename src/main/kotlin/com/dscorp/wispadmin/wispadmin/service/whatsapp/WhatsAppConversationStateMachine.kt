@@ -114,7 +114,10 @@ object WhatsAppConversationStateMachine {
             handoffReason = "installation_request"
         )
 
-        else -> WhatsAppBotTransition(action = WhatsAppBotAction.INVALID_SELECTION)
+        else -> WhatsAppBotTransition(
+            action = WhatsAppBotAction.SHOW_MAIN_MENU,
+            nextStep = WhatsAppConversationStep.MAIN_MENU
+        )
     }
 
     private fun onPaymentProof(currentStep: WhatsAppConversationStep): WhatsAppBotTransition {
@@ -137,6 +140,22 @@ object WhatsAppConversationStateMachine {
             WhatsAppConversationStep.AWAITING_RECEIPT_REVIEW -> WhatsAppBotTransition(
                 action = WhatsAppBotAction.ACK_RECEIPT_PENDING
             )
-            else -> WhatsAppBotTransition(action = WhatsAppBotAction.INVALID_SELECTION)
+            WhatsAppConversationStep.MAIN_MENU -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.SHOW_MAIN_MENU,
+                nextStep = WhatsAppConversationStep.MAIN_MENU
+            )
+            WhatsAppConversationStep.SUPPORT_MENU,
+            WhatsAppConversationStep.SUPPORT_DIAG -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.SHOW_SUPPORT_MENU,
+                nextStep = WhatsAppConversationStep.SUPPORT_MENU
+            )
+            WhatsAppConversationStep.DEBT_VIEW -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.SHOW_DEBT_MENU,
+                nextStep = WhatsAppConversationStep.DEBT_VIEW
+            )
+            else -> WhatsAppBotTransition(
+                action = WhatsAppBotAction.SHOW_MAIN_MENU,
+                nextStep = WhatsAppConversationStep.MAIN_MENU
+            )
         }
 }
