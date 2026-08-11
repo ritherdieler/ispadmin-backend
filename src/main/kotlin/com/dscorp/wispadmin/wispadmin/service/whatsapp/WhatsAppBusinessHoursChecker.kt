@@ -7,11 +7,12 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 /**
- * Parses business-hours config like: MON-SAT|08:00-18:00
+ * Parses business-hours config like: MON-FRI|08:00-17:30;SAT|08:00-12:30
+ * (semicolon-separated segments; legacy single segment MON-SAT|08:00-18:00 still supported)
  */
 object WhatsAppBusinessHoursChecker {
 
-    private val zone = ZoneId.of("America/Lima")
+    val zone: ZoneId = ZoneId.of("America/Lima")
 
     fun isWithinBusinessHours(
         properties: WhatsAppAutoReplyProperties,
@@ -20,12 +21,19 @@ object WhatsAppBusinessHoursChecker {
         val raw = properties.businessHours.trim()
         if (raw.isBlank()) return true
 
-        val parts = raw.split("|")
-        if (parts.size != 2) return true
+        val segments = raw.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return true
+
+        return segments.any { isWithinSegment(it, now) }
+    }
+
+    private fun isWithinSegment(segment: String, now: LocalDateTime): Boolean {
+        val parts = segment.split("|")
+        if (parts.size != 2) return false
 
         val days = parseDays(parts[0].trim())
         val times = parts[1].trim().split("-")
-        if (times.size != 2 || days.isEmpty()) return true
+        if (times.size != 2 || days.isEmpty()) return false
 
         val start = LocalTime.parse(times[0].trim())
         val end = LocalTime.parse(times[1].trim())

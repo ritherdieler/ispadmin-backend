@@ -1029,4 +1029,49 @@ class WhatsAppInboundMessageServiceTest {
         verify(exactly = 0) { messageLogRepository.save(any()) }
         verify(exactly = 0) { crmEventPublisher.publish(any(), any()) }
     }
+
+    @Test
+    fun `advisor button after hours sends first hour handoff and pauses bot`() {
+        whatsAppProperties.autoReply.businessHours = "MON-FRI|08:00-17:30;SAT|08:00-12:30"
+        val afterHoursText =
+            "Nuestro equipo atendera a la primera hora dentro del horario laboral. Tu mensaje quedo registrado."
+        val payload = WhatsAppInboundPayload(
+            metaMessageId = "wamid.in-advisor-after-hours",
+            phone = "51902354183",
+            messageText = null,
+            messageType = "button_reply",
+            buttonReplyId = "hablar_asesor",
+            buttonReplyTitle = "Hablar con asesor",
+            mediaId = null,
+            mediaMimeType = null,
+            contextMessageId = null
+        )
+        every { conversationService.resolveReplyToLogId(null) } returns null
+        every { inboundMessageRepository.save(any()) } answers {
+            val msg = firstArg<WhatsAppInboundMessage>()
+            if (msg.id == null) msg.copy(id = 88) else msg
+        }
+        every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
+        every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
+        every { conversationService.buildHumanHandoffClientMessage(any()) } returns afterHoursText
+        every { conversationService.buildHumanHandoffClientMessage() } returns afterHoursText
+        every {
+            whatsAppService.sendTextMessage(payload.phone, afterHoursText)
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.advisor-after",
+            recipient = payload.phone,
+            senderPhoneNumberId = "123"
+        )
+        val logSlot = slot<WhatsAppMessageLog>()
+        every { messageLogRepository.save(capture(logSlot)) } answers { firstArg() }
+
+        service.processInboundMessage(payload)
+
+        verify(exactly = 1) { conversationService.buildHumanHandoffClientMessage() }
+        verify(exactly = 1) { handoffService.pauseBotAndPassToAdvisor(payload.phone, "advisor_request") }
+        assertTrue(logSlot.captured.message!!.contains("[ASESOR]"))
+        assertTrue(logSlot.captured.message!!.contains("primera hora"))
+    }
 }

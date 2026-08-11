@@ -50,6 +50,9 @@ data class WhatsAppInboundMessage(
     @Column(length = 1024)
     var mediaStoredPath: String? = null,
 
+    @Column
+    var mediaPurgedAt: LocalDateTime? = null,
+
     @Column(length = 255)
     var contextMessageId: String? = null,
 

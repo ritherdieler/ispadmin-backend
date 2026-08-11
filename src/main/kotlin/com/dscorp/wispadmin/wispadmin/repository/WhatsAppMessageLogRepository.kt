@@ -142,4 +142,18 @@ interface WhatsAppMessageLogRepository : JpaRepository<WhatsAppMessageLog, Int> 
         @Param("startDate") startDate: LocalDateTime,
         @Param("endDate") endDate: LocalDateTime
     ): Set<Int>
+
+    @Query(
+        """
+        SELECT m FROM WhatsAppMessageLog m
+        WHERE m.mediaStoredPath IS NOT NULL
+          AND m.mediaPurgedAt IS NULL
+          AND m.createdAt < :before
+        ORDER BY m.createdAt ASC
+        """
+    )
+    fun findOutboundMediaRetentionCandidates(
+        @Param("before") before: LocalDateTime,
+        pageable: Pageable
+    ): List<WhatsAppMessageLog>
 }

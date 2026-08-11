@@ -818,6 +818,10 @@ class WhatsAppBackofficeController(
     fun downloadOutboundMedia(@PathVariable id: Int): ResponseEntity<Any> {
         val logEntry = messageLogRepository.findById(id).orElse(null)
             ?: return ResponseEntity.notFound().build()
+        if (logEntry.mediaPurgedAt != null) {
+            return ResponseEntity.status(HttpStatus.GONE)
+                .body(mapOf("error" to "Archivo expirado por politica de retencion"))
+        }
         val path = mediaDownloadService.resolveStoredPath(logEntry.mediaStoredPath)
             ?: return ResponseEntity.notFound().build()
         val resource = FileSystemResource(path)
@@ -882,6 +886,10 @@ class WhatsAppBackofficeController(
     fun downloadInboundMedia(@PathVariable id: Int): ResponseEntity<Any> {
         val inbound = inboundMessageRepository.findById(id).orElse(null)
             ?: return ResponseEntity.notFound().build()
+        if (inbound.mediaPurgedAt != null) {
+            return ResponseEntity.status(HttpStatus.GONE)
+                .body(mapOf("error" to "Archivo expirado por politica de retencion"))
+        }
         val path = mediaDownloadService.resolveStoredPath(inbound.mediaStoredPath)
             ?: return ResponseEntity.notFound().build()
         val resource = FileSystemResource(path)

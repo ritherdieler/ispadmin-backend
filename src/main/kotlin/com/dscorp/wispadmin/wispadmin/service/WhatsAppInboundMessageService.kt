@@ -461,12 +461,7 @@ class WhatsAppInboundMessageService(
 
             WhatsAppBotAction.ESCALATE_TO_ADVISOR -> sendTextReply(
                 phone,
-                conversationService.handleButtonReply(
-                    phone = phone,
-                    buttonReplyId = payload.buttonReplyId,
-                    subscription = subscription,
-                    sourceText = payload.buttonReplyTitle
-                ),
+                conversationService.buildHumanHandoffClientMessage(),
                 subscriptionId,
                 if (transition.handoffReason == "installation_request") "[INSTALACION] " else "[ASESOR] "
             )
@@ -542,15 +537,7 @@ class WhatsAppInboundMessageService(
 
         if (intent == WhatsAppInboundIntent.HUMAN_ESCALATION || classification.escalate) {
             val escalateReason = classification.escalateReason ?: "human_escalation"
-            val replyText = if (!withinHours) {
-                conversationService.buildAfterHoursHandoffMessage()
-            } else {
-                conversationService.handleHumanEscalation(
-                    subscription = subscription,
-                    phone = payload.phone,
-                    messageText = payload.messageText
-                )
-            }
+            val replyText = conversationService.buildHumanHandoffClientMessage()
             val reply = sendTextReply(
                 payload.phone,
                 replyText,
@@ -655,11 +642,7 @@ class WhatsAppInboundMessageService(
 
             WhatsAppInboundIntent.HUMAN_ESCALATION -> sendTextReply(
                 payload.phone,
-                conversationService.handleHumanEscalation(
-                    subscription = subscription,
-                    phone = payload.phone,
-                    messageText = payload.messageText
-                ),
+                conversationService.buildHumanHandoffClientMessage(),
                 subscription?.id,
                 "[ASESOR] "
             )

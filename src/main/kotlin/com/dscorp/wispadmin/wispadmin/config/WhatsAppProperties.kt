@@ -26,6 +26,7 @@ class WhatsAppProperties {
     var handover: WhatsAppHandoverProperties = WhatsAppHandoverProperties()
     var inboundPipeline: WhatsAppInboundPipelineProperties = WhatsAppInboundPipelineProperties()
     var mediaStorageDir: String = "./data/whatsapp/media"
+    var retention: WhatsAppRetentionProperties = WhatsAppRetentionProperties()
     var messagingDailyLimitOverride: Int = 0
 
     fun businessAccountUrl(): String {
@@ -69,14 +70,17 @@ class WhatsAppWelcomeOnRegistrationProperties {
 
 class WhatsAppAutoReplyProperties {
     var secretaryPhones: String = "948332929,960077993"
-    var secretaryHours: String = "Lunes a sabado de 8:00 a.m. a 6:00 p.m."
+    var secretaryHours: String =
+        "Lunes a viernes de 8:00 a.m. a 5:30 p.m.; sabados de 8:00 a.m. a 12:30 p.m."
     var bcpAccount: String = "335-98410-54-0-22"
     var yapePlin: String = "958073976"
     var paymentHolder: String = "GIGAFIBERPERU"
     var ticketDedupHours: Int = 24
-    var businessHours: String = "MON-SAT|08:00-18:00"
+    var businessHours: String = "MON-FRI|08:00-17:30;SAT|08:00-12:30"
     var afterHoursMessage: String =
-        "Nuestro equipo atendera en horario laboral (Lun-Sab 8:00 a 18:00). Deje su mensaje y le responderemos."
+        "Nuestro equipo atendera a la primera hora dentro del horario laboral (Lun-Vie 8:00 a 17:30; Sab 8:00 a 12:30). Deje su mensaje y le responderemos."
+    var afterHoursHumanFollowUpMessage: String =
+        "Fuera de horario laboral: sera atendido a la primera hora dentro del horario laboral."
     var operatorSilenceMinutes: Int = 45
     var inboundBurstSeconds: Int = 30
     var menuCooldownMinutes: Int = 20

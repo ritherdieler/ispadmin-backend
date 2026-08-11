@@ -165,11 +165,39 @@ class WhatsAppConversationService(
         phone: String,
         messageText: String?
     ): String {
-        return buildAdvisorClosureMessage()
+        return buildHumanHandoffClientMessage()
     }
 
     fun buildInstallationHandoverResponse(): String {
-        return buildAdvisorClosureMessage()
+        return buildHumanHandoffClientMessage()
+    }
+
+    fun buildHumanHandoffClientMessage(now: LocalDateTime? = null): String {
+        val at = now ?: LocalDateTime.now(WhatsAppBusinessHoursChecker.zone)
+        return if (WhatsAppBusinessHoursChecker.isWithinBusinessHours(whatsAppProperties.autoReply, at)) {
+            buildAdvisorClosureMessage()
+        } else {
+            buildAfterHoursHandoffMessage()
+        }
+    }
+
+    fun buildHumanFollowUpClientMessage(
+        inHoursText: String,
+        afterHoursLead: String,
+        now: LocalDateTime? = null
+    ): String {
+        val at = now ?: LocalDateTime.now(WhatsAppBusinessHoursChecker.zone)
+        if (WhatsAppBusinessHoursChecker.isWithinBusinessHours(whatsAppProperties.autoReply, at)) {
+            return inHoursText
+        }
+        val hours = whatsAppProperties.autoReply.secretaryHours
+        val followUp = whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage.trim()
+        return """
+            |$afterHoursLead
+            |
+            |$followUp
+            |Horario estimado de atencion: $hours.
+        """.trimMargin()
     }
 
     fun handleSupportOrTechnicalIssue(
@@ -236,7 +264,7 @@ class WhatsAppConversationService(
         }
         val issueCode = currentSupportIssueCode(phone)
         val diagAnswer = buttonReplyId.orEmpty().removePrefix(DIAG_BUTTON_PREFIX)
-        val bodyText = buildAdvisorClosureMessage()
+        val bodyText = buildHumanHandoffClientMessage()
         return sendTextSupportReply(
             phone = phone,
             bodyText = bodyText,
@@ -353,7 +381,7 @@ class WhatsAppConversationService(
         """.trimMargin()
     }
 
-    fun buildPaidResponse(subscription: Subscription?): String {
+    fun buildPaidResponse(subscription: Subscription?, now: LocalDateTime? = null): String {
         if (subscription == null) {
             return accountNotFoundMessage()
         }
@@ -378,23 +406,35 @@ class WhatsAppConversationService(
         val word = if (count == 1) "factura" else "facturas"
         val oldest = unpaid.firstOrNull()?.let { formatBillingPeriod(it) }
 
-        return """
+        val base = """
             |$greeting gracias por avisarnos.
             |
             |En el sistema aun figura(n) $count $word pendiente(s) por S/ ${"%.2f".format(total)}.
             |${if (oldest != null) "Periodo mas antiguo: $oldest." else ""}
             |Si ya realizo el pago, envie por este chat la foto o captura del voucher (Yape, Plin o BCP) para validarlo y actualizar su cuenta.
-            |
-            |Nuestro equipo lo revisara a la brevedad.$cutOffLine
         """.trimMargin().replace(Regex("\n{3,}"), "\n\n")
+
+        return buildHumanFollowUpClientMessage(
+            inHoursText = "$base\n\nNuestro equipo lo revisara a la brevedad.$cutOffLine".trimEnd(),
+            afterHoursLead = "$base$cutOffLine".trimEnd(),
+            now = now
+        )
     }
 
-    fun buildVoucherReceivedResponse(): String {
-        return "Recibimos su comprobante. Nuestro equipo lo revisara a la brevedad y le confirmaremos. Gracias."
+    fun buildVoucherReceivedResponse(now: LocalDateTime? = null): String {
+        return buildHumanFollowUpClientMessage(
+            inHoursText = "Recibimos su comprobante. Nuestro equipo lo revisara a la brevedad y le confirmaremos. Gracias.",
+            afterHoursLead = "Recibimos su comprobante. Gracias.",
+            now = now
+        )
     }
 
-    fun buildReceiptPendingAckResponse(): String {
-        return "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias."
+    fun buildReceiptPendingAckResponse(now: LocalDateTime? = null): String {
+        return buildHumanFollowUpClientMessage(
+            inHoursText = "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias.",
+            afterHoursLead = "Ya tenemos su comprobante en revision. Gracias.",
+            now = now
+        )
     }
 
     fun markInboundAsRead(inbound: WhatsAppInboundMessage): Boolean {
@@ -1063,10 +1103,11 @@ class WhatsAppConversationService(
         val hours = whatsAppProperties.autoReply.secretaryHours
         val base = whatsAppProperties.autoReply.afterHoursMessage.trim()
         return """
+            |✅ Tu caso fue registrado.
             |$base
             |
-            |Horario estimado de atención: $hours.
-            |Tu mensaje quedó registrado y un asesor humano te responderá en ese horario.
+            |Horario estimado de atencion: $hours.
+            |Sera atendido a la primera hora dentro del horario laboral.
         """.trimMargin()
     }
 
@@ -1183,7 +1224,7 @@ class WhatsAppConversationService(
 
         return """
             |[SUPPORT_CLOSED:ESPERANDO_ASESOR]
-            |${buildAdvisorClosureMessage()}
+            |${buildHumanHandoffClientMessage()}
         """.trimMargin()
     }
 

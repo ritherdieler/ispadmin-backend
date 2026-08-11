@@ -250,7 +250,10 @@ class WhatsAppConversationServiceTest {
         val response = service.handleSupportDiagnosticReply(subscription, phone, "A")
 
         assertTrue(response.contains("[SUPPORT_CLOSED:ESPERANDO_ASESOR]"))
-        assertTrue(response.contains("Tu caso fue registrado") || response.contains("Tu caso ha sido registrado"))
+        assertTrue(response.contains("Tu caso fue registrado"))
+        assertTrue(
+            response.contains("te atiende una persona") || response.contains("primera hora")
+        )
     }
 
     @Test
@@ -1128,5 +1131,57 @@ class WhatsAppConversationServiceTest {
         }
         assertEquals(WhatsAppMessageMutationPolicy.NO_LOCAL_OUTBOUND_RECORD, ex.message)
         verify { inboundMessageRepository.findById(123) }
+    }
+
+    @Test
+    fun `buildHumanHandoffClientMessage within hours promises immediate advisor`() {
+        val fridayAfternoon = LocalDateTime.of(2026, 7, 31, 17, 0)
+        val message = service.buildHumanHandoffClientMessage(fridayAfternoon)
+        assertTrue(message.contains("te atiende una persona"))
+        assertFalse(message.contains("primera hora"))
+    }
+
+    @Test
+    fun `buildHumanHandoffClientMessage after hours promises first business hour`() {
+        val fridayEvening = LocalDateTime.of(2026, 7, 31, 17, 30)
+        val message = service.buildHumanHandoffClientMessage(fridayEvening)
+        assertTrue(message.contains("primera hora"))
+        assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertTrue(message.contains("Tu caso fue registrado"))
+        assertFalse(message.contains("te atiende una persona de nuestro equipo por este mismo chat"))
+    }
+
+    @Test
+    fun `buildHumanHandoffClientMessage saturday afternoon is after hours`() {
+        val saturdayAfternoon = LocalDateTime.of(2026, 7, 25, 13, 0)
+        val message = service.buildHumanHandoffClientMessage(saturdayAfternoon)
+        assertTrue(message.contains("primera hora"))
+    }
+
+    @Test
+    fun `buildVoucherReceivedResponse after hours uses first business hour follow-up`() {
+        val sunday = LocalDateTime.of(2026, 7, 26, 10, 0)
+        val message = service.buildVoucherReceivedResponse(sunday)
+        assertTrue(message.contains("comprobante"))
+        assertTrue(message.contains("primera hora"))
+        assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertFalse(message.contains("a la brevedad"))
+    }
+
+    @Test
+    fun `buildReceiptPendingAckResponse after hours uses first business hour follow-up`() {
+        val sunday = LocalDateTime.of(2026, 7, 26, 10, 0)
+        val message = service.buildReceiptPendingAckResponse(sunday)
+        assertTrue(message.contains("comprobante"))
+        assertTrue(message.contains("primera hora"))
+        assertFalse(message.contains("en breve"))
+    }
+
+    @Test
+    fun `buildVoucherReceivedResponse within hours keeps immediate review copy`() {
+        val fridayMorning = LocalDateTime.of(2026, 7, 31, 9, 0)
+        val message = service.buildVoucherReceivedResponse(fridayMorning)
+        assertTrue(message.contains("a la brevedad"))
+        assertFalse(message.contains("primera hora"))
     }
 }

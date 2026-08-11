@@ -197,4 +197,18 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE WhatsAppInboundMessage m SET m.readAt = :readAt WHERE m.id IN :ids AND m.readAt IS NULL")
     fun markReadByIds(@Param("ids") ids: Collection<Int>, @Param("readAt") readAt: LocalDateTime): Int
+
+    @Query(
+        """
+        SELECT m FROM WhatsAppInboundMessage m
+        WHERE m.mediaStoredPath IS NOT NULL
+          AND m.mediaPurgedAt IS NULL
+          AND m.createdAt < :before
+        ORDER BY m.createdAt ASC
+        """
+    )
+    fun findInboundMediaRetentionCandidates(
+        @Param("before") before: LocalDateTime,
+        pageable: Pageable
+    ): List<WhatsAppInboundMessage>
 }

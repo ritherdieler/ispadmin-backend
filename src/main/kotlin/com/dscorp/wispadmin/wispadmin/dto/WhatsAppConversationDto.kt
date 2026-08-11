@@ -49,6 +49,7 @@ data class WhatsAppThreadMessageDto(
     val messageType: String,
     val buttonReplyTitle: String?,
     val hasMedia: Boolean,
+    val mediaExpired: Boolean = false,
     val mediaId: Int?,
     val mediaMimeType: String? = null,
     val mediaFilename: String? = null,

@@ -87,6 +87,9 @@ data class WhatsAppMessageLog(
     @Column(length = 1024)
     var mediaStoredPath: String? = null,
 
+    @Column
+    var mediaPurgedAt: LocalDateTime? = null,
+
     @Column(length = 255)
     var mediaFilename: String? = null,
 
