@@ -71,16 +71,16 @@ class WhatsAppWelcomeOnRegistrationProperties {
 class WhatsAppAutoReplyProperties {
     var secretaryPhones: String = "948332929,960077993"
     var secretaryHours: String =
-        "Lunes a viernes de 8:00 a.m. a 5:30 p.m.; sabados de 8:00 a.m. a 12:30 p.m."
+        "lunes a viernes de 8:00 a.m. a 5:30 p.m. y sabados de 8:00 a.m. a 12:30 p.m."
     var bcpAccount: String = "335-98410-54-0-22"
     var yapePlin: String = "958073976"
     var paymentHolder: String = "GIGAFIBERPERU"
     var ticketDedupHours: Int = 24
     var businessHours: String = "MON-FRI|08:00-17:30;SAT|08:00-12:30"
     var afterHoursMessage: String =
-        "Fuera de horario laboral: sera atendido a la primera hora."
+        "En este momento estamos fuera de horario laboral. Un asesor le atendera a primera hora por este mismo chat."
     var afterHoursHumanFollowUpMessage: String =
-        "Fuera de horario laboral: sera atendido a la primera hora."
+        "En este momento estamos fuera de horario laboral. Un asesor lo atendera a primera hora."
     var operatorSilenceMinutes: Int = 45
     var inboundBurstSeconds: Int = 30
     var menuCooldownMinutes: Int = 20

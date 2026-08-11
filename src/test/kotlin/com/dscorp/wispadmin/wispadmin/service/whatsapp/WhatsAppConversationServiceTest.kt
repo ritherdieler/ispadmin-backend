@@ -137,8 +137,9 @@ class WhatsAppConversationServiceTest {
         } returns emptyList()
 
         val response = service.buildPaidResponse(subscription)
-        assertTrue(response.contains("ya fue registrado"))
+        assertTrue(response.contains("ya esta registrado"))
         assertTrue(response.contains("al dia"))
+        assertTrue(response.contains("Gracias por su puntualidad"))
     }
 
     @Test
@@ -250,7 +251,7 @@ class WhatsAppConversationServiceTest {
         val response = service.handleSupportDiagnosticReply(subscription, phone, "A")
 
         assertTrue(response.contains("[SUPPORT_CLOSED:ESPERANDO_ASESOR]"))
-        assertTrue(response.contains("caso fue registrado"))
+        assertTrue(response.contains("caso quedo registrado"))
         assertTrue(
             response.contains("le atiende una persona") || response.contains("primera hora")
         )
@@ -733,7 +734,7 @@ class WhatsAppConversationServiceTest {
                 buttonText = any(),
                 sectionTitle = any(),
                 rows = capture(rowsSlot),
-                footerText = "Escribe MENÚ o ASESOR en cualquier momento",
+                footerText = "Puede escribir MENU o ASESOR en cualquier momento",
                 contextMessageId = "wamid.in-menu"
             )
         } returns WhatsAppSendResult(
@@ -904,7 +905,7 @@ class WhatsAppConversationServiceTest {
                 phoneNumber = "51902354183",
                 bodyText = any(),
                 buttons = capture(buttonsSlot),
-                footerText = "Escribe MENÚ o ASESOR en cualquier momento",
+                footerText = "Puede escribir MENU o ASESOR en cualquier momento",
                 contextMessageId = "wamid.in-support"
             )
         } returns WhatsAppSendResult(
@@ -1138,6 +1139,8 @@ class WhatsAppConversationServiceTest {
         val fridayAfternoon = LocalDateTime.of(2026, 7, 31, 17, 0)
         val message = service.buildHumanHandoffClientMessage(fridayAfternoon)
         assertTrue(message.contains("le atiende una persona"))
+        assertTrue(message.contains("Su solicitud quedo registrada"))
+        assertFalse(message.contains("caso quedo registrado"))
         assertFalse(message.contains("primera hora"))
     }
 
@@ -1147,10 +1150,33 @@ class WhatsAppConversationServiceTest {
         val message = service.buildHumanHandoffClientMessage(fridayEvening)
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
-        assertTrue(message.contains("Su caso fue registrado"))
+        assertTrue(message.contains("Su solicitud quedo registrada"))
+        assertFalse(message.contains("caso quedo registrado"))
         assertFalse(message.contains("le atiende una persona de nuestro equipo por este mismo chat"))
         assertEquals(1, Regex("primera hora").findAll(message).count())
         assertEquals(1, Regex(Regex.escape(whatsAppProperties.autoReply.secretaryHours)).findAll(message).count())
+    }
+
+    @Test
+    fun `support case handoff keeps caso wording`() {
+        val fridayEvening = LocalDateTime.of(2026, 7, 31, 17, 30)
+        val message = service.buildHumanHandoffClientMessage(
+            now = fridayEvening,
+            kind = WhatsAppHandoffCopyKind.SUPPORT_CASE
+        )
+        assertTrue(message.contains("Su caso quedo registrado"))
+        assertFalse(message.contains("solicitud quedo registrada"))
+    }
+
+    @Test
+    fun `installation handoff uses solicitud de instalacion`() {
+        val fridayAfternoon = LocalDateTime.of(2026, 7, 31, 17, 0)
+        val message = service.buildHumanHandoffClientMessage(
+            now = fridayAfternoon,
+            kind = WhatsAppHandoffCopyKind.INSTALLATION
+        )
+        assertTrue(message.contains("solicitud de instalacion quedo registrada"))
+        assertFalse(message.contains("caso quedo registrado"))
     }
 
     @Test
@@ -1163,12 +1189,22 @@ class WhatsAppConversationServiceTest {
     @Test
     fun `buildAfterHoursHandoffMessage is concise without repeating schedule`() {
         val message = service.buildAfterHoursHandoffMessage()
-        assertTrue(message.startsWith("✅ Su caso fue registrado."))
+        assertTrue(message.startsWith("✅ Su solicitud quedo registrada."))
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertTrue(message.contains("Nuestro horario es de"))
         assertFalse(message.contains("Horario estimado de atencion"))
         assertFalse(message.contains("Lun-Vie"))
         assertEquals(1, Regex("primera hora").findAll(message).count())
+    }
+
+    @Test
+    fun `buildAckResponse thanks without asking for menu selection`() {
+        val message = service.buildAckResponse(null)
+        assertTrue(message.contains("Gracias"))
+        assertTrue(message.contains("MENU") || message.contains("ASESOR"))
+        assertFalse(message.contains("seleccione una opcion"))
+        assertFalse(message.contains("selecciona"))
     }
 
     @Test
@@ -1178,6 +1214,7 @@ class WhatsAppConversationServiceTest {
         assertTrue(message.contains("comprobante"))
         assertTrue(message.contains("primera hora"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertTrue(message.contains("Nuestro horario es de"))
         assertFalse(message.contains("a la brevedad"))
         assertEquals(1, Regex("primera hora").findAll(message).count())
         assertEquals(1, Regex(Regex.escape(whatsAppProperties.autoReply.secretaryHours)).findAll(message).count())
@@ -1195,10 +1232,13 @@ class WhatsAppConversationServiceTest {
     @Test
     fun `buildAfterHoursAckMessage confirms without registering a case`() {
         val message = service.buildAfterHoursAckMessage()
-        assertTrue(message.contains("primera hora") || message.contains("Fuera de horario"))
+        assertTrue(message.contains("primera hora"))
+        assertTrue(message.contains("Nuestro horario es de"))
         assertTrue(message.contains(whatsAppProperties.autoReply.secretaryHours))
+        assertTrue(message.startsWith("Recibido, gracias."))
         assertFalse(message.contains("Tu caso fue registrado"))
         assertFalse(message.contains("caso fue registrado"))
+        assertFalse(message.contains("caso quedo registrado"))
     }
 
     @Test
@@ -1232,8 +1272,9 @@ class WhatsAppConversationServiceTest {
     @Test
     fun `buildPaymentProofRequest uses usted`() {
         val message = service.buildPaymentProofRequest(null)
-        assertTrue(message.contains("su comprobante"))
         assertTrue(message.contains("su pago"))
+        assertTrue(message.contains("el comprobante") || message.contains("su comprobante"))
+        assertTrue(message.contains("Cuando lo recibamos"))
         assertFalse(message.contains("tu comprobante"))
         assertFalse(message.contains("Envíanos tu"))
     }
@@ -1243,6 +1284,47 @@ class WhatsAppConversationServiceTest {
         val fridayMorning = LocalDateTime.of(2026, 7, 31, 9, 0)
         val message = service.buildVoucherReceivedResponse(fridayMorning)
         assertTrue(message.contains("su comprobante"))
-        assertTrue(message.contains("le confirmaremos") || message.contains("a la brevedad"))
+        assertTrue(message.contains("le confirmaremos") || message.contains("en breve"))
+    }
+
+    @Test
+    fun `main menu greeting uses usted`() {
+        val bodySlot = slot<String>()
+        every {
+            whatsAppService.sendInteractiveListMessage(
+                phoneNumber = any(),
+                bodyText = capture(bodySlot),
+                buttonText = any(),
+                sectionTitle = any(),
+                rows = any(),
+                footerText = any(),
+                contextMessageId = any()
+            )
+        } returns WhatsAppSendResult(
+            success = true,
+            metaResponse = "{}",
+            metaMessageId = "wamid.menu",
+            recipient = "51902354183",
+            senderPhoneNumberId = "123"
+        )
+
+        service.sendMainMenu(
+            phone = "51902354183",
+            subscription = null,
+            includeGreeting = true
+        )
+
+        assertTrue(bodySlot.captured.contains("Le atiende el asistente virtual"))
+        assertTrue(bodySlot.captured.contains("podemos ayudarle"))
+        assertFalse(bodySlot.captured.contains("Te atiende"))
+        assertFalse(bodySlot.captured.contains("te podemos ayudar"))
+    }
+
+    @Test
+    fun `buildPaymentProofReminder uses natural usted copy`() {
+        val message = service.buildPaymentProofReminder()
+        assertTrue(message.contains("Aun no hemos recibido su comprobante"))
+        assertTrue(message.contains("Menu principal"))
+        assertFalse(message.contains("Seguimos esperando"))
     }
 }

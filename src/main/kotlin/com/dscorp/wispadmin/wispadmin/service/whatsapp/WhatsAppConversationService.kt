@@ -54,7 +54,7 @@ class WhatsAppConversationService(
     }
 
     fun buildAckResponse(subscription: Subscription?): String {
-        return invalidInteractiveSelectionText()
+        return "Gracias. Si necesita algo mas, puede escribir MENU o ASESOR."
     }
 
     fun sendAutoReplyWithButtons(phone: String, subscription: Subscription?): AutoReplyResult {
@@ -169,34 +169,43 @@ class WhatsAppConversationService(
     }
 
     fun buildInstallationHandoverResponse(): String {
-        return buildHumanHandoffClientMessage()
+        return buildHumanHandoffClientMessage(kind = WhatsAppHandoffCopyKind.INSTALLATION)
     }
 
-    fun buildHumanHandoffClientMessage(now: LocalDateTime? = null): String {
+    fun buildHumanHandoffClientMessage(
+        now: LocalDateTime? = null,
+        kind: WhatsAppHandoffCopyKind = WhatsAppHandoffCopyKind.ADVISOR_QUEUE
+    ): String {
         val at = now ?: LocalDateTime.now(WhatsAppBusinessHoursChecker.zone)
         return if (WhatsAppBusinessHoursChecker.isWithinBusinessHours(whatsAppProperties.autoReply, at)) {
-            buildAdvisorClosureMessage()
+            buildAdvisorClosureMessage(kind)
         } else {
-            buildAfterHoursHandoffMessage()
+            buildAfterHoursHandoffMessage(kind)
         }
     }
 
     fun buildHumanFollowUpClientMessage(
         inHoursText: String,
         afterHoursLead: String,
+        afterHoursFollowUp: String? = null,
         now: LocalDateTime? = null
     ): String {
         val at = now ?: LocalDateTime.now(WhatsAppBusinessHoursChecker.zone)
         if (WhatsAppBusinessHoursChecker.isWithinBusinessHours(whatsAppProperties.autoReply, at)) {
             return inHoursText
         }
-        val hours = whatsAppProperties.autoReply.secretaryHours
-        val followUp = whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage.trim()
+        val followUp = (afterHoursFollowUp ?: whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage).trim()
         return """
             |$afterHoursLead
+            |
             |$followUp
-            |Horario: $hours.
+            |
+            |${businessHoursSentence()}
         """.trimMargin()
+    }
+
+    fun businessHoursSentence(): String {
+        return "Nuestro horario es de ${whatsAppProperties.autoReply.secretaryHours}."
     }
 
     fun handleSupportOrTechnicalIssue(
@@ -263,7 +272,7 @@ class WhatsAppConversationService(
         }
         val issueCode = currentSupportIssueCode(phone)
         val diagAnswer = buttonReplyId.orEmpty().removePrefix(DIAG_BUTTON_PREFIX)
-        val bodyText = buildHumanHandoffClientMessage()
+        val bodyText = buildHumanHandoffClientMessage(kind = WhatsAppHandoffCopyKind.SUPPORT_CASE)
         return sendTextSupportReply(
             phone = phone,
             bodyText = bodyText,
@@ -280,7 +289,7 @@ class WhatsAppConversationService(
     }
 
     fun invalidInteractiveSelectionText(): String {
-        return "Para continuar, toca una opción del menú en pantalla 👇"
+        return "Para continuar, seleccione una opcion del menu en pantalla 👇"
     }
 
     fun sendDebtResponseMenu(
@@ -341,16 +350,16 @@ class WhatsAppConversationService(
     fun buildPaymentProofRequest(subscription: Subscription?): String {
         val cfg = whatsAppProperties.autoReply
         return """
-            |📎 Para registrar su pago, envienos su comprobante como *foto* o *PDF* en este mismo chat.
+            |📎 Para registrar su pago, envienos el comprobante como *foto* o *PDF* por este chat.
             |
-            |Recuerde que puede pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
-            |Al recibirlo lo validaremos y actualizaremos su cuenta.
+            |Puede pagar con Yape/Plin al ${cfg.yapePlin} o al BCP ${cfg.bcpAccount}.
+            |Cuando lo recibamos, lo validaremos y actualizaremos su cuenta.
         """.trimMargin()
     }
 
     fun buildPaymentProofReminder(): String {
-        return "Seguimos esperando su comprobante 📎 Envielo como foto o PDF en este chat, " +
-            "o toque *Menú principal* si necesita otra cosa."
+        return "Aun no hemos recibido su comprobante 📎 Puede enviarlo como foto o PDF por este chat, " +
+            "o tocar *Menu principal* si necesita otra cosa."
     }
 
     fun buildDebtResponse(subscription: Subscription?): String {
@@ -376,7 +385,7 @@ class WhatsAppConversationService(
             |• Saldo pendiente: S/ ${"%.2f".format(total)}
             |• Fecha de vencimiento: $dueDate
             |
-            |Puede regularizar su pago mediante CCI/BCP ${cfg.bcpAccount} o Yape/Plin al numero ${cfg.yapePlin}.
+            |Puede pagar por CCI/BCP ${cfg.bcpAccount} o Yape/Plin al ${cfg.yapePlin}. Cuando pague, envienos el comprobante por este chat.
         """.trimMargin()
     }
 
@@ -388,14 +397,14 @@ class WhatsAppConversationService(
         val firstName = firstNameOf(subscription)
         val greeting = if (firstName != null) "Hola $firstName," else "Hola,"
         val cutOffLine = if (subscription.serviceStatus == ServiceStatus.CUT_OFF) {
-            "\nSu servicio figura cortado. Se reactivara al validar el pago."
+            "\nSu servicio aparece cortado. Se reactivara cuando validemos el pago."
         } else {
             ""
         }
 
         if (unpaid.isEmpty()) {
             return """
-                |$greeting acabamos de verificar en el sistema: su pago ya fue registrado.
+                |$greeting acabamos de revisar su cuenta: el pago ya esta registrado.
                 |Su cuenta esta al dia. Gracias por su puntualidad.$cutOffLine
             """.trimMargin()
         }
@@ -408,22 +417,24 @@ class WhatsAppConversationService(
         val base = """
             |$greeting gracias por avisarnos.
             |
-            |En el sistema aun figura(n) $count $word pendiente(s) por S/ ${"%.2f".format(total)}.
+            |Revisamos su cuenta y aun aparecen $count $word pendiente(s) por S/ ${"%.2f".format(total)}.
             |${if (oldest != null) "Periodo mas antiguo: $oldest." else ""}
             |Si ya realizo el pago, envie por este chat la foto o captura del voucher (Yape, Plin o BCP) para validarlo y actualizar su cuenta.
         """.trimMargin().replace(Regex("\n{3,}"), "\n\n")
 
         return buildHumanFollowUpClientMessage(
-            inHoursText = "$base\n\nNuestro equipo lo revisara a la brevedad.$cutOffLine".trimEnd(),
+            inHoursText = "$base\n\nNuestro equipo lo revisara en breve.$cutOffLine".trimEnd(),
             afterHoursLead = "$base$cutOffLine".trimEnd(),
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo revisara a primera hora.",
             now = now
         )
     }
 
     fun buildVoucherReceivedResponse(now: LocalDateTime? = null): String {
         return buildHumanFollowUpClientMessage(
-            inHoursText = "Recibimos su comprobante. Nuestro equipo lo revisara a la brevedad y le confirmaremos. Gracias.",
+            inHoursText = "Recibimos su comprobante. Gracias. Nuestro equipo lo revisara en breve y le confirmaremos por este chat.",
             afterHoursLead = "Recibimos su comprobante. Gracias.",
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo revisara a primera hora.",
             now = now
         )
     }
@@ -432,6 +443,7 @@ class WhatsAppConversationService(
         return buildHumanFollowUpClientMessage(
             inHoursText = "Ya tenemos su comprobante en revision. Un asesor le confirmara en breve. Gracias.",
             afterHoursLead = "Ya tenemos su comprobante en revision. Gracias.",
+            afterHoursFollowUp = "En este momento estamos fuera de horario laboral. Un asesor lo confirmara a primera hora.",
             now = now
         )
     }
@@ -1066,9 +1078,9 @@ class WhatsAppConversationService(
 
     private fun buildMainMenuBody(includeGreeting: Boolean): String {
         return if (includeGreeting) {
-            "👋 ¡Hola! Te atiende el asistente virtual de GigaFiber. ¿En qué te podemos ayudar hoy?"
+            "👋 Hola. Le atiende el asistente virtual de GigaFiber. ¿En que podemos ayudarle hoy?"
         } else {
-            "Selecciona una opción para continuar 👇"
+            "Seleccione una opcion para continuar 👇"
         }
     }
 
@@ -1089,33 +1101,44 @@ class WhatsAppConversationService(
         )
     }
 
-    private fun buildAdvisorClosureMessage(): String {
+    private fun buildAdvisorClosureMessage(kind: WhatsAppHandoffCopyKind): String {
         val phones = whatsAppProperties.autoReply.secretaryPhoneList().joinToString(" / ")
         return """
-            |✅ Su caso fue registrado. A partir de ahora le atiende una persona de nuestro equipo por este mismo chat. ⏱️
+            |✅ ${handoffRegisteredLead(kind)} A partir de ahora le atiende una persona de nuestro equipo por este mismo chat. ⏱️
             |
-            |También puede comunicarse con Secretaría: 📞 $phones
+            |Tambien puede llamar a Secretaria: 📞 $phones
         """.trimMargin()
     }
 
-    fun buildAfterHoursHandoffMessage(): String {
-        val hours = whatsAppProperties.autoReply.secretaryHours
+    fun buildAfterHoursHandoffMessage(
+        kind: WhatsAppHandoffCopyKind = WhatsAppHandoffCopyKind.ADVISOR_QUEUE
+    ): String {
         val base = whatsAppProperties.autoReply.afterHoursMessage.trim()
         return """
-            |✅ Su caso fue registrado.
+            |✅ ${handoffRegisteredLead(kind)}
+            |
             |$base
-            |Horario: $hours.
+            |
+            |${businessHoursSentence()}
         """.trimMargin()
     }
 
     fun buildAfterHoursAckMessage(): String {
-        val hours = whatsAppProperties.autoReply.secretaryHours
-        val followUp = whatsAppProperties.autoReply.afterHoursHumanFollowUpMessage.trim()
         return """
-            |Recibido. Gracias.
-            |$followUp
-            |Horario: $hours.
+            |Recibido, gracias.
+            |
+            |En este momento estamos fuera de horario laboral. Le responderemos a primera hora.
+            |
+            |${businessHoursSentence()}
         """.trimMargin()
+    }
+
+    private fun handoffRegisteredLead(kind: WhatsAppHandoffCopyKind): String {
+        return when (kind) {
+            WhatsAppHandoffCopyKind.ADVISOR_QUEUE -> "Su solicitud quedo registrada."
+            WhatsAppHandoffCopyKind.SUPPORT_CASE -> "Su caso quedo registrado."
+            WhatsAppHandoffCopyKind.INSTALLATION -> "Su solicitud de instalacion quedo registrada."
+        }
     }
 
     private fun withGlobalNavigation(
@@ -1187,9 +1210,9 @@ class WhatsAppConversationService(
 
     private fun supportEntryBody(profile: SupportProfile): String {
         return when (profile) {
-            SupportProfile.COMBO -> "Selecciona qué servicio presenta el problema:"
+            SupportProfile.COMBO -> "Seleccione que servicio presenta el problema:"
             SupportProfile.CABLE_ONLY,
-            SupportProfile.INTERNET_ONLY -> "Selecciona el problema que estás teniendo:"
+            SupportProfile.INTERNET_ONLY -> "Seleccione el problema que esta teniendo:"
         }
     }
 
@@ -1231,7 +1254,7 @@ class WhatsAppConversationService(
 
         return """
             |[SUPPORT_CLOSED:ESPERANDO_ASESOR]
-            |${buildHumanHandoffClientMessage()}
+            |${buildHumanHandoffClientMessage(kind = WhatsAppHandoffCopyKind.SUPPORT_CASE)}
         """.trimMargin()
     }
 
@@ -1287,7 +1310,7 @@ class WhatsAppConversationService(
     private fun diagnosticQuestion(subscription: Subscription?, issue: SupportIssue): DiagnosticQuestion {
         return when {
             issue.service == SupportService.INTERNET && isFiber(subscription) -> DiagnosticQuestion(
-                text = "Por favor, revisa tu módem. ¿De qué color ves la luz del indicador LOS o PON en el frente?",
+                text = "Por favor revise su modem. ¿De que color ve la luz del indicador LOS o PON en el frente?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_red", "🔴 Luz roja"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_green", "🟢 Verde / azul"),
@@ -1295,21 +1318,21 @@ class WhatsAppConversationService(
                 )
             )
             issue.service == SupportService.INTERNET && isCoaxial(subscription) -> DiagnosticQuestion(
-                text = "Por favor, revisa tu módem. ¿La luz de ONLINE o INTERNET está encendida fija?",
+                text = "Por favor revise su modem. ¿La luz de ONLINE o INTERNET esta encendida fija?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}coax_fixed", "🟢 Sí, está fija"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}coax_blink", "🔴 No / Parpadea")
                 )
             )
             issue.service == SupportService.CABLE -> DiagnosticQuestion(
-                text = "¿Qué pantalla o mensaje ves en tu televisor?",
+                text = "¿Que pantalla o mensaje ve en su televisor?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}tv_black", "📺 Pantalla negra"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}tv_error", "⚠️ Código error")
                 )
             )
             else -> DiagnosticQuestion(
-                text = "Por favor, revisa tu módem. ¿De qué color ves la luz del indicador LOS o PON en el frente?",
+                text = "Por favor revise su modem. ¿De que color ve la luz del indicador LOS o PON en el frente?",
                 buttons = listOf(
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_red", "🔴 Luz roja"),
                     WhatsAppService.InteractiveButtonOption("${DIAG_BUTTON_PREFIX}fiber_green", "🟢 Verde / azul"),
@@ -1456,7 +1479,7 @@ class WhatsAppConversationService(
         val phones = whatsAppProperties.autoReply.secretaryPhoneList()
             .joinToString("\n") { "• $it" }
         return """
-            |No encontramos su cuenta con este numero. Comuniquese con secretaria:
+            |No encontramos una cuenta asociada a este numero. Por favor comuniquese con Secretaria:
             |$phones
         """.trimMargin()
     }

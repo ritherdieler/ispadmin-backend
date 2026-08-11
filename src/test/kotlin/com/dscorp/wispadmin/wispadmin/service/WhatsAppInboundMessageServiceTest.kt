@@ -20,6 +20,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmTicketLinkService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CsatSurveyService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppChatStateService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffCopyKind
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffResult
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundSession
@@ -201,7 +202,7 @@ class WhatsAppInboundMessageServiceTest {
         every { conversationService.hasPendingInteractiveMenu(payload.phone) } returns false
         every {
             conversationService.buildAckResponse(null)
-        } returns "Para continuar, por favor selecciona una de las opciones del menú en pantalla 👇"
+        } returns "Gracias. Si necesita algo mas, puede escribir MENU o ASESOR."
         every {
             whatsAppService.sendTextMessage(payload.phone, any())
         } returns WhatsAppSendResult(
@@ -1052,8 +1053,7 @@ class WhatsAppInboundMessageServiceTest {
         }
         every { conversationService.findSubscriptionByPhone(payload.phone) } returns null
         every { conversationService.hasRecentOperatorReply(payload.phone) } returns false
-        every { conversationService.buildHumanHandoffClientMessage(any()) } returns afterHoursText
-        every { conversationService.buildHumanHandoffClientMessage() } returns afterHoursText
+        every { conversationService.buildHumanHandoffClientMessage(null, any()) } returns afterHoursText
         every {
             whatsAppService.sendTextMessage(payload.phone, afterHoursText)
         } returns WhatsAppSendResult(
@@ -1068,7 +1068,9 @@ class WhatsAppInboundMessageServiceTest {
 
         service.processInboundMessage(payload)
 
-        verify(exactly = 1) { conversationService.buildHumanHandoffClientMessage() }
+        verify(exactly = 1) {
+            conversationService.buildHumanHandoffClientMessage(null, WhatsAppHandoffCopyKind.ADVISOR_QUEUE)
+        }
         verify(exactly = 1) { handoffService.pauseBotAndPassToAdvisor(payload.phone, "advisor_request") }
         assertTrue(logSlot.captured.message!!.contains("[ASESOR]"))
         assertTrue(logSlot.captured.message!!.contains("primera hora"))
@@ -1078,7 +1080,7 @@ class WhatsAppInboundMessageServiceTest {
     fun `generic ack after hours sends short confirmation without case registered`() {
         whatsAppProperties.autoReply.businessHours = "MON-SUN|00:00-00:00"
         val ackText =
-            "Fuera de horario laboral: sera atendido a la primera hora.\nHorario: Lunes a viernes de 8:00 a.m. a 5:30 p.m."
+            "Recibido, gracias.\n\nEn este momento estamos fuera de horario laboral. Le responderemos a primera hora.\n\nNuestro horario es de lunes a viernes de 8:00 a.m. a 5:30 p.m. y sabados de 8:00 a.m. a 12:30 p.m."
         val payload = WhatsAppInboundPayload(
             metaMessageId = "wamid.in-ack-after-hours",
             phone = "51902354183",

@@ -21,6 +21,7 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationState
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppChatStateService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationQueryService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppConversationService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffCopyKind
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppHandoffService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundSession
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppInboundIntent
@@ -461,7 +462,10 @@ class WhatsAppInboundMessageService(
 
             WhatsAppBotAction.ESCALATE_TO_ADVISOR -> sendTextReply(
                 phone,
-                conversationService.buildHumanHandoffClientMessage(),
+                conversationService.buildHumanHandoffClientMessage(
+                    now = null,
+                    kind = handoffCopyKind(transition.handoffReason)
+                ),
                 subscriptionId,
                 if (transition.handoffReason == "installation_request") "[INSTALACION] " else "[ASESOR] "
             )
@@ -799,6 +803,14 @@ class WhatsAppInboundMessageService(
         return text
             .replace(Regex("""^\[SUPPORT_(?:MENU|DIAG|CLOSED|INVALID):?[A-Z_]*]\s*"""), "")
             .trim()
+    }
+
+    private fun handoffCopyKind(reason: String?): WhatsAppHandoffCopyKind {
+        return when (reason) {
+            "installation_request" -> WhatsAppHandoffCopyKind.INSTALLATION
+            "support_diagnostic" -> WhatsAppHandoffCopyKind.SUPPORT_CASE
+            else -> WhatsAppHandoffCopyKind.ADVISOR_QUEUE
+        }
     }
 
     private fun persistAutoReplyLog(

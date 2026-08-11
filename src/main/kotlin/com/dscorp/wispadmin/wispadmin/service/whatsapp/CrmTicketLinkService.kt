@@ -167,7 +167,7 @@ class CrmTicketLinkService(
     fun formatStatusReply(phone: String): String {
         val items = buildStatusSummary(phone)
         if (items.isEmpty()) {
-            return "No encontramos tickets abiertos asociados a este numero. Si necesita reportar una averia, escriba *averia* o use el menu."
+            return "No encontramos tickets abiertos asociados a este numero. Si necesita reportar una averia, escriba *averia* o toque *Menu principal*."
         }
         val lines = items.joinToString("\n") { item ->
             val sla = if (item.slaBreached) " ⚠️ SLA" else ""
