@@ -20,4 +20,5 @@ data class PaymentDto(
     val plan: PlanDto,
     val responsibleName: String? = null,
     val subscriptionId: Int,
+    val proofImagePath: String? = null,
 ) : Serializable

@@ -41,10 +41,12 @@ class Payment(
     var paymentCommitmentDateDatetime: LocalDateTime? = null,
     var amountToPay: Double,
     var electronicPayerName: String? = null,
+    @Column(name = "proof_image_path", length = 1024)
+    var proofImagePath: String? = null,
 ) {
 
 
-    fun toDto(): PaymentDto = PaymentDto(
+    fun toDto(proofPublicPath: String? = proofImagePath): PaymentDto = PaymentDto(
         id = id,
         discountAmount = discountAmount,
         discountReason = discountReason,
@@ -64,6 +66,7 @@ class Payment(
         plan = subscription!!.plan!!.toDto(),
         responsibleName = responsible?.name,
         subscriptionId = subscription!!.id!!,
+        proofImagePath = proofPublicPath,
         )
 
     fun toPayerFinderResultDto()  = PayerFinderResultDto(

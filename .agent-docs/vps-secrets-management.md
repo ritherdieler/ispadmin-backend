@@ -70,7 +70,7 @@ Agrupadas por función; valores **nunca** en este documento.
 | Release | `APP_RELEASE` |
 | Smart Map | `MAPBOX_ACCESS_TOKEN` |
 | Buscador | `MEILI_HOST`, `MEILI_MASTER_KEY` |
-| WhatsApp Cloud API | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_MEDIA_STORAGE_DIR` (path en contenedor; volumen host `/opt/gigafiber/data/whatsapp/media`) |
+| WhatsApp Cloud API | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_MEDIA_STORAGE_DIR` (path en contenedor; volumen host `/opt/gigafiber/data/whatsapp/media`), `WHATSAPP_MEDIA_BASE_PATH` (ruta/URL base para armar `PaymentDto.proofImagePath`; default prod `/usr/local/tomcat/../data/whatsapp/media`) |
 | CRM / OpenAI | `CRM_SECRETS_MASTER_KEY` → `crm.llm.master-key`; `OPENAI_API_KEY` bootstrap opcional → `crm.llm.bootstrap-api-key` |
 | RouterOS REST | `ROUTER_OS_CLIENT_ADAPTER` (prod: `rest`); `ROUTER_OS_REST_TRUSTSTORE_PASSWORD` → truststore JKS embebido |
 | Observabilidad (ingest + dashboard) | `OBS_API_KEY_BACKOFFICE`, `OBS_API_KEY_ASISTENCIAS`, `OBS_API_KEY_ANDROID`, `OBS_API_KEY_DASHBOARD`, `OBS_SESSION_SECRET`, `OBS_DASHBOARD_BASE_URL`, … |

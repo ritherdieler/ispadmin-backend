@@ -1,15 +1,17 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
+import com.dscorp.wispadmin.wispadmin.data.model.Payment
 import com.dscorp.wispadmin.wispadmin.data.model.util.BaseResponse
 import com.dscorp.wispadmin.wispadmin.dto.PaymentDto
+import com.dscorp.wispadmin.wispadmin.requestbody.MultiPaymentRegisterRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentUpdateRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentCreateRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentInvoiceCreateRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.PaymentValidationResponse
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
-import com.dscorp.wispadmin.wispadmin.service.MikrotikService
 import com.dscorp.wispadmin.wispadmin.service.PaymentInvoiceService
+import com.dscorp.wispadmin.wispadmin.service.PaymentService
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
@@ -20,9 +22,11 @@ import com.dscorp.wispadmin.wispadmin.util.toLocalDateTimeOrNull
 @RequestMapping("/payment")
 class PaymentController(
     private val repository: PaymentRepository,
-    private val mikrotikService: MikrotikService,
+    private val paymentService: PaymentService,
     private val paymentInvoiceService: PaymentInvoiceService
 ) {
+
+    private fun Payment.asDto() = paymentService.toPublicDto(this)
 
     @GetMapping("/getElectronicPayers")
     fun getElectronicPayers(@RequestParam subscriptionId: Int): BaseResponse {
@@ -41,7 +45,7 @@ class PaymentController(
 
         val payment = repository.findById(paymentId)
         return if (payment.isPresent) {
-            ResponseEntity.ok(payment.get().toDto())
+            ResponseEntity.ok(payment.get().asDto())
         } else {
             ResponseEntity.notFound().build()
         }
@@ -49,7 +53,11 @@ class PaymentController(
 
     @PutMapping
     fun registerPayment(@RequestBody newPayment: PaymentRequest): ResponseEntity<PaymentDto> =
-        ResponseEntity.ok(mikrotikService.savePayment(newPayment).toDto())
+        ResponseEntity.ok(paymentService.registerPayment(newPayment).asDto())
+
+    @PutMapping("/batch")
+    fun registerPayments(@RequestBody request: MultiPaymentRegisterRequest): ResponseEntity<List<PaymentDto>> =
+        ResponseEntity.ok(paymentService.registerPayments(request).map { it.asDto() })
 
     @GetMapping("/filtered")
     fun getPayments(
@@ -68,7 +76,7 @@ class PaymentController(
             ?: java.time.LocalDateTime.now()
 
         val payments = repository.findBySubscriptionFiltered(subscriptionCode, initDate, finalDate)
-        return ResponseEntity.ok(payments.map { it.toDto() })
+        return ResponseEntity.ok(payments.map { it.asDto() })
     }
 
     @GetMapping
@@ -88,7 +96,7 @@ class PaymentController(
             payments
         }
 
-        return ResponseEntity.ok(limitedPayments.map { it.toDto() })
+        return ResponseEntity.ok(limitedPayments.map { it.asDto() })
     }
 
     @PutMapping("/{id}")
@@ -116,7 +124,7 @@ class PaymentController(
             payment.billingDateDatetime = it.toLocalDateTimeOrNull() ?: payment.billingDateDatetime
         }
 
-        return ResponseEntity.ok(repository.save(payment).toDto())
+        return ResponseEntity.ok(repository.save(payment).asDto())
     }
 
     @DeleteMapping("/{id}")
@@ -144,28 +152,15 @@ class PaymentController(
 
     @PostMapping
     fun createPayment(@RequestBody createRequest: PaymentCreateRequest): ResponseEntity<PaymentDto> {
-        val paymentRequest = PaymentRequest(
-            id = null,
-            amountPaid = createRequest.amountPaid,
-            discountAmount = createRequest.discountAmount ?: 0.0,
-            discountReason = createRequest.discountReason,
-            method = createRequest.method,
-            paid = true,
-            subscriptionId = createRequest.subscriptionId,
-            responsibleId = createRequest.responsibleId,
-            electronicPayerName = createRequest.electronicPayerName,
-            billingDate = createRequest.billingDate ?: System.currentTimeMillis()
-        )
-
-        val payment = mikrotikService.savePayment(paymentRequest)
-        return ResponseEntity.status(201).body(payment.toDto())
+        val payment = paymentService.createPaidPayment(createRequest)
+        return ResponseEntity.status(201).body(payment.asDto())
     }
 
     @PostMapping("/invoice")
     fun createInvoice(@RequestBody request: PaymentInvoiceCreateRequest): ResponseEntity<PaymentDto> {
         return try {
             val payment = paymentInvoiceService.createInvoice(request)
-            ResponseEntity.status(201).body(payment.toDto())
+            ResponseEntity.status(201).body(payment.asDto())
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(400).body(null)
         }

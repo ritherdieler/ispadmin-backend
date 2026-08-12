@@ -6,7 +6,6 @@ import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.UserRepository
-import com.dscorp.wispadmin.wispadmin.requestbody.PaymentRequest
 import org.springframework.stereotype.Service
 import javax.persistence.EntityNotFoundException
 import javax.transaction.Transactional
@@ -16,42 +15,8 @@ class MikrotikService(
     private val repository: PaymentRepository,
     private val userRepository: UserRepository,
     private val subscriptionRepository: SubscriptionRepository,
-    private val mikrotikPaymentReactivationHandler: MikrotikPaymentReactivationHandler
+    private val mikrotikPaymentReactivationHandler: MikrotikPaymentReactivationHandler,
 ) {
-
-
-    @Transactional
-    fun savePayment(newPayment: PaymentRequest): Payment {
-
-        val payment = repository.findById(newPayment.id!!).get()
-
-        if (newPayment.discountAmount > payment.amountToPay) throw Exception("El descuento no puede ser mayor al monto a pagar")
-
-
-
-        payment.apply {
-            amountPaid = payment.amountToPay - newPayment.discountAmount
-            method = newPayment.method
-            discountAmount = newPayment.discountAmount
-            discountReason = newPayment.discountReason
-            paid = true
-            paymentDateDatetime = LocalDateTime.now()
-            responsible = userRepository.getReferenceById(newPayment.responsibleId)
-            electronicPayerName = newPayment.electronicPayerName
-        }
-        repository.save(payment)
-
-        if (payment.subscription?.serviceStatus != ServiceStatus.CANCELLED) {
-            payment.subscription?.let {
-                if (isEligibleForReactivation(it)) {
-                    mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(it.toDto())
-                }
-            }
-        }
-
-
-        return payment
-    }
 
     private fun UpdateSubscriptionStateToActive(payment: Payment) {
         val subscription = payment.subscription?.apply {

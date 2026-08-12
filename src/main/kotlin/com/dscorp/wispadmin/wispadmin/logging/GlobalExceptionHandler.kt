@@ -25,6 +25,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 import java.util.*
+import javax.persistence.EntityNotFoundException
 import javax.servlet.http.HttpServletRequest
 
 /**
@@ -83,6 +84,16 @@ class GlobalExceptionHandler @Autowired constructor(
             mapOf(
                 "code" to "BAD_REQUEST",
                 "message" to (ex.message ?: "Solicitud invalida"),
+            ),
+        )
+    }
+
+    @ExceptionHandler(EntityNotFoundException::class)
+    fun handleEntityNotFound(ex: EntityNotFoundException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+            mapOf(
+                "code" to "NOT_FOUND",
+                "message" to (ex.message ?: "Recurso no encontrado"),
             ),
         )
     }

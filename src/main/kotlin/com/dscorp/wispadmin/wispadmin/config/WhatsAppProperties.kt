@@ -26,6 +26,7 @@ class WhatsAppProperties {
     var handover: WhatsAppHandoverProperties = WhatsAppHandoverProperties()
     var inboundPipeline: WhatsAppInboundPipelineProperties = WhatsAppInboundPipelineProperties()
     var mediaStorageDir: String = "./data/whatsapp/media"
+    var media: WhatsAppMediaProperties = WhatsAppMediaProperties()
     var retention: WhatsAppRetentionProperties = WhatsAppRetentionProperties()
     var messagingDailyLimitOverride: Int = 0
 
@@ -51,6 +52,18 @@ class WhatsAppProperties {
     fun isWebhookConfigured(): Boolean {
         return webhookVerifyToken.isNotBlank() && appSecret.isNotBlank()
     }
+
+    fun resolvedMediaBasePath(): String {
+        val configured = media.basePath.trim()
+        if (configured.isNotBlank()) {
+            return configured
+        }
+        return mediaStorageDir.trim()
+    }
+}
+
+class WhatsAppMediaProperties {
+    var basePath: String = ""
 }
 
 class WhatsAppBackofficeProperties {
