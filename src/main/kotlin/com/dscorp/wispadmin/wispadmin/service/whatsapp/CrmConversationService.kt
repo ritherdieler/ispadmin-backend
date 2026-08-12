@@ -186,7 +186,8 @@ class CrmConversationService(
             saved,
             operatorUsername,
             extra = mapOf(
-                "hasPendingReceipt" to false
+                "hasPendingReceipt" to false,
+                "hasPendingAdvisorRequest" to false
             )
         )
         return saved.toDto()

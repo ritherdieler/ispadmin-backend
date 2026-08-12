@@ -155,7 +155,8 @@ class WhatsAppConversationQueryService(
                     currentAgentId = agentId,
                     lastInboundAt = it.lastInboundAt,
                     lastOutboundAt = it.lastOutboundAt,
-                    hasPendingReceipt = it.hasPendingReceipt
+                    hasPendingReceipt = it.hasPendingReceipt,
+                    hasPendingAdvisorRequest = it.hasPendingAdvisorRequest
                 )
             }.toLong()
 
@@ -164,6 +165,7 @@ class WhatsAppConversationQueryService(
             mine = count(WhatsAppInboxView.MINE),
             team = count(WhatsAppInboxView.TEAM),
             receipts = count(WhatsAppInboxView.RECEIPTS),
+            advisors = count(WhatsAppInboxView.ADVISORS),
             resolved = count(WhatsAppInboxView.RESOLVED),
             all = summaries.size.toLong(),
             totalUnread = inboundMessageRepository.countAllUnread(),
@@ -349,6 +351,7 @@ class WhatsAppConversationQueryService(
         val latestOutbound = messageLogRepository.findLatestOutboundByPhoneIn(variants)
         val unreadRows = inboundMessageRepository.countUnreadByPhoneIn(variants)
         val mediaRows = inboundMessageRepository.findLatestMediaAtByPhoneIn(variants)
+        val advisorRows = inboundMessageRepository.findLatestAdvisorRequestAtByPhoneIn(variants)
         val subscriptionRows = inboundMessageRepository.findLatestSubscriptionIdByPhoneIn(variants)
         val buttonRows = inboundMessageRepository.findLatestButtonReplyIdByPhoneIn(variants)
         val crmByPhone = loadCrmByPhones(variants)
@@ -363,6 +366,9 @@ class WhatsAppConversationQueryService(
             PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to (row[1] as Number).toInt()
         }
         val mediaAtByCanonical = mediaRows.associate { row ->
+            PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to toLocalDateTime(row[1])
+        }
+        val advisorAtByCanonical = advisorRows.associate { row ->
             PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString()) to toLocalDateTime(row[1])
         }
         val subscriptionByCanonical = subscriptionRows.associate { row ->
@@ -419,6 +425,12 @@ class WhatsAppConversationQueryService(
                 resolvedAt = crm?.resolvedAt,
                 latestMediaAt = latestMediaAt
             )
+            val latestAdvisorAt = advisorAtByCanonical[phone]
+            val pendingAdvisor = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = status,
+                resolvedAt = crm?.resolvedAt,
+                latestAdvisorRequestAt = latestAdvisorAt
+            )
             val window = pickBestServiceWindow(
                 PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
             ) ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
@@ -442,6 +454,7 @@ class WhatsAppConversationQueryService(
                 lastButtonReplyId = buttonByCanonical[phone],
                 lastHasMedia = latestMediaAt != null,
                 hasPendingReceipt = pendingReceipt,
+                hasPendingAdvisorRequest = pendingAdvisor,
                 crmConversationId = crm?.id,
                 crmStatus = status,
                 assignedAgentId = crm?.assignedAgentId,
@@ -509,6 +522,15 @@ class WhatsAppConversationQueryService(
                 resolvedAt = crm?.resolvedAt,
                 latestMediaAt = latestMediaAt
             )
+            val latestAdvisorAt = phoneInbound
+                .filter { it.buttonReplyId == WhatsAppBotMenuCatalog.ADVISOR }
+                .maxByOrNull { it.createdAt }
+                ?.createdAt
+            val pendingAdvisor = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = crm?.status?.name,
+                resolvedAt = crm?.resolvedAt,
+                latestAdvisorRequestAt = latestAdvisorAt
+            )
             val window = pickBestServiceWindow(
                 PeruvianWhatsAppPhone.queryVariants(phone).mapNotNull { serviceWindows[it] }
             ) ?: WhatsAppServiceWindowService.WhatsAppServiceWindowStatus(
@@ -535,6 +557,7 @@ class WhatsAppConversationQueryService(
                     ?.buttonReplyId,
                 lastHasMedia = latestMediaAt != null,
                 hasPendingReceipt = pendingReceipt,
+                hasPendingAdvisorRequest = pendingAdvisor,
                 crmConversationId = crm?.id,
                 crmStatus = crm?.status?.name,
                 assignedAgentId = crm?.assignedAgentId,
@@ -561,7 +584,8 @@ class WhatsAppConversationQueryService(
                     currentAgentId = filter.agentId,
                     lastInboundAt = it.lastInboundAt,
                     lastOutboundAt = it.lastOutboundAt,
-                    hasPendingReceipt = it.hasPendingReceipt
+                    hasPendingReceipt = it.hasPendingReceipt,
+                    hasPendingAdvisorRequest = it.hasPendingAdvisorRequest
                 )
             }
             .filter { summary ->

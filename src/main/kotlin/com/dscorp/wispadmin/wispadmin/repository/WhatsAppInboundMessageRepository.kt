@@ -144,6 +144,18 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     @Query(
         value = """
+        SELECT phone, MAX(created_at)
+        FROM whatsapp_inbound_message
+        WHERE phone IN (:phones)
+          AND button_reply_id = 'hablar_asesor'
+        GROUP BY phone
+        """,
+        nativeQuery = true
+    )
+    fun findLatestAdvisorRequestAtByPhoneIn(@Param("phones") phones: Collection<String>): List<Array<Any>>
+
+    @Query(
+        value = """
         SELECT phone, subscription_id
         FROM whatsapp_inbound_message
         WHERE id IN (

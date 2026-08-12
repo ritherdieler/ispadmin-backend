@@ -7,6 +7,7 @@ enum class WhatsAppInboxView {
     MINE,
     TEAM,
     RECEIPTS,
+    ADVISORS,
     RESOLVED,
     ALL;
 
@@ -49,6 +50,18 @@ object WhatsAppInboxViewPolicy {
         return latestMediaAt.isAfter(resolvedAt)
     }
 
+    fun hasPendingAdvisorRequest(
+        status: String?,
+        resolvedAt: LocalDateTime?,
+        latestAdvisorRequestAt: LocalDateTime?
+    ): Boolean {
+        if (latestAdvisorRequestAt == null) return false
+        val normalized = status?.trim()?.uppercase().orEmpty()
+        if (normalized == "RESOLVED") return false
+        if (resolvedAt == null) return true
+        return latestAdvisorRequestAt.isAfter(resolvedAt)
+    }
+
     fun matchesView(
         view: WhatsAppInboxView,
         status: String?,
@@ -56,13 +69,15 @@ object WhatsAppInboxViewPolicy {
         currentAgentId: Int?,
         lastInboundAt: LocalDateTime?,
         lastOutboundAt: LocalDateTime?,
-        hasPendingReceipt: Boolean
+        hasPendingReceipt: Boolean,
+        hasPendingAdvisorRequest: Boolean = false
     ): Boolean {
         val normalized = (status ?: "NEW").trim().uppercase()
         return when (view) {
             WhatsAppInboxView.ALL -> true
             WhatsAppInboxView.RESOLVED -> normalized == "RESOLVED"
             WhatsAppInboxView.RECEIPTS -> hasPendingReceipt
+            WhatsAppInboxView.ADVISORS -> hasPendingAdvisorRequest
             WhatsAppInboxView.MINE ->
                 normalized == "ASSIGNED" &&
                     currentAgentId != null &&

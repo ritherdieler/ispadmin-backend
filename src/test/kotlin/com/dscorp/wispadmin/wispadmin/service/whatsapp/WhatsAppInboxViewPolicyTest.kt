@@ -91,4 +91,81 @@ class WhatsAppInboxViewPolicyTest {
             WhatsAppInboxViewPolicy.belongsInUnattendedQueue("ASSIGNED", t2, t1)
         )
     }
+
+    @Test
+    fun `pending advisor request never resolved or after last resolve`() {
+        assertTrue(
+            WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "PENDING",
+                resolvedAt = null,
+                latestAdvisorRequestAt = t1
+            )
+        )
+        assertTrue(
+            WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "REOPENED",
+                resolvedAt = t1,
+                latestAdvisorRequestAt = t2
+            )
+        )
+        assertFalse(
+            WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "REOPENED",
+                resolvedAt = t1,
+                latestAdvisorRequestAt = t0
+            )
+        )
+        assertFalse(
+            WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "RESOLVED",
+                resolvedAt = t1,
+                latestAdvisorRequestAt = t2
+            )
+        )
+        assertFalse(
+            WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "PENDING",
+                resolvedAt = null,
+                latestAdvisorRequestAt = null
+            )
+        )
+    }
+
+    @Test
+    fun `advisor after resolve keeps conversation in advisors view`() {
+        val matches = WhatsAppInboxViewPolicy.matchesView(
+            view = WhatsAppInboxView.ADVISORS,
+            status = "PENDING",
+            assignedAgentId = null,
+            currentAgentId = 7,
+            lastInboundAt = t2,
+            lastOutboundAt = t0,
+            hasPendingReceipt = false,
+            hasPendingAdvisorRequest = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "PENDING",
+                resolvedAt = t1,
+                latestAdvisorRequestAt = t2
+            )
+        )
+        assertTrue(matches)
+    }
+
+    @Test
+    fun `advisor before resolve does not keep conversation in advisors view`() {
+        val matches = WhatsAppInboxViewPolicy.matchesView(
+            view = WhatsAppInboxView.ADVISORS,
+            status = "REOPENED",
+            assignedAgentId = null,
+            currentAgentId = 7,
+            lastInboundAt = t2,
+            lastOutboundAt = t0,
+            hasPendingReceipt = false,
+            hasPendingAdvisorRequest = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                status = "REOPENED",
+                resolvedAt = t1,
+                latestAdvisorRequestAt = t0
+            )
+        )
+        assertFalse(matches)
+    }
 }

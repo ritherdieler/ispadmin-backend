@@ -335,6 +335,13 @@ class WhatsAppInboundMessageService(
                     latestMediaAt = inbound.createdAt
                 )
             }
+            if (inbound.buttonReplyId == WhatsAppBotMenuCatalog.ADVISOR) {
+                conversationPayload["hasPendingAdvisorRequest"] = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                    status = crmConversation?.status?.name,
+                    resolvedAt = crmConversation?.resolvedAt,
+                    latestAdvisorRequestAt = inbound.createdAt
+                )
+            }
             crmEventPublisher.publish(
                 eventType = CrmEventPublisher.CONVERSATION_UPDATED,
                 payload = conversationPayload

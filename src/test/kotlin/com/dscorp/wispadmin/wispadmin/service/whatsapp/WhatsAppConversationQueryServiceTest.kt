@@ -67,6 +67,7 @@ class WhatsAppConversationQueryServiceTest {
         every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns emptyList()
         every { inboundMessageRepository.countUnreadByPhoneIn(any()) } returns emptyList()
         every { inboundMessageRepository.findLatestMediaAtByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestAdvisorRequestAtByPhoneIn(any()) } returns emptyList()
         every { inboundMessageRepository.findLatestSubscriptionIdByPhoneIn(any()) } returns emptyList()
         every { inboundMessageRepository.findLatestButtonReplyIdByPhoneIn(any()) } returns emptyList()
         every { subscriptionRepository.findNameProjectionsByIdIn(any()) } returns emptyList()
@@ -396,6 +397,128 @@ class WhatsAppConversationQueryServiceTest {
         assertEquals(1, receipts.items.size)
         assertTrue(receipts.items[0].hasPendingReceipt)
         assertTrue(receipts.items[0].lastHasMedia)
+    }
+
+    @Test
+    fun `listConversations includes advisors when hablar_asesor never resolved`() {
+        val advisorAt = LocalDateTime.of(2026, 8, 2, 10, 0)
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf("51955555555")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(
+                id = 3,
+                metaMessageId = "in-adv",
+                phone = "51955555555",
+                messageText = null,
+                messageType = "button_reply",
+                buttonReplyId = "hablar_asesor",
+                buttonReplyTitle = "Hablar con un asesor",
+                createdAt = advisorAt,
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestAdvisorRequestAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51955555555", advisorAt)
+        )
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.CrmConversation(
+                id = 11,
+                phone = "51955555555",
+                status = com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus.PENDING,
+                resolvedAt = null,
+                lastInboundAt = advisorAt
+            )
+        )
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val advisors = service.listConversations(
+            WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.ADVISORS)
+        )
+
+        assertEquals(1, advisors.items.size)
+        assertTrue(advisors.items[0].hasPendingAdvisorRequest)
+    }
+
+    @Test
+    fun `listConversations includes advisors when hablar_asesor arrives after resolve`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val advisorAt = resolvedAt.plusHours(4)
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf("51966666666")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(
+                id = 4,
+                metaMessageId = "in-adv-2",
+                phone = "51966666666",
+                messageText = null,
+                messageType = "button_reply",
+                buttonReplyId = "hablar_asesor",
+                buttonReplyTitle = "Hablar con un asesor",
+                createdAt = advisorAt,
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestAdvisorRequestAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51966666666", advisorAt)
+        )
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.CrmConversation(
+                id = 12,
+                phone = "51966666666",
+                status = com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus.PENDING,
+                resolvedAt = resolvedAt,
+                lastInboundAt = advisorAt
+            )
+        )
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val advisors = service.listConversations(
+            WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.ADVISORS)
+        )
+
+        assertEquals(1, advisors.items.size)
+        assertTrue(advisors.items[0].hasPendingAdvisorRequest)
+    }
+
+    @Test
+    fun `listConversations excludes advisors when hablar_asesor is before last resolve`() {
+        val resolvedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        val advisorAt = resolvedAt.minusHours(2)
+        val textAt = resolvedAt.plusHours(1)
+        every { inboundMessageRepository.findRecentActivePhones(any()) } returns listOf("51977777777")
+        every { inboundMessageRepository.findLatestInboundByPhoneIn(any()) } returns listOf(
+            WhatsAppInboundMessage(
+                id = 5,
+                metaMessageId = "in-text-2",
+                phone = "51977777777",
+                messageText = "hola",
+                createdAt = textAt,
+                readAt = null
+            )
+        )
+        every { messageLogRepository.findLatestOutboundByPhoneIn(any()) } returns emptyList()
+        every { inboundMessageRepository.findLatestAdvisorRequestAtByPhoneIn(any()) } returns listOf(
+            arrayOf("51977777777", advisorAt)
+        )
+        every { crmConversationRepository.findByChannelAndPhoneIn(any(), any()) } returns listOf(
+            com.dscorp.wispadmin.wispadmin.data.model.CrmConversation(
+                id = 13,
+                phone = "51977777777",
+                status = com.dscorp.wispadmin.wispadmin.data.model.CrmConversationStatus.REOPENED,
+                resolvedAt = resolvedAt,
+                lastInboundAt = textAt
+            )
+        )
+        every { serviceWindowService.getServiceWindows(any()) } returns emptyMap()
+
+        val all = service.listConversations(WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.ALL))
+        val advisors = service.listConversations(
+            WhatsAppConversationFilter(limit = 50, view = WhatsAppInboxView.ADVISORS)
+        )
+
+        assertEquals(1, all.items.size)
+        assertFalse(all.items[0].hasPendingAdvisorRequest)
+        assertEquals(0, advisors.items.size)
     }
 
     @Test
