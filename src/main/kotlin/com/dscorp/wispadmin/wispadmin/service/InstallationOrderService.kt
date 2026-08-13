@@ -115,6 +115,10 @@ class InstallationOrderService @Autowired constructor(
     fun closeInstallationOrder(orderId: Int): InstallationOrder {
         val order = getInstallationOrderById(orderId)
 
+        if (order.status == InstallationOrderStatus.CERRADO) {
+            return order
+        }
+
         order.status = InstallationOrderStatus.CERRADO
 
         val updatedOrder = installationOrderRepository.save(order)

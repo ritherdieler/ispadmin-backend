@@ -51,6 +51,7 @@ data class SubscriptionDto(
     val equipmentCondition: EquipmentCondition? = null,
     val autoCut: Boolean = true,
     val hasFiberOnu: Boolean = false,
+    val alreadyRegistered: Boolean = false,
 
     ) : Serializable
 

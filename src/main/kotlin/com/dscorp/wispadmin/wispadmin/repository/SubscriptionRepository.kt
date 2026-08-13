@@ -13,6 +13,8 @@ import java.time.LocalDateTime
 
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
+    fun findByClientRequestId(clientRequestId: String): Optional<Subscription>
+
     @Query(
         """
         SELECT DISTINCT s FROM Subscription s

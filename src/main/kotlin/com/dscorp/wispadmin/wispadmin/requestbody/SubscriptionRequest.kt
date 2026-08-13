@@ -32,9 +32,11 @@ data class SubscriptionRequest(
     var facadePhotoUrl: String? = null,
     var isMigration: Boolean = false,
     var installationOrderId: Int? = null,
+    var clientRequestId: String? = null,
     var borneNumber: String? = null,
     var equipmentCondition: EquipmentCondition = EquipmentCondition.LOAN,
     var autoCut: Boolean = true,
+    var clientIpAddress: String? = null,
 ) {
     fun toModel(): Subscription = Subscription(
         firstName = firstName.removeSpecialCharacters(),

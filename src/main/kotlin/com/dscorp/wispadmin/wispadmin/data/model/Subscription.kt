@@ -132,6 +132,9 @@ data class Subscription(
     @Column(name = "facade_photo_url", length = 500)
     var facadePhotoUrl: String? = null,
 
+    @Column(name = "client_request_id", unique = true)
+    var clientRequestId: String? = null,
+
     @OneToMany(mappedBy = "subscription")
     val subscriptionLogs: MutableSet<SubscriptionLog> = mutableSetOf(),
 
