@@ -709,6 +709,12 @@ class WhatsAppConversationService(
             throw IllegalArgumentException("No hay deuda pendiente para el aviso de corte.")
         }
 
+        val unpaidAggregate = if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER) {
+            UnpaidInvoiceAggregate.fromUnpaidPayments(unpaid)
+        } else {
+            null
+        }
+
         val saved = templateDeliveryService.deliverTemplate(
             definition = definition,
             subscription = subscription,
@@ -718,7 +724,8 @@ class WhatsAppConversationService(
             paymentId = payment?.id,
             subscriptionId = subscription.id,
             welcomeContext = welcomeContext,
-            operatorUsername = operatorUsername
+            operatorUsername = operatorUsername,
+            unpaidAggregate = unpaidAggregate
         )
 
         chatStateService.markWaitingForAdvisor(phone, "operator_template")

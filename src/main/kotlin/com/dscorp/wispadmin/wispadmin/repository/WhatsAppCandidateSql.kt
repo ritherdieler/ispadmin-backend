@@ -2,24 +2,26 @@ package com.dscorp.wispadmin.wispadmin.repository
 
 object WhatsAppCandidateSql {
     /**
-     * Una fila por subscription_id: factura impaga con billing_date (e id) más antiguos.
-     * Requiere MySQL 8+ (ROW_NUMBER).
+     * One row per subscription_id: every unpaid invoice is aggregated.
+     * The oldest unpaid payment id (billing_date, then id) remains the send anchor.
      */
     const val OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN = """
         INNER JOIN (
-            SELECT id
-            FROM (
-                SELECT
-                    id,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY subscription_id
-                        ORDER BY billing_date_datetime ASC, id ASC
-                    ) AS rn
-                FROM payment
-                WHERE paid = false
-            ) ranked
-            WHERE ranked.rn = 1
-        ) oldest ON oldest.id = p.id
+            SELECT
+                subscription_id,
+                SUM(amount_to_pay) AS total_amount,
+                COUNT(id) AS invoice_count,
+                MIN(billing_date_datetime) AS period_from,
+                MAX(billing_date_datetime) AS period_to,
+                SUBSTRING_INDEX(
+                    GROUP_CONCAT(id ORDER BY billing_date_datetime ASC, id ASC),
+                    ',',
+                    1
+                ) AS oldest_payment_id
+            FROM payment
+            WHERE paid = false
+            GROUP BY subscription_id
+        ) unpaid ON CAST(unpaid.oldest_payment_id AS UNSIGNED) = p.id
     """
 
     const val PERUVIAN_PHONE_FILTER = """

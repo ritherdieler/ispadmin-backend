@@ -47,7 +47,9 @@ data class WhatsAppMessageCandidateDto(
     val billingDate: String?,
     val paymentDate: String?,
     val installationDate: String?,
-    val alreadySentToday: Boolean
+    val alreadySentToday: Boolean,
+    val invoiceCount: Int = 1,
+    val periodSummary: String? = null
 )
 
 data class WhatsAppMessageBatchResultDto(

@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.UnpaidInvoiceAggregate
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDefinition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
@@ -101,7 +102,8 @@ class WhatsAppBackofficeMessageServiceTest {
             nullableArg(Int::class.javaObjectType),
             nullableArg(WelcomeTemplateContext::class.java),
             nullableArg(String::class.java),
-            nullableArg(String::class.java)
+            nullableArg(String::class.java),
+            nullableArg(UnpaidInvoiceAggregate::class.java)
         )
 
         val result = service.sendSelected(
@@ -141,7 +143,8 @@ class WhatsAppBackofficeMessageServiceTest {
                 nullableArg(Int::class.javaObjectType),
                 nullableArg(WelcomeTemplateContext::class.java),
                 nullableArg(String::class.java),
-                nullableArg(String::class.java)
+                nullableArg(String::class.java),
+                nullableArg(UnpaidInvoiceAggregate::class.java)
             )
 
         val result = service.sendSelected(
@@ -202,7 +205,8 @@ class WhatsAppBackofficeMessageServiceTest {
             nullableArg(Int::class.javaObjectType),
             nullableArg(WelcomeTemplateContext::class.java),
             nullableArg(String::class.java),
-            nullableArg(String::class.java)
+            nullableArg(String::class.java),
+            nullableArg(UnpaidInvoiceAggregate::class.java)
         )
 
         val result = service.sendSelected(
@@ -223,7 +227,8 @@ class WhatsAppBackofficeMessageServiceTest {
             nullableArg(Int::class.javaObjectType),
             nullableArg(WelcomeTemplateContext::class.java),
             nullableArg(String::class.java),
-            nullableArg(String::class.java)
+            nullableArg(String::class.java),
+            nullableArg(UnpaidInvoiceAggregate::class.java)
         )
     }
 
@@ -252,7 +257,8 @@ class WhatsAppBackofficeMessageServiceTest {
             nullableArg(Int::class.javaObjectType),
             nullableArg(WelcomeTemplateContext::class.java),
             nullableArg(String::class.java),
-            nullableArg(String::class.java)
+            nullableArg(String::class.java),
+            nullableArg(UnpaidInvoiceAggregate::class.java)
         )
 
         service.sendSelected(
@@ -262,6 +268,34 @@ class WhatsAppBackofficeMessageServiceTest {
 
         verify(paymentRepository, times(1)).findWhatsAppPaymentRowsByIds(listOf(1, 2))
         verify(paymentRepository, never()).findWhatsAppPaymentRowById(ArgumentMatchers.anyInt())
+    }
+
+    @Test
+    fun `listCandidates for reminder consolidates three unpaid invoices into one candidate`() {
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
+            listOf(
+                reminderAggregateRow(
+                    oldestPaymentId = 101,
+                    subscriptionId = 10,
+                    phone = "987654321",
+                    totalAmount = 240.0,
+                    invoiceCount = 3,
+                    periodFrom = LocalDateTime.of(2026, 7, 1, 0, 0),
+                    periodTo = LocalDateTime.of(2026, 9, 1, 0, 0),
+                )
+            )
+        )
+
+        val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
+        val candidate = response.candidates.single()
+
+        assertEquals(101, candidate.paymentId)
+        assertEquals(101, candidate.targetId)
+        assertEquals(10, candidate.subscriptionId)
+        assertEquals(240.0, candidate.amount)
+        assertEquals(3, candidate.invoiceCount)
+        assertEquals("01/07/2026 - 01/09/2026", candidate.periodSummary)
+        assertEquals("01/07/2026", candidate.billingDate)
     }
 
     @Test
@@ -421,6 +455,31 @@ class WhatsAppBackofficeMessageServiceTest {
             null,
             LocalDateTime.of(2026, 7, 1, 0, 0),
             null,
+        ) as Array<Any>
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun reminderAggregateRow(
+        oldestPaymentId: Int,
+        subscriptionId: Int,
+        phone: String?,
+        totalAmount: Double,
+        invoiceCount: Int,
+        periodFrom: LocalDateTime,
+        periodTo: LocalDateTime,
+    ): Array<Any> {
+        return arrayOf(
+            oldestPaymentId,
+            subscriptionId,
+            "Juan",
+            "Perez",
+            phone,
+            totalAmount,
+            null,
+            periodFrom,
+            null,
+            invoiceCount,
+            periodTo,
         ) as Array<Any>
     }
 

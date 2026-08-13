@@ -477,7 +477,8 @@ class WhatsAppConversationServiceTest {
                 paymentId = 99,
                 subscriptionId = 10,
                 welcomeContext = null,
-                operatorUsername = "operador1"
+                operatorUsername = "operador1",
+                unpaidAggregate = any()
             )
         } returns WhatsAppMessageLog(
             id = 101,
@@ -533,7 +534,8 @@ class WhatsAppConversationServiceTest {
                 paymentId = 99,
                 subscriptionId = 10,
                 welcomeContext = null,
-                operatorUsername = "secretaria1"
+                operatorUsername = "secretaria1",
+                unpaidAggregate = any()
             )
         } returns WhatsAppMessageLog(
             id = 102,
@@ -582,7 +584,8 @@ class WhatsAppConversationServiceTest {
                 paymentId = any(),
                 subscriptionId = any(),
                 welcomeContext = any(),
-                operatorUsername = any()
+                operatorUsername = any(),
+                unpaidAggregate = any()
             )
         }
     }

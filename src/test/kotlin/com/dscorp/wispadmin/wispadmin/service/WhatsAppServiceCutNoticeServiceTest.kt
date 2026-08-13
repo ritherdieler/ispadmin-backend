@@ -55,6 +55,7 @@ class WhatsAppServiceCutNoticeServiceTest {
             anyNullable(),
             anyNullable(),
             anyNullable(),
+            anyNullable(),
             anyNullable()
         )
 

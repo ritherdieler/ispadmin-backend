@@ -40,14 +40,16 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
             s.first_name,
             s.last_name,
             s.phone,
-            p.amount_to_pay,
+            unpaid.total_amount,
             p.amount_paid,
-            p.billing_date_datetime,
-            p.payment_date_datetime
+            unpaid.period_from,
+            p.payment_date_datetime,
+            unpaid.invoice_count,
+            unpaid.period_to
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         INNER JOIN subscription s ON s.id = p.subscription_id
-        ORDER BY p.billing_date_datetime ASC, p.id ASC
+        ORDER BY unpaid.period_from ASC, p.id ASC
         LIMIT :limit
     """,
         nativeQuery = true
