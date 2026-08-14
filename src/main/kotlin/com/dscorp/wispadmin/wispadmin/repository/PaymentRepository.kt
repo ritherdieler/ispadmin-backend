@@ -33,19 +33,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
     ): List<Payment>
 
     @Query(
-        value = """
-        SELECT
-            p.id AS payment_id,
-            s.id AS subscription_id,
-            s.first_name,
-            s.last_name,
-            s.phone,
-            unpaid.total_amount,
-            p.amount_paid,
-            unpaid.period_from,
-            p.payment_date_datetime,
-            unpaid.invoice_count,
-            unpaid.period_to
+        value = WhatsAppCandidateSql.REMINDER_CANDIDATE_ROW_SELECT + """
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         INNER JOIN subscription s ON s.id = p.subscription_id

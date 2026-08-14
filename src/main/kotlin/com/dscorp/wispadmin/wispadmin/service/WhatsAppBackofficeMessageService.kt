@@ -489,6 +489,7 @@ class WhatsAppBackofficeMessageService(
             val paymentDate = row.localDateTimeAt(8)?.format(DATE_FORMAT)
             val invoiceCount = row.intAtOrDefault(9, 1)
             val periodTo = row.localDateTimeAt(10) ?: periodFrom
+            val isBimonthly = row.booleanAtOrDefault(11, false)
             val periodSummary = if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER && periodFrom != null) {
                 UnpaidInvoiceAggregate.formatPeriodSummary(periodFrom, periodTo ?: periodFrom)
             } else {
@@ -508,7 +509,8 @@ class WhatsAppBackofficeMessageService(
                 installationDate = null,
                 alreadySentToday = sentTodayPaymentIds.contains(paymentId),
                 invoiceCount = invoiceCount,
-                periodSummary = periodSummary
+                periodSummary = periodSummary,
+                isBimonthly = isBimonthly
             )
         }
 
@@ -736,7 +738,12 @@ class WhatsAppBackofficeMessageService(
     }
 
     private fun Array<Any>.booleanAt(index: Int): Boolean {
-        return when (val value = this[index]) {
+        return booleanAtOrDefault(index, false)
+    }
+
+    private fun Array<Any>.booleanAtOrDefault(index: Int, default: Boolean): Boolean {
+        val value = this.getOrNull(index) ?: return default
+        return when (value) {
             is Boolean -> value
             is Number -> value.toInt() != 0
             else -> value.toString().toBoolean()

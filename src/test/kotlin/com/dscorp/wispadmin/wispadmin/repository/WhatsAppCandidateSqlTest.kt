@@ -29,4 +29,16 @@ class WhatsAppCandidateSqlTest {
         assertTrue(join.contains("GROUP_CONCAT"))
         assertTrue(join.contains("billing_date_datetime ASC"))
     }
+
+    @Test
+    fun reminderCandidateRowSelectExposesBimonthlyFlagAndUnpaidAggregates() {
+        val select = WhatsAppCandidateSql.REMINDER_CANDIDATE_ROW_SELECT
+        val join = WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN
+
+        assertTrue(select.contains("COALESCE(s.is_bimonthly, FALSE) AS isBimonthly"))
+        assertTrue(select.contains("unpaid.total_amount"))
+        assertTrue(select.contains("unpaid.invoice_count"))
+        assertTrue(join.contains("SUM(amount_to_pay)"))
+        assertTrue(join.contains("COUNT(id) AS invoice_count"))
+    }
 }

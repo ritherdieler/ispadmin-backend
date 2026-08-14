@@ -24,6 +24,22 @@ object WhatsAppCandidateSql {
         ) unpaid ON CAST(unpaid.oldest_payment_id AS UNSIGNED) = p.id
     """
 
+    const val REMINDER_CANDIDATE_ROW_SELECT = """
+        SELECT
+            p.id AS payment_id,
+            s.id AS subscription_id,
+            s.first_name,
+            s.last_name,
+            s.phone,
+            unpaid.total_amount,
+            p.amount_paid,
+            unpaid.period_from,
+            p.payment_date_datetime,
+            unpaid.invoice_count,
+            unpaid.period_to,
+            COALESCE(s.is_bimonthly, FALSE) AS isBimonthly
+    """
+
     const val PERUVIAN_PHONE_FILTER = """
           AND s.phone IS NOT NULL
           AND s.phone <> ''

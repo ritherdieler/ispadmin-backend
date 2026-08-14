@@ -296,6 +296,44 @@ class WhatsAppBackofficeMessageServiceTest {
         assertEquals(3, candidate.invoiceCount)
         assertEquals("01/07/2026 - 01/09/2026", candidate.periodSummary)
         assertEquals("01/07/2026", candidate.billingDate)
+        assertFalse(candidate.isBimonthly)
+    }
+
+    @Test
+    fun `listCandidates for reminder maps isBimonthly and accumulated amount`() {
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
+            listOf(
+                reminderAggregateRow(
+                    oldestPaymentId = 201,
+                    subscriptionId = 20,
+                    phone = "987654321",
+                    totalAmount = 160.0,
+                    invoiceCount = 2,
+                    periodFrom = LocalDateTime.of(2026, 7, 1, 0, 0),
+                    periodTo = LocalDateTime.of(2026, 8, 1, 0, 0),
+                    isBimonthly = true,
+                )
+            )
+        )
+
+        val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
+        val candidate = response.candidates.single()
+
+        assertTrue(candidate.isBimonthly)
+        assertEquals(160.0, candidate.amount)
+        assertEquals(2, candidate.invoiceCount)
+    }
+
+    @Test
+    fun `listCandidates for reminder defaults isBimonthly when column is missing`() {
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
+            listOf(reminderRow(paymentId = 1, subscriptionId = 10, phone = "987654321"))
+        )
+
+        val response = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name)
+
+        assertFalse(response.candidates.single().isBimonthly)
+        assertEquals(1, response.candidates.single().invoiceCount)
     }
 
     @Test
@@ -467,6 +505,7 @@ class WhatsAppBackofficeMessageServiceTest {
         invoiceCount: Int,
         periodFrom: LocalDateTime,
         periodTo: LocalDateTime,
+        isBimonthly: Boolean = false,
     ): Array<Any> {
         return arrayOf(
             oldestPaymentId,
@@ -480,6 +519,7 @@ class WhatsAppBackofficeMessageServiceTest {
             null,
             invoiceCount,
             periodTo,
+            isBimonthly,
         ) as Array<Any>
     }
 
