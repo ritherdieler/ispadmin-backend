@@ -31,35 +31,92 @@ class WhatsAppQuickReplyControllerTest {
     }
 
     @Test
-    fun `list returns quick replies for authenticated user`() {
+    fun `list returns quick replies for authenticated SECRETARY`() {
         every { service.list() } returns listOf(
             WhatsAppQuickReplyDto(1, "Saludo", "/saludo", "Hola", LocalDateTime.now(), LocalDateTime.now())
         )
 
-        val response = controller.list(authenticatedRequest())
+        val response = controller.list(authenticatedRequest("SECRETARY"))
 
         assertEquals(HttpStatus.OK, response.statusCode)
         verify(exactly = 1) { service.list() }
     }
 
     @Test
-    fun `create delegates to service`() {
+    fun `create delegates to service for ADMIN`() {
         every { service.create(any()) } returns WhatsAppQuickReplyDto(
             2, "Cierre", "/cierre", "Gracias", LocalDateTime.now(), LocalDateTime.now()
         )
 
         val response = controller.create(
             WhatsAppQuickReplyBody(title = "Cierre", shortcut = "/cierre", content = "Gracias"),
-            authenticatedRequest()
+            authenticatedRequest("ADMIN")
         )
 
         assertEquals(HttpStatus.OK, response.statusCode)
         verify(exactly = 1) { service.create(any()) }
     }
 
-    private fun authenticatedRequest(): MockHttpServletRequest =
+    @Test
+    fun `create forbidden for SECRETARY`() {
+        val response = controller.create(
+            WhatsAppQuickReplyBody(title = "Cierre", shortcut = "/cierre", content = "Gracias"),
+            authenticatedRequest("SECRETARY")
+        )
+
+        assertEquals(HttpStatus.FORBIDDEN, response.statusCode)
+        verify(exactly = 0) { service.create(any()) }
+    }
+
+    @Test
+    fun `update allowed for ADMIN`() {
+        every { service.update(3, any()) } returns WhatsAppQuickReplyDto(
+            3, "Cierre", "/cierre", "Gracias", LocalDateTime.now(), LocalDateTime.now()
+        )
+
+        val response = controller.update(
+            3,
+            WhatsAppQuickReplyBody(title = "Cierre", shortcut = "/cierre", content = "Gracias"),
+            authenticatedRequest("ADMIN")
+        )
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        verify(exactly = 1) { service.update(3, any()) }
+    }
+
+    @Test
+    fun `update forbidden for SECRETARY`() {
+        val response = controller.update(
+            3,
+            WhatsAppQuickReplyBody(title = "Cierre", shortcut = "/cierre", content = "Gracias"),
+            authenticatedRequest("SECRETARY")
+        )
+
+        assertEquals(HttpStatus.FORBIDDEN, response.statusCode)
+        verify(exactly = 0) { service.update(any(), any()) }
+    }
+
+    @Test
+    fun `delete allowed for ADMIN`() {
+        every { service.delete(4) } returns Unit
+
+        val response = controller.delete(4, authenticatedRequest("ADMIN"))
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        verify(exactly = 1) { service.delete(4) }
+    }
+
+    @Test
+    fun `delete forbidden for SECRETARY`() {
+        val response = controller.delete(4, authenticatedRequest("SECRETARY"))
+
+        assertEquals(HttpStatus.FORBIDDEN, response.statusCode)
+        verify(exactly = 0) { service.delete(any()) }
+    }
+
+    private fun authenticatedRequest(userType: String): MockHttpServletRequest =
         MockHttpServletRequest().apply {
             setAttribute(PlatformAuthFilter.AUTH_USER_ID_ATTRIBUTE, 2)
-            setAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE, "ADMIN")
+            setAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE, userType)
         }
 }
