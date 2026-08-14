@@ -249,7 +249,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
     fun getLasMonthsPaymentMethodStatics(startDate: LocalDateTime, endDate: LocalDateTime): List<Payment>
     
     /**
-     * Consulta optimizada para obtener estadísticas de métodos de pago agrupadas por mes
+     * Consulta optimizada para obtener estadÃ­sticas de mÃ©todos de pago agrupadas por mes
      * Esta consulta hace el trabajo en la base de datos en lugar de en memoria
      */
     @Query("""
