@@ -325,6 +325,31 @@ class WhatsAppBackofficeMessageServiceTest {
     }
 
     @Test
+    fun `listCandidates for reminder uses unpaid total when oldest amount_paid is zero`() {
+        `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
+            listOf(
+                reminderAggregateRow(
+                    oldestPaymentId = 301,
+                    subscriptionId = 30,
+                    phone = "987654321",
+                    totalAmount = 100.0,
+                    oldestAmountPaid = 0.0,
+                    invoiceCount = 2,
+                    periodFrom = LocalDateTime.of(2026, 6, 30, 0, 0),
+                    periodTo = LocalDateTime.of(2026, 7, 31, 0, 0),
+                    isBimonthly = true,
+                )
+            )
+        )
+
+        val candidate = service.listCandidates(WhatsAppTemplateCode.PAYMENT_REMINDER.name).candidates.single()
+
+        assertEquals(100.0, candidate.amount)
+        assertEquals(2, candidate.invoiceCount)
+        assertTrue(candidate.isBimonthly)
+    }
+
+    @Test
     fun `listCandidates for reminder defaults isBimonthly when column is missing`() {
         `when`(paymentRepository.findReminderCandidatePaymentRows(ArgumentMatchers.anyInt())).thenReturn(
             listOf(reminderRow(paymentId = 1, subscriptionId = 10, phone = "987654321"))
@@ -506,6 +531,7 @@ class WhatsAppBackofficeMessageServiceTest {
         periodFrom: LocalDateTime,
         periodTo: LocalDateTime,
         isBimonthly: Boolean = false,
+        oldestAmountPaid: Double? = null,
     ): Array<Any> {
         return arrayOf(
             oldestPaymentId,
@@ -514,7 +540,7 @@ class WhatsAppBackofficeMessageServiceTest {
             "Perez",
             phone,
             totalAmount,
-            null,
+            oldestAmountPaid,
             periodFrom,
             null,
             invoiceCount,

@@ -503,7 +503,7 @@ class WhatsAppBackofficeMessageService(
                 subscriptionId = subscriptionId,
                 clientName = clientName,
                 phone = phone!!,
-                amount = amountPaid ?: amountToPay,
+                amount = candidateListAmount(definition, amountToPay, amountPaid),
                 billingDate = billingDate,
                 paymentDate = paymentDate,
                 installationDate = null,
@@ -626,7 +626,7 @@ class WhatsAppBackofficeMessageService(
             subscriptionId = subscriptionId,
             clientName = clientName,
             phone = phone,
-            amount = amountPaid ?: amountToPay,
+            amount = candidateListAmount(definition, amountToPay, amountPaid),
             billingDate = billingDate,
             paymentDate = paymentDate,
             installationDate = null,
@@ -717,6 +717,14 @@ class WhatsAppBackofficeMessageService(
             id = row.intAt(0)
         }
     }
+
+    private fun candidateListAmount(
+        definition: WhatsAppTemplateDefinition,
+        amountToPay: Double,
+        amountPaid: Double?,
+    ): Double =
+        if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER) amountToPay
+        else amountPaid ?: amountToPay
 
     private fun buildClientName(firstName: String?, lastName: String?): String {
         return listOfNotNull(firstName?.trim()?.takeIf { it.isNotEmpty() }, lastName?.trim()?.takeIf { it.isNotEmpty() })

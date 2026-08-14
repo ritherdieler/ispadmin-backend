@@ -18,6 +18,7 @@ class PaymentRepositoryTest {
         assertTrue(query.contains("s.is_bimonthly"))
         assertTrue(query.contains("GROUP BY"))
         assertTrue(query.contains("SUM("))
+        assertTrue(query.contains("is_bimonthly, FALSE) DESC") || query.contains("is_bimonthly) DESC"))
         assertFalse(query.contains("ranked.rn = 1"))
         assertFalse(query.contains("ROW_NUMBER()"))
     }

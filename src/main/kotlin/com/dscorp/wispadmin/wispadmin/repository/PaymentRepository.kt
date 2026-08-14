@@ -37,7 +37,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         INNER JOIN subscription s ON s.id = p.subscription_id
-        ORDER BY unpaid.period_from ASC, p.id ASC
+        ORDER BY COALESCE(s.is_bimonthly, FALSE) DESC, unpaid.period_from ASC, p.id ASC
         LIMIT :limit
     """,
         nativeQuery = true
@@ -249,7 +249,7 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
     fun getLasMonthsPaymentMethodStatics(startDate: LocalDateTime, endDate: LocalDateTime): List<Payment>
     
     /**
-     * Consulta optimizada para obtener estadÃ­sticas de mÃ©todos de pago agrupadas por mes
+     * Consulta optimizada para obtener estadísticas de métodos de pago agrupadas por mes
      * Esta consulta hace el trabajo en la base de datos en lugar de en memoria
      */
     @Query("""
