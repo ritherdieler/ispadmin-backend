@@ -20,12 +20,16 @@ import javax.net.ssl.X509TrustManager
 class RouterOs7RestAdapter(
     private val properties: RouterOsClientProperties,
     private val objectMapper: ObjectMapper = ObjectMapper(),
-    httpClient: OkHttpClient? = null
+    httpClient: OkHttpClient? = null,
+    private val mockEnabled: Boolean = false
 ) : MikrotikClient, AutoCloseable {
 
     private val ownedClient: OkHttpClient = httpClient ?: buildClient(properties)
 
     override fun <T> withSession(device: MikrotikDeviceRef, block: (MikrotikSession) -> T): T {
+        if (mockEnabled) {
+            return block(MockMikrotikSession())
+        }
         val effective = device.copy(
             port = resolvePort(device)
         )

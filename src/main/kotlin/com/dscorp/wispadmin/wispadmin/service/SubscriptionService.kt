@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.wispadmin.controller.toAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.controller.toErrorLog
 import com.dscorp.wispadmin.wispadmin.data.model.*
@@ -58,6 +59,11 @@ class SubscriptionService(
     private val cancelledOnuReuseService: CancelledOnuReuseService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
+
+    fun findExistingSubscriptionByClientRequestId(clientRequestId: String?): Subscription? {
+        val normalized = clientRequestId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return repository.findByClientRequestId(normalized).orElse(null)
+    }
 
     fun createSubscriptionsSimpleQueue(): CompletableFuture<QueueCreationStats> {
         return queueManager.createSubscriptionsSimpleQueue()
@@ -152,10 +158,15 @@ class SubscriptionService(
         var onuSn: String? = null
 
         return try {
+            findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
+                completePendingInstallation(existing, newSubscription)
+                return existing.toDto().copy(alreadyRegistered = true)
+            }
+
             subscriptionValidator.validateSubscriptionRequest(newSubscription)
 
-            val freeIp = getFreeIp()
-            val subscriptionToSave = createSubscriptionEntity(newSubscription, freeIp)
+            val ipAssignment = resolveIpAssignment(newSubscription)
+            val subscriptionToSave = createSubscriptionEntity(newSubscription, ipAssignment)
 
             if (newSubscription.installationType == InstallationType.FIBER) {
                 processOnuForFiber(subscriptionToSave, newSubscription)
@@ -189,11 +200,15 @@ class SubscriptionService(
             val place = placeRepository.findById(subscription.place!!.id).get()
 
             val strategy = installationStrategyFactory.getStrategy(newSubscription.installationType)
-            val result = strategy.processInstallation(subscription, newSubscription, device, plan, place)
-            
-            queueAdded = result.queueAdded
-            onuAuthorized = result.onuAuthorized
-            onuSn = result.onuSn
+            try {
+                val result = strategy.processInstallation(subscription, newSubscription, device, plan, place)
+                queueAdded = result.queueAdded
+                onuAuthorized = result.onuAuthorized
+                onuSn = result.onuSn
+            } catch (ex: MikrotikException) {
+                logger.error("Error de provisión MikroTik tras persistir suscripción ${subscription.id}", ex)
+                persistProvisionError(ex)
+            }
 
             newSubscription.installationOrderId?.let { orderId ->
                 processInstallationOrderCompletion(orderId, subscription)
@@ -211,13 +226,41 @@ class SubscriptionService(
         }
     }
 
+    private fun completePendingInstallation(
+        existing: Subscription,
+        request: SubscriptionRequest
+    ) {
+        try {
+            val deviceId = existing.hostDevice?.id ?: request.hostDeviceId
+            val planId = existing.plan?.id ?: request.planId
+            val placeId = existing.place?.id ?: request.placeId
+            val device = networkDeviceRepository.findById(deviceId).get()
+            val plan = planRepository.findById(planId).get()
+            val place = placeRepository.findById(placeId).get()
+            val installationType = existing.installationType ?: request.installationType
+            val strategy = installationStrategyFactory.getStrategy(installationType)
+            strategy.processInstallation(existing, request, device, plan, place)
+        } catch (ex: MikrotikException) {
+            logger.warn("No se pudo completar la provisión MikroTik pendiente para ${existing.id}", ex)
+            persistProvisionError(ex)
+        }
+    }
+
+    private fun persistProvisionError(ex: Exception) {
+        try {
+            errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))
+        } catch (logError: Exception) {
+            logger.warn("No se pudo guardar el error de provisión MikroTik", logError)
+        }
+    }
+
     private fun createSubscriptionEntity(
         newSubscription: SubscriptionRequest,
         freeIp: Pair<String, IpPool>
     ): Subscription {
         return newSubscription.toModel().apply {
             subscriptionDatetime = LocalDateTime.now()
-
+            clientRequestId = newSubscription.clientRequestId?.trim()?.takeIf { it.isNotEmpty() }
 
             this.ip = freeIp.first
             this.ipPool = freeIp.second
@@ -342,32 +385,51 @@ class SubscriptionService(
         }
     }
 
-    fun getFreeIp(): Pair<String, IpPool> {
-        var availableIp = ""
-        var pool: IpPool? = null
-        val ipRange = 10..250
+    private fun resolveIpAssignment(request: SubscriptionRequest): Pair<String, IpPool> {
+        val manualIp = request.clientIpAddress?.trim()?.takeIf { it.isNotEmpty() }
+        if (manualIp != null) {
+            require(manualIp.isValidIpAddress()) { "La IP del cliente no es válida" }
+            val matchingPool = ipPoolRepository.findAllEligiblePools().firstOrNull { pool ->
+                manualIp.startsWith(pool.ipSegment.getBaseIpFromRange())
+            }
+            val pool = matchingPool ?: getFreeIp(request.hostDeviceId).second
+            return Pair(manualIp, pool)
+        }
+        return getFreeIp(request.hostDeviceId)
+    }
 
-        val ipPools = ipPoolRepository.findAllEligiblePools()
+    fun getFreeIp(hostDeviceId: Int? = null): Pair<String, IpPool> {
+        val ipRange = 10..250
+        val eligiblePools = ipPoolRepository.findAllEligiblePools()
+        val ipPools = if (hostDeviceId != null) {
+            eligiblePools.filter { it.hostDevice?.id == hostDeviceId }.ifEmpty { eligiblePools }
+        } else {
+            eligiblePools
+        }
 
         for (ipPool in ipPools) {
-            if (availableIp.isNotEmpty()) break
-            val ips = mutableListOf<Int>()
-            for (ip in ipPool.ips) {
-                ip.ip!!.split(".").last().trim().toInt().let { ips.add(it) }
+            val occupied = ipPool.ips.mapNotNull { subscription ->
+                subscription.ip?.split(".")?.last()?.trim()?.toIntOrNull()
             }
-            val availableips = ipRange - ips.toSet()
+            val occupiedSet = occupied.toSet()
+            val nextOctet = if (occupied.isEmpty()) {
+                10
+            } else {
+                val maxOctet = occupied.maxOrNull() ?: 9
+                val candidate = maxOctet + 1
+                if (candidate <= 250 && candidate !in occupiedSet) {
+                    candidate
+                } else {
+                    ipRange.firstOrNull { it !in occupiedSet }
+                }
+            }
 
-            if (availableips.isNotEmpty()) {
-                availableIp = ipPool.ipSegment.getBaseIpFromRange() + availableips.first()
-                pool = ipPool
-                break
+            if (nextOctet != null) {
+                return Pair(ipPool.ipSegment.getBaseIpFromRange() + nextOctet, ipPool)
             }
         }
 
-        if (availableIp.isEmpty() || pool == null)
-            throw Exception("No more ips available")
-        else
-            return Pair(availableIp, pool)
+        throw Exception("No more ips available")
     }
 
     @Transactional

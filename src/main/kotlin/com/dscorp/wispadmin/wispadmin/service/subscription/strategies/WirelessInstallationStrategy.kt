@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
+import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
@@ -26,19 +27,22 @@ class WirelessInstallationStrategy : IInstallationStrategy {
         place: Place
     ): InstallationResult {
         val queueName = buildQueueName(subscription)
-        
-        device.executeCommand { session ->
-            session.add(
-                "/queue/simple",
-                mapOf(
-                    "name" to queueName,
-                    "target" to subscription.ip.orEmpty(),
-                    "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
+        return try {
+            device.executeCommand { session ->
+                session.add(
+                    "/queue/simple",
+                    mapOf(
+                        "name" to queueName,
+                        "target" to subscription.ip.orEmpty(),
+                        "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
+                    )
                 )
-            )
+            }
+            InstallationResult(queueAdded = true)
+        } catch (error: MikrotikException) {
+            logger.error("No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}", error)
+            InstallationResult(queueAdded = false)
         }
-        
-        return InstallationResult(queueAdded = true)
     }
     
     override fun buildQueueName(subscription: Subscription): String {

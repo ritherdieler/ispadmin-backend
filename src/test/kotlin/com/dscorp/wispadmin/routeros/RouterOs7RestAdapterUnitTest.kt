@@ -3,17 +3,21 @@ package com.dscorp.wispadmin.routeros
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikAuthException
+import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
 import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
 import com.dscorp.wispadmin.routeros.port.MikrotikTimeoutException
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLHandshakeException
 
 class RouterOs7RestAdapterUnitTest {
 
@@ -151,5 +155,53 @@ class RouterOs7RestAdapterUnitTest {
         val removeReq = server.takeRequest()
         assertEquals("DELETE", removeReq.method)
         assertTrue(removeReq.path!!.contains("/rest/ip/address/*1"))
+    }
+
+    @Test
+    fun `tls handshake failure maps to MikrotikCommandException when mock is disabled`() {
+        val handshakeClient = OkHttpClient.Builder()
+            .addInterceptor { throw SSLHandshakeException("Remote host terminated the handshake") }
+            .build()
+        val handshakeAdapter = RouterOs7RestAdapter(
+            properties = RouterOsClientProperties().apply {
+                rest.scheme = "https"
+                rest.port = 443
+                rest.verifySsl = true
+            },
+            httpClient = handshakeClient,
+            mockEnabled = false
+        )
+
+        val error = assertThrows(MikrotikCommandException::class.java) {
+            handshakeAdapter.withSession(device.copy(port = 443)) { session ->
+                session.add("/queue/simple", mapOf("name" to "test-queue"))
+            }
+        }
+
+        assertTrue(error.message!!.contains("handshake", ignoreCase = true))
+        handshakeAdapter.close()
+    }
+
+    @Test
+    fun `tls handshake is swallowed and add succeeds when mikrotik mock is enabled`() {
+        val handshakeClient = OkHttpClient.Builder()
+            .addInterceptor { throw SSLHandshakeException("Remote host terminated the handshake") }
+            .build()
+        val mockAdapter = RouterOs7RestAdapter(
+            properties = RouterOsClientProperties().apply {
+                rest.scheme = "https"
+                rest.port = 443
+                rest.verifySsl = true
+            },
+            httpClient = handshakeClient,
+            mockEnabled = true
+        )
+
+        assertDoesNotThrow {
+            mockAdapter.withSession(device.copy(port = 443)) { session ->
+                session.add("/queue/simple", mapOf("name" to "test-queue", "target" to "10.0.0.10"))
+            }
+        }
+        mockAdapter.close()
     }
 }

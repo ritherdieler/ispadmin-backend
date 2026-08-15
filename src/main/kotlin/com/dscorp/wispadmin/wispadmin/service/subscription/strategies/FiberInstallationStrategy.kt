@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
+import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
@@ -58,17 +59,21 @@ class FiberInstallationStrategy(
             onuAuthorized = true
 
             val queueName = buildQueueName(subscription)
-            device.executeCommand { session ->
-                session.add(
-                    "/queue/simple",
-                    mapOf(
-                        "name" to queueName,
-                        "target" to subscription.ip.orEmpty(),
-                        "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
+            try {
+                device.executeCommand { session ->
+                    session.add(
+                        "/queue/simple",
+                        mapOf(
+                            "name" to queueName,
+                            "target" to subscription.ip.orEmpty(),
+                            "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
+                        )
                     )
-                )
+                }
+                queueAdded = true
+            } catch (error: MikrotikException) {
+                logger.error("No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}", error)
             }
-            queueAdded = true
         }
 
         return InstallationResult(

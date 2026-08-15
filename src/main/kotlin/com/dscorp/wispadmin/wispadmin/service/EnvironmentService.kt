@@ -10,7 +10,9 @@ class EnvironmentService {
     private lateinit var activeProfile: String
     
     fun isDevelopment(): Boolean {
-        return activeProfile == "dev"
+        return activeProfile.split(",")
+            .map { it.trim() }
+            .any { it.equals("dev", ignoreCase = true) }
     }
     
     fun getActiveProfile(): String {

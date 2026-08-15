@@ -322,6 +322,11 @@ class SubscriptionController(
         return ResponseEntity.ok(null)
     }
 
+    @GetMapping("/provisioning-ready")
+    fun provisioningReady(): BaseResponse {
+        return BaseResponse(status = 200, data = true)
+    }
+
     @PostMapping
     fun newSubscription(@RequestBody newSubscription: SubscriptionRequest): BaseResponse {
         return try {
@@ -359,6 +364,18 @@ class SubscriptionController(
         @RequestPart("facadePhoto") facadephoto: MultipartFile
     ): BaseResponse {
         return try {
+            subscriptionService.findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)
+                ?.let {
+                    val dto = subscriptionService.registerSubscription(
+                        newSubscription = newSubscription,
+                        onSuccess = { }
+                    )
+                    return BaseResponse(
+                        data = dto,
+                        status = 200,
+                    )
+                }
+
             val facadePhotoUrl = storageService.uploadFileToFolder(facadephoto, "facades")
 
             newSubscription.facadePhotoUrl = facadePhotoUrl
