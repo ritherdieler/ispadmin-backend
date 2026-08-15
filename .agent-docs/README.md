@@ -41,6 +41,9 @@
 | Timezone dashboard / Docker / KPIs | [dashboard-timezone-fix.md](./dashboard-timezone-fix.md) |
 | Deploy flow | [deploy-flow.md](./deploy-flow.md) |
 | **Deploy prod NetDiag 2026-08-01** | [deploy-prod-netdiag-2026-08-01.md](./deploy-prod-netdiag-2026-08-01.md) |
+| **Deploy prod WhatsApp facturas consolidadas 2026-08-13** | [deploy-prod-whatsapp-investigation-2026-08-13.md](./deploy-prod-whatsapp-investigation-2026-08-13.md) |
+| **Deploy prod WhatsApp recordatorios bimestrales 2026-08-14** | [deploy-prod-whatsapp-bimonthly-2026-08-14.md](./deploy-prod-whatsapp-bimonthly-2026-08-14.md) |
+| **Deploy prod WhatsApp investigation (montos + ADMIN QR) 2026-08-14** | [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md) |
 | **Versionado por release en deploy (semver+git)** | [observability-release-versioning-deploy.md](./observability-release-versioning-deploy.md) |
 | **Release en runtime + registro de deploys + filtros por release (backend)** | [observability-release-comparacion-backend.md](./observability-release-comparacion-backend.md) |
 | DJL models en WAR | [djl-models-in-war.md](./djl-models-in-war.md) |

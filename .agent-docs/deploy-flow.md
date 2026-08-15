@@ -4,7 +4,7 @@ Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en 
 
 Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
 
-Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `1f7f7d3` → release `1.0.3+1f7f7d3` (2026-08-01, merge NetDiag perf + GPON LLM). Detalle: [deploy-prod-netdiag-2026-08-01.md](./deploy-prod-netdiag-2026-08-01.md).
+Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `9586600` → release `1.0.3+9586600` (2026-08-14, WhatsApp investigation: montos + ADMIN quick replies). Detalle: [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md).
 
 Deploy anterior: `develop` @ `32a68e4` → `1.0.3+32a68e4` (2026-07-23). Detalle CORS: [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md). Deploy previo `633c7e1`: [deploy-prod-backend-2026-07-23.md](./deploy-prod-backend-2026-07-23.md).
 
