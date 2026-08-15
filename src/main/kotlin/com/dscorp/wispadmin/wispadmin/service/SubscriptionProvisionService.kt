@@ -90,7 +90,7 @@ class SubscriptionProvisionService(
     }
 
     fun scheduleNextAttempt(subscription: Subscription) {
-        val attempts = subscription.provisionAttemptCount
+        val attempts = subscription.provisionAttemptCount ?: 0
         if (attempts >= MAX_ATTEMPTS) {
             if (subscription.mikrotikProvisionStatus == MikrotikProvisionStatus.PENDING) {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.FAILED

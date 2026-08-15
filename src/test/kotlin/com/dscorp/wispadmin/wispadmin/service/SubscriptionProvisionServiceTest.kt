@@ -118,6 +118,18 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
+    fun `scheduleNextAttempt treats null attempt count as zero`() {
+        val subscription = baseSubscription().apply {
+            mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
+            oltProvisionStatus = OltProvisionStatus.NA
+            provisionAttemptCount = null
+        }
+        service.scheduleNextAttempt(subscription)
+        assertEquals(1, subscription.provisionAttemptCount)
+        assertNotNull(subscription.provisionNextAttemptAt)
+    }
+
+    @Test
     fun `scheduleNextAttempt uses 15 minutes on second attempt`() {
         val subscription = baseSubscription().apply {
             mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING

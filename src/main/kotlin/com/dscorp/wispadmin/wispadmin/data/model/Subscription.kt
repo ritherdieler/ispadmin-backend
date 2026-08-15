@@ -144,7 +144,7 @@ data class Subscription(
     var oltProvisionStatus: OltProvisionStatus? = null,
 
     @Column(name = "provision_attempt_count")
-    var provisionAttemptCount: Int = 0,
+    var provisionAttemptCount: Int? = 0,
 
     @Column(name = "provision_next_attempt_at")
     var provisionNextAttemptAt: LocalDateTime? = null,
