@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.dto.WhatsAppQuickReplyBody
+import com.dscorp.wispadmin.wispadmin.security.CrmAccessPolicy
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationForbiddenException
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmConversationNotFoundException
@@ -64,6 +65,10 @@ class WhatsAppQuickReplyController(
         if (resolveUserId(httpRequest) == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf("error" to "Usuario no autenticado"))
         }
+        if (!CrmAccessPolicy.canManageCrmSecrets(resolveUserType(httpRequest))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(mapOf("error" to "Solo ADMIN puede modificar respuestas rapidas"))
+        }
         return try {
             ResponseEntity.ok(block())
         } catch (e: CrmConversationNotFoundException) {
@@ -85,4 +90,7 @@ class WhatsAppQuickReplyController(
             else -> raw.toString().toIntOrNull()
         }
     }
+
+    private fun resolveUserType(request: HttpServletRequest): String? =
+        request.getAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE)?.toString()
 }

@@ -97,6 +97,35 @@ class TemplateParameterResolverTest {
     }
 
     @Test
+    fun `payment reminder HSM uses consolidated unpaid total and period summary`() {
+        val oldest = Payment(
+            discountAmount = 0.0,
+            paid = false,
+            amountToPay = 80.0,
+            billingDateDatetime = LocalDateTime.of(2026, 7, 1, 0, 0)
+        ).apply { id = 101; this.subscription = subscription }
+
+        val aggregate = UnpaidInvoiceAggregate(
+            oldestPaymentId = 101,
+            totalAmount = 240.0,
+            invoiceCount = 3,
+            periodFrom = LocalDateTime.of(2026, 7, 1, 0, 0),
+            periodTo = LocalDateTime.of(2026, 9, 1, 0, 0)
+        )
+
+        val parameters = TemplateParameterResolver.resolve(
+            definition = WhatsAppTemplateCatalog.get(WhatsAppTemplateCode.PAYMENT_REMINDER),
+            subscription = subscription,
+            payment = oldest,
+            unpaidAggregate = aggregate
+        )
+
+        assertEquals("Juan Perez", parameters[0].text)
+        assertEquals("240.0", parameters[1].text)
+        assertEquals("01/07/2026 - 01/09/2026", parameters[2].text)
+    }
+
+    @Test
     fun `resolves payment validation parameters`() {
         val payment = Payment(
             discountAmount = 0.0,

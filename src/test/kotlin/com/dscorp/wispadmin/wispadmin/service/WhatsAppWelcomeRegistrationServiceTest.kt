@@ -54,6 +54,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             anyNullable(),
             anyNullable(),
+            anyNullable(),
             anyNullable()
         )
 
@@ -168,6 +169,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             org.mockito.ArgumentMatchers.eq(42),
             welcomeContextCaptor.capture(),
             anyNullable(),
+            anyNullable(),
             anyNullable()
         )
 
@@ -213,6 +215,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             org.mockito.ArgumentMatchers.eq(43),
             welcomeContextCaptor.capture(),
             anyNullable(),
+            anyNullable(),
             anyNullable()
         )
 
@@ -257,6 +260,7 @@ class WhatsAppWelcomeRegistrationServiceTest {
             anyNullable(),
             org.mockito.ArgumentMatchers.eq(44),
             welcomeContextCaptor.capture(),
+            anyNullable(),
             anyNullable(),
             anyNullable()
         )

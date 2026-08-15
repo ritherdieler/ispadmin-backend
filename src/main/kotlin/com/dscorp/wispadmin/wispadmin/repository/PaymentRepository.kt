@@ -33,21 +33,11 @@ interface PaymentRepository : JpaRepository<Payment, Int> {
     ): List<Payment>
 
     @Query(
-        value = """
-        SELECT
-            p.id AS payment_id,
-            s.id AS subscription_id,
-            s.first_name,
-            s.last_name,
-            s.phone,
-            p.amount_to_pay,
-            p.amount_paid,
-            p.billing_date_datetime,
-            p.payment_date_datetime
+        value = WhatsAppCandidateSql.REMINDER_CANDIDATE_ROW_SELECT + """
         FROM payment p
         """ + WhatsAppCandidateSql.OLDEST_UNPAID_PAYMENT_PER_SUBSCRIPTION_JOIN + """
         INNER JOIN subscription s ON s.id = p.subscription_id
-        ORDER BY p.billing_date_datetime ASC, p.id ASC
+        ORDER BY COALESCE(s.is_bimonthly, FALSE) DESC, unpaid.period_from ASC, p.id ASC
         LIMIT :limit
     """,
         nativeQuery = true

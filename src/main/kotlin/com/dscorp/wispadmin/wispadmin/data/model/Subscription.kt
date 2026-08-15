@@ -152,6 +152,9 @@ data class Subscription(
     @Column(name = "auto_cut")
     var autoCut: Boolean = true,
 
+    @Column(name = "is_bimonthly", nullable = false)
+    var isBimonthly: Boolean? = false,
+
     @OneToMany(mappedBy = "subscription", cascade = [CascadeType.ALL], fetch = FetchType.LAZY)
     val reconnections: MutableSet<SubscriptionReconnection> = mutableSetOf(),
 

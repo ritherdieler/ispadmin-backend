@@ -24,12 +24,20 @@ object TemplateParameterResolver {
         subscription: Subscription,
         payment: Payment? = null,
         oldestUnpaidPayment: Payment? = null,
-        welcomeContext: WelcomeTemplateContext? = null
+        welcomeContext: WelcomeTemplateContext? = null,
+        unpaidAggregate: UnpaidInvoiceAggregate? = null
     ): List<NamedTemplateParameter> {
         return definition.parameters.map { param ->
             NamedTemplateParameter(
                 parameterName = param.metaParameterName,
-                text = resolveValue(param.source, subscription, payment, oldestUnpaidPayment, welcomeContext)
+                text = resolveValue(
+                    param.source,
+                    subscription,
+                    payment,
+                    oldestUnpaidPayment,
+                    welcomeContext,
+                    unpaidAggregate
+                )
             )
         }
     }
@@ -39,17 +47,21 @@ object TemplateParameterResolver {
         subscription: Subscription,
         payment: Payment?,
         oldestUnpaidPayment: Payment?,
-        welcomeContext: WelcomeTemplateContext?
+        welcomeContext: WelcomeTemplateContext?,
+        unpaidAggregate: UnpaidInvoiceAggregate?
     ): String {
         return when (source) {
             TemplateParameterSource.CLIENT_NAME -> subscription.getFullName()
-            TemplateParameterSource.AMOUNT_TO_PAY -> requirePayment(payment).amountToPay.toString()
+            TemplateParameterSource.AMOUNT_TO_PAY ->
+                unpaidAggregate?.totalAmount?.toString()
+                    ?: requirePayment(payment).amountToPay.toString()
             TemplateParameterSource.AMOUNT_PAID -> {
                 val p = requirePayment(payment)
                 (p.amountPaid ?: p.amountToPay).toString()
             }
             TemplateParameterSource.BILLING_PERIOD ->
-                requirePayment(payment).billingDateDatetime.format(DATE_FORMAT)
+                unpaidAggregate?.periodSummary()
+                    ?: requirePayment(payment).billingDateDatetime.format(DATE_FORMAT)
             TemplateParameterSource.PAYMENT_DATE -> {
                 val date = requirePayment(payment).paymentDateDatetime
                     ?: throw IllegalArgumentException("La factura no tiene fecha de pago registrada.")
@@ -82,12 +94,20 @@ object TemplateParameterResolver {
         subscription: Subscription,
         payment: Payment? = null,
         oldestUnpaidPayment: Payment? = null,
-        welcomeContext: WelcomeTemplateContext? = null
+        welcomeContext: WelcomeTemplateContext? = null,
+        unpaidAggregate: UnpaidInvoiceAggregate? = null
     ): NamedTemplateParameter? {
         val buttonDef = definition.buttonParameter ?: return null
         return NamedTemplateParameter(
             parameterName = "button_${buttonDef.index}",
-            text = resolveValue(buttonDef.source, subscription, payment, oldestUnpaidPayment, welcomeContext)
+            text = resolveValue(
+                buttonDef.source,
+                subscription,
+                payment,
+                oldestUnpaidPayment,
+                welcomeContext,
+                unpaidAggregate
+            )
         )
     }
 

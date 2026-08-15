@@ -20,6 +20,7 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianPhoneValidator
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.UnpaidInvoiceAggregate
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
@@ -300,6 +301,14 @@ class WhatsAppBackofficeMessageService(
             )
         }
 
+        val unpaidAggregate = if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER && subscriptionId != null) {
+            UnpaidInvoiceAggregate.fromUnpaidPayments(
+                paymentRepository.findUnpaidBySubscriptionIdOrderByBillingDateDatetimeAsc(subscriptionId)
+            )
+        } else {
+            null
+        }
+
         return try {
             deliverMessage(
                 definition = definition,
@@ -311,7 +320,8 @@ class WhatsAppBackofficeMessageService(
                 phone = phone!!,
                 targetId = paymentId,
                 campaignId = campaignId,
-                operatorUsername = operatorUsername
+                operatorUsername = operatorUsername,
+                unpaidAggregate = unpaidAggregate
             )
             sentPaymentResult(paymentId, subscription.id, phone, clientName)
         } catch (e: IllegalStateException) {
@@ -415,7 +425,8 @@ class WhatsAppBackofficeMessageService(
         phone: String,
         targetId: Int,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        unpaidAggregate: UnpaidInvoiceAggregate? = null
     ) {
         val todayStart = LocalDate.now().atStartOfDay()
         val tomorrowStart = todayStart.plusDays(1)
@@ -433,7 +444,8 @@ class WhatsAppBackofficeMessageService(
             subscriptionId = subscriptionId,
             phone = phone,
             campaignId = campaignId,
-            operatorUsername = operatorUsername
+            operatorUsername = operatorUsername,
+            unpaidAggregate = unpaidAggregate
         )
     }
 
@@ -472,8 +484,17 @@ class WhatsAppBackofficeMessageService(
 
             val amountToPay = row.doubleAt(5)
             val amountPaid = row.doubleAtOrNull(6)
-            val billingDate = row.localDateTimeAt(7)?.format(DATE_FORMAT)
+            val periodFrom = row.localDateTimeAt(7)
+            val billingDate = periodFrom?.format(DATE_FORMAT)
             val paymentDate = row.localDateTimeAt(8)?.format(DATE_FORMAT)
+            val invoiceCount = row.intAtOrDefault(9, 1)
+            val periodTo = row.localDateTimeAt(10) ?: periodFrom
+            val isBimonthly = row.booleanAtOrDefault(11, false)
+            val periodSummary = if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER && periodFrom != null) {
+                UnpaidInvoiceAggregate.formatPeriodSummary(periodFrom, periodTo ?: periodFrom)
+            } else {
+                billingDate
+            }
 
             candidates += WhatsAppMessageCandidateDto(
                 targetType = definition.targetType.name,
@@ -482,11 +503,14 @@ class WhatsAppBackofficeMessageService(
                 subscriptionId = subscriptionId,
                 clientName = clientName,
                 phone = phone!!,
-                amount = amountPaid ?: amountToPay,
+                amount = candidateListAmount(definition, amountToPay, amountPaid),
                 billingDate = billingDate,
                 paymentDate = paymentDate,
                 installationDate = null,
-                alreadySentToday = sentTodayPaymentIds.contains(paymentId)
+                alreadySentToday = sentTodayPaymentIds.contains(paymentId),
+                invoiceCount = invoiceCount,
+                periodSummary = periodSummary,
+                isBimonthly = isBimonthly
             )
         }
 
@@ -602,7 +626,7 @@ class WhatsAppBackofficeMessageService(
             subscriptionId = subscriptionId,
             clientName = clientName,
             phone = phone,
-            amount = amountPaid ?: amountToPay,
+            amount = candidateListAmount(definition, amountToPay, amountPaid),
             billingDate = billingDate,
             paymentDate = paymentDate,
             installationDate = null,
@@ -694,6 +718,14 @@ class WhatsAppBackofficeMessageService(
         }
     }
 
+    private fun candidateListAmount(
+        definition: WhatsAppTemplateDefinition,
+        amountToPay: Double,
+        amountPaid: Double?,
+    ): Double =
+        if (definition.code == WhatsAppTemplateCode.PAYMENT_REMINDER) amountToPay
+        else amountPaid ?: amountToPay
+
     private fun buildClientName(firstName: String?, lastName: String?): String {
         return listOfNotNull(firstName?.trim()?.takeIf { it.isNotEmpty() }, lastName?.trim()?.takeIf { it.isNotEmpty() })
             .joinToString(" ")
@@ -702,6 +734,11 @@ class WhatsAppBackofficeMessageService(
 
     private fun Array<Any>.intAt(index: Int): Int = (this[index] as Number).toInt()
 
+    private fun Array<Any>.intAtOrDefault(index: Int, default: Int): Int {
+        val value = this.getOrNull(index) ?: return default
+        return (value as? Number)?.toInt() ?: default
+    }
+
     private fun Array<Any>.doubleAt(index: Int): Double = (this[index] as Number).toDouble()
 
     private fun Array<Any>.doubleAtOrNull(index: Int): Double? {
@@ -709,7 +746,12 @@ class WhatsAppBackofficeMessageService(
     }
 
     private fun Array<Any>.booleanAt(index: Int): Boolean {
-        return when (val value = this[index]) {
+        return booleanAtOrDefault(index, false)
+    }
+
+    private fun Array<Any>.booleanAtOrDefault(index: Int, default: Boolean): Boolean {
+        val value = this.getOrNull(index) ?: return default
+        return when (value) {
             is Boolean -> value
             is Number -> value.toInt() != 0
             else -> value.toString().toBoolean()

@@ -30,7 +30,8 @@ class WhatsAppTemplateDeliveryService(
         subscriptionId: Int? = null,
         welcomeContext: WelcomeTemplateContext? = null,
         campaignId: String? = null,
-        operatorUsername: String? = null
+        operatorUsername: String? = null,
+        unpaidAggregate: UnpaidInvoiceAggregate? = null
     ): WhatsAppMessageLog {
         if (definition.category == WhatsAppTemplateCategory.MARKETING) {
             val normalizedPhone = PeruvianWhatsAppPhone.toInternational(phone)
@@ -58,14 +59,16 @@ class WhatsAppTemplateDeliveryService(
             subscription = subscription,
             payment = payment,
             oldestUnpaidPayment = oldestUnpaidPayment,
-            welcomeContext = welcomeContext
+            welcomeContext = welcomeContext,
+            unpaidAggregate = unpaidAggregate
         )
         val buttonParameter = TemplateParameterResolver.resolveButtonParameter(
             definition = definition,
             subscription = subscription,
             payment = payment,
             oldestUnpaidPayment = oldestUnpaidPayment,
-            welcomeContext = welcomeContext
+            welcomeContext = welcomeContext,
+            unpaidAggregate = unpaidAggregate
         )?.let { resolvedButton ->
             WhatsAppTemplateButtonParameter(
                 subType = definition.buttonParameter!!.subType,
