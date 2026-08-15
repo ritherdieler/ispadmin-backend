@@ -1,5 +1,20 @@
-ALTER TABLE subscription
-    ADD COLUMN is_bimonthly BOOLEAN NOT NULL DEFAULT FALSE;
+SET @exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'subscription'
+      AND COLUMN_NAME = 'is_bimonthly'
+);
+
+SET @sql := IF(
+    @exists = 0,
+    'ALTER TABLE subscription ADD COLUMN is_bimonthly BOOLEAN NOT NULL DEFAULT FALSE',
+    'ALTER TABLE subscription MODIFY COLUMN is_bimonthly BOOLEAN NOT NULL DEFAULT FALSE'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- Replace the 12 placeholders with real subscription IDs, then run this UPDATE:
 -- UPDATE subscription

@@ -392,38 +392,44 @@ class SubscriptionService(
             val matchingPool = ipPoolRepository.findAllEligiblePools().firstOrNull { pool ->
                 manualIp.startsWith(pool.ipSegment.getBaseIpFromRange())
             }
-            val pool = matchingPool ?: getFreeIp().second
+            val pool = matchingPool ?: getFreeIp(request.hostDeviceId).second
             return Pair(manualIp, pool)
         }
-        return getFreeIp()
+        return getFreeIp(request.hostDeviceId)
     }
 
-    fun getFreeIp(): Pair<String, IpPool> {
-        var availableIp = ""
-        var pool: IpPool? = null
+    fun getFreeIp(hostDeviceId: Int? = null): Pair<String, IpPool> {
         val ipRange = 10..250
-
-        val ipPools = ipPoolRepository.findAllEligiblePools()
+        val eligiblePools = ipPoolRepository.findAllEligiblePools()
+        val ipPools = if (hostDeviceId != null) {
+            eligiblePools.filter { it.hostDevice?.id == hostDeviceId }.ifEmpty { eligiblePools }
+        } else {
+            eligiblePools
+        }
 
         for (ipPool in ipPools) {
-            if (availableIp.isNotEmpty()) break
-            val ips = mutableListOf<Int>()
-            for (ip in ipPool.ips) {
-                ip.ip!!.split(".").last().trim().toInt().let { ips.add(it) }
+            val occupied = ipPool.ips.mapNotNull { subscription ->
+                subscription.ip?.split(".")?.last()?.trim()?.toIntOrNull()
             }
-            val availableips = ipRange - ips.toSet()
+            val occupiedSet = occupied.toSet()
+            val nextOctet = if (occupied.isEmpty()) {
+                10
+            } else {
+                val maxOctet = occupied.maxOrNull() ?: 9
+                val candidate = maxOctet + 1
+                if (candidate <= 250 && candidate !in occupiedSet) {
+                    candidate
+                } else {
+                    ipRange.firstOrNull { it !in occupiedSet }
+                }
+            }
 
-            if (availableips.isNotEmpty()) {
-                availableIp = ipPool.ipSegment.getBaseIpFromRange() + availableips.first()
-                pool = ipPool
-                break
+            if (nextOctet != null) {
+                return Pair(ipPool.ipSegment.getBaseIpFromRange() + nextOctet, ipPool)
             }
         }
 
-        if (availableIp.isEmpty() || pool == null)
-            throw Exception("No more ips available")
-        else
-            return Pair(availableIp, pool)
+        throw Exception("No more ips available")
     }
 
     @Transactional
