@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.wispadmin.dto
 
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
+import com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus
+import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import java.io.Serializable
 import java.time.LocalDate
@@ -52,6 +54,9 @@ data class SubscriptionDto(
     val autoCut: Boolean = true,
     val hasFiberOnu: Boolean = false,
     val alreadyRegistered: Boolean = false,
+    val mikrotikProvisionStatus: MikrotikProvisionStatus? = null,
+    val oltProvisionStatus: OltProvisionStatus? = null,
+    val provisioningPending: Boolean = false,
 
     ) : Serializable
 

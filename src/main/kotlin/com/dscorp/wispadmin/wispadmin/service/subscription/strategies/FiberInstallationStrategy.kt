@@ -16,9 +16,9 @@ import org.springframework.stereotype.Component
 class FiberInstallationStrategy(
     private val cancelledOnuReuseService: CancelledOnuReuseService
 ) : IInstallationStrategy {
-    
+
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
-    
+
     companion object {
         private const val FALLBACK_VLAN = "1"
         private const val DEFAULT_ZONE = "Zone 1"
@@ -26,7 +26,7 @@ class FiberInstallationStrategy(
         private const val DEFAULT_CUSTOM_PROFILE = "Generic_1"
         private const val QUEUE_NAME_TEMPLATE = "id:%d, usuario:%s %s, lugar:%s, nap:%s, plan:%s, tipo:%s"
     }
-    
+
     override fun processInstallation(
         subscription: Subscription,
         request: SubscriptionRequest,
@@ -37,6 +37,8 @@ class FiberInstallationStrategy(
         var queueAdded = false
         var onuAuthorized = false
         var onuSn: String? = null
+        var mikrotikError: String? = null
+        var oltError: String? = null
 
         request.onu?.let { onuRequest ->
             onuSn = onuRequest.sn
@@ -54,35 +56,56 @@ class FiberInstallationStrategy(
                 onu_mode = DEFAULT_ONU_MODE,
                 custom_profile = DEFAULT_CUSTOM_PROFILE
             )
-            
-            cancelledOnuReuseService.authorizeWithCancelledReuse(authorizeRequest)
-            onuAuthorized = true
+
+            try {
+                cancelledOnuReuseService.authorizeWithCancelledReuse(authorizeRequest)
+                onuAuthorized = true
+            } catch (error: Exception) {
+                oltError = error.message ?: "Error autorizando ONU en OLT"
+                logger.error(
+                    "No se pudo autorizar ONU en OLT para suscripción ${subscription.id}",
+                    error
+                )
+            }
 
             val queueName = buildQueueName(subscription)
+            val target = subscription.ip.orEmpty()
             try {
                 device.executeCommand { session ->
+                    val existing = session.print("/queue/simple", mapOf("target" to "$target/32"))
+                    if (existing.isNotEmpty()) {
+                        return@executeCommand
+                    }
                     session.add(
                         "/queue/simple",
                         mapOf(
                             "name" to queueName,
-                            "target" to subscription.ip.orEmpty(),
+                            "target" to target,
                             "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
                         )
                     )
                 }
                 queueAdded = true
             } catch (error: MikrotikException) {
-                logger.error("No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}", error)
+                mikrotikError = error.message
+                logger.error(
+                    "No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}",
+                    error
+                )
             }
+        } ?: run {
+            oltError = "Solicitud FIBER sin datos de ONU"
         }
 
         return InstallationResult(
             queueAdded = queueAdded,
             onuAuthorized = onuAuthorized,
-            onuSn = onuSn
+            onuSn = onuSn,
+            mikrotikError = mikrotikError,
+            oltError = oltError
         )
     }
-    
+
     override fun buildQueueName(subscription: Subscription): String {
         val napBoxCode = subscription.napBox?.code ?: ""
         return QUEUE_NAME_TEMPLATE.format(
@@ -117,6 +140,3 @@ class FiberInstallationStrategy(
         return FALLBACK_VLAN
     }
 }
-
-
-

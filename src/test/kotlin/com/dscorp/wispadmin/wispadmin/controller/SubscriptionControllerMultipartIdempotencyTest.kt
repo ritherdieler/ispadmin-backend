@@ -13,14 +13,18 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockMultipartFile
 
@@ -30,6 +34,8 @@ class SubscriptionControllerMultipartIdempotencyTest {
     private val subscriptionService = mockk<SubscriptionService>()
     private val storageService = mockk<FirebaseStorageService>(relaxed = true)
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val integrityViolationClassifier = SubscriptionIntegrityViolationClassifier()
+    private val ipConflictNocNotifier = mockk<SubscriptionIpConflictNocNotifier>(relaxed = true)
 
     private val controller = SubscriptionController(
         repository = subscriptionRepository,
@@ -42,6 +48,8 @@ class SubscriptionControllerMultipartIdempotencyTest {
         subscriptionLogRepository = mockk(relaxed = true),
         storageService = storageService,
         eventPublisher = eventPublisher,
+        integrityViolationClassifier = integrityViolationClassifier,
+        ipConflictNocNotifier = ipConflictNocNotifier
     )
 
     @Test
@@ -84,7 +92,89 @@ class SubscriptionControllerMultipartIdempotencyTest {
         verify(exactly = 1) { subscriptionService.registerSubscription(any(), any()) }
     }
 
-    private fun sampleRequest(clientRequestId: String) = SubscriptionRequest(
+    @Test
+    fun `newSubcriptionWithFacade returns IP_CONFLICT and alerts NOC on ip unique violation`() {
+        every {
+            subscriptionService.findExistingSubscriptionByClientRequestId(any())
+        } returns null
+        every { storageService.uploadFileToFolder(any(), any()) } returns "https://facade/1.jpg"
+        every {
+            subscriptionService.registerSubscription(any(), any())
+        } throws DataIntegrityViolationException(
+            "could not execute statement",
+            RuntimeException("Duplicate entry '192.168.1.77' for key 'subscription.ip'")
+        )
+
+        val request = sampleRequest(
+            clientRequestId = "offline-req-ip",
+            clientIpAddress = "192.168.1.77"
+        )
+        val response = controller.newSubcriptionWithFacade(
+            newSubscription = request,
+            facadephoto = MockMultipartFile(
+                "facadePhoto",
+                "facade.jpg",
+                MediaType.IMAGE_JPEG_VALUE,
+                byteArrayOf(1, 2, 3),
+            )
+        )
+
+        assertEquals(409, response.status)
+        assertEquals(SubscriptionIpConflictNocNotifier.ERROR_CODE, response.errorCode)
+        assertEquals(SubscriptionIpConflictNocNotifier.ERROR_MESSAGE, response.error)
+        verify(exactly = 1) { ipConflictNocNotifier.notifyIpConflict(request) }
+    }
+
+    @Test
+    fun `newSubcriptionWithFacade keeps generic 409 without NOC when dni conflicts`() {
+        every {
+            subscriptionService.findExistingSubscriptionByClientRequestId(any())
+        } returns null
+        every { storageService.uploadFileToFolder(any(), any()) } returns "https://facade/1.jpg"
+        every {
+            subscriptionService.registerSubscription(any(), any())
+        } throws DataIntegrityViolationException(
+            "could not execute statement",
+            RuntimeException("Duplicate entry '12345678' for key 'subscription.dni'")
+        )
+
+        val response = controller.newSubcriptionWithFacade(
+            newSubscription = sampleRequest(clientRequestId = "offline-req-dni"),
+            facadephoto = MockMultipartFile(
+                "facadePhoto",
+                "facade.jpg",
+                MediaType.IMAGE_JPEG_VALUE,
+                byteArrayOf(1, 2, 3),
+            )
+        )
+
+        assertEquals(409, response.status)
+        assertNull(response.errorCode)
+        assertEquals("Este usuario no se encuentra registrado", response.error)
+        verify(exactly = 0) { ipConflictNocNotifier.notifyIpConflict(any()) }
+    }
+
+    @Test
+    fun `newSubscription returns IP_CONFLICT and alerts NOC on ip unique violation`() {
+        every {
+            subscriptionService.registerSubscription(any(), any())
+        } throws DataIntegrityViolationException(
+            "could not execute statement",
+            RuntimeException("Duplicate entry '10.0.0.15' for key 'subscription.ip'")
+        )
+
+        val request = sampleRequest(clientIpAddress = "10.0.0.15")
+        val response = controller.newSubscription(request)
+
+        assertEquals(409, response.status)
+        assertEquals(SubscriptionIpConflictNocNotifier.ERROR_CODE, response.errorCode)
+        verify(exactly = 1) { ipConflictNocNotifier.notifyIpConflict(request) }
+    }
+
+    private fun sampleRequest(
+        clientRequestId: String? = null,
+        clientIpAddress: String? = null
+    ) = SubscriptionRequest(
         firstName = "Juan",
         lastName = "Perez",
         dni = "12345678",
@@ -98,6 +188,8 @@ class SubscriptionControllerMultipartIdempotencyTest {
         technicianId = 1,
         hostDeviceId = 1,
         installationType = InstallationType.WIRELESS,
+        equipmentCondition = EquipmentCondition.LOAN,
         clientRequestId = clientRequestId,
+        clientIpAddress = clientIpAddress
     )
 }

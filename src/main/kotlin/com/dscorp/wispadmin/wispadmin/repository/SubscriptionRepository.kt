@@ -17,6 +17,38 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     @Query(
         """
+        SELECT s FROM Subscription s
+        WHERE s.provisionNextAttemptAt IS NOT NULL
+          AND s.provisionNextAttemptAt <= :now
+          AND (
+            s.mikrotikProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.PENDING
+            OR s.oltProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.PENDING
+          )
+        ORDER BY s.provisionNextAttemptAt ASC
+        """
+    )
+    fun findDueForProvisionReconciliation(
+        @Param("now") now: LocalDateTime,
+        pageable: org.springframework.data.domain.Pageable
+    ): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.place
+        LEFT JOIN FETCH s.napBox
+        LEFT JOIN FETCH s.hostDevice
+        LEFT JOIN FETCH s.technician
+        LEFT JOIN FETCH s.fiberOnu
+        LEFT JOIN FETCH s.ipPool
+        WHERE s.id IN :ids
+        """
+    )
+    fun findAllWithProvisionRelationsByIdIn(@Param("ids") ids: List<Int>): List<Subscription>
+
+    @Query(
+        """
         SELECT DISTINCT s FROM Subscription s
         LEFT JOIN FETCH s.plan
         LEFT JOIN FETCH s.place

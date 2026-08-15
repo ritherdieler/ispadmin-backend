@@ -61,6 +61,7 @@ class SubscriptionServiceTest {
         installationStrategyFactory = installationStrategyFactory,
         applicationEventPublisher = mockk<ApplicationEventPublisher>(relaxed = true),
         cancelledOnuReuseService = mockk(relaxed = true),
+        subscriptionProvisionService = mockk(relaxed = true),
     )
 
     @Test

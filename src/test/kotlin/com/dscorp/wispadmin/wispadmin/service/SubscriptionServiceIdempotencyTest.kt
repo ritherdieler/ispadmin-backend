@@ -43,8 +43,19 @@ class SubscriptionServiceIdempotencyTest {
     private val installationStrategyFactory = mockk<InstallationStrategyFactory>()
     private val installationStrategy = mockk<IInstallationStrategy>()
     private val errorLogRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository>(relaxed = true)
+    private val subscriptionProvisionService by lazy {
+        SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository
+        )
+    }
 
-    private val service = SubscriptionService(
+    private val service by lazy {
+        SubscriptionService(
         repository = repository,
         ipPoolRepository = ipPoolRepository,
         networkDeviceRepository = networkDeviceRepository,
@@ -68,7 +79,9 @@ class SubscriptionServiceIdempotencyTest {
         installationStrategyFactory = installationStrategyFactory,
         applicationEventPublisher = applicationEventPublisher,
         cancelledOnuReuseService = mockk(relaxed = true),
-    )
+        subscriptionProvisionService = subscriptionProvisionService,
+        )
+    }
 
     @Test
     fun `registerSubscription returns existing dto when clientRequestId already exists`() {
@@ -85,6 +98,7 @@ class SubscriptionServiceIdempotencyTest {
 
         stubLookupsForProvision()
         every { repository.findByClientRequestId("offline-req-1") } returns Optional.of(existing)
+        every { repository.save(any()) } answers { firstArg() }
         every {
             installationStrategy.processInstallation(any(), any(), any(), any(), any())
         } returns InstallationResult(queueAdded = true)
@@ -122,8 +136,97 @@ class SubscriptionServiceIdempotencyTest {
 
         assertEquals(77, result.id)
         assertFalse(result.alreadyRegistered)
-        verify(exactly = 1) { repository.save(any()) }
+        assertTrue(result.provisioningPending)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.PENDING,
+            result.mikrotikProvisionStatus
+        )
+        verify(atLeast = 1) { repository.save(any()) }
         verify(exactly = 1) { applicationEventPublisher.publishEvent(any<SubscriptionRegisteredEvent>()) }
+    }
+
+    @Test
+    fun `registerSubscription keeps saved fiber when OLT fails but MikroTik succeeds`() {
+        stubLookupsForProvision()
+        every { repository.findByClientRequestId(any()) } returns Optional.empty()
+        every { ipPoolRepository.findAllEligiblePools() } returns listOf(
+            IpPool(id = 1, ipSegment = "192.168.1.0/24")
+        )
+        every { repository.save(any()) } answers {
+            firstArg<Subscription>().apply { id = 78 }
+        }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(
+            queueAdded = true,
+            onuAuthorized = false,
+            oltError = "OLT unreachable"
+        )
+
+        val result = service.registerSubscription(
+            newSubscription = sampleRequest(clientRequestId = "fiber-olt-down").apply {
+                installationType = InstallationType.FIBER
+                napBoxId = 1
+                onu = com.dscorp.wispadmin.wispadmin.dto.OnuDto(
+                    sn = "ONU123",
+                    olt_id = "1",
+                    board = "1",
+                    port = "1",
+                    onu_type_name = "HG8310"
+                )
+            },
+            onSuccess = { },
+        )
+
+        assertEquals(78, result.id)
+        assertTrue(result.provisioningPending)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.COMPLETE,
+            result.mikrotikProvisionStatus
+        )
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.PENDING,
+            result.oltProvisionStatus
+        )
+    }
+
+    @Test
+    fun `registerSubscription with existing clientRequestId reconciles pending provision`() {
+        val existing = Subscription(
+            firstName = "Juan",
+            lastName = "Perez",
+            dni = "12345678",
+            equipmentCondition = EquipmentCondition.LOAN,
+        ).apply {
+            id = 55
+            clientRequestId = "offline-pending"
+            installationType = InstallationType.WIRELESS
+            mikrotikProvisionStatus =
+                com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.PENDING
+            oltProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.NA
+            hostDevice = NetworkDevice(id = 1)
+            plan = Plan(id = 1)
+            place = Place(id = 1)
+        }
+
+        stubLookupsForProvision()
+        every { repository.findByClientRequestId("offline-pending") } returns Optional.of(existing)
+        every { repository.save(any()) } answers { firstArg() }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(queueAdded = true)
+
+        val result = service.registerSubscription(
+            newSubscription = sampleRequest(clientRequestId = "offline-pending"),
+            onSuccess = { throw AssertionError("onSuccess must not run for duplicate") },
+        )
+
+        assertTrue(result.alreadyRegistered)
+        assertFalse(result.provisioningPending)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.COMPLETE,
+            result.mikrotikProvisionStatus
+        )
     }
 
     @Test

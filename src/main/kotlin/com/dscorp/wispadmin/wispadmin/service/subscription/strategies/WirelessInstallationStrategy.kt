@@ -12,13 +12,13 @@ import org.springframework.stereotype.Component
 
 @Component
 class WirelessInstallationStrategy : IInstallationStrategy {
-    
+
     private val logger = LoggerFactory.getLogger(WirelessInstallationStrategy::class.java)
-    
+
     companion object {
         private const val QUEUE_NAME_TEMPLATE = "id:%d, usuario:%s %s, lugar:%s, plan:%s, tipo:%s"
     }
-    
+
     override fun processInstallation(
         subscription: Subscription,
         request: SubscriptionRequest,
@@ -27,13 +27,18 @@ class WirelessInstallationStrategy : IInstallationStrategy {
         place: Place
     ): InstallationResult {
         val queueName = buildQueueName(subscription)
+        val target = subscription.ip.orEmpty()
         return try {
             device.executeCommand { session ->
+                val existing = session.print("/queue/simple", mapOf("target" to "$target/32"))
+                if (existing.isNotEmpty()) {
+                    return@executeCommand
+                }
                 session.add(
                     "/queue/simple",
                     mapOf(
                         "name" to queueName,
-                        "target" to subscription.ip.orEmpty(),
+                        "target" to target,
                         "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
                     )
                 )
@@ -41,10 +46,10 @@ class WirelessInstallationStrategy : IInstallationStrategy {
             InstallationResult(queueAdded = true)
         } catch (error: MikrotikException) {
             logger.error("No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}", error)
-            InstallationResult(queueAdded = false)
+            InstallationResult(queueAdded = false, mikrotikError = error.message)
         }
     }
-    
+
     override fun buildQueueName(subscription: Subscription): String {
         return QUEUE_NAME_TEMPLATE.format(
             subscription.id ?: 0,
@@ -56,6 +61,3 @@ class WirelessInstallationStrategy : IInstallationStrategy {
         )
     }
 }
-
-
-

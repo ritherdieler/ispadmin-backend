@@ -22,7 +22,9 @@ interface IInstallationStrategy {
 data class InstallationResult(
     val queueAdded: Boolean,
     val onuAuthorized: Boolean = false,
-    val onuSn: String? = null
+    val onuSn: String? = null,
+    val mikrotikError: String? = null,
+    val oltError: String? = null
 )
 
 

@@ -135,6 +135,23 @@ data class Subscription(
     @Column(name = "client_request_id", unique = true)
     var clientRequestId: String? = null,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mikrotik_provision_status", length = 32)
+    var mikrotikProvisionStatus: MikrotikProvisionStatus? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "olt_provision_status", length = 32)
+    var oltProvisionStatus: OltProvisionStatus? = null,
+
+    @Column(name = "provision_attempt_count")
+    var provisionAttemptCount: Int = 0,
+
+    @Column(name = "provision_next_attempt_at")
+    var provisionNextAttemptAt: LocalDateTime? = null,
+
+    @Column(name = "provision_last_error", length = 500)
+    var provisionLastError: String? = null,
+
     @OneToMany(mappedBy = "subscription")
     val subscriptionLogs: MutableSet<SubscriptionLog> = mutableSetOf(),
 
@@ -213,8 +230,19 @@ data class Subscription(
         borneNumber = borneNumber,
         equipmentCondition = equipmentCondition,
         autoCut = autoCut,
-        hasFiberOnu = fiberOnu != null
+        hasFiberOnu = fiberOnu != null,
+        mikrotikProvisionStatus = mikrotikProvisionStatus,
+        oltProvisionStatus = oltProvisionStatus,
+        provisioningPending = isProvisioningPending()
     )
+
+    fun isProvisioningPending(): Boolean {
+        val mikrotikPending = mikrotikProvisionStatus == MikrotikProvisionStatus.PENDING ||
+            mikrotikProvisionStatus == MikrotikProvisionStatus.FAILED
+        val oltPending = oltProvisionStatus == OltProvisionStatus.PENDING ||
+            oltProvisionStatus == OltProvisionStatus.FAILED
+        return mikrotikPending || oltPending
+    }
 
 
     fun toCutDto() = SubscriptionCutDto(

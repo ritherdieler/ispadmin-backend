@@ -20,6 +20,7 @@ import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceCutManager
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceReactivationManager
+import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage.FcmMessageType
@@ -56,7 +57,8 @@ class SubscriptionService(
     private val paymentRepository: PaymentRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
     private val applicationEventPublisher: ApplicationEventPublisher,
-    private val cancelledOnuReuseService: CancelledOnuReuseService
+    private val cancelledOnuReuseService: CancelledOnuReuseService,
+    private val subscriptionProvisionService: SubscriptionProvisionService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -159,7 +161,7 @@ class SubscriptionService(
 
         return try {
             findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
-                completePendingInstallation(existing, newSubscription)
+                subscriptionProvisionService.reconcile(existing, newSubscription)
                 return existing.toDto().copy(alreadyRegistered = true)
             }
 
@@ -167,6 +169,10 @@ class SubscriptionService(
 
             val ipAssignment = resolveIpAssignment(newSubscription)
             val subscriptionToSave = createSubscriptionEntity(newSubscription, ipAssignment)
+            subscriptionProvisionService.initializeStatuses(
+                subscriptionToSave,
+                newSubscription.installationType
+            )
 
             if (newSubscription.installationType == InstallationType.FIBER) {
                 processOnuForFiber(subscriptionToSave, newSubscription)
@@ -198,17 +204,33 @@ class SubscriptionService(
             val device = networkDeviceRepository.findById(subscription.hostDevice!!.id).get()
             val plan = planRepository.findById(subscription.plan!!.id).get()
             val place = placeRepository.findById(subscription.place!!.id).get()
+            subscription.hostDevice = device
+            subscription.plan = plan
+            subscription.place = place
 
             val strategy = installationStrategyFactory.getStrategy(newSubscription.installationType)
-            try {
+            val installationResult = try {
                 val result = strategy.processInstallation(subscription, newSubscription, device, plan, place)
                 queueAdded = result.queueAdded
                 onuAuthorized = result.onuAuthorized
                 onuSn = result.onuSn
-            } catch (ex: MikrotikException) {
-                logger.error("Error de provisión MikroTik tras persistir suscripción ${subscription.id}", ex)
+                result
+            } catch (ex: Exception) {
+                logger.error("Error de provisión de red tras persistir suscripción ${subscription.id}", ex)
                 persistProvisionError(ex)
+                InstallationResult(
+                    queueAdded = false,
+                    onuAuthorized = false,
+                    mikrotikError = ex.message,
+                    oltError = ex.message
+                )
             }
+            subscriptionProvisionService.applyInstallationResult(
+                subscription = subscription,
+                result = installationResult,
+                installationType = newSubscription.installationType
+            )
+            subscription = repository.save(subscription)
 
             newSubscription.installationOrderId?.let { orderId ->
                 processInstallationOrderCompletion(orderId, subscription)
@@ -230,20 +252,7 @@ class SubscriptionService(
         existing: Subscription,
         request: SubscriptionRequest
     ) {
-        try {
-            val deviceId = existing.hostDevice?.id ?: request.hostDeviceId
-            val planId = existing.plan?.id ?: request.planId
-            val placeId = existing.place?.id ?: request.placeId
-            val device = networkDeviceRepository.findById(deviceId).get()
-            val plan = planRepository.findById(planId).get()
-            val place = placeRepository.findById(placeId).get()
-            val installationType = existing.installationType ?: request.installationType
-            val strategy = installationStrategyFactory.getStrategy(installationType)
-            strategy.processInstallation(existing, request, device, plan, place)
-        } catch (ex: MikrotikException) {
-            logger.warn("No se pudo completar la provisión MikroTik pendiente para ${existing.id}", ex)
-            persistProvisionError(ex)
-        }
+        subscriptionProvisionService.reconcile(existing, request)
     }
 
     private fun persistProvisionError(ex: Exception) {

@@ -12,6 +12,8 @@ import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.dscorp.wispadmin.wispadmin.service.BorneValidationResult
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -45,11 +47,33 @@ class SubscriptionController(
     private val couponRepository: CouponRepository,
     private val subscriptionLogRepository: SubscriptionLogRepository,
     private val storageService: FirebaseStorageService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val integrityViolationClassifier: SubscriptionIntegrityViolationClassifier,
+    private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
         subscriptionId?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
+    }
+
+    private fun handleRegistrationIntegrityViolation(
+        request: SubscriptionRequest,
+        ex: DataIntegrityViolationException,
+        defaultError: String
+    ): BaseResponse {
+        return if (integrityViolationClassifier.isIpUniqueViolation(ex)) {
+            ipConflictNocNotifier.notifyIpConflict(request)
+            BaseResponse(
+                status = 409,
+                error = SubscriptionIpConflictNocNotifier.ERROR_MESSAGE,
+                errorCode = SubscriptionIpConflictNocNotifier.ERROR_CODE
+            )
+        } else {
+            BaseResponse(
+                status = 409,
+                error = defaultError
+            )
+        }
     }
 
     @GetMapping("/findByElectronicPayerName")
@@ -348,9 +372,10 @@ class SubscriptionController(
             publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
-            BaseResponse(
-                status = 409,
-                error = "Este usuario ya se encuentra registrado",
+            handleRegistrationIntegrityViolation(
+                request = newSubscription,
+                ex = e,
+                defaultError = "Este usuario ya se encuentra registrado"
             )
         }
     }
@@ -398,9 +423,10 @@ class SubscriptionController(
             publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
-            BaseResponse(
-                status = 409,
-                error = "Este usuario no se encuentra registrado",
+            handleRegistrationIntegrityViolation(
+                request = newSubscription,
+                ex = e,
+                defaultError = "Este usuario no se encuentra registrado"
             )
         }
     }
