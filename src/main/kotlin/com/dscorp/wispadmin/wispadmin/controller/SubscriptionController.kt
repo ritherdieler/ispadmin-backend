@@ -1023,13 +1023,13 @@ class SubscriptionController(
     }
 }
 
-fun OnuDto.toAuthorizationRequest(customerFullName: String) = OnuAuthorizationRequest(
+fun OnuDto.toAuthorizationRequest(customerFullName: String, vlan: String) = OnuAuthorizationRequest(
     olt_id = olt_id,
     pon_type = pon_type,
     board = board,
     port = port,
     sn = sn,
-    vlan = 1.toString(),
+    vlan = vlan,
     onu_type = onu_type_name,
     zone = "Zone 1",
     name = customerFullName,

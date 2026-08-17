@@ -61,6 +61,36 @@ class FiberInstallationStrategyTest {
         }
     }
 
+    @Test
+    fun `resolveVlan payload 100 predomina aunque hostDevice tenga vlanId 1`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 1, vlanId = 1)).apply {
+            vlan = "100"
+        }
+
+        assertEquals("100", strategy.resolveVlan(subscription))
+    }
+
+    @Test
+    fun `resolveVlan nulo o vacio recurre a hostDevice vlanId`() {
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val withoutVlan = subscriptionWithHostDevice(host)
+        val blankVlan = subscriptionWithHostDevice(host).apply { vlan = "   " }
+
+        assertEquals("100", strategy.resolveVlan(withoutVlan))
+        assertEquals("100", strategy.resolveVlan(blankVlan))
+    }
+
+    @Test
+    fun `resolveVlan falla cuando CLOUD_CORE_ROUTER no tiene vlanId ni vlan en payload`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = null)).apply {
+            vlan = null
+        }
+
+        assertThrows(IllegalStateException::class.java) {
+            strategy.resolveVlan(subscription)
+        }
+    }
+
     @AfterEach
     fun tearDown() {
         unmockkStatic("com.dscorp.wispadmin.wispadmin.extensions.ExtensionsKt")

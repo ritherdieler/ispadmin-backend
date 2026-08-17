@@ -77,6 +77,7 @@ class SubscriptionServiceIdempotencyTest {
         subscriptionValidator = subscriptionValidator,
         paymentRepository = mockk(relaxed = true),
         installationStrategyFactory = installationStrategyFactory,
+        fiberInstallationStrategy = mockk(relaxed = true),
         applicationEventPublisher = applicationEventPublisher,
         cancelledOnuReuseService = mockk(relaxed = true),
         subscriptionProvisionService = subscriptionProvisionService,

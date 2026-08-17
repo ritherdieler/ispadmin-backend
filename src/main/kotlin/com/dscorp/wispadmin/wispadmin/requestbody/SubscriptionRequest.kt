@@ -37,6 +37,7 @@ data class SubscriptionRequest(
     var equipmentCondition: EquipmentCondition = EquipmentCondition.LOAN,
     var autoCut: Boolean = true,
     var clientIpAddress: String? = null,
+    var vlan: String? = null,
 ) {
     fun toModel(): Subscription = Subscription(
         firstName = firstName.removeSpecialCharacters(),
@@ -63,7 +64,8 @@ data class SubscriptionRequest(
         isMigration = isMigration,
         borneNumber = borneNumber,
         equipmentCondition = equipmentCondition,
-        autoCut = autoCut
+        autoCut = autoCut,
+        vlan = vlan
     )
 
     private fun subscriptionDateAsLocalDateTime(): LocalDateTime {

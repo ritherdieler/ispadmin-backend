@@ -115,6 +115,9 @@ data class Subscription(
     @Enumerated(EnumType.STRING)
     var installationType: InstallationType? = null,
 
+    @Column(name = "vlan", length = 10)
+    var vlan: String? = null,
+
     @Enumerated(EnumType.STRING)
     var serviceStatus: ServiceStatus = ServiceStatus.ACTIVE,
 

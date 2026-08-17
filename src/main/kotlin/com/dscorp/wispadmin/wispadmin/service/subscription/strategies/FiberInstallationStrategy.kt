@@ -129,6 +129,8 @@ class FiberInstallationStrategy(
             )
         }
 
+        subscription.vlan?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+
         hostDevice.vlanId?.let { return it.toString() }
 
         if (hostDevice.networkDeviceType == NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER) {

@@ -1,0 +1,1 @@
+ALTER TABLE subscription ADD COLUMN vlan VARCHAR(10) NULL;
