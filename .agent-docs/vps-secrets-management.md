@@ -76,6 +76,7 @@ Agrupadas por función; valores **nunca** en este documento.
 | Observabilidad (ingest + dashboard) | `OBS_API_KEY_BACKOFFICE`, `OBS_API_KEY_ASISTENCIAS`, `OBS_API_KEY_ANDROID`, `OBS_API_KEY_DASHBOARD`, `OBS_SESSION_SECRET`, `OBS_DASHBOARD_BASE_URL`, … |
 | NetDiag NOC | `NET_DIAG_ENABLED`, `NET_DIAG_API_KEY`, `NET_DIAG_WHATSAPP_NOC_PHONE` (opcional), `NET_DIAG_SNMP_*`, `NET_DIAG_SYSLOG_*`, `NET_DIAG_LLM_*` |
 | OLT Gateway (SSH) | `OLT_GATEWAY_ENABLED`, `OLT_GATEWAY_API_KEY`, `OLT_GATEWAY_PASSWORD`, `OLT_GATEWAY_HOST`, `OLT_GATEWAY_USERNAME`, … |
+| GenieACS NBI (TR-069) | `GENIEACS_NBI_URL` (default `http://127.0.0.1:7557`), `GENIEACS_NBI_USERNAME`, `GENIEACS_NBI_PASSWORD` (opcionales), `GENIEACS_NBI_TIMEOUT_MS` |
 
 Contrato completo de propiedades: `src/main/resources/application-prod.properties`.
 

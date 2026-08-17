@@ -12,6 +12,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.service.CpeManagementService
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
@@ -49,7 +50,8 @@ class SubscriptionControllerMultipartIdempotencyTest {
         storageService = storageService,
         eventPublisher = eventPublisher,
         integrityViolationClassifier = integrityViolationClassifier,
-        ipConflictNocNotifier = ipConflictNocNotifier
+        ipConflictNocNotifier = ipConflictNocNotifier,
+        cpeManagementService = mockk<CpeManagementService>(relaxed = true)
     )
 
     @Test

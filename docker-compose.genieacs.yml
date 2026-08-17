@@ -1,0 +1,62 @@
+# Local GenieACS lab for TR-069 tests with a physical CPE.
+# Start (after Docker Desktop is running):
+#   docker compose -f docker-compose.genieacs.yml up -d
+# UI:   http://localhost:3001
+# NBI:  http://localhost:7557  (Spring Boot GENIEACS_NBI_URL)
+# CWMP: http://<LAN_IPv4>:7547/  (router ACS URL)
+
+name: genieacs-local
+
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: genieacs-mongo
+    restart: unless-stopped
+    volumes:
+      - genieacs_mongo_data:/data/db
+    networks:
+      - genieacs
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  genieacs:
+    image: drumsergio/genieacs:1.2.16.0
+    container_name: genieacs
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      GENIEACS_MONGODB_CONNECTION_URL: mongodb://mongo/genieacs
+      GENIEACS_UI_JWT_SECRET: ${GENIEACS_UI_JWT_SECRET:-changeme-local-dev}
+      GENIEACS_CWMP_INTERFACE: 0.0.0.0
+      GENIEACS_NBI_INTERFACE: 0.0.0.0
+      GENIEACS_FS_INTERFACE: 0.0.0.0
+      GENIEACS_UI_INTERFACE: 0.0.0.0
+    ports:
+      - "7547:7547" # CWMP — CPE / router ACS URL
+      - "7557:7557" # NBI — Spring Boot
+      - "7567:7567" # FS — firmware/files (GenieACS requires this process)
+      - "3001:3000" # UI — browser (host 3001; 3000 is used by the frontend)
+    volumes:
+      - genieacs_ext:/opt/genieacs/ext
+    networks:
+      - genieacs
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  genieacs_mongo_data:
+  genieacs_ext:
+
+networks:
+  genieacs:
+    name: genieacs-local

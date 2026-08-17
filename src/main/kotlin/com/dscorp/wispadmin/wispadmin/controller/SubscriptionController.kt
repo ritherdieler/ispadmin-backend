@@ -12,8 +12,10 @@ import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.dscorp.wispadmin.wispadmin.service.BorneValidationResult
+import com.dscorp.wispadmin.wispadmin.service.CpeManagementService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
+import com.dscorp.wispadmin.wispadmin.genieacs.GenieAcsDeviceNotFoundException
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -49,7 +51,8 @@ class SubscriptionController(
     private val storageService: FirebaseStorageService,
     private val eventPublisher: ApplicationEventPublisher,
     private val integrityViolationClassifier: SubscriptionIntegrityViolationClassifier,
-    private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier
+    private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
+    private val cpeManagementService: CpeManagementService
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -133,6 +136,29 @@ class SubscriptionController(
             )
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "")))
+        }
+    }
+
+    @GetMapping("/{subscriptionId}/cpe-status")
+    fun getCpeStatus(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(cpeManagementService.getCpeStatus(subscriptionId))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "")))
+        }
+    }
+
+    @PutMapping("/{subscriptionId}/wifi")
+    fun updateWifi(
+        @PathVariable subscriptionId: Int,
+        @RequestBody request: UpdateWifiRequest
+    ): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(cpeManagementService.updateWifi(subscriptionId, request))
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "")))
+        } catch (e: GenieAcsDeviceNotFoundException) {
+            ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to (e.message ?: "")))
         }
     }
 

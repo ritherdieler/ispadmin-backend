@@ -53,6 +53,7 @@ data class SubscriptionDto(
     val equipmentCondition: EquipmentCondition? = null,
     val autoCut: Boolean = true,
     val hasFiberOnu: Boolean = false,
+    val fiberOnuSn: String? = null,
     val alreadyRegistered: Boolean = false,
     val mikrotikProvisionStatus: MikrotikProvisionStatus? = null,
     val oltProvisionStatus: OltProvisionStatus? = null,

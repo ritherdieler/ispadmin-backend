@@ -231,6 +231,7 @@ data class Subscription(
         equipmentCondition = equipmentCondition,
         autoCut = autoCut,
         hasFiberOnu = fiberOnu != null,
+        fiberOnuSn = fiberOnu?.sn?.takeIf { it.isNotBlank() },
         mikrotikProvisionStatus = mikrotikProvisionStatus,
         oltProvisionStatus = oltProvisionStatus,
         provisioningPending = isProvisioningPending()
