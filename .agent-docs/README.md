@@ -74,6 +74,7 @@
 | **Swagger / OpenAPI (SpringDoc)** | [swagger-openapi.md](./swagger-openapi.md) |
 | OLT MA5608T — salida exploración CLI (`?`) | [olt-ma5608t-cli-explore-output.md](./olt-ma5608t-cli-explore-output.md) |
 | Fix N+1 listado de suscripciones (GET /subscription/all) | [fix-n1-subscription-listado.md](./fix-n1-subscription-listado.md) |
+| **Corte automático de internet (día 15 / lunes siguiente)** | [corte-automatico-dia-15.md](./corte-automatico-dia-15.md) |
 
 ## Infraestructura Nginx
 

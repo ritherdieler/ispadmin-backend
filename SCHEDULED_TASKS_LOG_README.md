@@ -8,9 +8,9 @@ Sistema completo de registro persistente en base de datos para las tareas progra
 
 ### 1. Corte de Servicio de Internet (CUT_INTERNET_SERVICE)
 - **Scheduler**: `CutServiceMonthlyTaskScheduler`
-- **Programación**: 
-  - Día 16 de cada mes (lunes a viernes) a las 00:00
-  - Martes siguiente si el día 16 cae en fin de semana
+- **Programación**:
+  - Día 15 de cada mes a las 00:00 `America/Lima` si es lunes a viernes
+  - Lunes siguiente a las 00:00 si el 15 cae sábado o domingo
 - **Función**: Corta el servicio de internet a deudores y suscripciones canceladas mediante Address List en Mikrotik
 
 ### 2. Generación de Address List para Cancelados (GENERATE_ADDRESS_LIST_CANCELLED)
@@ -215,15 +215,15 @@ fun cutInternetService(): CutServiceResultDto {
 
 ### En el Scheduler (CutServiceMonthlyTaskScheduler)
 ```kotlin
-@Scheduled(cron = "0 0 0 16 * MON-FRI")
-fun executeOn16thIfWeekday() {
+@Scheduled(cron = "0 0 0 * * *", zone = "America/Lima")
+fun executeIfCutDay() {
+    val today = LocalDate.now(clock.withZone(ZoneId.of("America/Lima")))
+    if (!ServiceCutSchedule.shouldRun(today)) {
+        return
+    }
     try {
-        logger.info("🔄 Iniciando tarea programada: Corte de servicio mensual")
-        val result = subscriptionService.cutInternetService() // El log se guarda automáticamente
-        logger.info("✅ Tarea completada exitosamente")
+        subscriptionService.cutInternetService()
     } catch (e: Exception) {
-        logger.error("❌ Error en tarea programada: ${e.message}")
-        // Solo se guarda log de error si falla completamente la ejecución
         scheduledTaskLogService.logTaskError(
             ScheduledTaskType.CUT_INTERNET_SERVICE,
             e.message ?: "Error desconocido"

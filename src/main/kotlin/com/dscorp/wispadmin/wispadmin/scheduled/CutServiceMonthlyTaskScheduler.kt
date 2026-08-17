@@ -4,58 +4,39 @@ import com.dscorp.wispadmin.wispadmin.data.model.ScheduledTaskType
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.DayOfWeek
+import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Component
-class CutServiceMonthlyTaskScheduler {
+class CutServiceMonthlyTaskScheduler(
+    private val subscriptionService: SubscriptionService,
+    private val scheduledTaskLogService: ScheduledTaskLogService,
+    private val clock: Clock = Clock.system(ZoneId.of("America/Lima")),
+) {
 
     private val logger = LoggerFactory.getLogger(CutServiceMonthlyTaskScheduler::class.java)
+    private val zone: ZoneId = ZoneId.of("America/Lima")
 
-    @Autowired
-    lateinit var subscriptionService: SubscriptionService
-
-    @Autowired
-    lateinit var scheduledTaskLogService: ScheduledTaskLogService
-
-    @Scheduled(cron = "0 0 0 16 * MON-FRI")
-    fun executeOn16thIfWeekday() {
+    @Scheduled(cron = "0 0 0 * * *", zone = "America/Lima")
+    fun executeIfCutDay() {
+        val today = LocalDate.now(clock.withZone(zone))
+        if (!ServiceCutSchedule.shouldRun(today)) {
+            return
+        }
         try {
-            logger.info("🔄 Iniciando tarea programada: Corte de servicio mensual - ${LocalDateTime.now()}")
+            logger.info("Iniciando tarea programada: Corte de servicio mensual - ${LocalDateTime.now(clock)}")
             subscriptionService.cutInternetService()
-            logger.info("✅ Tarea completada exitosamente - Se generaron 2 logs (deudores y cancelados)")
+            logger.info("Tarea completada exitosamente")
         } catch (e: Exception) {
-            logger.error("❌ Error en tarea programada de corte de servicio: ${e.message}", e)
+            logger.error("Error en tarea programada de corte de servicio: ${e.message}", e)
             scheduledTaskLogService.logTaskError(
                 ScheduledTaskType.CUT_INTERNET_SERVICE,
                 e.message ?: "Error desconocido"
             )
         }
     }
-
-    @Scheduled(cron = "0 0 0 18-23 * TUE")
-    fun executeOnTuesdayAfterWeekend16th() {
-        val today = LocalDate.now()
-        val sixteenth = today.withDayOfMonth(16)
-        val dayOfWeek = sixteenth.dayOfWeek
-
-        if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
-            try {
-                logger.info("🔄 Iniciando tarea programada (martes después de fin de semana): Corte de servicio mensual - ${LocalDateTime.now()}")
-                subscriptionService.cutInternetService()
-                logger.info("✅ Tarea completada exitosamente - Se generaron 2 logs (deudores y cancelados)")
-            } catch (e: Exception) {
-                logger.error("❌ Error en tarea programada de corte de servicio (martes): ${e.message}", e)
-                scheduledTaskLogService.logTaskError(
-                    ScheduledTaskType.CUT_INTERNET_SERVICE,
-                    e.message ?: "Error desconocido"
-                )
-            }
-        }
-    }
-
 }
