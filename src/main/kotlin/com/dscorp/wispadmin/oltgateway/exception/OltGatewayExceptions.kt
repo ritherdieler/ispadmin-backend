@@ -14,4 +14,6 @@ class OltWritesDisabledException(message: String) : OltGatewayException(message)
 
 class OltGatewayConflictException(message: String) : OltGatewayException(message)
 
+class OltGatewayValidationException(message: String) : OltGatewayException(message)
+
 class CliBusBusyException(val reason: String) : OltGatewayException("CLI bus busy: $reason")

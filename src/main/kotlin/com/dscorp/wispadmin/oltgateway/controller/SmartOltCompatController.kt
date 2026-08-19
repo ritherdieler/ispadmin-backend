@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
+import com.dscorp.wispadmin.oltgateway.api.UpdateWanFormDto
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
 import io.swagger.v3.oas.annotations.Operation
@@ -20,9 +21,9 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/api/olt-gateway")
+@RequestMapping(path = ["/api/olt-gateway", "/api"])
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
-@Tag(name = "OLT Gateway SmartOLT Compat", description = "Aliases HTTP compatibles con SmartOLT (6 ops)")
+@Tag(name = "OLT Gateway SmartOLT Compat", description = "Aliases HTTP compatibles con SmartOLT (8 ops)")
 @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
 class SmartOltCompatController(
     private val oltManagerFacade: OltManagerFacade
@@ -95,4 +96,43 @@ class SmartOltCompatController(
     @Operation(summary = "Reboot ONU (SmartOLT alias)")
     fun rebootOnu(@PathVariable externalId: String): SmartOltActionResponseDto =
         oltManagerFacade.rebootOnu(externalId)
+
+    @PostMapping(
+        path = ["/onu/set_wan_mode/{externalId}"],
+        consumes = [MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE]
+    )
+    @Operation(summary = "Set ONU WAN mode (SmartOLT alias)")
+    fun setWanMode(
+        @PathVariable externalId: String,
+        @RequestParam(required = false, defaultValue = "") wan_mode: String,
+        @RequestParam(required = false, defaultValue = "") vlan: String,
+        @RequestParam(required = false, defaultValue = "") ip_address: String,
+        @RequestParam(required = false, defaultValue = "") subnet_mask: String,
+        @RequestParam(required = false, defaultValue = "") default_gateway: String,
+        @RequestParam(required = false, defaultValue = "") dns1: String,
+        @RequestParam(required = false, defaultValue = "") dns2: String
+    ): SmartOltActionResponseDto {
+        return oltManagerFacade.updateOnuWan(
+            externalId,
+            UpdateWanFormDto(
+                wan_mode = wan_mode,
+                vlan = vlan,
+                ip_address = ip_address,
+                subnet_mask = subnet_mask,
+                default_gateway = default_gateway,
+                dns1 = dns1,
+                dns2 = dns2
+            )
+        )
+    }
+
+    @PostMapping(
+        path = ["/onu/update_vlan/{externalId}"],
+        consumes = [MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE]
+    )
+    @Operation(summary = "Update ONU VLAN (SmartOLT alias)")
+    fun updateVlan(
+        @PathVariable externalId: String,
+        @RequestParam(required = false, defaultValue = "") vlan: String
+    ): SmartOltActionResponseDto = oltManagerFacade.updateOnuVlan(externalId, vlan)
 }

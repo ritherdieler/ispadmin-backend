@@ -262,6 +262,23 @@ class MockOltService : OltService {
         Thread.sleep(300)
     }
 
+    override fun updateOnuWanConfig(
+        sn: String,
+        vlan: Int?,
+        ip: String?,
+        mask: String?,
+        gateway: String?,
+        dns1: String?,
+        dns2: String?,
+    ): OnuWanUpdateResult {
+        logger.info(
+            "MOCK OLT: Actualizando WAN de la ONU $sn (vlan=$vlan, ip=$ip, mask=$mask, " +
+                "gateway=$gateway, dns1=$dns1, dns2=$dns2)"
+        )
+        Thread.sleep(300)
+        return OnuWanUpdateResult(applied = true, uniqueExternalId = "mock-$sn")
+    }
+
     override fun deleteOnu(onuExternalId: String) {
         logger.info("MOCK OLT: Eliminando ONU con ID externo: $onuExternalId")
         

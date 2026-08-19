@@ -67,6 +67,9 @@ class OltGatewayApiKeyFilter(
         val uri = request.requestURI ?: ""
         return path.startsWith("/api/olt-gateway") ||
             path.contains("/api/olt-gateway/") ||
-            uri.contains("/api/olt-gateway/")
+            uri.contains("/api/olt-gateway/") ||
+            // SmartOLT drop-in aliases exposed directly under /api/onu/**
+            path.startsWith("/api/onu/") ||
+            uri.contains("/api/onu/")
     }
 }

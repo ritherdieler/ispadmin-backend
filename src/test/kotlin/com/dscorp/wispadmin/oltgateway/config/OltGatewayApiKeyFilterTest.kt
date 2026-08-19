@@ -66,6 +66,22 @@ class OltGatewayApiKeyFilterTest {
     }
 
     @Test
+    fun `protege el alias SmartOLT sin prefijo olt-gateway`() {
+        every { properties.isValidApiKey(null) } returns false
+        every { properties.isValidApiKey("") } returns false
+
+        val request = MockHttpServletRequest("POST", "/ispadmin/api/onu/set_wan_mode/gigafiber-ma5608t_1_0_5")
+        request.contextPath = "/ispadmin"
+        request.servletPath = "/api/onu/set_wan_mode/gigafiber-ma5608t_1_0_5"
+        request.requestURI = "/ispadmin/api/onu/set_wan_mode/gigafiber-ma5608t_1_0_5"
+        val response = MockHttpServletResponse()
+
+        filter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.status)
+    }
+
+    @Test
     fun `acepta X-Token como alias SmartOLT`() {
         every { properties.isValidApiKey("dev-olt-gateway-key") } returns true
 

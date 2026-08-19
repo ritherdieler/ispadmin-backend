@@ -45,6 +45,18 @@ data class RebootCliRequest(
     val ontId: Int
 )
 
+data class UpdateWanCliRequest(
+    val board: Int,
+    val port: Int,
+    val ontId: Int,
+    val vlan: Int? = null,
+    val ipAddress: String? = null,
+    val subnetMask: String? = null,
+    val gateway: String? = null,
+    val dns1: String? = null,
+    val dns2: String? = null
+)
+
 class OltGatewayCommandService(
     private val runCommand: (String) -> String,
     private val properties: OltGatewayProperties,
@@ -110,6 +122,44 @@ class OltGatewayCommandService(
             runCommand("ont reboot ${request.port} ${request.ontId}")
             runCommand("quit")
         }
+    }
+
+    /** Retags the ONT service-port and/or rewrites its WAN address over OMCI. */
+    fun updateWan(request: UpdateWanCliRequest): List<String> {
+        ensureWritesEnabled()
+        val executed = mutableListOf<String>()
+        val hasStaticIp = request.ipAddress != null && request.subnetMask != null
+        if (request.vlan == null && !hasStaticIp) return executed
+
+        inWriteJob {
+            fun exec(cmd: String) {
+                executed.add(cmd)
+                runCommand(cmd)
+            }
+            request.vlan?.let { vlan ->
+                // MA5608T cannot edit a service-port in place: drop the ONT ones and recreate them.
+                exec("undo service-port port 0/${request.board}/${request.port} ont ${request.ontId}")
+                exec(
+                    "service-port vlan $vlan gpon 0/${request.board}/${request.port} ont ${request.ontId} " +
+                        "gemport 1 multi-service user-vlan $vlan tag-transform translate"
+                )
+            }
+            if (hasStaticIp) {
+                exec("interface gpon 0/${request.board}")
+                exec(ipConfigCommand(request))
+                exec("quit")
+            }
+        }
+        return executed
+    }
+
+    private fun ipConfigCommand(request: UpdateWanCliRequest): String = buildString {
+        append("ont ipconfig ${request.port} ${request.ontId} static ")
+        append("ip-address ${request.ipAddress} mask ${request.subnetMask}")
+        request.gateway?.let { append(" gateway $it") }
+        request.dns1?.let { append(" pri-dns $it") }
+        request.dns2?.let { append(" slave-dns $it") }
+        request.vlan?.let { append(" vlan $it") }
     }
 
     private fun ensureWritesEnabled() {

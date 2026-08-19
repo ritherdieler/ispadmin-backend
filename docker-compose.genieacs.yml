@@ -1,9 +1,14 @@
-# Local GenieACS lab for TR-069 tests with a physical CPE.
+# GenieACS for TR-069 on the internal/management network (no public tunnel).
 # Start (after Docker Desktop is running):
 #   docker compose -f docker-compose.genieacs.yml up -d
-# UI:   http://localhost:3001
-# NBI:  http://localhost:7557  (Spring Boot GENIEACS_NBI_URL)
-# CWMP: http://<LAN_IPv4>:7547/  (router ACS URL)
+# Verify internal endpoints (Windows):
+#   .\scripts\genieacs-internal-network.ps1
+# UI:   http://<internal-ip>:3001   or http://localhost:3001
+# NBI:  http://<internal-ip>:7557   (Spring Boot GENIEACS_NBI_URL)
+# CWMP: http://<internal-ip>:7547/  (ONU ACS URL — must be reachable from ONU WAN)
+# Docs: docs/genieacs-red-interna.md
+# Emergency lab-only tunnel (do not use in production):
+#   docker compose -f docker-compose.genieacs.yml --profile public up -d
 
 name: genieacs-local
 
@@ -37,6 +42,7 @@ services:
       GENIEACS_NBI_INTERFACE: 0.0.0.0
       GENIEACS_FS_INTERFACE: 0.0.0.0
       GENIEACS_UI_INTERFACE: 0.0.0.0
+      GENIEACS_CWMP_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-cwmp-access.log
     ports:
       - "7547:7547" # CWMP — CPE / router ACS URL
       - "7557:7557" # NBI — Spring Boot
@@ -52,6 +58,17 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
+
+  # Emergency lab-only TCP tunnel. Prefer internal/management VLAN IP for CWMP.
+  # Does not publish NBI (7557) or UI (3001).
+  cwmp-public-tunnel:
+    image: ekzhang/bore:latest
+    container_name: genieacs-cwmp-tunnel
+    profiles: ["public"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["local", "7547", "--local-host", "host.docker.internal", "--to", "bore.pub"]
 
 volumes:
   genieacs_mongo_data:

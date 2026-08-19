@@ -16,6 +16,8 @@ import com.dscorp.wispadmin.wispadmin.service.CpeManagementService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.genieacs.GenieAcsDeviceNotFoundException
+import com.dscorp.wispadmin.wispadmin.genieacs.CpeDeviceOfflineException
+import com.dscorp.wispadmin.wispadmin.dto.UpdateCpeConfigRequest
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -153,12 +155,30 @@ class SubscriptionController(
         @PathVariable subscriptionId: Int,
         @RequestBody request: UpdateWifiRequest
     ): ResponseEntity<Any> {
+        return cpeConfigResponse {
+            cpeManagementService.updateWifi(subscriptionId, request)
+        }
+    }
+
+    @PutMapping("/{subscriptionId}/cpe-config")
+    fun updateCpeConfig(
+        @PathVariable subscriptionId: Int,
+        @RequestBody request: UpdateCpeConfigRequest,
+    ): ResponseEntity<Any> {
+        return cpeConfigResponse {
+            cpeManagementService.updateCpeConfig(subscriptionId, request)
+        }
+    }
+
+    private fun cpeConfigResponse(action: () -> Any): ResponseEntity<Any> {
         return try {
-            ResponseEntity.ok(cpeManagementService.updateWifi(subscriptionId, request))
+            ResponseEntity.ok(action())
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "")))
         } catch (e: GenieAcsDeviceNotFoundException) {
             ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to (e.message ?: "")))
+        } catch (e: CpeDeviceOfflineException) {
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to (e.message ?: "")))
         }
     }
 

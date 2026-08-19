@@ -116,3 +116,13 @@ data class MoveOnuFormDto(
     val board: String = "",
     val port: String = ""
 )
+
+data class UpdateWanFormDto(
+    val wan_mode: String = "",
+    val vlan: String = "",
+    val ip_address: String = "",
+    val subnet_mask: String = "",
+    val default_gateway: String = "",
+    val dns1: String = "",
+    val dns2: String = ""
+)

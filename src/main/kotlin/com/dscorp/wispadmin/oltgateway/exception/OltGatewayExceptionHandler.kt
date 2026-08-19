@@ -45,6 +45,12 @@ class OltGatewayExceptionHandler {
             .body(ErrorResponseDto(error = "conflict", message = ex.message ?: "Conflict"))
     }
 
+    @ExceptionHandler(OltGatewayValidationException::class)
+    fun handleValidation(ex: OltGatewayValidationException): ResponseEntity<ErrorResponseDto> {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponseDto(error = "invalid_request", message = ex.message ?: "Invalid request"))
+    }
+
     @ExceptionHandler(CliBusBusyException::class)
     fun handleCliBusBusy(ex: CliBusBusyException): ResponseEntity<ErrorResponseDto> {
         return ResponseEntity.status(HttpStatus.CONFLICT)

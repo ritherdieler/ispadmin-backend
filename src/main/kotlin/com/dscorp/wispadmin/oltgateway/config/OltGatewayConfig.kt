@@ -51,7 +51,7 @@ class OltGatewayConfig {
     ): FilterRegistrationBean<OltGatewayApiKeyFilter> {
         val registration = FilterRegistrationBean<OltGatewayApiKeyFilter>()
         registration.filter = OltGatewayApiKeyFilter(properties, objectMapper)
-        registration.addUrlPatterns("/api/olt-gateway/*")
+        registration.addUrlPatterns("/api/olt-gateway/*", "/api/onu/*")
         registration.order = 25
         return registration
     }

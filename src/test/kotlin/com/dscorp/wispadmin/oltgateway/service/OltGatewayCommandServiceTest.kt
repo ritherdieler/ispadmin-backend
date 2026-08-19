@@ -96,6 +96,55 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `updateWan recrea el service-port cuando cambia la VLAN`() {
+        val executed = service.updateWan(UpdateWanCliRequest(board = 1, port = 0, ontId = 5, vlan = 120))
+
+        assertTrue(commands.any { it == "undo service-port port 0/1/0 ont 5" })
+        assertTrue(
+            commands.any {
+                it == "service-port vlan 120 gpon 0/1/0 ont 5 gemport 1 multi-service " +
+                    "user-vlan 120 tag-transform translate"
+            }
+        )
+        assertTrue(commands.none { it.startsWith("ont ipconfig") })
+        assertEquals(commands, executed)
+    }
+
+    @Test
+    fun `updateWan emite ont ipconfig estatico con gateway y dns`() {
+        service.updateWan(
+            UpdateWanCliRequest(
+                board = 1,
+                port = 0,
+                ontId = 5,
+                vlan = 120,
+                ipAddress = "192.168.30.50",
+                subnetMask = "255.255.255.0",
+                gateway = "192.168.30.1",
+                dns1 = "8.8.8.8",
+                dns2 = "8.8.4.4"
+            )
+        )
+
+        assertTrue(commands.any { it == "interface gpon 0/1" })
+        assertTrue(
+            commands.any {
+                it == "ont ipconfig 0 5 static ip-address 192.168.30.50 mask 255.255.255.0 " +
+                    "gateway 192.168.30.1 pri-dns 8.8.8.8 slave-dns 8.8.4.4 vlan 120"
+            }
+        )
+        assertTrue(commands.any { it == "quit" })
+    }
+
+    @Test
+    fun `updateWan sin datos no emite comandos`() {
+        val executed = service.updateWan(UpdateWanCliRequest(board = 1, port = 0, ontId = 5))
+
+        assertTrue(executed.isEmpty())
+        assertTrue(commands.isEmpty())
+    }
+
+    @Test
     fun `writes disabled lanza excepcion`() {
         properties.writes.enabled = false
 

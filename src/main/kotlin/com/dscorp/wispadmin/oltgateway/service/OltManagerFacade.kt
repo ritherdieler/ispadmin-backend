@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
+import com.dscorp.wispadmin.oltgateway.api.UpdateWanFormDto
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
@@ -21,6 +22,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
+import com.dscorp.wispadmin.oltgateway.exception.OltGatewayValidationException
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import org.springframework.transaction.annotation.Transactional
@@ -313,6 +315,119 @@ open class OltManagerFacade(
         }
     }
 
+    @Transactional
+    open fun updateOnuWan(externalId: String, request: UpdateWanFormDto): SmartOltActionResponseDto =
+        applyWanUpdate(externalId, request, "set_wan_mode")
+
+    @Transactional
+    open fun updateOnuVlan(externalId: String, vlan: String): SmartOltActionResponseDto =
+        applyWanUpdate(externalId, UpdateWanFormDto(vlan = vlan), "update_vlan")
+
+    private fun applyWanUpdate(
+        externalId: String,
+        request: UpdateWanFormDto,
+        action: String
+    ): SmartOltActionResponseDto {
+        val onu = onuRepository.findByExternalIdAndDeletedAtIsNull(externalId)
+            .orElseThrow { OnuNotFoundException("ONU not found for externalId=$externalId") }
+        val update = parseWanUpdate(request)
+        val olt = requireOlt()
+        val task = taskRepository.save(
+            OltMgrTask(
+                olt = olt,
+                onu = onu,
+                type = action,
+                payload = """{"external_id":"$externalId","vlan":${update.vlan}}""",
+                status = "running",
+                source = "api",
+                startedAt = Instant.now()
+            )
+        )
+        try {
+            commandService.updateWan(
+                UpdateWanCliRequest(
+                    board = onu.board,
+                    port = onu.port,
+                    ontId = onu.onuIndex,
+                    vlan = update.vlan,
+                    ipAddress = update.ipAddress,
+                    subnetMask = update.subnetMask,
+                    gateway = update.gateway,
+                    dns1 = update.dns1,
+                    dns2 = update.dns2
+                )
+            )
+            update.vlan?.let { onu.mainVlanId = it }
+            update.ipAddress?.let {
+                onu.ipAddress = it
+                onu.wanMode = STATIC_WAN_MODE
+            }
+            update.subnetMask?.let { onu.subnetMask = it }
+            update.gateway?.let { onu.defaultGateway = it }
+            update.dns1?.let { onu.dns1 = it }
+            update.dns2?.let { onu.dns2 = it }
+            onu.updatedAt = Instant.now()
+            onuRepository.save(onu)
+            task.status = "success"
+            task.finishedAt = Instant.now()
+            taskRepository.save(task)
+            auditLogRepository.save(
+                OltMgrAuditLog(
+                    olt = olt,
+                    onu = onu,
+                    action = action,
+                    source = "api",
+                    details = """{"external_id":"$externalId","vlan":${update.vlan}}"""
+                )
+            )
+            return SmartOltActionResponseDto(status = true, unique_external_id = externalId)
+        } catch (ex: Exception) {
+            task.status = "failed"
+            task.error = ex.message
+            task.finishedAt = Instant.now()
+            taskRepository.save(task)
+            throw ex
+        }
+    }
+
+    private fun parseWanUpdate(request: UpdateWanFormDto): WanUpdate {
+        val rawVlan = request.vlan.trimToNull()
+        val vlan = rawVlan?.let {
+            it.toIntOrNull()?.takeIf { value -> value in MIN_VLAN..MAX_VLAN }
+                ?: throw OltGatewayValidationException("Invalid vlan '$it', expected $MIN_VLAN-$MAX_VLAN")
+        }
+        val ipAddress = request.ip_address.trimToNull()
+        val subnetMask = request.subnet_mask.trimToNull()
+        val gateway = request.default_gateway.trimToNull()
+        val dns1 = request.dns1.trimToNull()
+        val dns2 = request.dns2.trimToNull()
+
+        if (ipAddress != null && subnetMask == null) {
+            throw OltGatewayValidationException("subnet_mask is required when ip_address is provided")
+        }
+        if (subnetMask != null && ipAddress == null) {
+            throw OltGatewayValidationException("ip_address is required when subnet_mask is provided")
+        }
+        if (ipAddress == null && (gateway != null || dns1 != null || dns2 != null)) {
+            throw OltGatewayValidationException("ip_address and subnet_mask are required to set gateway or DNS")
+        }
+        if (vlan == null && ipAddress == null) {
+            throw OltGatewayValidationException("Nothing to update: send vlan or the WAN parameters")
+        }
+        return WanUpdate(vlan, ipAddress, subnetMask, gateway, dns1, dns2)
+    }
+
+    private data class WanUpdate(
+        val vlan: Int?,
+        val ipAddress: String?,
+        val subnetMask: String?,
+        val gateway: String?,
+        val dns1: String?,
+        val dns2: String?
+    )
+
+    private fun String?.trimToNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
     private fun requireOlt(): OltMgrOlt {
         return oltRepository.findByName(properties.oltId)
             .orElseThrow { IllegalStateException("OLT seed missing for ${properties.oltId}") }
@@ -348,5 +463,11 @@ open class OltManagerFacade(
         return onuTypeRepository.findByName(name).orElseGet {
             onuTypeRepository.save(OltMgrOnuType(name = name))
         }
+    }
+
+    companion object {
+        private const val STATIC_WAN_MODE = "static"
+        private const val MIN_VLAN = 1
+        private const val MAX_VLAN = 4094
     }
 }

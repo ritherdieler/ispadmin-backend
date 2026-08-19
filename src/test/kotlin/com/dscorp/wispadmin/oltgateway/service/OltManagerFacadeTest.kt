@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
+import com.dscorp.wispadmin.oltgateway.api.UpdateWanFormDto
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
@@ -17,6 +18,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentR
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
+import com.dscorp.wispadmin.oltgateway.exception.OltGatewayValidationException
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
@@ -26,6 +28,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -307,5 +310,92 @@ class OltManagerFacadeTest {
         every { onuRepository.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
 
         assertThrows<OnuNotFoundException> { facade.rebootOnu("missing") }
+    }
+
+    @Test
+    fun `updateOnuWan aplica CLI y persiste la red en A`() {
+        val onu = givenAuthorizedOnu()
+        val cliRequest = slot<UpdateWanCliRequest>()
+        every { commandService.updateWan(capture(cliRequest)) } returns emptyList()
+        every { onuRepository.save(any()) } answers { firstArg() }
+
+        val response = facade.updateOnuWan(
+            "gigafiber-ma5608t_1_0_5",
+            UpdateWanFormDto(
+                vlan = "120",
+                ip_address = "192.168.30.50",
+                subnet_mask = "255.255.255.0",
+                default_gateway = "192.168.30.1",
+                dns1 = "8.8.8.8",
+                dns2 = "8.8.4.4"
+            )
+        )
+
+        assertTrue(response.status)
+        assertEquals("gigafiber-ma5608t_1_0_5", response.unique_external_id)
+        assertEquals(120, onu.mainVlanId)
+        assertEquals("192.168.30.50", onu.ipAddress)
+        assertEquals("255.255.255.0", onu.subnetMask)
+        assertEquals("192.168.30.1", onu.defaultGateway)
+        assertEquals("8.8.8.8", onu.dns1)
+        assertEquals("8.8.4.4", onu.dns2)
+        assertEquals("static", onu.wanMode)
+        assertEquals(1, cliRequest.captured.board)
+        assertEquals(0, cliRequest.captured.port)
+        assertEquals(5, cliRequest.captured.ontId)
+        assertEquals(120, cliRequest.captured.vlan)
+        verify { taskRepository.save(match { it.type == "set_wan_mode" && it.status == "success" }) }
+        verify { auditLogRepository.save(match { it.action == "set_wan_mode" }) }
+    }
+
+    @Test
+    fun `updateOnuVlan solo reconfigura la VLAN`() {
+        val onu = givenAuthorizedOnu()
+        val cliRequest = slot<UpdateWanCliRequest>()
+        every { commandService.updateWan(capture(cliRequest)) } returns emptyList()
+        every { onuRepository.save(any()) } answers { firstArg() }
+
+        val response = facade.updateOnuVlan("gigafiber-ma5608t_1_0_5", "120")
+
+        assertTrue(response.status)
+        assertEquals(120, onu.mainVlanId)
+        assertNull(onu.ipAddress)
+        assertNull(cliRequest.captured.ipAddress)
+        verify { auditLogRepository.save(match { it.action == "update_vlan" }) }
+    }
+
+    @Test
+    fun `updateOnuWan rechaza IP sin mascara`() {
+        givenAuthorizedOnu()
+
+        assertThrows<OltGatewayValidationException> {
+            facade.updateOnuWan(
+                "gigafiber-ma5608t_1_0_5",
+                UpdateWanFormDto(ip_address = "192.168.30.50")
+            )
+        }
+        verify(exactly = 0) { commandService.updateWan(any()) }
+    }
+
+    @Test
+    fun `updateOnuVlan 404 si no existe`() {
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
+
+        assertThrows<OnuNotFoundException> { facade.updateOnuVlan("missing", "120") }
+    }
+
+    private fun givenAuthorizedOnu(): OltMgrOnu {
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "4857544311E70E9A",
+            externalId = "gigafiber-ma5608t_1_0_5",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 5,
+            mainVlanId = 100
+        )
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_0_5") } returns Optional.of(onu)
+        return onu
     }
 }
