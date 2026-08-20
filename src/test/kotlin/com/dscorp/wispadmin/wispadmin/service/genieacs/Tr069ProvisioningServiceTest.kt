@@ -55,6 +55,7 @@ class Tr069ProvisioningServiceTest {
     fun `device appears on second poll then COMPLETE`() {
         server.enqueue(emptyDevices())
         server.enqueue(deviceList())
+        server.enqueue(wanConnectionTree(index = 4))
         server.enqueue(taskAccepted())
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 2.4
@@ -74,6 +75,26 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
+    fun `setParameterValues uses wanVlanId from request not global property`() {
+        server.enqueue(deviceList())
+        server.enqueue(wanConnectionTree(index = 4))
+        server.enqueue(taskAccepted())
+        server.enqueue(taskAccepted())
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+
+        val outcome = service.provision(sampleRequest().copy(wanVlanId = 100))
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        // 1=listDevices, 2=wan tree, 3=setParameterValues
+        server.takeRequest()
+        server.takeRequest()
+        val setBody = server.takeRequest().body.readUtf8()
+        assertTrue(setBody.contains("\"100\""), "expected VLAN 100 in SPV payload: $setBody")
+        assertTrue(setBody.contains("X_CT-COM_VLANIDMark"), setBody)
+    }
+
+    @Test
     fun `device never appears returns MANUAL_REQUIRED`() {
         repeat(5) { server.enqueue(emptyDevices()) }
 
@@ -86,6 +107,7 @@ class Tr069ProvisioningServiceTest {
     @Test
     fun `connection request credentials error returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
+        server.enqueue(wanConnectionTree(index = 4))
         server.enqueue(
             MockResponse()
                 .setResponseCode(202)
@@ -127,6 +149,7 @@ class Tr069ProvisioningServiceTest {
         wifiPassword24 = "11111111",
         wifiSsid5 = "acs5g",
         wifiPassword5 = "11111111",
+        wanVlanId = 1,
     )
 
     private fun emptyDevices() = MockResponse()
@@ -164,6 +187,24 @@ class Tr069ProvisioningServiceTest {
         .setResponseCode(202)
         .addHeader("Content-Type", "application/json")
         .setBody("""{"_id":"task-1"}""")
+
+    private fun wanConnectionTree(index: Int) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"B46415-V2804AX15T-12345B4641531C0B6",
+              "InternetGatewayDevice":{
+                "WANDevice":{"1":{
+                  "WANConnectionDevice":{
+                    "$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.123.4"}}}}
+                  }
+                }}
+              }
+            }]
+            """.trimIndent()
+        )
 
     private fun deviceWithSsids(ssid24: String, ssid5: String) = MockResponse()
         .setResponseCode(200)

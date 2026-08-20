@@ -39,26 +39,21 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
-    fun `resolveVlan devuelve 100 para MK2 piloto`() {
-        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = 100))
+    fun `resolveVlan devuelve 100 desde subscription vlan`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = 100)).apply {
+            vlan = "100"
+        }
 
         assertEquals("100", strategy.resolveVlan(subscription))
     }
 
     @Test
-    fun `resolveVlan devuelve 1 para MK1 legacy`() {
-        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 1, vlanId = 1))
+    fun `resolveVlan devuelve 1 desde subscription vlan`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 1, vlanId = 1)).apply {
+            vlan = "1"
+        }
 
         assertEquals("1", strategy.resolveVlan(subscription))
-    }
-
-    @Test
-    fun `resolveVlan falla cuando CLOUD_CORE_ROUTER no tiene vlanId`() {
-        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = null))
-
-        assertThrows(IllegalStateException::class.java) {
-            strategy.resolveVlan(subscription)
-        }
     }
 
     @Test
@@ -71,22 +66,26 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
-    fun `resolveVlan nulo o vacio recurre a hostDevice vlanId`() {
+    fun `resolveVlan nulo o vacio falla sin fallback a hostDevice`() {
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val withoutVlan = subscriptionWithHostDevice(host)
         val blankVlan = subscriptionWithHostDevice(host).apply { vlan = "   " }
 
-        assertEquals("100", strategy.resolveVlan(withoutVlan))
-        assertEquals("100", strategy.resolveVlan(blankVlan))
+        assertThrows(IllegalArgumentException::class.java) {
+            strategy.resolveVlan(withoutVlan)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            strategy.resolveVlan(blankVlan)
+        }
     }
 
     @Test
-    fun `resolveVlan falla cuando CLOUD_CORE_ROUTER no tiene vlanId ni vlan en payload`() {
-        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = null)).apply {
-            vlan = null
+    fun `resolveVlan falla con vlan invalida aunque hostDevice tenga vlanId`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = 100)).apply {
+            vlan = "50"
         }
 
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             strategy.resolveVlan(subscription)
         }
     }
@@ -100,7 +99,7 @@ class FiberInstallationStrategyTest {
     fun `resolveVlan falla cuando hostDevice esta deshabilitado`() {
         val subscription = subscriptionWithHostDevice(
             cloudCoreRouter(id = 8, vlanId = 100, disabled = true)
-        )
+        ).apply { vlan = "100" }
 
         assertThrows(IllegalStateException::class.java) {
             strategy.resolveVlan(subscription)
@@ -114,6 +113,7 @@ class FiberInstallationStrategyTest {
         strategy = FiberInstallationStrategy(onuReuse)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
@@ -140,6 +140,7 @@ class FiberInstallationStrategyTest {
         strategy = FiberInstallationStrategy(onuReuse)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
             ip = "192.168.1.77"
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
@@ -200,6 +201,7 @@ class FiberInstallationStrategyTest {
         hostDeviceId = 8,
         installationType = InstallationType.FIBER,
         onu = OnuDto(sn = "ALCL12345678", board = "1", olt_id = "1", onu = "1", onu_type_id = "1", onu_type_name = "HG8240H", pon_type = "gpon", port = "1"),
-        clientRequestId = "offline-req-1"
+        clientRequestId = "offline-req-1",
+        vlan = "100",
     )
 }

@@ -104,6 +104,41 @@ class GenieAcsClient(
         return readNestedValue(deviceNode, dottedPath)
     }
 
+    /**
+     * Returns WANConnectionDevice instance indices that expose WANIPConnection.1.
+     * Empty when GenieACS has not reported the WAN tree yet.
+     */
+    fun listWanConnectionIndices(deviceId: String): List<Int> {
+        val projection = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice"
+        val uri = deviceUri(deviceId, projection)
+        val body = try {
+            restTemplate.getForObject(uri, String::class.java)
+        } catch (ex: Exception) {
+            log.warn("No se pudo listar WANConnectionDevice de {}: {}", deviceId, ex.message)
+            return emptyList()
+        } ?: return emptyList()
+        val root = objectMapper.readTree(body)
+        val deviceNode = when {
+            root.isArray && root.size() > 0 -> root[0]
+            root.isObject -> root
+            else -> return emptyList()
+        }
+        val wanConn = deviceNode
+            .path("InternetGatewayDevice")
+            .path("WANDevice")
+            .path("1")
+            .path("WANConnectionDevice")
+        if (!wanConn.isObject) return emptyList()
+        return wanConn.fieldNames().asSequence()
+            .mapNotNull { it.toIntOrNull() }
+            .filter { index ->
+                wanConn.path(index.toString()).path("WANIPConnection").path("1").isObject ||
+                    wanConn.path(index.toString()).path("WANIPConnection").has("1")
+            }
+            .sorted()
+            .toList()
+    }
+
     private fun postTask(
         deviceId: String,
         payload: Map<String, Any>,

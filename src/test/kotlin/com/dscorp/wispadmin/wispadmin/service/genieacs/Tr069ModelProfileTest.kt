@@ -60,4 +60,18 @@ class Tr069ModelProfileTest {
         assertEquals("192.168.123.4", values.first { it.path.endsWith("ExternalIPAddress") }.value)
         assertEquals("acs2g", values.first { it.path.endsWith("WLANConfiguration.5.SSID") }.value)
     }
+
+    @Test
+    fun `withWanConnectionIndex rewrites WAN paths`() {
+        val profile = Tr069ModelProfiles.resolve("V2804AX15T", null)!!.withWanConnectionIndex(2)
+        assertTrue(profile.wanIpConnectionPath.contains("WANConnectionDevice.2.WANIPConnection.1"))
+        assertTrue(profile.wanGponLinkConfigPath.contains("WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig"))
+    }
+
+    @Test
+    fun `resolveWanConnectionIndex prefers default when present`() {
+        assertEquals(4, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(1, 4, 5)))
+        assertEquals(2, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(2, 3)))
+        assertEquals(4, Tr069ModelProfiles.resolveWanConnectionIndex(emptyList()))
+    }
 }

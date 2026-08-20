@@ -54,6 +54,7 @@ class SubscriptionServiceIdempotencyTest {
             genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
                 enabled = false
             },
+            tr069PostInstallProvisioner = mockk(relaxed = true),
         )
     }
 

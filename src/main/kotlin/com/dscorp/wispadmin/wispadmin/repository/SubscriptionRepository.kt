@@ -23,6 +23,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
           AND (
             s.mikrotikProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus.PENDING
             OR s.oltProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.PENDING
+            OR (
+              s.tr069ProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.PENDING
+              AND s.oltProvisionStatus = com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.COMPLETE
+            )
           )
         ORDER BY s.provisionNextAttemptAt ASC
         """

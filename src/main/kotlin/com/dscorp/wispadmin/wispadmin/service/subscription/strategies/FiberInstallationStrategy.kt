@@ -9,6 +9,7 @@ import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
@@ -20,7 +21,6 @@ class FiberInstallationStrategy(
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
 
     companion object {
-        private const val FALLBACK_VLAN = "1"
         private const val DEFAULT_ZONE = "Zone 1"
         private const val DEFAULT_ONU_MODE = "Routing"
         private const val DEFAULT_CUSTOM_PROFILE = "Generic_1"
@@ -119,7 +119,11 @@ class FiberInstallationStrategy(
         )
     }
 
-    internal fun resolveVlan(subscription: Subscription): String {
+    /**
+     * VLAN for SmartOLT authorize_onu — must match the value sent from the app
+     * and the GenieACS TR-069 WAN VLAN. No hostDevice / global fallback.
+     */
+    fun resolveVlan(subscription: Subscription): String {
         val hostDevice = subscription.hostDevice
             ?: throw IllegalStateException("La suscripción debe tener hostDevice asignado")
 
@@ -129,16 +133,8 @@ class FiberInstallationStrategy(
             )
         }
 
-        subscription.vlan?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-
-        hostDevice.vlanId?.let { return it.toString() }
-
-        if (hostDevice.networkDeviceType == NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER) {
-            throw IllegalStateException(
-                "CLOUD_CORE_ROUTER id=${hostDevice.id} debe tener vlanId configurado"
-            )
-        }
-
-        return FALLBACK_VLAN
+        val vlan = SubscriptionVlanRules.requireAppVlan(subscription.vlan)
+        SubscriptionVlanRules.assertPoolAligned(vlan, subscription.ipPool?.ipSegment)
+        return vlan
     }
 }

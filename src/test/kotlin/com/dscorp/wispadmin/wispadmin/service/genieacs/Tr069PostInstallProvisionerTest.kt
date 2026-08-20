@@ -1,25 +1,28 @@
 package com.dscorp.wispadmin.wispadmin.service.genieacs
 
+import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
+import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
+import com.dscorp.wispadmin.wispadmin.dto.OnuDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
-import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
-import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
-import com.dscorp.wispadmin.wispadmin.dto.OnuDto
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.Optional
 
-class Tr069PostInstallProvisionerAcsSyncTest {
+class Tr069PostInstallProvisionerTest {
 
     private val properties = GenieAcsProperties().apply { enabled = true }
     private val provisioningService = mockk<Tr069ProvisioningService>()
@@ -39,79 +42,68 @@ class Tr069PostInstallProvisionerAcsSyncTest {
             acsSyncService = acsSyncService,
             fiberInstallationStrategy = fiberInstallationStrategy,
         )
-        every { fiberInstallationStrategy.resolveVlan(any()) } returns "1"
-        every { repository.findById(10) } returns Optional.of(
-            Subscription(
-                id = 10,
-                installationType = InstallationType.FIBER,
-                ip = "192.168.123.4",
-                vlan = "1",
-                wifiSsid24 = "acs2g",
-                wifiSsid5 = "acs5g",
-                oltProvisionStatus = OltProvisionStatus.COMPLETE,
-                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
-                equipmentCondition = EquipmentCondition.LOAN,
-            )
-        )
+        every { fiberInstallationStrategy.resolveVlan(any()) } returns "100"
         every { repository.save(any()) } answers { firstArg() }
     }
 
     @Test
-    fun `COMPLETE outcome triggers acs upsert`() {
-        val outcome = Tr069ProvisionOutcome(
-            status = Tr069ProvisionStatus.COMPLETE,
-            deviceId = "dev-1",
-            message = "ok",
-            acsSnapshot = Tr069AcsSnapshot(serialSuffix = "31C0B6", ssid24 = "acs2g"),
-        )
-        every { provisioningService.provision(any()) } returns outcome
+    fun `skips GenieACS when OLT not COMPLETE and keeps TR069 PENDING`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.PENDING)
+        every { repository.findById(10) } returns Optional.of(subscription)
 
-        provisioner.apply(
+        val dto = provisioner.apply(
             SubscriptionDto(
                 id = 10,
                 installationType = InstallationType.FIBER,
-                oltProvisionStatus = OltProvisionStatus.COMPLETE,
+                oltProvisionStatus = OltProvisionStatus.PENDING,
+                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
             ),
-            fiberRequest(),
+            fiberRequest(vlan = "100"),
         )
 
-        verify(exactly = 1) {
-            acsSyncService.upsertFromProvision(
-                subscriptionId = 10,
-                outcome = outcome,
-                smartoltSerial = "VSOL0031C0B6",
-            )
-        }
+        verify(exactly = 0) { provisioningService.provision(any()) }
+        assertEquals(Tr069ProvisionStatus.PENDING, dto.tr069ProvisionStatus)
+        assertTrue(dto.tr069Message!!.contains("OLT", ignoreCase = true))
     }
 
     @Test
-    fun `MANUAL without device still invokes sync service which may no-op`() {
-        val outcome = Tr069ProvisionOutcome(
-            status = Tr069ProvisionStatus.MANUAL_REQUIRED,
-            deviceId = null,
-            error = "timeout",
+    fun `passes wanVlanId from resolveVlan when OLT COMPLETE`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.COMPLETE)
+        every { repository.findById(10) } returns Optional.of(subscription)
+        every { fiberInstallationStrategy.resolveVlan(any()) } returns "100"
+        val requestSlot = slot<Tr069ProvisionRequest>()
+        every { provisioningService.provision(capture(requestSlot)) } returns Tr069ProvisionOutcome(
+            status = Tr069ProvisionStatus.COMPLETE,
+            deviceId = "dev-1",
+            message = "ok",
         )
-        every { provisioningService.provision(any()) } returns outcome
 
         provisioner.apply(
             SubscriptionDto(
                 id = 10,
                 installationType = InstallationType.FIBER,
                 oltProvisionStatus = OltProvisionStatus.COMPLETE,
+                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
             ),
-            fiberRequest(),
+            fiberRequest(vlan = "100"),
         )
 
-        verify(exactly = 1) {
-            acsSyncService.upsertFromProvision(
-                subscriptionId = 10,
-                outcome = outcome,
-                smartoltSerial = "VSOL0031C0B6",
-            )
-        }
+        assertEquals(100, requestSlot.captured.wanVlanId)
     }
 
-    private fun fiberRequest() = SubscriptionRequest(
+    private fun fiberSubscription(olt: OltProvisionStatus) = Subscription(
+        id = 10,
+        installationType = InstallationType.FIBER,
+        ip = "192.168.30.10",
+        vlan = "100",
+        wifiSsid24 = "acs2g",
+        wifiSsid5 = "acs5g",
+        oltProvisionStatus = olt,
+        tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
+        equipmentCondition = EquipmentCondition.LOAN,
+    )
+
+    private fun fiberRequest(vlan: String) = SubscriptionRequest(
         firstName = "Juan",
         lastName = "Perez",
         dni = "12345678",
@@ -125,9 +117,9 @@ class Tr069PostInstallProvisionerAcsSyncTest {
         technicianId = 1,
         hostDeviceId = 1,
         installationType = InstallationType.FIBER,
-        vlan = "1",
+        vlan = vlan,
         wifiSsid24 = "acs2g",
         wifiSsid5 = "acs5g",
-        onu = OnuDto(sn = "VSOL0031C0B6", onu_type_name = "V2804AX15T"),
+        onu = OnuDto(sn = "VSOL0031C0B6", onu_type_name = "VSOLVA74"),
     )
 }

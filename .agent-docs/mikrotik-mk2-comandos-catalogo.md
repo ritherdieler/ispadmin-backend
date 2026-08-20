@@ -35,7 +35,11 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/ip arp print where address=192.168.30.202` | ARP abonado piloto | Diagnóstico | Esperado: `reachable` en `sfp-sfpplus2` |
 | `/ping 192.168.30.202 count=5` | Ping L3 abonado piloto | Diagnóstico / verify script | |
 | `/tool traceroute 8.8.8.8 src-address=192.168.30.1 count=1` | Ruta WAN desde gateway piloto | Diagnóstico | NAT masquerade OK |
-| `/ip service set www-ssl certificate=netdiag-rest-mk2 disabled=no address=212.85.13.47/32,192.168.0.0/16` | REST TLS NetDiag desde VPS | `scripts/mk2-enable-www-ssl.py` | CA `netdiag-ca`; truststore alias `mk2-netdiag-ca`; 2026-08-01 |
+| `/ip address add address=192.168.255.1/24 interface=LAN_MK1 …` | Gateway staging TR-069 VLAN1 | `scripts/genieacs/mk2-provisioning-network-255.rsc` | DHCP `.100–.250`; DNS 8.8.8.8/8.8.4.4 |
+| `/ip pool add name=provisioning-255 ranges=192.168.255.100-192.168.255.250` | Pool DHCP staging | `mk2-provisioning-network-255.rsc` | Idempotente |
+| `/ip dhcp-server add name=dhcp-provisioning-255 …` | DHCP server staging | `mk2-provisioning-network-255.rsc` | Lease 1h |
+| `/ip firewall filter … dst-port=7547 dst-address=192.168.255.0/24` | CR GenieACS staging | `mk2-provisioning-network-255.rsc` | Desde `10.255.255.2` |
+| `/ip firewall nat … src-address=192.168.255.0/24 masquerade` | NAT Inform ACS | `mk2-provisioning-network-255.rsc` | |
 | `/ip firewall address-list add list=api_whitelist address=212.85.13.47` | Allowlist VPS ispAdmin | Protección API MK2 | + `192.168.0.0/16` red interna |
 | `/ip service set api address=212.85.13.47/32,192.168.0.0/16` | API solo VPS + LAN | Protección API MK2 | Aplicado 2026-07-21 |
 | `/ip service disable api-ssl` | Apaga api-ssl sin certificado | Protección API MK2 | |
@@ -48,6 +52,13 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/tool torch interface=sfp-sfpplus2 duration=30` | Monitoreo tráfico uplink | Validación internet ONU | Detectar flujos ONU→Internet |
 | `/ip firewall connection print where src-address~"192.168.30"` | Conexiones NAT abonados piloto | Validación internet | Sin conns externas = CPE no sale |
 | `/tool fetch url="http://192.168.30.202/" mode=http` | Acceso UI CPE desde MK2 | Diagnóstico ZTE | HTTP 200 = L3 bidireccional |
+| `/routing table add name=toTarazona fib` | Tabla de ruteo para policy clientes problemáticos | `scripts/mikrotik-mk2-problematic-routing.rsc` | ROS 7; aplicado 2026-08-19 |
+| `/ip address add address=8.243.126.161/32 interface="WAN-VLAN SFP-SFPPLUS1" …` | IP secundaria SNAT problemáticos (también `.160`/`.162`) | `scripts/mikrotik-mk2-problematic-routing.rsc` | **No** tocar `38.224.231.4/27` |
+| `/ip firewall address-list add list="Clientes con paginas problematicas" …` | 14 clientes migrados desde MK1 | `scripts/mikrotik-mk2-problematic-address-list.rsc` | Excluye `0.0.0.0` inválida |
+| `/ip firewall mangle add … new-routing-mark=toTarazona in-interface=LAN_MK1` | Mark-routing clientes problemáticos VLAN1 | `scripts/mikrotik-mk2-problematic-routing.rsc` | + regla espejo `sfp-sfpplus2` VLAN100 |
+| `/ip route add … gateway=38.224.231.1 routing-table=toTarazona` | Default marcada → Tarazona | `scripts/mikrotik-mk2-problematic-routing.rsc` | Mismo GW que main; SNAT cambia IP origen |
+| `/ip firewall nat add chain=srcnat action=src-nat routing-mark=toTarazona to-addresses=8.243.126.161` | SNAT problemáticos | `scripts/mikrotik-mk2-problematic-routing.rsc` | Antes del masquerade WAN; 2026-08-19 |
+| `/ping 8.8.8.8 src-address=8.243.126.161 count=3` | Valida salida por IP secundaria | Diagnóstico post-migración | 0% loss verificado 2026-08-19 |
 
 ## Scripts
 
@@ -57,6 +68,9 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `scripts/mikrotik-mk2-pilot-gateway-fix.rsc` | Solo corrección si la IP quedó en `vlan100-olt` |
 | `scripts/mikrotik-mk2-pilot-verify.sh` | Verificación ping/ARP/stats |
 | `scripts/mikrotik-mk2-phase1-verify.py` | Verificación API + DB id=8 |
+| `scripts/mikrotik-mk2-problematic-address-list.rsc` | Address-list clientes problemáticos (14 IPs) |
+| `scripts/mikrotik-mk2-problematic-routing.rsc` | Routing table + IPs secundarias + mangle + ruta + SNAT |
+| `scripts/mikrotik-mk1-problematic-disable.rsc` | Deshabilitar policy/IPs en MK1 tras cutover |
 
 ## Relacionado
 

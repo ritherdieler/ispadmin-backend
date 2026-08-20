@@ -273,16 +273,21 @@ data class Subscription(
             tr069LastError
                 ?: "No se pudo configurar la ONU por TR-069. Configure la ONU manualmente."
         Tr069ProvisionStatus.PENDING ->
-            "Esperando aprovisionamiento TR-069."
+            tr069LastError ?: "Esperando aprovisionamiento TR-069."
         Tr069ProvisionStatus.NA, null -> null
     }
 
-    fun isProvisioningPending(): Boolean {
+    fun isMikrotikOrOltPending(): Boolean {
         val mikrotikPending = mikrotikProvisionStatus == MikrotikProvisionStatus.PENDING ||
             mikrotikProvisionStatus == MikrotikProvisionStatus.FAILED
         val oltPending = oltProvisionStatus == OltProvisionStatus.PENDING ||
             oltProvisionStatus == OltProvisionStatus.FAILED
         return mikrotikPending || oltPending
+    }
+
+    fun isProvisioningPending(): Boolean {
+        val tr069Pending = tr069ProvisionStatus == Tr069ProvisionStatus.PENDING
+        return isMikrotikOrOltPending() || tr069Pending
     }
 
 

@@ -13,6 +13,17 @@ data class Tr069ModelProfile(
     val wlan24Path: String,
     val wlan5Path: String,
 ) {
+    fun withWanConnectionIndex(index: Int): Tr069ModelProfile {
+        require(index in 1..16) { "WAN connection index fuera de rango: $index" }
+        val igd = "InternetGatewayDevice"
+        return copy(
+            wanIpConnectionPath =
+                "$igd.WANDevice.1.WANConnectionDevice.$index.WANIPConnection.1",
+            wanGponLinkConfigPath =
+                "$igd.WANDevice.1.WANConnectionDevice.$index.X_CT-COM_WANGponLinkConfig",
+        )
+    }
+
     fun buildParameterValues(
         ip: String,
         subnetMask: String,
@@ -59,10 +70,11 @@ data class Tr069ModelProfile(
 object Tr069ModelProfiles {
 
     private const val IGD = "InternetGatewayDevice"
+    private const val DEFAULT_WAN_INDEX = 4
     private const val WAN4 =
-        "$IGD.WANDevice.1.WANConnectionDevice.4.WANIPConnection.1"
+        "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.WANIPConnection.1"
     private const val WAN_GPON =
-        "$IGD.WANDevice.1.WANConnectionDevice.4.X_CT-COM_WANGponLinkConfig"
+        "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.X_CT-COM_WANGponLinkConfig"
     private const val WLAN_24 = "$IGD.LANDevice.1.WLANConfiguration.5"
     private const val WLAN_5 = "$IGD.LANDevice.1.WLANConfiguration.1"
 
@@ -87,5 +99,19 @@ object Tr069ModelProfiles {
         return keys.firstNotNullOfOrNull { key ->
             BY_KEY.entries.firstOrNull { (k, _) -> key.contains(k) }?.value
         }
+    }
+
+    /**
+     * Picks the first WANConnectionDevice index that exposes WANIPConnection.1,
+     * falling back to the profile default (4) when GenieACS has no tree yet.
+     */
+    fun resolveWanConnectionIndex(
+        existingIndices: Collection<Int>,
+        preferredDefault: Int = DEFAULT_WAN_INDEX,
+    ): Int {
+        val sorted = existingIndices.filter { it in 1..16 }.sorted()
+        if (sorted.isEmpty()) return preferredDefault
+        if (preferredDefault in sorted) return preferredDefault
+        return sorted.first()
     }
 }

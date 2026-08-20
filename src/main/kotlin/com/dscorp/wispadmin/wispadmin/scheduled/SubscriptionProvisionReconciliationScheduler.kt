@@ -18,7 +18,7 @@ class SubscriptionProvisionReconciliationScheduler(
     fun reconcile() {
         val count = subscriptionProvisionService.reconcileDue()
         if (count > 0) {
-            logger.info("Reconciliacion de provision MikroTik/OLT procesada: $count suscripciones")
+            logger.info("Reconciliacion de provision MikroTik/OLT/TR-069 procesada: $count suscripciones")
         }
     }
 }

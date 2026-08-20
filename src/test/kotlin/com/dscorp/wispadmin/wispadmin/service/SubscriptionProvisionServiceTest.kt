@@ -50,6 +50,7 @@ class SubscriptionProvisionServiceTest {
         genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
             enabled = false
         },
+        tr069PostInstallProvisioner = mockk(relaxed = true),
     )
 
     @Test
@@ -88,6 +89,7 @@ class SubscriptionProvisionServiceTest {
             genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
                 enabled = true
             },
+            tr069PostInstallProvisioner = mockk(relaxed = true),
         )
         val subscription = baseSubscription()
         enabledService.initializeStatuses(subscription, InstallationType.FIBER)
@@ -228,6 +230,22 @@ class SubscriptionProvisionServiceTest {
         assertEquals(MikrotikProvisionStatus.COMPLETE, result.mikrotikProvisionStatus)
         assertFalse(result.isProvisioningPending())
         verify(exactly = 1) { repository.save(subscription) }
+    }
+
+    @Test
+    fun `buildRequestFromSubscription includes vlan and wifi`() {
+        val subscription = baseSubscription().apply {
+            vlan = "100"
+            wifiSsid24 = "acs2g"
+            wifiSsid5 = "acs5g"
+            ip = "192.168.30.10"
+            installationType = InstallationType.FIBER
+        }
+        val request = service.buildRequestFromSubscription(subscription)
+        assertEquals("100", request.vlan)
+        assertEquals("acs2g", request.wifiSsid24)
+        assertEquals("acs5g", request.wifiSsid5)
+        assertEquals("192.168.30.10", request.clientIpAddress)
     }
 
     private fun baseSubscription() = Subscription(

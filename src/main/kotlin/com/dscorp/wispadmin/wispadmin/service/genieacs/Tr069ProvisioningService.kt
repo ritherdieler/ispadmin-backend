@@ -19,6 +19,8 @@ data class Tr069ProvisionRequest(
     val wifiSsid5: String?,
     val wifiPassword5: String?,
     val waitTimeoutMs: Long? = null,
+    /** WAN VLAN from app (`subscription.vlan`). Required when GenieACS is enabled. */
+    val wanVlanId: Int,
 )
 
 data class Tr069AcsSnapshot(
@@ -142,12 +144,20 @@ class Tr069ProvisioningService(
 
         val gateway = segment.getBaseIpFromRange() + "1"
         val subnetMask = cidrToSubnetMask(segment)
-        val values = profile.buildParameterValues(
+        val wanIndices = try {
+            client.listWanConnectionIndices(device.id)
+        } catch (ex: Exception) {
+            log.warn("No se pudo descubrir índice WAN de {}: {}", device.id, ex.message)
+            emptyList()
+        }
+        val wanIndex = Tr069ModelProfiles.resolveWanConnectionIndex(wanIndices)
+        val profileForWan = profile.withWanConnectionIndex(wanIndex)
+        val values = profileForWan.buildParameterValues(
             ip = ip,
             subnetMask = subnetMask,
             gateway = gateway,
             dns = properties.defaultDns,
-            vlanId = properties.wanVlanId,
+            vlanId = request.wanVlanId,
             wifiSsid24 = request.wifiSsid24,
             wifiPassword24 = request.wifiPassword24,
             wifiSsid5 = request.wifiSsid5,
@@ -187,8 +197,8 @@ class Tr069ProvisioningService(
             ssid5 = request.wifiSsid5,
         )
 
-        val ssid24Path = "${profile.wlan24Path}.SSID"
-        val ssid5Path = "${profile.wlan5Path}.SSID"
+        val ssid24Path = "${profileForWan.wlan24Path}.SSID"
+        val ssid5Path = "${profileForWan.wlan5Path}.SSID"
         client.getParameterValues(
             deviceId = device.id,
             parameterNames = listOfNotNull(

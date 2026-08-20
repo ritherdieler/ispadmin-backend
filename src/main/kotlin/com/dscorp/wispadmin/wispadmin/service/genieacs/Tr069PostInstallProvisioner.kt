@@ -1,11 +1,13 @@
 package com.dscorp.wispadmin.wispadmin.service.genieacs
 
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
+import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -18,6 +20,7 @@ class Tr069PostInstallProvisioner(
     private val repository: SubscriptionRepository,
     private val cipher: CrmSecretCipher,
     private val acsSyncService: SubscriptionAcsSyncService,
+    private val fiberInstallationStrategy: FiberInstallationStrategy,
 ) {
     private val log = LoggerFactory.getLogger(Tr069PostInstallProvisioner::class.java)
 
@@ -62,6 +65,18 @@ class Tr069PostInstallProvisioner(
         val subscription = repository.findById(subscriptionId).orElse(null)
             ?: return enrichDtoWithoutPersist(dto, request)
 
+        val oltStatus = subscription.oltProvisionStatus ?: dto.oltProvisionStatus
+        if (oltStatus != OltProvisionStatus.COMPLETE) {
+            return persistStatus(
+                subscriptionId = subscriptionId,
+                request = request,
+                status = Tr069ProvisionStatus.PENDING,
+                deviceId = null,
+                error = null,
+                messageOverride = "Esperando autorización OLT antes de GenieACS TR-069.",
+            )
+        }
+
         val waitTimeout = when {
             !request.clientRequestId.isNullOrBlank() && dto.alreadyRegistered ->
                 properties.offlineWaitTimeoutMs
@@ -72,6 +87,17 @@ class Tr069PostInstallProvisioner(
             dto.alreadyRegistered -> properties.offlineWaitTimeoutMs
             else -> properties.waitTimeoutMs
         }
+
+        if (request.vlan.isNullOrBlank() && !subscription.vlan.isNullOrBlank()) {
+            request.vlan = subscription.vlan
+        }
+        val wanVlanId = fiberInstallationStrategy.resolveVlan(
+            subscription.apply {
+                if (vlan.isNullOrBlank()) {
+                    vlan = request.vlan
+                }
+            }
+        ).toInt()
 
         val smartoltSerial = request.onu?.sn ?: subscription.fiberOnu?.sn
         val outcome = provisioningService.provision(
@@ -85,6 +111,7 @@ class Tr069PostInstallProvisioner(
                 wifiSsid5 = request.wifiSsid5 ?: subscription.wifiSsid5,
                 wifiPassword5 = resolvePassword(request.wifiPassword5, subscription.wifiPassword5Enc),
                 waitTimeoutMs = waitTimeout,
+                wanVlanId = wanVlanId,
             )
         )
 
@@ -154,13 +181,25 @@ class Tr069PostInstallProvisioner(
             Tr069ProvisionStatus.COMPLETE, Tr069ProvisionStatus.NA -> null
             else -> (error ?: messageOverride)?.take(500)
         }
+        if (status == Tr069ProvisionStatus.COMPLETE && !subscription.isMikrotikOrOltPending()) {
+            subscription.provisionNextAttemptAt = null
+            subscription.provisionLastError = null
+        } else if (
+            status == Tr069ProvisionStatus.PENDING &&
+            subscription.oltProvisionStatus == OltProvisionStatus.COMPLETE &&
+            subscription.provisionNextAttemptAt == null
+        ) {
+            subscription.provisionNextAttemptAt = java.time.LocalDateTime.now().plusMinutes(5)
+        }
         return repository.save(subscription).toDto().let { saved ->
-            if (messageOverride != null && status == Tr069ProvisionStatus.COMPLETE) {
-                saved.copy(tr069Message = messageOverride)
-            } else if (messageOverride != null && status == Tr069ProvisionStatus.MANUAL_REQUIRED) {
-                saved.copy(tr069Message = messageOverride)
-            } else {
-                saved
+            when {
+                messageOverride != null && status == Tr069ProvisionStatus.COMPLETE ->
+                    saved.copy(tr069Message = messageOverride)
+                messageOverride != null &&
+                    (status == Tr069ProvisionStatus.MANUAL_REQUIRED ||
+                        status == Tr069ProvisionStatus.PENDING) ->
+                    saved.copy(tr069Message = messageOverride)
+                else -> saved
             }
         }
     }

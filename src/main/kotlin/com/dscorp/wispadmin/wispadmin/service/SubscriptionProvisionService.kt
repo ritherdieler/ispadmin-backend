@@ -15,9 +15,11 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -31,6 +33,7 @@ class SubscriptionProvisionService(
     private val installationStrategyFactory: InstallationStrategyFactory,
     private val errorLogRepository: ErrorLogRepository,
     private val genieAcsProperties: GenieAcsProperties,
+    @Lazy private val tr069PostInstallProvisioner: Tr069PostInstallProvisioner,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
 
@@ -87,12 +90,21 @@ class SubscriptionProvisionService(
             .ifBlank { null }
         if (errors != null) {
             subscription.provisionLastError = errors.take(500)
-        } else if (!subscription.isProvisioningPending()) {
+        } else if (!subscription.isMikrotikOrOltPending()) {
             subscription.provisionLastError = null
-            subscription.provisionNextAttemptAt = null
+            if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING) {
+                subscription.provisionNextAttemptAt = null
+            }
         }
 
-        if (subscription.isProvisioningPending()) {
+        if (subscription.isMikrotikOrOltPending()) {
+            scheduleNextAttempt(subscription)
+        } else if (
+            subscription.tr069ProvisionStatus == Tr069ProvisionStatus.PENDING &&
+            subscription.oltProvisionStatus == OltProvisionStatus.COMPLETE &&
+            subscription.provisionNextAttemptAt == null
+        ) {
+            // OLT already OK; keep a retry window for GenieACS TR-069.
             scheduleNextAttempt(subscription)
         }
     }
@@ -125,34 +137,66 @@ class SubscriptionProvisionService(
         if (subscription.mikrotikProvisionStatus == null && subscription.oltProvisionStatus == null) {
             initializeStatuses(subscription, installationType)
         }
-        if (!subscription.isProvisioningPending()) {
-            return subscription
-        }
-        val deviceId = subscription.hostDevice?.id ?: request.hostDeviceId
-        val planId = subscription.plan?.id ?: request.planId
-        val placeId = subscription.place?.id ?: request.placeId
-        val device = networkDeviceRepository.findById(deviceId).get()
-        val plan = planRepository.findById(planId).get()
-        val place = placeRepository.findById(placeId).get()
-        subscription.hostDevice = device
-        subscription.plan = plan
-        subscription.place = place
+        val needsMikrotikOrOlt =
+            subscription.mikrotikProvisionStatus == MikrotikProvisionStatus.PENDING ||
+                subscription.mikrotikProvisionStatus == MikrotikProvisionStatus.FAILED ||
+                subscription.oltProvisionStatus == OltProvisionStatus.PENDING ||
+                subscription.oltProvisionStatus == OltProvisionStatus.FAILED
 
-        val strategy = installationStrategyFactory.getStrategy(installationType)
-        val result = try {
-            strategy.processInstallation(subscription, request, device, plan, place)
-        } catch (ex: Exception) {
-            logger.warn("Fallo reconciliando provisión para suscripción ${subscription.id}", ex)
-            persistProvisionError(ex)
-            InstallationResult(
-                queueAdded = false,
-                onuAuthorized = false,
-                mikrotikError = ex.message,
-                oltError = ex.message
-            )
+        if (needsMikrotikOrOlt) {
+            val deviceId = subscription.hostDevice?.id ?: request.hostDeviceId
+            val planId = subscription.plan?.id ?: request.planId
+            val placeId = subscription.place?.id ?: request.placeId
+            val device = networkDeviceRepository.findById(deviceId).get()
+            val plan = planRepository.findById(planId).get()
+            val place = placeRepository.findById(placeId).get()
+            subscription.hostDevice = device
+            subscription.plan = plan
+            subscription.place = place
+
+            val strategy = installationStrategyFactory.getStrategy(installationType)
+            val result = try {
+                strategy.processInstallation(subscription, request, device, plan, place)
+            } catch (ex: Exception) {
+                logger.warn("Fallo reconciliando provisión para suscripción ${subscription.id}", ex)
+                persistProvisionError(ex)
+                InstallationResult(
+                    queueAdded = false,
+                    onuAuthorized = false,
+                    mikrotikError = ex.message,
+                    oltError = ex.message
+                )
+            }
+            applyInstallationResult(subscription, result, installationType)
+            repository.save(subscription)
         }
-        applyInstallationResult(subscription, result, installationType)
-        return repository.save(subscription)
+
+        maybeRetryTr069(subscription, request)
+        if (subscription.isProvisioningPending()) {
+            scheduleNextAttempt(subscription)
+            repository.save(subscription)
+        }
+        return subscription
+    }
+
+    private fun maybeRetryTr069(subscription: Subscription, request: SubscriptionRequest) {
+        if (!genieAcsProperties.enabled) return
+        if (subscription.installationType != InstallationType.FIBER) return
+        if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) return
+        if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING) return
+        val id = subscription.id ?: return
+        try {
+            val dto = subscription.toDto()
+            tr069PostInstallProvisioner.apply(dto, request)
+            repository.findById(id).ifPresent { refreshed ->
+                subscription.tr069ProvisionStatus = refreshed.tr069ProvisionStatus
+                subscription.tr069LastError = refreshed.tr069LastError
+                subscription.tr069DeviceId = refreshed.tr069DeviceId
+            }
+        } catch (ex: Exception) {
+            logger.warn("Fallo reintento TR-069 para suscripción $id", ex)
+            persistProvisionError(ex)
+        }
     }
 
     @Transactional
@@ -208,7 +252,10 @@ class SubscriptionProvisionService(
             equipmentCondition = subscription.equipmentCondition,
             clientRequestId = subscription.clientRequestId,
             clientIpAddress = subscription.ip,
-            onu = onu
+            onu = onu,
+            vlan = subscription.vlan,
+            wifiSsid24 = subscription.wifiSsid24,
+            wifiSsid5 = subscription.wifiSsid5,
         )
     }
 

@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -59,6 +60,7 @@ class SubscriptionValidatorService(
         if (request.installationType == InstallationType.FIBER) {
             require(request.onu != null) { "La ONU es requerida para instalación de fibra" }
             require(request.napBoxId != null) { "El NAP Box es requerido para instalación de fibra" }
+            SubscriptionVlanRules.requireAppVlan(request.vlan)
         }
     }
 }
