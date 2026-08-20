@@ -41,6 +41,7 @@ data class SubscriptionRequest(
     var wifiPassword24: String? = null,
     var wifiSsid5: String? = null,
     var wifiPassword5: String? = null,
+    var vlan: String? = null,
 ) {
     fun toModel(): Subscription = Subscription(
         firstName = firstName.removeSpecialCharacters(),
@@ -70,6 +71,7 @@ data class SubscriptionRequest(
         autoCut = autoCut,
         wifiSsid24 = wifiSsid24,
         wifiSsid5 = wifiSsid5,
+        vlan = vlan
     )
 
     private fun subscriptionDateAsLocalDateTime(): LocalDateTime {

@@ -20,6 +20,7 @@ import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceCutManager
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceReactivationManager
+import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
@@ -56,6 +57,7 @@ class SubscriptionService(
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
+    private val fiberInstallationStrategy: FiberInstallationStrategy,
     private val applicationEventPublisher: ApplicationEventPublisher,
     private val cancelledOnuReuseService: CancelledOnuReuseService,
     private val subscriptionProvisionService: SubscriptionProvisionService
@@ -125,7 +127,10 @@ class SubscriptionService(
         try {
             val subscription = repository.findById(request.subscriptionId).get()
             val plan = planRepository.findById(request.planId).get()
-            val authorizationRequest = request.onu.toAuthorizationRequest(subscription.getFullName())
+            val authorizationRequest = request.onu.toAuthorizationRequest(
+                customerFullName = subscription.getFullName(),
+                vlan = fiberInstallationStrategy.resolveVlan(subscription)
+            )
             subscription.apply {
                 this.plan = plan
                 isMigration = true

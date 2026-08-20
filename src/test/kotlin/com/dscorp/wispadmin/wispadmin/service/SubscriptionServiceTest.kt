@@ -59,6 +59,7 @@ class SubscriptionServiceTest {
         subscriptionValidator = subscriptionValidator,
         paymentRepository = mockk(relaxed = true),
         installationStrategyFactory = installationStrategyFactory,
+        fiberInstallationStrategy = mockk(relaxed = true),
         applicationEventPublisher = mockk<ApplicationEventPublisher>(relaxed = true),
         cancelledOnuReuseService = mockk(relaxed = true),
         subscriptionProvisionService = mockk(relaxed = true),
