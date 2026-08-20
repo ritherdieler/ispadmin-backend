@@ -55,7 +55,7 @@ class Tr069ProvisioningServiceTest {
     fun `device appears on second poll then COMPLETE`() {
         server.enqueue(emptyDevices())
         server.enqueue(deviceList())
-        server.enqueue(wanConnectionTree(index = 4))
+        server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(taskAccepted())
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 2.4
@@ -77,7 +77,7 @@ class Tr069ProvisioningServiceTest {
     @Test
     fun `setParameterValues uses wanVlanId from request not global property`() {
         server.enqueue(deviceList())
-        server.enqueue(wanConnectionTree(index = 4))
+        server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(taskAccepted())
         server.enqueue(taskAccepted())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -107,7 +107,7 @@ class Tr069ProvisioningServiceTest {
     @Test
     fun `connection request credentials error returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
-        server.enqueue(wanConnectionTree(index = 4))
+        server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(
             MockResponse()
                 .setResponseCode(202)

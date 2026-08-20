@@ -70,8 +70,9 @@ data class Tr069ModelProfile(
 object Tr069ModelProfiles {
 
     private const val IGD = "InternetGatewayDevice"
-    private const val DEFAULT_WAN_INDEX = 4
-    private const val WAN4 =
+    /** Fallback when GenieACS has no WAN tree yet (factory ONU: single WAN at index 1). */
+    private const val DEFAULT_WAN_INDEX = 1
+    private const val WAN1 =
         "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.WANIPConnection.1"
     private const val WAN_GPON =
         "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.X_CT-COM_WANGponLinkConfig"
@@ -80,7 +81,7 @@ object Tr069ModelProfiles {
 
     private val V2804AX15T = Tr069ModelProfile(
         productClass = "V2804AX15T",
-        wanIpConnectionPath = WAN4,
+        wanIpConnectionPath = WAN1,
         wanGponLinkConfigPath = WAN_GPON,
         wlan24Path = WLAN_24,
         wlan5Path = WLAN_5,
@@ -102,16 +103,12 @@ object Tr069ModelProfiles {
     }
 
     /**
-     * Picks the first WANConnectionDevice index that exposes WANIPConnection.1,
-     * falling back to the profile default (4) when GenieACS has no tree yet.
+     * Uses the first WANConnectionDevice index reported by GenieACS.
+     * On a factory ONU there is only one WAN slot; no preference for a fixed index.
+     * Falls back to [DEFAULT_WAN_INDEX] (1) when the tree is not available yet.
      */
-    fun resolveWanConnectionIndex(
-        existingIndices: Collection<Int>,
-        preferredDefault: Int = DEFAULT_WAN_INDEX,
-    ): Int {
+    fun resolveWanConnectionIndex(existingIndices: Collection<Int>): Int {
         val sorted = existingIndices.filter { it in 1..16 }.sorted()
-        if (sorted.isEmpty()) return preferredDefault
-        if (preferredDefault in sorted) return preferredDefault
-        return sorted.first()
+        return sorted.firstOrNull() ?: DEFAULT_WAN_INDEX
     }
 }

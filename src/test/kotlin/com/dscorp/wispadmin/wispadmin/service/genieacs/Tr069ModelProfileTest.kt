@@ -13,7 +13,7 @@ class Tr069ModelProfileTest {
         val profile = Tr069ModelProfiles.resolve(onuTypeName = "V2804AX15T", productClass = null)
         assertNotNull(profile)
         assertEquals("V2804AX15T", profile!!.productClass)
-        assertTrue(profile.wanIpConnectionPath.contains("WANConnectionDevice.4.WANIPConnection.1"))
+        assertTrue(profile.wanIpConnectionPath.contains("WANConnectionDevice.1.WANIPConnection.1"))
         assertTrue(profile.wlan24Path.endsWith("WLANConfiguration.5"))
         assertTrue(profile.wlan5Path.endsWith("WLANConfiguration.1"))
     }
@@ -69,9 +69,9 @@ class Tr069ModelProfileTest {
     }
 
     @Test
-    fun `resolveWanConnectionIndex prefers default when present`() {
-        assertEquals(4, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(1, 4, 5)))
+    fun `resolveWanConnectionIndex always uses first available index`() {
+        assertEquals(1, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(1, 4, 5)))
         assertEquals(2, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(2, 3)))
-        assertEquals(4, Tr069ModelProfiles.resolveWanConnectionIndex(emptyList()))
+        assertEquals(1, Tr069ModelProfiles.resolveWanConnectionIndex(emptyList()))
     }
 }
