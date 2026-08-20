@@ -22,7 +22,9 @@ data class GenieAcsTaskResult(
     val accepted: Boolean,
     val connectionRequestFailed: Boolean = false,
     val taskId: String? = null,
-)
+) {
+    fun toErrorDetail(): String = GenieAcsClient.formatTaskError(this)
+}
 
 @Component
 class GenieAcsClient(
@@ -232,6 +234,32 @@ class GenieAcsClient(
         const val CR_CREDENTIALS_ERROR = "Incorrect connection request credentials"
         const val DEFAULT_DEVICE_PROJECTION =
             "_id,_lastInform,_lastBoot,_deviceId,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
+
+        fun formatTaskError(result: GenieAcsTaskResult): String {
+            val detail = extractErrorDetail(result.body)
+            return buildString {
+                append("GenieACS HTTP ").append(result.statusCode)
+                when {
+                    !detail.isNullOrBlank() -> append(": ").append(detail)
+                    !result.body.isNullOrBlank() -> append(": ").append(result.body!!.trim().take(200))
+                }
+            }
+        }
+
+        fun extractErrorDetail(body: String?): String? {
+            if (body.isNullOrBlank()) return null
+            return try {
+                val root = ObjectMapper().readTree(body)
+                sequenceOf("detail", "message", "fault", "error")
+                    .map { root.path(it) }
+                    .firstOrNull { node ->
+                        !node.isMissingNode && !node.isNull && node.asText("").isNotBlank()
+                    }
+                    ?.asText()
+            } catch (_: Exception) {
+                body.trim().take(200).ifBlank { null }
+            }
+        }
 
         fun readNestedValue(root: JsonNode, dottedPath: String): String? {
             var current: JsonNode = root

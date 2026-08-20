@@ -105,6 +105,27 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
+    fun `setParameterValues rejected includes GenieACS HTTP status and body in message`() {
+        server.enqueue(deviceList())
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"detail":"missing or invalid resource identifier","error":400,"message":"Bad Request"}"""
+                )
+        )
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
+        assertTrue(outcome.message!!.contains("GenieACS HTTP 400"))
+        assertTrue(outcome.message!!.contains("missing or invalid resource identifier"))
+        assertEquals(outcome.message, outcome.error)
+    }
+
+    @Test
     fun `connection request credentials error returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
         server.enqueue(wanConnectionTree(index = 1))

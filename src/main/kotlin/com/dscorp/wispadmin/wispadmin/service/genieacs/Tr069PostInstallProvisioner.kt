@@ -198,7 +198,7 @@ class Tr069PostInstallProvisioner(
                 messageOverride != null &&
                     (status == Tr069ProvisionStatus.MANUAL_REQUIRED ||
                         status == Tr069ProvisionStatus.PENDING) ->
-                    saved.copy(tr069Message = messageOverride)
+                    saved.copy(tr069Message = error?.takeIf { it.isNotBlank() } ?: messageOverride)
                 else -> saved
             }
         }
@@ -215,7 +215,7 @@ class Tr069PostInstallProvisioner(
         status = Tr069ProvisionStatus.MANUAL_REQUIRED,
         deviceId = deviceId,
         error = error,
-        messageOverride = "No se pudo configurar la ONU por TR-069. Configure la ONU manualmente.",
+        messageOverride = error,
     )
 
     private fun applyWifiFromRequest(subscription: Subscription, request: SubscriptionRequest) {

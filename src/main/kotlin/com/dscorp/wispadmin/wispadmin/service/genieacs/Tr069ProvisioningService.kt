@@ -172,21 +172,27 @@ class Tr069ProvisioningService(
             )
             setResult = client.setParameterValues(device.id, values, connectionRequest = false)
             if (setResult.connectionRequestFailed || !setResult.accepted) {
+                val genieError = if (setResult.connectionRequestFailed) {
+                    GenieAcsClient.CR_CREDENTIALS_ERROR
+                } else {
+                    setResult.toErrorDetail()
+                }
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.MANUAL_REQUIRED,
                     deviceId = device.id,
-                    error = GenieAcsClient.CR_CREDENTIALS_ERROR,
-                    message = "Falló Connection Request al CPE. Configure la ONU manualmente.",
+                    error = genieError,
+                    message = genieError,
                     acsSnapshot = baseSnapshot.withTask(setResult),
                 )
             }
             // Task queued for next Inform — still try to verify within remaining wait window
         } else if (!setResult.accepted) {
+            val genieError = setResult.toErrorDetail()
             return Tr069ProvisionOutcome(
                 status = Tr069ProvisionStatus.MANUAL_REQUIRED,
                 deviceId = device.id,
-                error = setResult.body?.take(200),
-                message = "GenieACS rechazó setParameterValues. Configure la ONU manualmente.",
+                error = genieError,
+                message = genieError,
                 acsSnapshot = baseSnapshot.withTask(setResult),
             )
         }

@@ -177,4 +177,20 @@ class GenieAcsClientTest {
         assertFalse(request.path!!.contains("connection_request"))
         assertTrue(request.body.readUtf8().contains("getParameterValues"))
     }
+
+    @Test
+    fun `formatTaskError includes HTTP status and GenieACS detail`() {
+        val formatted = GenieAcsClient.formatTaskError(
+            GenieAcsTaskResult(
+                statusCode = 400,
+                body = """{"detail":"missing or invalid resource identifier","error":400,"message":"Bad Request"}""",
+                accepted = false,
+            )
+        )
+
+        assertEquals(
+            "GenieACS HTTP 400: missing or invalid resource identifier",
+            formatted,
+        )
+    }
 }
