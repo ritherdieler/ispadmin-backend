@@ -30,6 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.time.YearMonth
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import org.springframework.web.multipart.MultipartFile
@@ -54,6 +55,7 @@ class SubscriptionController(
     private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
     private val tr069PostInstallProvisioner: Tr069PostInstallProvisioner,
     private val subscriptionAcsOpsService: SubscriptionAcsOpsService,
+    private val subscriptionProvisionService: SubscriptionProvisionService,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -174,6 +176,17 @@ class SubscriptionController(
     fun rebootSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
         return try {
             ResponseEntity.ok(subscriptionAcsOpsService.reboot(subscriptionId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        }
+    }
+
+    @PostMapping("/{subscriptionId}/acs/retry-tr069")
+    fun retryTr069Provisioning(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(subscriptionProvisionService.retryTr069(subscriptionId))
         } catch (_: NoSuchElementException) {
             ResponseEntity.notFound().build()
         } catch (ex: IllegalStateException) {

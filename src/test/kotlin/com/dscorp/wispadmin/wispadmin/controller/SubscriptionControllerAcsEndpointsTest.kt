@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAcs
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsRebootResultDto
+import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.repository.CouponRepository
 import com.dscorp.wispadmin.wispadmin.repository.NapBoxRepository
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
@@ -29,6 +30,7 @@ import org.springframework.http.HttpStatus
 class SubscriptionControllerAcsEndpointsTest {
 
     private val subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>()
+    private val subscriptionProvisionService = mockk<com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService>()
     private val controller = SubscriptionController(
         repository = mockk(relaxed = true),
         subscriptionService = mockk(relaxed = true),
@@ -44,6 +46,7 @@ class SubscriptionControllerAcsEndpointsTest {
         ipConflictNocNotifier = mockk(relaxed = true),
         tr069PostInstallProvisioner = mockk(relaxed = true),
         subscriptionAcsOpsService = subscriptionAcsOpsService,
+        subscriptionProvisionService = subscriptionProvisionService,
     )
 
     @Test
@@ -114,5 +117,41 @@ class SubscriptionControllerAcsEndpointsTest {
         @Suppress("UNCHECKED_CAST")
         val body = response.body as Map<String, String>
         assertEquals("sin deviceId", body["error"])
+    }
+
+    @Test
+    fun `POST retry-tr069 returns updated subscription dto`() {
+        every { subscriptionProvisionService.retryTr069(42) } returns SubscriptionDto(
+            id = 42,
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
+            tr069Message = "ONU configurada automáticamente por TR-069.",
+        )
+
+        val response = controller.retryTr069Provisioning(42)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        val body = response.body as SubscriptionDto
+        assertEquals(Tr069ProvisionStatus.COMPLETE, body.tr069ProvisionStatus)
+        verify { subscriptionProvisionService.retryTr069(42) }
+    }
+
+    @Test
+    fun `POST retry-tr069 returns 400 when OLT not ready`() {
+        every {
+            subscriptionProvisionService.retryTr069(42)
+        } throws IllegalStateException("No se puede reintentar TR-069 hasta que la autorización OLT esté COMPLETE")
+
+        val response = controller.retryTr069Provisioning(42)
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
+    @Test
+    fun `POST retry-tr069 returns 404 when subscription missing`() {
+        every { subscriptionProvisionService.retryTr069(42) } throws NoSuchElementException("missing")
+
+        val response = controller.retryTr069Provisioning(42)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
     }
 }

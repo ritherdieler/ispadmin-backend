@@ -8,6 +8,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
+import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
@@ -15,6 +17,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.IInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
@@ -39,6 +43,7 @@ class SubscriptionProvisionServiceTest {
     private val installationStrategyFactory = mockk<InstallationStrategyFactory>()
     private val installationStrategy = mockk<IInstallationStrategy>()
     private val errorLogRepository = mockk<ErrorLogRepository>(relaxed = true)
+    private val tr069PostInstallProvisioner = mockk<Tr069PostInstallProvisioner>(relaxed = true)
 
     private val service = SubscriptionProvisionService(
         repository = repository,
@@ -50,7 +55,7 @@ class SubscriptionProvisionServiceTest {
         genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
             enabled = false
         },
-        tr069PostInstallProvisioner = mockk(relaxed = true),
+        tr069PostInstallProvisioner = tr069PostInstallProvisioner,
     )
 
     @Test
@@ -246,6 +251,72 @@ class SubscriptionProvisionServiceTest {
         assertEquals("acs2g", request.wifiSsid24)
         assertEquals("acs5g", request.wifiSsid5)
         assertEquals("192.168.30.10", request.clientIpAddress)
+    }
+
+    @Test
+    fun `retryTr069 reapplies provision when MANUAL_REQUIRED and OLT COMPLETE`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.FIBER
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
+            vlan = "100"
+            ip = "192.168.30.10"
+        }
+        every { repository.findById(42) } returns Optional.of(subscription)
+        every {
+            tr069PostInstallProvisioner.apply(any(), any())
+        } returns SubscriptionDto(
+            id = 42,
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
+            tr069Message = "ONU configurada automáticamente por TR-069.",
+        )
+
+        val result = service.retryTr069(42)
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
+        verify(exactly = 1) { tr069PostInstallProvisioner.apply(any(), any()) }
+    }
+
+    @Test
+    fun `retryTr069 returns current dto without reapplying when already COMPLETE`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.FIBER
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
+        }
+        every { repository.findById(42) } returns Optional.of(subscription)
+
+        val result = service.retryTr069(42)
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
+        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+    }
+
+    @Test
+    fun `retryTr069 throws when OLT is not COMPLETE`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.FIBER
+            oltProvisionStatus = OltProvisionStatus.PENDING
+            tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
+        }
+        every { repository.findById(42) } returns Optional.of(subscription)
+
+        assertThrows(IllegalStateException::class.java) {
+            service.retryTr069(42)
+        }
+        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+    }
+
+    @Test
+    fun `retryTr069 throws when subscription missing`() {
+        every { repository.findById(99) } returns Optional.empty()
+
+        assertThrows(NoSuchElementException::class.java) {
+            service.retryTr069(99)
+        }
     }
 
     private fun baseSubscription() = Subscription(

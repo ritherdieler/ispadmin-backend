@@ -259,6 +259,37 @@ class SubscriptionProvisionService(
         )
     }
 
+    /**
+     * Explicit TR-069 retry from the mobile app after MANUAL_REQUIRED (or PENDING).
+     * COMPLETE is idempotent and does not re-run GenieACS.
+     */
+    fun retryTr069(subscriptionId: Int): com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto {
+        val subscription = repository.findById(subscriptionId)
+            .orElseThrow { NoSuchElementException("Suscripción $subscriptionId no encontrada") }
+
+        if (subscription.installationType != InstallationType.FIBER) {
+            throw IllegalStateException("El reintento TR-069 solo aplica a instalaciones FIBER")
+        }
+        if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) {
+            throw IllegalStateException(
+                "No se puede reintentar TR-069 hasta que la autorización OLT esté COMPLETE"
+            )
+        }
+
+        val status = subscription.tr069ProvisionStatus
+        if (status == Tr069ProvisionStatus.COMPLETE) {
+            return subscription.toDto()
+        }
+        if (status != Tr069ProvisionStatus.MANUAL_REQUIRED && status != Tr069ProvisionStatus.PENDING) {
+            throw IllegalStateException(
+                "TR-069 no admite reintento en estado ${status ?: "null"}"
+            )
+        }
+
+        val request = buildRequestFromSubscription(subscription)
+        return tr069PostInstallProvisioner.apply(subscription.toDto(), request)
+    }
+
     private fun persistProvisionError(ex: Exception) {
         try {
             errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))

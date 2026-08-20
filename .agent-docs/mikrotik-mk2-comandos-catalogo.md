@@ -2,7 +2,7 @@
 
 > Hub: [infra-red-multi-mikrotik-gigafiber.md](./infra-red-multi-mikrotik-gigafiber.md)
 
-Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR2116, ROS 7.23.2) para uplink OLT **0/3/2**.
+Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR2116, ROS 7.23.2) para uplink OLT **0/3/2**. Staging TR-069 (`192.168.255.0/24`) en **`sfp-sfpplus2`** (VLAN 100), coexistiendo con gateway prod `192.168.30.1/24`.
 
 | Comando | Descripción | Usado en | Notas |
 |---------|-------------|----------|-------|
@@ -35,9 +35,9 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/ip arp print where address=192.168.30.202` | ARP abonado piloto | Diagnóstico | Esperado: `reachable` en `sfp-sfpplus2` |
 | `/ping 192.168.30.202 count=5` | Ping L3 abonado piloto | Diagnóstico / verify script | |
 | `/tool traceroute 8.8.8.8 src-address=192.168.30.1 count=1` | Ruta WAN desde gateway piloto | Diagnóstico | NAT masquerade OK |
-| `/ip address add address=192.168.255.1/24 interface=LAN_MK1 …` | Gateway staging TR-069 VLAN1 | `scripts/genieacs/mk2-provisioning-network-255.rsc` | DHCP `.100–.250`; DNS 8.8.8.8/8.8.4.4 |
+| `/ip address add address=192.168.255.1/24 interface=sfp-sfpplus2 …` | Gateway staging TR-069 **VLAN 100** | `scripts/genieacs/mk2-provisioning-network-255.rsc` | Coexiste con `192.168.30.1/24` en la misma iface; DHCP `.100–.250`; DNS 8.8.8.8/8.8.4.4; migrado desde `LAN_MK1` 2026-08-20 |
 | `/ip pool add name=provisioning-255 ranges=192.168.255.100-192.168.255.250` | Pool DHCP staging | `mk2-provisioning-network-255.rsc` | Idempotente |
-| `/ip dhcp-server add name=dhcp-provisioning-255 …` | DHCP server staging | `mk2-provisioning-network-255.rsc` | Lease 1h |
+| `/ip dhcp-server add name=dhcp-provisioning-255 … interface=sfp-sfpplus2` | DHCP server staging VLAN100 | `mk2-provisioning-network-255.rsc` | Lease 1h; script limpia residual en `LAN_MK1` |
 | `/ip firewall filter … dst-port=7547 dst-address=192.168.255.0/24` | CR GenieACS staging | `mk2-provisioning-network-255.rsc` | Desde `10.255.255.2` |
 | `/ip firewall nat … src-address=192.168.255.0/24 masquerade` | NAT Inform ACS | `mk2-provisioning-network-255.rsc` | |
 | `/ip firewall address-list add list=api_whitelist address=212.85.13.47` | Allowlist VPS ispAdmin | Protección API MK2 | + `192.168.0.0/16` red interna |
@@ -71,6 +71,7 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `scripts/mikrotik-mk2-problematic-address-list.rsc` | Address-list clientes problemáticos (14 IPs) |
 | `scripts/mikrotik-mk2-problematic-routing.rsc` | Routing table + IPs secundarias + mangle + ruta + SNAT |
 | `scripts/mikrotik-mk1-problematic-disable.rsc` | Deshabilitar policy/IPs en MK1 tras cutover |
+| `scripts/genieacs/mk2-provisioning-network-255.rsc` | Staging TR-069 `192.168.255.0/24` en `sfp-sfpplus2` (VLAN 100) + limpieza `LAN_MK1` |
 
 ## Relacionado
 
