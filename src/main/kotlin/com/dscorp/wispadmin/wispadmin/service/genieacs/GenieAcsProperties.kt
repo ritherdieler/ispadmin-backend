@@ -15,4 +15,6 @@ class GenieAcsProperties {
     var connectTimeoutMs: Long = 5_000
     var defaultDns: String = "8.8.8.8,8.8.4.4"
     var wanVlanId: Int = 1
+    /** Emite cada llamada NBI como curl en logs (INFO). Útil para Postman/debug; desactivar en prod normal. */
+    var logCurl: Boolean = false
 }

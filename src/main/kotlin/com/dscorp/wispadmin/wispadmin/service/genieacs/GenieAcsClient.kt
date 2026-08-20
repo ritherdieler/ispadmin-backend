@@ -148,7 +148,9 @@ class GenieAcsClient(
     ): GenieAcsTaskResult {
         val uri = taskUri(deviceId, connectionRequest)
         val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
-        val entity = HttpEntity(objectMapper.writeValueAsString(payload), headers)
+        val jsonBody = objectMapper.writeValueAsString(payload)
+        logCurlPostTask(uri, jsonBody)
+        val entity = HttpEntity(jsonBody, headers)
         return try {
             val response = restTemplate.exchange(uri, HttpMethod.POST, entity, String::class.java)
             val body = response.body
@@ -180,6 +182,11 @@ class GenieAcsClient(
             builder.query("connection_request")
         }
         return builder.build(true).toUri()
+    }
+
+    private fun logCurlPostTask(uri: URI, jsonBody: String) {
+        if (!properties.logCurl) return
+        log.info("[GenieACS curl]\n{}", GenieAcsCurlLogger.formatPostTask(uri, jsonBody))
     }
 
     private fun deviceUri(deviceId: String, projection: String): URI {

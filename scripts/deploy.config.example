@@ -35,4 +35,7 @@ OBS_API_KEY=
 # OLT_GATEWAY_ENABLED=true
 # OLT_GATEWAY_API_KEY=
 # OLT_GATEWAY_PASSWORD=
-# CRM (solo VPS /opt/gigafiber/.env — no deploy.sh): CRM_SECRETS_MASTER_KEY, OPENAI_API_KEY bootstrap opcional
+# GenieACS TR-069: loguea cada POST NBI como curl en logs Tomcat (grep '[GenieACS curl]').
+# Activar solo durante pruebas; incluye claves WiFi en texto plano.
+# DEPLOY_GENIEACS_LOG_CURL=true ./scripts/deploy.sh --deploy
+# DEPLOY_GENIEACS_LOG_CURL=

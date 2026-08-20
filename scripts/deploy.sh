@@ -411,11 +411,13 @@ check_version_not_registered() {
 update_release_env() {
   echo "Ensuring APP_RELEASE=$RELEASE_VERSION in $BACKEND_ENV_FILE ..."
   local mapbox_token="${MAPBOX_ACCESS_TOKEN:-}"
+  local genieacs_log_curl="${DEPLOY_GENIEACS_LOG_CURL:-}"
   run_ssh "bash -s" <<EOF
 set -euo pipefail
 ENV_FILE='$BACKEND_ENV_FILE'
 VALUE='$RELEASE_VERSION'
 MAPBOX_TOKEN='$mapbox_token'
+GENIEACS_LOG_CURL='$genieacs_log_curl'
 touch "\$ENV_FILE"
 changed=0
 
@@ -452,6 +454,25 @@ if [[ -n "\$MAPBOX_TOKEN" ]]; then
 else
   if ! grep -q '^MAPBOX_ACCESS_TOKEN=' "\$ENV_FILE"; then
     echo "WARNING: MAPBOX_ACCESS_TOKEN no está en \$ENV_FILE; las rutas Smart Map usarán líneas rectas (fallback)" >&2
+  fi
+fi
+
+if [[ -n "\$GENIEACS_LOG_CURL" ]]; then
+  if grep -q '^GENIEACS_LOG_CURL=' "\$ENV_FILE"; then
+    current_genieacs_log="\$(grep '^GENIEACS_LOG_CURL=' "\$ENV_FILE" | head -1 | cut -d= -f2-)"
+    if [[ "\$current_genieacs_log" != "\$GENIEACS_LOG_CURL" ]]; then
+      if [[ "\$changed" -eq 0 ]]; then
+        cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+      fi
+      sed -i "s#^GENIEACS_LOG_CURL=.*#GENIEACS_LOG_CURL=\$GENIEACS_LOG_CURL#" "\$ENV_FILE"
+      changed=1
+    fi
+  else
+    if [[ "\$changed" -eq 0 ]]; then
+      cp "\$ENV_FILE" "\${ENV_FILE}.bak.\$(date +%Y%m%d%H%M%S)"
+    fi
+    printf '\nGENIEACS_LOG_CURL=%s\n' "\$GENIEACS_LOG_CURL" >> "\$ENV_FILE"
+    changed=1
   fi
 fi
 
