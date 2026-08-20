@@ -25,6 +25,13 @@ class Tr069ModelProfileTest {
     }
 
     @Test
+    fun `resolves VSOLVA74 SmartOLT onu type to V2804AX15T profile`() {
+        val profile = Tr069ModelProfiles.resolve(onuTypeName = "VSOLVA74", productClass = null)
+        assertNotNull(profile)
+        assertEquals("V2804AX15T", profile!!.productClass)
+    }
+
+    @Test
     fun `returns null for unknown model`() {
         assertNull(Tr069ModelProfiles.resolve(onuTypeName = "HG8310", productClass = "HG8310"))
         assertNull(Tr069ModelProfiles.resolve(onuTypeName = null, productClass = null))

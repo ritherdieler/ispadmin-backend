@@ -76,6 +76,8 @@ object Tr069ModelProfiles {
 
     private val BY_KEY = mapOf(
         "V2804AX15T" to V2804AX15T,
+        // SmartOLT onu_type_name for VSOL V2804AX15T CPEs
+        "VSOLVA74" to V2804AX15T,
     )
 
     fun resolve(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
