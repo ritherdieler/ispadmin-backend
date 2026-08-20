@@ -7,6 +7,27 @@ import java.net.URI
 class GenieAcsCurlLoggerTest {
 
     @Test
+    fun `formatResponse includes http status and body`() {
+        val formatted = GenieAcsCurlLogger.formatResponse(
+            statusCode = 202,
+            body = """{"_id":"task-1"}""",
+        )
+
+        assertEquals(
+            """
+            HTTP 202
+            {"_id":"task-1"}
+            """.trimIndent(),
+            formatted,
+        )
+    }
+
+    @Test
+    fun `formatResponse shows empty body placeholder`() {
+        assertEquals("HTTP 400\n(empty body)", GenieAcsCurlLogger.formatResponse(400, null))
+    }
+
+    @Test
     fun `formatPostTask includes url headers and json body`() {
         val uri = URI("http://127.0.0.1:7557/devices/B46415-V2804AX15T-12345/tasks?connection_request")
         val body = """{"name":"setParameterValues","parameterValues":[["path","value","xsd:string"]]}"""

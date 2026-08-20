@@ -154,23 +154,34 @@ class GenieAcsClient(
         return try {
             val response = restTemplate.exchange(uri, HttpMethod.POST, entity, String::class.java)
             val body = response.body
-            GenieAcsTaskResult(
+            buildTaskResult(
                 statusCode = response.statusCodeValue,
                 body = body,
                 accepted = response.statusCodeValue in 200..299,
-                connectionRequestFailed = body?.contains(CR_CREDENTIALS_ERROR, ignoreCase = true) == true,
-                taskId = parseTaskId(body),
             )
         } catch (ex: HttpStatusCodeException) {
             val body = ex.responseBodyAsString
-            GenieAcsTaskResult(
+            buildTaskResult(
                 statusCode = ex.rawStatusCode,
                 body = body,
                 accepted = false,
-                connectionRequestFailed = body.contains(CR_CREDENTIALS_ERROR, ignoreCase = true),
-                taskId = parseTaskId(body),
             )
         }
+    }
+
+    private fun buildTaskResult(
+        statusCode: Int,
+        body: String?,
+        accepted: Boolean,
+    ): GenieAcsTaskResult {
+        logGenieAcsResponse(statusCode, body)
+        return GenieAcsTaskResult(
+            statusCode = statusCode,
+            body = body,
+            accepted = accepted,
+            connectionRequestFailed = body?.contains(CR_CREDENTIALS_ERROR, ignoreCase = true) == true,
+            taskId = parseTaskId(body),
+        )
     }
 
     private fun taskUri(deviceId: String, connectionRequest: Boolean): URI {
@@ -187,6 +198,11 @@ class GenieAcsClient(
     private fun logCurlPostTask(uri: URI, jsonBody: String) {
         if (!properties.logCurl) return
         log.info("[GenieACS curl]\n{}", GenieAcsCurlLogger.formatPostTask(uri, jsonBody))
+    }
+
+    private fun logGenieAcsResponse(statusCode: Int, body: String?) {
+        if (!properties.logCurl) return
+        log.info("[GenieACS response]\n{}", GenieAcsCurlLogger.formatResponse(statusCode, body))
     }
 
     private fun deviceUri(deviceId: String, projection: String): URI {
