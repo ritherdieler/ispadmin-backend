@@ -50,7 +50,10 @@ class SubscriptionServiceIdempotencyTest {
             planRepository = planRepository,
             placeRepository = placeRepository,
             installationStrategyFactory = installationStrategyFactory,
-            errorLogRepository = errorLogRepository
+            errorLogRepository = errorLogRepository,
+            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
+                enabled = false
+            },
         )
     }
 
@@ -188,6 +191,51 @@ class SubscriptionServiceIdempotencyTest {
             com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.PENDING,
             result.oltProvisionStatus
         )
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.NA,
+            result.tr069ProvisionStatus
+        )
+    }
+
+    @Test
+    fun `registerSubscription fiber with genieacs disabled marks tr069 as NA`() {
+        stubLookupsForProvision()
+        every { repository.findByClientRequestId(any()) } returns Optional.empty()
+        every { ipPoolRepository.findAllEligiblePools() } returns listOf(
+            IpPool(id = 1, ipSegment = "192.168.1.0/24")
+        )
+        every { repository.save(any()) } answers {
+            firstArg<Subscription>().apply { id = 79 }
+        }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(queueAdded = true, onuAuthorized = true)
+
+        val result = service.registerSubscription(
+            newSubscription = sampleRequest(clientRequestId = "fiber-tr069-off").apply {
+                installationType = InstallationType.FIBER
+                napBoxId = 1
+                wifiSsid24 = "casa24"
+                wifiPassword24 = "password1"
+                wifiSsid5 = "casa5"
+                wifiPassword5 = "password1"
+                onu = com.dscorp.wispadmin.wispadmin.dto.OnuDto(
+                    sn = "VSOL0031C0B6",
+                    olt_id = "1",
+                    board = "1",
+                    port = "1",
+                    onu_type_name = "V2804AX15T"
+                )
+            },
+            onSuccess = { },
+        )
+
+        assertEquals(79, result.id)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.NA,
+            result.tr069ProvisionStatus
+        )
+        assertFalse(result.tr069RequiresManualConfig)
     }
 
     @Test

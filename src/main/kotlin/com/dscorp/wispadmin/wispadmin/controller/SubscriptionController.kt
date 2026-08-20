@@ -30,6 +30,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.time.YearMonth
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import org.springframework.web.multipart.MultipartFile
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -49,7 +51,9 @@ class SubscriptionController(
     private val storageService: FirebaseStorageService,
     private val eventPublisher: ApplicationEventPublisher,
     private val integrityViolationClassifier: SubscriptionIntegrityViolationClassifier,
-    private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier
+    private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
+    private val tr069PostInstallProvisioner: Tr069PostInstallProvisioner,
+    private val subscriptionAcsOpsService: SubscriptionAcsOpsService,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -143,6 +147,37 @@ class SubscriptionController(
             ResponseEntity.ok(subscription.toDto())
         } else {
             ResponseEntity.notFound().build()
+        }
+    }
+
+    @GetMapping("/{subscriptionId}/acs")
+    fun getSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<SubscriptionAcsDto> {
+        return try {
+            ResponseEntity.ok(subscriptionAcsOpsService.getAcs(subscriptionId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        }
+    }
+
+    @PostMapping("/{subscriptionId}/acs/refresh")
+    fun refreshSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(subscriptionAcsOpsService.refresh(subscriptionId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        }
+    }
+
+    @PostMapping("/{subscriptionId}/acs/reboot")
+    fun rebootSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
+        return try {
+            ResponseEntity.ok(subscriptionAcsOpsService.reboot(subscriptionId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
         }
     }
 
@@ -369,8 +404,10 @@ class SubscriptionController(
                 }
             )
 
-            publishSubscriptionChanged(subscription.id)
-            BaseResponse(data = subscription, status = 200)
+            // TR-069 fuera de la transacción de registerSubscription (espera sync ~90s)
+            val enriched = tr069PostInstallProvisioner.apply(subscription, newSubscription)
+            publishSubscriptionChanged(enriched.id)
+            BaseResponse(data = enriched, status = 200)
         } catch (e: DataIntegrityViolationException) {
             handleRegistrationIntegrityViolation(
                 request = newSubscription,
@@ -395,8 +432,9 @@ class SubscriptionController(
                         newSubscription = newSubscription,
                         onSuccess = { }
                     )
+                    val enriched = tr069PostInstallProvisioner.apply(dto, newSubscription)
                     return BaseResponse(
-                        data = dto,
+                        data = enriched,
                         status = 200,
                     )
                 }
@@ -420,8 +458,9 @@ class SubscriptionController(
                 }
             )
 
-            publishSubscriptionChanged(subscription.id)
-            BaseResponse(data = subscription, status = 200)
+            val enriched = tr069PostInstallProvisioner.apply(subscription, newSubscription)
+            publishSubscriptionChanged(enriched.id)
+            BaseResponse(data = enriched, status = 200)
         } catch (e: DataIntegrityViolationException) {
             handleRegistrationIntegrityViolation(
                 request = newSubscription,

@@ -152,6 +152,28 @@ data class Subscription(
     @Column(name = "provision_last_error", length = 500)
     var provisionLastError: String? = null,
 
+    @Column(name = "wifi_ssid_24", length = 32)
+    var wifiSsid24: String? = null,
+
+    @Column(name = "wifi_ssid_5", length = 32)
+    var wifiSsid5: String? = null,
+
+    @Column(name = "wifi_password_24_enc", length = 512)
+    var wifiPassword24Enc: String? = null,
+
+    @Column(name = "wifi_password_5_enc", length = 512)
+    var wifiPassword5Enc: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tr069_provision_status", length = 32)
+    var tr069ProvisionStatus: Tr069ProvisionStatus? = null,
+
+    @Column(name = "tr069_device_id", length = 128)
+    var tr069DeviceId: String? = null,
+
+    @Column(name = "tr069_last_error", length = 500)
+    var tr069LastError: String? = null,
+
     @OneToMany(mappedBy = "subscription")
     val subscriptionLogs: MutableSet<SubscriptionLog> = mutableSetOf(),
 
@@ -233,8 +255,24 @@ data class Subscription(
         hasFiberOnu = fiberOnu != null,
         mikrotikProvisionStatus = mikrotikProvisionStatus,
         oltProvisionStatus = oltProvisionStatus,
-        provisioningPending = isProvisioningPending()
+        provisioningPending = isProvisioningPending(),
+        tr069ProvisionStatus = tr069ProvisionStatus,
+        tr069RequiresManualConfig = tr069ProvisionStatus == Tr069ProvisionStatus.MANUAL_REQUIRED,
+        tr069Message = tr069MessageForDto(),
+        wifiSsid24 = wifiSsid24,
+        wifiSsid5 = wifiSsid5,
     )
+
+    private fun tr069MessageForDto(): String? = when (tr069ProvisionStatus) {
+        Tr069ProvisionStatus.COMPLETE ->
+            "ONU configurada automáticamente por TR-069. No requiere configuración manual."
+        Tr069ProvisionStatus.MANUAL_REQUIRED ->
+            tr069LastError
+                ?: "No se pudo configurar la ONU por TR-069. Configure la ONU manualmente."
+        Tr069ProvisionStatus.PENDING ->
+            "Esperando aprovisionamiento TR-069."
+        Tr069ProvisionStatus.NA, null -> null
+    }
 
     fun isProvisioningPending(): Boolean {
         val mikrotikPending = mikrotikProvisionStatus == MikrotikProvisionStatus.PENDING ||

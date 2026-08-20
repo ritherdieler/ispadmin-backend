@@ -16,12 +16,15 @@ import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
+import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
@@ -36,6 +39,8 @@ class SubscriptionControllerMultipartIdempotencyTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val integrityViolationClassifier = SubscriptionIntegrityViolationClassifier()
     private val ipConflictNocNotifier = mockk<SubscriptionIpConflictNocNotifier>(relaxed = true)
+    private val tr069PostInstallProvisioner = mockk<Tr069PostInstallProvisioner>()
+    private val subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>(relaxed = true)
 
     private val controller = SubscriptionController(
         repository = subscriptionRepository,
@@ -49,8 +54,15 @@ class SubscriptionControllerMultipartIdempotencyTest {
         storageService = storageService,
         eventPublisher = eventPublisher,
         integrityViolationClassifier = integrityViolationClassifier,
-        ipConflictNocNotifier = ipConflictNocNotifier
+        ipConflictNocNotifier = ipConflictNocNotifier,
+        tr069PostInstallProvisioner = tr069PostInstallProvisioner,
+        subscriptionAcsOpsService = subscriptionAcsOpsService,
     )
+
+    @BeforeEach
+    fun stubTr069() {
+        every { tr069PostInstallProvisioner.apply(any(), any()) } answers { firstArg() }
+    }
 
     @Test
     fun `newSubcriptionWithFacade skips photo upload when clientRequestId already exists`() {

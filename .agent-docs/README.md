@@ -55,6 +55,9 @@
 | **Infraestructura red multi-MikroTik GigaFiber (hub)** | [infra-red-multi-mikrotik-gigafiber.md](./infra-red-multi-mikrotik-gigafiber.md) |
 | **Plan migración clientes CCR1 (MK1) → CCR2 (MK2)** | [plan-migracion-clientes-ccr1-a-ccr2.md](./plan-migracion-clientes-ccr1-a-ccr2.md) |
 | **Selector CLOUD_CORE_ROUTER Android (construcción)** | [selector-cloud-core-router-android-build.md](./selector-cloud-core-router-android-build.md) |
+| **GenieACS — despliegue VPS** | [genieacs-despliegue-gigafiber.md](./genieacs-despliegue-gigafiber.md) (incluye snapshot `subscription_acs` V26) |
+| **GenieACS — plan implementación VPS** | [genieacs-plan-implementacion-vps.md](./genieacs-plan-implementacion-vps.md) |
+| **GenieACS — parámetros writable VSOL V2804AX15T** | [genieacs-vsol-v2804-parametros.md](./genieacs-vsol-v2804-parametros.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |
 | **Catálogo comandos RouterOS MK2 piloto** | [mikrotik-mk2-comandos-catalogo.md](./mikrotik-mk2-comandos-catalogo.md) |
@@ -75,6 +78,7 @@
 | OLT MA5608T — salida exploración CLI (`?`) | [olt-ma5608t-cli-explore-output.md](./olt-ma5608t-cli-explore-output.md) |
 | Fix N+1 listado de suscripciones (GET /subscription/all) | [fix-n1-subscription-listado.md](./fix-n1-subscription-listado.md) |
 | **Corte automático de internet (día 15 / lunes siguiente)** | [corte-automatico-dia-15.md](./corte-automatico-dia-15.md) |
+| **Deploy prod corte día 15 2026-08-17** | [deploy-prod-corte-dia-15-2026-08-17.md](./deploy-prod-corte-dia-15-2026-08-17.md) |
 
 ## Infraestructura Nginx
 

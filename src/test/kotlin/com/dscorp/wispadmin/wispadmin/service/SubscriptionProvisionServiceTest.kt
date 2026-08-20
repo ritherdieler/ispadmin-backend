@@ -46,7 +46,10 @@ class SubscriptionProvisionServiceTest {
         planRepository = planRepository,
         placeRepository = placeRepository,
         installationStrategyFactory = installationStrategyFactory,
-        errorLogRepository = errorLogRepository
+        errorLogRepository = errorLogRepository,
+        genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
+            enabled = false
+        },
     )
 
     @Test
@@ -55,6 +58,10 @@ class SubscriptionProvisionServiceTest {
         service.initializeStatuses(subscription, InstallationType.WIRELESS)
         assertEquals(MikrotikProvisionStatus.PENDING, subscription.mikrotikProvisionStatus)
         assertEquals(OltProvisionStatus.NA, subscription.oltProvisionStatus)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.NA,
+            subscription.tr069ProvisionStatus
+        )
     }
 
     @Test
@@ -63,6 +70,31 @@ class SubscriptionProvisionServiceTest {
         service.initializeStatuses(subscription, InstallationType.FIBER)
         assertEquals(MikrotikProvisionStatus.PENDING, subscription.mikrotikProvisionStatus)
         assertEquals(OltProvisionStatus.PENDING, subscription.oltProvisionStatus)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.NA,
+            subscription.tr069ProvisionStatus
+        )
+    }
+
+    @Test
+    fun `initializeStatuses sets fiber tr069 PENDING when genieacs enabled`() {
+        val enabledService = SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository,
+            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
+                enabled = true
+            },
+        )
+        val subscription = baseSubscription()
+        enabledService.initializeStatuses(subscription, InstallationType.FIBER)
+        assertEquals(
+            com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus.PENDING,
+            subscription.tr069ProvisionStatus
+        )
     }
 
     @Test

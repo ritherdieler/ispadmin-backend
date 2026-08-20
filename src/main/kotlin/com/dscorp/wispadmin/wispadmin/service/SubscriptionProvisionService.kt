@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.OnuDto
 import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
@@ -13,6 +14,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import org.slf4j.LoggerFactory
@@ -27,7 +29,8 @@ class SubscriptionProvisionService(
     private val planRepository: PlanRepository,
     private val placeRepository: PlaceRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
-    private val errorLogRepository: ErrorLogRepository
+    private val errorLogRepository: ErrorLogRepository,
+    private val genieAcsProperties: GenieAcsProperties,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
 
@@ -36,14 +39,19 @@ class SubscriptionProvisionService(
             InstallationType.WIRELESS -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
                 subscription.oltProvisionStatus = OltProvisionStatus.NA
+                subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
             }
             InstallationType.FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
                 subscription.oltProvisionStatus = OltProvisionStatus.PENDING
+                subscription.tr069ProvisionStatus =
+                    if (genieAcsProperties.enabled) Tr069ProvisionStatus.PENDING
+                    else Tr069ProvisionStatus.NA
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
                 subscription.oltProvisionStatus = OltProvisionStatus.NA
+                subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
             }
         }
     }

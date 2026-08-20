@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
+import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import java.io.Serializable
 import java.time.LocalDate
 
@@ -57,8 +58,12 @@ data class SubscriptionDto(
     val mikrotikProvisionStatus: MikrotikProvisionStatus? = null,
     val oltProvisionStatus: OltProvisionStatus? = null,
     val provisioningPending: Boolean = false,
-
-    ) : Serializable
+    val tr069ProvisionStatus: Tr069ProvisionStatus? = null,
+    val tr069RequiresManualConfig: Boolean = false,
+    val tr069Message: String? = null,
+    val wifiSsid24: String? = null,
+    val wifiSsid5: String? = null,
+) : Serializable
 
 
 data class SubscriptionUserDto(
