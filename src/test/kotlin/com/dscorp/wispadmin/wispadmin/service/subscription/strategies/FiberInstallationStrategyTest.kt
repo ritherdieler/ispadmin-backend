@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
-import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
@@ -8,19 +7,12 @@ import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.dto.OnuDto
-import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
-import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.Runs
-import io.mockk.slot
-import io.mockk.unmockkStatic
-import org.junit.jupiter.api.AfterEach
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -35,7 +27,10 @@ class FiberInstallationStrategyTest {
 
     @BeforeEach
     fun setUp() {
-        strategy = FiberInstallationStrategy(mock(CancelledOnuReuseService::class.java))
+        strategy = FiberInstallationStrategy(
+            mock(CancelledOnuReuseService::class.java),
+            mockk(relaxed = true)
+        )
     }
 
     @Test
@@ -90,11 +85,6 @@ class FiberInstallationStrategyTest {
         }
     }
 
-    @AfterEach
-    fun tearDown() {
-        unmockkStatic("com.dscorp.wispadmin.wispadmin.extensions.ExtensionsKt")
-    }
-
     @Test
     fun `resolveVlan falla cuando hostDevice esta deshabilitado`() {
         val subscription = subscriptionWithHostDevice(
@@ -108,17 +98,18 @@ class FiberInstallationStrategyTest {
 
     @Test
     fun `processInstallation does not throw when MikroTik TLS handshake fails`() {
-        mockkStatic("com.dscorp.wispadmin.wispadmin.extensions.ExtensionsKt")
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
-        strategy = FiberInstallationStrategy(onuReuse)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
-        every { any<NetworkDevice>().executeCommand(any()) } throws MikrotikCommandException(
-            "rest PUT /rest/queue/simple: Remote host terminated the handshake"
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(
+            added = false,
+            error = "rest PUT /rest/queue/simple: Remote host terminated the handshake"
         )
 
         val result = strategy.processInstallation(
@@ -131,13 +122,17 @@ class FiberInstallationStrategyTest {
 
         assertFalse(result.queueAdded)
         assertEquals(true, result.onuAuthorized)
+        assertEquals(
+            "rest PUT /rest/queue/simple: Remote host terminated the handshake",
+            result.mikrotikError
+        )
     }
 
     @Test
     fun `processInstallation uses offline client ip as simple queue target`() {
-        mockkStatic("com.dscorp.wispadmin.wispadmin.extensions.ExtensionsKt")
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
-        strategy = FiberInstallationStrategy(onuReuse)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -145,13 +140,7 @@ class FiberInstallationStrategyTest {
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
-        val capturedArgs = slot<Map<String, String>>()
-        every { any<NetworkDevice>().executeCommand(any()) } answers {
-            val block = secondArg<(MikrotikSession) -> Unit>()
-            val session = mockk<MikrotikSession>(relaxed = true)
-            every { session.add("/queue/simple", capture(capturedArgs)) } just Runs
-            block(session)
-        }
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
 
         val result = strategy.processInstallation(
             subscription = subscription,
@@ -162,7 +151,9 @@ class FiberInstallationStrategyTest {
         )
 
         assertTrue(result.queueAdded)
-        assertEquals("192.168.1.77", capturedArgs.captured["target"])
+        verify {
+            queueProvisioner.ensureQueue(match { it.ip == "192.168.1.77" }, host, subscription.plan!!)
+        }
     }
 
     private fun cloudCoreRouter(id: Int, vlanId: Int?, disabled: Boolean = false): NetworkDevice =

@@ -76,7 +76,7 @@ class Tr069ModelProfileTest {
     fun `withWanConnectionIndex rewrites WAN paths`() {
         val profile = Tr069ModelProfiles.resolve("V2804AX15T", null)!!.withWanConnectionIndex(2)
         assertTrue(profile.wanIpConnectionPath.contains("WANConnectionDevice.2.WANIPConnection.1"))
-        assertTrue(profile.wanGponLinkConfigPath.contains("WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig"))
+        assertTrue(profile.wanGponLinkConfigPath!!.contains("WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig"))
     }
 
     @Test

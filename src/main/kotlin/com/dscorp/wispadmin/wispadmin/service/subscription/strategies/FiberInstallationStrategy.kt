@@ -1,11 +1,9 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
-import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
-import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
@@ -15,7 +13,8 @@ import org.springframework.stereotype.Component
 
 @Component
 class FiberInstallationStrategy(
-    private val cancelledOnuReuseService: CancelledOnuReuseService
+    private val cancelledOnuReuseService: CancelledOnuReuseService,
+    private val simpleQueueProvisioner: SimpleQueueProvisioner
 ) : IInstallationStrategy {
 
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -68,31 +67,9 @@ class FiberInstallationStrategy(
                 )
             }
 
-            val queueName = buildQueueName(subscription)
-            val target = subscription.ip.orEmpty()
-            try {
-                device.executeCommand { session ->
-                    val existing = session.print("/queue/simple", mapOf("target" to "$target/32"))
-                    if (existing.isNotEmpty()) {
-                        return@executeCommand
-                    }
-                    session.add(
-                        "/queue/simple",
-                        mapOf(
-                            "name" to queueName,
-                            "target" to target,
-                            "max-limit" to "${plan.uploadSpeed}M/${plan.downloadSpeed}M"
-                        )
-                    )
-                }
-                queueAdded = true
-            } catch (error: MikrotikException) {
-                mikrotikError = error.message
-                logger.error(
-                    "No se pudo crear simple queue en MikroTik para suscripción ${subscription.id}",
-                    error
-                )
-            }
+            val queueResult = simpleQueueProvisioner.ensureQueue(subscription, device, plan)
+            queueAdded = queueResult.added
+            mikrotikError = queueResult.error
         } ?: run {
             oltError = "Solicitud FIBER sin datos de ONU"
         }

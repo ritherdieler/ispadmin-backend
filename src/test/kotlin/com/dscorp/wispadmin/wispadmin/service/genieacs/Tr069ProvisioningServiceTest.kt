@@ -281,13 +281,17 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
-    fun `unknown model returns MANUAL_REQUIRED without waiting forever`() {
+    fun `unknown onu type waits for GenieACS before failing`() {
+        server.enqueue(emptyDevices())
         val outcome = service.provision(
-            sampleRequest().copy(onuTypeName = "HG8310")
+            sampleRequest().copy(onuTypeName = "HG8310", waitTimeoutMs = 1L),
         )
         assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
-        assertTrue(outcome.message!!.contains("sin perfil", ignoreCase = true))
-        assertEquals(0, server.requestCount)
+        assertTrue(
+            outcome.message!!.contains("no contactó", ignoreCase = true) ||
+                outcome.message!!.contains("sin perfil", ignoreCase = true),
+        )
+        assertTrue(server.requestCount > 0)
     }
 
     private fun sampleRequest() = Tr069ProvisionRequest(

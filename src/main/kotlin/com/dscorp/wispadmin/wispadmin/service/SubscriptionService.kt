@@ -8,7 +8,6 @@ import com.dscorp.wispadmin.wispadmin.dto.AddressListGenerationResultDto
 import com.dscorp.wispadmin.wispadmin.dto.CutServiceSummaryDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
-import com.dscorp.wispadmin.wispadmin.extensions.getBaseIpFromRange
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.requestbody.MigrationRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
@@ -60,7 +59,8 @@ class SubscriptionService(
     private val fiberInstallationStrategy: FiberInstallationStrategy,
     private val applicationEventPublisher: ApplicationEventPublisher,
     private val cancelledOnuReuseService: CancelledOnuReuseService,
-    private val subscriptionProvisionService: SubscriptionProvisionService
+    private val subscriptionProvisionService: SubscriptionProvisionService,
+    private val ipAllocationService: IpAllocationService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -400,50 +400,26 @@ class SubscriptionService(
     }
 
     private fun resolveIpAssignment(request: SubscriptionRequest): Pair<String, IpPool> {
-        val manualIp = request.clientIpAddress?.trim()?.takeIf { it.isNotEmpty() }
-        if (manualIp != null) {
-            require(manualIp.isValidIpAddress()) { "La IP del cliente no es válida" }
-            val matchingPool = ipPoolRepository.findAllEligiblePools().firstOrNull { pool ->
-                manualIp.startsWith(pool.ipSegment.getBaseIpFromRange())
-            }
-            val pool = matchingPool ?: getFreeIp(request.hostDeviceId).second
-            return Pair(manualIp, pool)
+        var assignment = ipAllocationService.allocate(
+            hostDeviceId = request.hostDeviceId,
+            preferredIp = request.clientIpAddress
+        )
+        if (repository.existsByIpAndServiceStatus(assignment.first, ServiceStatus.ACTIVE)) {
+            ipAllocationService.reportCollision(
+                ip = assignment.first,
+                reason = IpAllocationService.REASON_ACTIVE_SUBSCRIPTION,
+                hostDeviceId = request.hostDeviceId
+            )
+            assignment = ipAllocationService.allocate(hostDeviceId = request.hostDeviceId)
         }
-        return getFreeIp(request.hostDeviceId)
+        if (repository.existsByIpAndServiceStatus(assignment.first, ServiceStatus.ACTIVE)) {
+            throw IllegalStateException("No more ips available")
+        }
+        return assignment
     }
 
     fun getFreeIp(hostDeviceId: Int? = null): Pair<String, IpPool> {
-        val ipRange = 10..250
-        val eligiblePools = ipPoolRepository.findAllEligiblePools()
-        val ipPools = if (hostDeviceId != null) {
-            eligiblePools.filter { it.hostDevice?.id == hostDeviceId }.ifEmpty { eligiblePools }
-        } else {
-            eligiblePools
-        }
-
-        for (ipPool in ipPools) {
-            val occupied = ipPool.ips.mapNotNull { subscription ->
-                subscription.ip?.split(".")?.last()?.trim()?.toIntOrNull()
-            }
-            val occupiedSet = occupied.toSet()
-            val nextOctet = if (occupied.isEmpty()) {
-                10
-            } else {
-                val maxOctet = occupied.maxOrNull() ?: 9
-                val candidate = maxOctet + 1
-                if (candidate <= 250 && candidate !in occupiedSet) {
-                    candidate
-                } else {
-                    ipRange.firstOrNull { it !in occupiedSet }
-                }
-            }
-
-            if (nextOctet != null) {
-                return Pair(ipPool.ipSegment.getBaseIpFromRange() + nextOctet, ipPool)
-            }
-        }
-
-        throw Exception("No more ips available")
+        return ipAllocationService.allocate(hostDeviceId = hostDeviceId)
     }
 
     @Transactional

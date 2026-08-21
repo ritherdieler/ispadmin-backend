@@ -85,6 +85,12 @@ class SubscriptionServiceIdempotencyTest {
         applicationEventPublisher = applicationEventPublisher,
         cancelledOnuReuseService = mockk(relaxed = true),
         subscriptionProvisionService = subscriptionProvisionService,
+        ipAllocationService = IpAllocationService(
+            ipPoolRepository = ipPoolRepository,
+            subscriptionRepository = repository,
+            mikrotikService = mockk(relaxed = true),
+            observabilityReporter = mockk(relaxed = true)
+        ),
         )
     }
 
@@ -293,6 +299,9 @@ class SubscriptionServiceIdempotencyTest {
         every { planRepository.findById(1) } returns Optional.of(Plan(id = 1, name = "f50", downloadSpeed = 50, uploadSpeed = 50))
         every { placeRepository.findById(1) } returns Optional.of(Place(id = 1, name = "Huacho"))
         every { errorLogRepository.save(any()) } answers { firstArg() }
+        every { repository.findActiveIps() } returns emptyList()
+        every { repository.existsByIpAndServiceStatus(any(), any()) } returns false
+        every { repository.findByIpAndServiceStatus(any(), any()) } returns emptyList()
     }
 
     private fun sampleRequest(clientRequestId: String?) = SubscriptionRequest(

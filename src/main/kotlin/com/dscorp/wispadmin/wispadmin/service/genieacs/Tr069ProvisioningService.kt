@@ -77,15 +77,6 @@ class Tr069ProvisioningService(
             )
         }
 
-        val profileFromOnu = Tr069ModelProfiles.resolve(request.onuTypeName, null)
-        if (profileFromOnu == null && request.onuTypeName.isNullOrBlank()) {
-            // allow resolve later from device product class
-        } else if (profileFromOnu == null) {
-            return manual(
-                "Modelo ONU sin perfil TR-069 (${request.onuTypeName}). Configure la ONU manualmente."
-            )
-        }
-
         val ip = request.ip?.trim().orEmpty()
         val segment = request.ipSegment?.trim().orEmpty()
         if (ip.isBlank() || segment.isBlank()) {

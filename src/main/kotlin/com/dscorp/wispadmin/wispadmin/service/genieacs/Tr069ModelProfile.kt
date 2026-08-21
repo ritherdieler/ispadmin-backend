@@ -8,26 +8,26 @@ data class Tr069ParameterValue(
 
 data class Tr069ModelProfile(
     val productClass: String,
+    val wanConnectionDeviceIndex: Int = 1,
     val wanIpConnectionPath: String,
-    val wanGponLinkConfigPath: String,
+    val wanGponLinkConfigPath: String? = null,
+    val vlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
     val wlan24Path: String,
     val wlan5Path: String,
 ) {
     fun withWanConnectionIndex(index: Int): Tr069ModelProfile {
         require(index in 1..16) { "WAN connection index fuera de rango: $index" }
-        val igd = "InternetGatewayDevice"
+        if (index == wanConnectionDeviceIndex) return this
         return copy(
-            wanIpConnectionPath =
-                "$igd.WANDevice.1.WANConnectionDevice.$index.WANIPConnection.1",
-            wanGponLinkConfigPath =
-                "$igd.WANDevice.1.WANConnectionDevice.$index.X_CT-COM_WANGponLinkConfig",
+            wanConnectionDeviceIndex = index,
+            wanIpConnectionPath = rewriteWanIndex(wanIpConnectionPath, index),
+            wanGponLinkConfigPath = wanGponLinkConfigPath?.let { rewriteWanIndex(it, index) },
+            vlanParameters = vlanParameters.map { spec ->
+                spec.copy(path = rewriteWanIndex(spec.path, index))
+            },
         )
     }
 
-    /**
-     * Single SPV payload for VSOL V2804AX15T: Static IP + VLAN + WiFi in one GenieACS task.
-     * Validated from factory preconfig (DHCP + VLAN 100) without a prior Enable=false step.
-     */
     fun buildParameterValues(
         ip: String,
         subnetMask: String,
@@ -39,7 +39,6 @@ data class Tr069ModelProfile(
         wifiSsid5: String?,
         wifiPassword5: String?,
     ): List<Tr069ParameterValue> {
-        val vlan = vlanId.toString()
         val values = mutableListOf(
             param("$wanIpConnectionPath.AddressingType", "Static", "xsd:string"),
             param("$wanIpConnectionPath.ExternalIPAddress", ip, "xsd:string"),
@@ -47,37 +46,66 @@ data class Tr069ModelProfile(
             param("$wanIpConnectionPath.DefaultGateway", gateway, "xsd:string"),
             param("$wanIpConnectionPath.DNSServers", dns, "xsd:string"),
             param("$wanIpConnectionPath.DNSEnabled", "true", "xsd:boolean"),
-            param("$wanIpConnectionPath.X_CT-COM_VLANIDMark", vlan, "xsd:unsignedInt"),
-            param("$wanIpConnectionPath.X_ZTE-COM_VLANID", vlan, "xsd:unsignedInt"),
-            param("$wanIpConnectionPath.X_ZTE-COM_VLANEnable", "1", "xsd:unsignedInt"),
-            param("$wanGponLinkConfigPath.VLANIDMark", vlan, "xsd:unsignedInt"),
         )
-        if (!wifiSsid24.isNullOrBlank()) {
+        values += vlanParameterValues(vlanId)
+        if (wlan24Path.isNotBlank() && !wifiSsid24.isNullOrBlank()) {
             values += param("$wlan24Path.SSID", wifiSsid24, "xsd:string")
         }
-        if (!wifiPassword24.isNullOrBlank()) {
+        if (wlan24Path.isNotBlank() && !wifiPassword24.isNullOrBlank()) {
             values += param("$wlan24Path.KeyPassphrase", wifiPassword24, "xsd:string")
         }
-        if (!wifiSsid5.isNullOrBlank()) {
+        if (wlan5Path.isNotBlank() && !wifiSsid5.isNullOrBlank()) {
             values += param("$wlan5Path.SSID", wifiSsid5, "xsd:string")
         }
-        if (!wifiPassword5.isNullOrBlank()) {
+        if (wlan5Path.isNotBlank() && !wifiPassword5.isNullOrBlank()) {
             values += param("$wlan5Path.KeyPassphrase", wifiPassword5, "xsd:string")
         }
         return values
     }
 
-    /** Staging prep: DHCP + VLAN before prod static SPV (ONU on MK2 `192.168.255.0/24`). */
     fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
-        val vlan = vlanId.toString()
-        return listOf(
+        val values = mutableListOf(
             param("$wanIpConnectionPath.AddressingType", "DHCP", "xsd:string"),
-            param("$wanIpConnectionPath.X_CT-COM_VLANIDMark", vlan, "xsd:unsignedInt"),
-            param("$wanIpConnectionPath.X_ZTE-COM_VLANID", vlan, "xsd:unsignedInt"),
-            param("$wanIpConnectionPath.X_ZTE-COM_VLANEnable", "1", "xsd:unsignedInt"),
-            param("$wanGponLinkConfigPath.VLANIDMark", vlan, "xsd:unsignedInt"),
+        )
+        values += vlanParameterValues(vlanId)
+        return values
+    }
+
+    private fun vlanParameterValues(vlanId: Int): List<Tr069ParameterValue> {
+        val specs = if (vlanParameters.isNotEmpty()) {
+            vlanParameters
+        } else {
+            defaultVsolVlanSpecs()
+        }
+        val vlan = vlanId.toString()
+        return specs.map { spec ->
+            val (value, type) = when (spec.valueKind) {
+                Tr069VlanValueKind.VLAN_ID -> vlan to "xsd:unsignedInt"
+                Tr069VlanValueKind.ENABLE_ONE -> "1" to "xsd:unsignedInt"
+                Tr069VlanValueKind.ENABLE_TRUE -> "true" to "xsd:boolean"
+            }
+            param(spec.path, value, type)
+        }
+    }
+
+    private fun defaultVsolVlanSpecs(): List<Tr069VlanParameterSpec> {
+        val gponVlan = wanGponLinkConfigPath?.let { Tr069VlanParameterSpec("$it.VLANIDMark") }
+        return listOfNotNull(
+            Tr069VlanParameterSpec("$wanIpConnectionPath.X_CT-COM_VLANIDMark"),
+            Tr069VlanParameterSpec("$wanIpConnectionPath.X_ZTE-COM_VLANID"),
+            Tr069VlanParameterSpec(
+                path = "$wanIpConnectionPath.X_ZTE-COM_VLANEnable",
+                valueKind = Tr069VlanValueKind.ENABLE_ONE,
+            ),
+            gponVlan,
         )
     }
+
+    private fun rewriteWanIndex(path: String, newIndex: Int): String =
+        path.replace(
+            Regex("""\.WANConnectionDevice\.\d+\."""),
+            ".WANConnectionDevice.$newIndex.",
+        )
 
     private fun param(path: String, value: String, type: String) =
         Tr069ParameterValue(path = path, value = value, type = type)
@@ -86,7 +114,6 @@ data class Tr069ModelProfile(
 object Tr069ModelProfiles {
 
     private const val IGD = "InternetGatewayDevice"
-    /** Fallback when GenieACS has no WAN tree yet (factory ONU: single WAN at index 1). */
     private const val DEFAULT_WAN_INDEX = 1
     private const val WAN1 =
         "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.WANIPConnection.1"
@@ -97,32 +124,39 @@ object Tr069ModelProfiles {
 
     private val V2804AX15T = Tr069ModelProfile(
         productClass = "V2804AX15T",
+        wanConnectionDeviceIndex = DEFAULT_WAN_INDEX,
         wanIpConnectionPath = WAN1,
         wanGponLinkConfigPath = WAN_GPON,
         wlan24Path = WLAN_24,
         wlan5Path = WLAN_5,
     )
 
-    private val BY_KEY = mapOf(
+    private val BUILTIN_BY_KEY = mapOf(
         "V2804AX15T" to V2804AX15T,
-        // SmartOLT onu_type_name for VSOL V2804AX15T CPEs
         "VSOLVA74" to V2804AX15T,
     )
 
+    @Volatile
+    private var dynamicResolver: ((String?, String?) -> Tr069ModelProfile?)? = null
+
+    fun registerDynamicResolver(resolver: (String?, String?) -> Tr069ModelProfile?) {
+        dynamicResolver = resolver
+    }
+
     fun resolve(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
+        dynamicResolver?.invoke(onuTypeName, productClass)?.let { return it }
+        return resolveBuiltin(onuTypeName, productClass)
+    }
+
+    fun resolveBuiltin(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
         val keys = listOfNotNull(onuTypeName, productClass)
             .map { it.trim().uppercase() }
             .filter { it.isNotEmpty() }
         return keys.firstNotNullOfOrNull { key ->
-            BY_KEY.entries.firstOrNull { (k, _) -> key.contains(k) }?.value
+            BUILTIN_BY_KEY.entries.firstOrNull { (k, _) -> key.contains(k) }?.value
         }
     }
 
-    /**
-     * Uses the first WANConnectionDevice index reported by GenieACS.
-     * On a factory ONU there is only one WAN slot; no preference for a fixed index.
-     * Falls back to [DEFAULT_WAN_INDEX] (1) when the tree is not available yet.
-     */
     fun resolveWanConnectionIndex(existingIndices: Collection<Int>): Int {
         val sorted = existingIndices.filter { it in 1..16 }.sorted()
         return sorted.firstOrNull() ?: DEFAULT_WAN_INDEX

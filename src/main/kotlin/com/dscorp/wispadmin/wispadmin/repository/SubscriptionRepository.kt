@@ -106,6 +106,14 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     // Método para obtener las suscripciones activas
     @Query("SELECT s FROM Subscription s WHERE s.serviceStatus = 'ACTIVE'")
     fun findActiveSubscriptions(): List<Subscription>
+
+    @Query("SELECT s.ip FROM Subscription s WHERE s.serviceStatus = 'ACTIVE' AND s.ip IS NOT NULL AND s.ip <> ''")
+    fun findActiveIps(): List<String>
+
+    fun existsByIpAndServiceStatus(ip: String, serviceStatus: ServiceStatus): Boolean
+
+    fun findByIpAndServiceStatus(ip: String, serviceStatus: ServiceStatus): List<Subscription>
+
     
     // Método para obtener las suscripciones canceladas
     @Query("SELECT s FROM Subscription s WHERE s.serviceStatus = 'CANCELLED'")
