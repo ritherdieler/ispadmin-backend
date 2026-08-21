@@ -27,6 +27,8 @@ class Tr069ModelProfileRegistry(
         profilesByKey = buildMapFromEntities(repository.findAll())
     }
 
+    fun hasImportedProfiles(): Boolean = profilesByKey.isNotEmpty()
+
     fun resolve(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
         val keys = listOfNotNull(onuTypeName, productClass)
             .map { it.trim().uppercase() }

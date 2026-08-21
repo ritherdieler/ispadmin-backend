@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.dto
 
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069VlanParameterSpec
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069WifiSecurityPrepSpec
 import java.time.LocalDateTime
 
 data class Tr069ModelProfileDto(
@@ -12,6 +13,7 @@ data class Tr069ModelProfileDto(
     val vlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
     val wlan24Path: String? = null,
     val wlan5Path: String? = null,
+    val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
     val aliases: List<String> = emptyList(),
     val sourceDeviceId: String? = null,
     val sourceSerial: String? = null,

@@ -42,6 +42,18 @@ class GenieAcsCsvProfileExtractorTest {
         )
         assertTrue(draft.wlan24Path!!.endsWith("WLANConfiguration.1"))
         assertTrue(draft.wlan5Path!!.endsWith("WLANConfiguration.5"))
+        assertTrue(draft.wifiSecurityPrep.isNotEmpty(), "Factory open WiFi export should require WPA prep")
+        assertTrue(
+            draft.wifiSecurityPrep.any { it.parameterSuffix == "BeaconType" && it.value == "11i" },
+            draft.wifiSecurityPrep.toString(),
+        )
+    }
+
+    @Test
+    fun `VSOL export does not require wifi security prep`() {
+        val csv = readFixture("genieacs-exports/vsol-v2804ax15t.csv")
+        val draft = GenieAcsCsvProfileExtractor.extract(csv)
+        assertTrue(draft.wifiSecurityPrep.isEmpty(), draft.wifiSecurityPrep.toString())
     }
 
     @Test

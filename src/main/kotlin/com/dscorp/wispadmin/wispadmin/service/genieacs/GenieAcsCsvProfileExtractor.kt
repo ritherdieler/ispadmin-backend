@@ -11,6 +11,7 @@ data class Tr069ProfileDraft(
     val vlanParameters: List<Tr069VlanParameterSpec>,
     val wlan24Path: String?,
     val wlan5Path: String?,
+    val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
     val warnings: List<String> = emptyList(),
 ) {
     fun toModelProfile(): Tr069ModelProfile = Tr069ModelProfile(
@@ -21,6 +22,7 @@ data class Tr069ProfileDraft(
         vlanParameters = vlanParameters,
         wlan24Path = wlan24Path ?: "",
         wlan5Path = wlan5Path ?: "",
+        wifiSecurityPrep = wifiSecurityPrep,
     )
 }
 
@@ -121,6 +123,14 @@ object GenieAcsCsvProfileExtractor {
         if (wlan24 == null) warnings += "No se detectó radio WiFi 2.4 GHz."
         if (wlan5 == null) warnings += "No se detectó radio WiFi 5 GHz."
 
+        val keyPassphraseByPath = rows
+            .filter { WLAN_KEY_SUFFIX.containsMatchIn(it.parameter) }
+            .associate { it.parameter to it.value }
+        val wifiSecurityPrep = Tr069WifiSecurityDefaults.detectFromCsvExport(
+            wlanPaths = listOf(wlan24, wlan5),
+            keyPassphraseByPath = keyPassphraseByPath,
+        )
+
         return Tr069ProfileDraft(
             productClass = productClass,
             manufacturer = manufacturer,
@@ -132,6 +142,7 @@ object GenieAcsCsvProfileExtractor {
             vlanParameters = vlanParameters.distinctBy { it.path },
             wlan24Path = wlan24,
             wlan5Path = wlan5,
+            wifiSecurityPrep = wifiSecurityPrep,
             warnings = warnings,
         )
     }

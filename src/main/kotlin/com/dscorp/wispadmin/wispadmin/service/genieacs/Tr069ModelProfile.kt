@@ -14,6 +14,7 @@ data class Tr069ModelProfile(
     val vlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
     val wlan24Path: String,
     val wlan5Path: String,
+    val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
 ) {
     fun withWanConnectionIndex(index: Int): Tr069ModelProfile {
         require(index in 1..16) { "WAN connection index fuera de rango: $index" }
@@ -28,16 +29,12 @@ data class Tr069ModelProfile(
         )
     }
 
-    fun buildParameterValues(
+    fun buildWanParameterValues(
         ip: String,
         subnetMask: String,
         gateway: String,
         dns: String,
         vlanId: Int,
-        wifiSsid24: String?,
-        wifiPassword24: String?,
-        wifiSsid5: String?,
-        wifiPassword5: String?,
     ): List<Tr069ParameterValue> {
         val values = mutableListOf(
             param("$wanIpConnectionPath.AddressingType", "Static", "xsd:string"),
@@ -48,17 +45,50 @@ data class Tr069ModelProfile(
             param("$wanIpConnectionPath.DNSEnabled", "true", "xsd:boolean"),
         )
         values += vlanParameterValues(vlanId)
-        if (wlan24Path.isNotBlank() && !wifiSsid24.isNullOrBlank()) {
-            values += param("$wlan24Path.SSID", wifiSsid24, "xsd:string")
+        return values
+    }
+
+    fun buildWifiParameterValues(
+        wifiSsid24: String?,
+        wifiPassword24: String?,
+        wifiSsid5: String?,
+        wifiPassword5: String?,
+    ): List<Tr069ParameterValue> {
+        val values = mutableListOf<Tr069ParameterValue>()
+        values += wlanBandValues(wlan24Path, wifiSsid24, wifiPassword24)
+        values += wlanBandValues(wlan5Path, wifiSsid5, wifiPassword5)
+        return values
+    }
+
+    fun buildParameterValues(
+        ip: String,
+        subnetMask: String,
+        gateway: String,
+        dns: String,
+        vlanId: Int,
+        wifiSsid24: String?,
+        wifiPassword24: String?,
+        wifiSsid5: String?,
+        wifiPassword5: String?,
+    ): List<Tr069ParameterValue> =
+        buildWanParameterValues(ip, subnetMask, gateway, dns, vlanId) +
+            buildWifiParameterValues(wifiSsid24, wifiPassword24, wifiSsid5, wifiPassword5)
+
+    private fun wlanBandValues(
+        wlanPath: String,
+        ssid: String?,
+        password: String?,
+    ): List<Tr069ParameterValue> {
+        if (wlanPath.isBlank()) return emptyList()
+        val values = mutableListOf<Tr069ParameterValue>()
+        wifiSecurityPrep.forEach { spec ->
+            values += param("$wlanPath.${spec.parameterSuffix}", spec.value, spec.type)
         }
-        if (wlan24Path.isNotBlank() && !wifiPassword24.isNullOrBlank()) {
-            values += param("$wlan24Path.KeyPassphrase", wifiPassword24, "xsd:string")
+        if (!ssid.isNullOrBlank()) {
+            values += param("$wlanPath.SSID", ssid, "xsd:string")
         }
-        if (wlan5Path.isNotBlank() && !wifiSsid5.isNullOrBlank()) {
-            values += param("$wlan5Path.SSID", wifiSsid5, "xsd:string")
-        }
-        if (wlan5Path.isNotBlank() && !wifiPassword5.isNullOrBlank()) {
-            values += param("$wlan5Path.KeyPassphrase", wifiPassword5, "xsd:string")
+        if (!password.isNullOrBlank()) {
+            values += param("$wlanPath.KeyPassphrase", password, "xsd:string")
         }
         return values
     }
@@ -143,12 +173,11 @@ object Tr069ModelProfiles {
         dynamicResolver = resolver
     }
 
-    fun resolve(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
-        dynamicResolver?.invoke(onuTypeName, productClass)?.let { return it }
-        return resolveBuiltin(onuTypeName, productClass)
-    }
+    fun resolve(onuTypeName: String?, productClass: String?): Tr069ModelProfile? =
+        dynamicResolver?.invoke(onuTypeName, productClass)
 
-    fun resolveBuiltin(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
+    /** Perfiles embebidos VSOL; solo para tests unitarios. Producción usa perfiles importados en BD. */
+    internal fun resolveBuiltin(onuTypeName: String?, productClass: String?): Tr069ModelProfile? {
         val keys = listOfNotNull(onuTypeName, productClass)
             .map { it.trim().uppercase() }
             .filter { it.isNotEmpty() }

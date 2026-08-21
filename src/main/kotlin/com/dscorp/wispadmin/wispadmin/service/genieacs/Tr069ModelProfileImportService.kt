@@ -71,6 +71,7 @@ class Tr069ModelProfileImportService(
         vlanParameters = vlanParameters,
         wlan24Path = wlan24Path,
         wlan5Path = wlan5Path,
+        wifiSecurityPrep = wifiSecurityPrep,
         sourceDeviceId = deviceId,
         sourceSerial = serialNumber,
         warnings = warnings,

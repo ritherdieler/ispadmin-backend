@@ -53,6 +53,7 @@ data class Tr069ProvisionOutcome(
 class Tr069ProvisioningService(
     private val client: GenieAcsClient,
     private val properties: GenieAcsProperties,
+    private val profileRegistry: Tr069ModelProfileRegistry,
 ) {
     private val log = LoggerFactory.getLogger(Tr069ProvisioningService::class.java)
 
@@ -128,16 +129,30 @@ class Tr069ProvisioningService(
             log.warn("No se pudo purgar cola GenieACS de {}: {}", device.id, ex.message)
         }
 
-        val profile = Tr069ModelProfiles.resolve(
+        if (!profileRegistry.hasImportedProfiles()) {
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = device.id,
+                error = MISSING_IMPORTED_PROFILES_MESSAGE,
+                message = MISSING_IMPORTED_PROFILES_MESSAGE,
+                acsSnapshot = baseSnapshot,
+            )
+        }
+
+        val resolvedProfile = Tr069ModelProfiles.resolve(
             onuTypeName = request.onuTypeName,
             productClass = device.productClass,
-        ) ?: return Tr069ProvisionOutcome(
-            status = Tr069ProvisionStatus.MANUAL_REQUIRED,
-            deviceId = device.id,
-            error = "Modelo ONU sin perfil TR-069 (${device.productClass ?: request.onuTypeName}). Configure la ONU manualmente.",
-            message = "Modelo ONU sin perfil TR-069 (${device.productClass ?: request.onuTypeName}). Configure la ONU manualmente.",
-            acsSnapshot = baseSnapshot,
-        )
+        ) ?: run {
+            val modelLabel = device.productClass ?: request.onuTypeName ?: "desconocido"
+            val message = missingModelProfileMessage(modelLabel)
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = device.id,
+                error = message,
+                message = message,
+                acsSnapshot = baseSnapshot,
+            )
+        }
 
         val gateway = segment.getBaseIpFromRange() + "1"
         val subnetMask = cidrToSubnetMask(segment)
@@ -148,7 +163,7 @@ class Tr069ProvisioningService(
             emptyList()
         }
         val wanIndex = Tr069ModelProfiles.resolveWanConnectionIndex(wanIndices)
-        val profileForWan = profile.withWanConnectionIndex(wanIndex)
+        val profileForWan = resolvedProfile.withWanConnectionIndex(wanIndex)
         val wanIpPath = "${profileForWan.wanIpConnectionPath}.ExternalIPAddress"
         val currentWanIp = client.getDeviceParameterValue(device.id, wanIpPath)
 
@@ -167,23 +182,33 @@ class Tr069ProvisioningService(
             sleeper(properties.pollIntervalMs)
         }
 
-        val values = profileForWan.buildParameterValues(
+        val values = profileForWan.buildWanParameterValues(
             ip = ip,
             subnetMask = subnetMask,
             gateway = gateway,
             dns = properties.defaultDns,
             vlanId = request.wanVlanId,
+        )
+
+        val (wanSpv, wanFailure) = submitSpv(device.id, values, baseSnapshot)
+        if (wanFailure != null) {
+            return wanFailure
+        }
+        var setResult = wanSpv!!.result
+
+        val wifiValues = profileForWan.buildWifiParameterValues(
             wifiSsid24 = request.wifiSsid24,
             wifiPassword24 = request.wifiPassword24,
             wifiSsid5 = request.wifiSsid5,
             wifiPassword5 = request.wifiPassword5,
         )
-
-        val (mainSpv, mainFailure) = submitSpv(device.id, values, baseSnapshot)
-        if (mainFailure != null) {
-            return mainFailure
+        if (wifiValues.isNotEmpty()) {
+            val (wifiSpv, wifiFailure) = submitSpv(device.id, wifiValues, baseSnapshot)
+            if (wifiFailure != null) {
+                return wifiFailure
+            }
+            setResult = wifiSpv!!.result
         }
-        val setResult = mainSpv!!.result
 
         val snapshotAfterTask = baseSnapshot.withTask(setResult).copy(
             wanIpCache = ip,
@@ -335,6 +360,12 @@ class Tr069ProvisioningService(
     )
 
     companion object {
+        const val MISSING_IMPORTED_PROFILES_MESSAGE =
+            "No hay perfiles TR-069 importados. Configure los perfiles en Administración → Perfiles TR-069 antes de registrar."
+
+        fun missingModelProfileMessage(modelLabel: String): String =
+            "Modelo ONU sin perfil TR-069 ($modelLabel). Importe el CSV del modelo en Administración → Perfiles TR-069."
+
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
             "Los SSIDs no se confirmaron en el ACS dentro del tiempo de espera."
 

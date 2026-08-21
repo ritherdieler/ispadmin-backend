@@ -4,6 +4,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,6 +19,7 @@ class Tr069ProvisioningServiceTest {
 
     private lateinit var server: MockWebServer
     private lateinit var service: Tr069ProvisioningService
+    private lateinit var profileRegistry: Tr069ModelProfileRegistry
     private val now = AtomicLong(0L)
     private val objectMapper = ObjectMapper()
 
@@ -40,7 +43,12 @@ class Tr069ProvisioningServiceTest {
             setReadTimeout(2000)
         })
         val client = GenieAcsClient(properties, objectMapper, restTemplate)
-        service = Tr069ProvisioningService(client, properties).withTimeControls(
+        profileRegistry = mockk()
+        every { profileRegistry.hasImportedProfiles() } returns true
+        Tr069ModelProfiles.registerDynamicResolver { onuTypeName, productClass ->
+            Tr069ModelProfiles.resolveBuiltin(onuTypeName, productClass)
+        }
+        service = Tr069ProvisioningService(client, properties, profileRegistry).withTimeControls(
             clock = { now.get() },
             sleeper = { ms -> now.addAndGet(ms) },
         )
@@ -48,9 +56,67 @@ class Tr069ProvisioningServiceTest {
 
     @AfterEach
     fun tearDown() {
+        Tr069ModelProfiles.registerDynamicResolver { _, _ -> null }
         server.shutdown()
     }
 
+    @Test
+    fun `no imported profiles returns configure profiles message`() {
+        every { profileRegistry.hasImportedProfiles() } returns false
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
+        assertEquals(Tr069ProvisioningService.MISSING_IMPORTED_PROFILES_MESSAGE, outcome.message)
+        assertTrue(outcome.message!!.contains("Perfiles TR-069"))
+    }
+
+    @Test
+    fun `provisioning sends separate WAN and WiFi SPV tasks`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
+        server.enqueue(taskAccepted()) // WAN SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // WiFi SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // getParameterValues
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        skipToSetParameterValuesRequests(1)
+        val wanBody = server.takeRequest().body.readUtf8()
+        assertTrue(wanBody.contains("ExternalIPAddress"), wanBody)
+        assertTrue(!wanBody.contains("WLANConfiguration"), wanBody)
+        server.takeRequest() // faults after WAN
+        val wifiBody = server.takeRequest().body.readUtf8()
+        assertTrue(wifiBody.contains("WLANConfiguration"), wifiBody)
+        assertTrue(!wifiBody.contains("ExternalIPAddress"), wifiBody)
+    }
+
+    @Test
+    fun `WiFi SPV fault after successful WAN returns MANUAL_REQUIRED`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
+        server.enqueue(taskAccepted()) // WAN SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // WiFi SPV accepted
+        server.enqueue(wifiKeyPassphraseFault(taskId = "task-1"))
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
+        assertTrue(outcome.message!!.contains("KeyPassphrase", ignoreCase = true))
+    }
     @Test
     fun `device appears on second poll then COMPLETE`() {
         server.enqueue(emptyDevices())
@@ -58,8 +124,7 @@ class Tr069ProvisioningServiceTest {
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
+        enqueueWanAndWifiSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 2.4
@@ -93,9 +158,8 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(emptyFaults())
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(taskAccepted())
+        enqueueWanAndWifiSpvSuccess()
+        server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -118,9 +182,8 @@ class Tr069ProvisioningServiceTest {
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(taskAccepted())
+        enqueueWanAndWifiSpvSuccess()
+        server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -128,7 +191,7 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest().copy(wanVlanId = 100))
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=wan ip, 6=setParameterValues
+        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=wan ip, 6=WAN SPV
         server.takeRequest()
         server.takeRequest()
         server.takeRequest()
@@ -230,6 +293,7 @@ class Tr069ProvisioningServiceTest {
                 .setBody(taskBody)
         )
         server.enqueue(emptyFaults())
+        enqueueWifiSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         repeat(4) { server.enqueue(deviceWithSsids("wrong24", "wrong5")) }
         repeat(4) { server.enqueue(emptyFaults()) }
@@ -250,7 +314,9 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceWanIpRead(wanIp = "192.168.255.249"))
         server.enqueue(taskAccepted()) // staging prep SPV
         server.enqueue(emptyFaults())
-        server.enqueue(taskAccepted()) // prod SPV
+        server.enqueue(taskAccepted()) // prod WAN SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // WiFi SPV
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
@@ -275,10 +341,46 @@ class Tr069ProvisioningServiceTest {
         assertTrue(prepBody.contains("DHCP"), prepBody)
         assertTrue(!prepBody.contains("192.168.30.213"), prepBody)
         server.takeRequest() // faults after prep SPV
-        val prodBody = server.takeRequest().body.readUtf8()
-        assertTrue(prodBody.contains("Static"), prodBody)
-        assertTrue(prodBody.contains("192.168.30.213"), prodBody)
+        val prodWanBody = server.takeRequest().body.readUtf8()
+        assertTrue(prodWanBody.contains("Static"), prodWanBody)
+        assertTrue(prodWanBody.contains("192.168.30.213"), prodWanBody)
+        assertTrue(!prodWanBody.contains("WLANConfiguration"), prodWanBody)
     }
+
+    private fun enqueueWanAndWifiSpvSuccess() {
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        enqueueWifiSpvSuccess()
+    }
+
+    private fun enqueueWifiSpvSuccess() {
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+    }
+
+    private fun skipToSetParameterValuesRequests(count: Int) {
+        repeat(count + 4) { server.takeRequest() }
+    }
+
+    private fun wifiKeyPassphraseFault(taskId: String) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "device":"B46415-V2804AX15T-12345B4641531C0B6",
+              "channel":"task_$taskId",
+              "code":"cwmp.9007",
+              "message":"Invalid parameter value",
+              "detail":{
+                "faultString":"Invalid parameter value",
+                "setParameterValuesFault":[
+                  {"parameterName":"InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.KeyPassphrase","faultCode":"9007","faultString":"Invalid parameter value"}
+                ]
+              }
+            }]
+            """.trimIndent()
+        )
 
     @Test
     fun `unknown onu type waits for GenieACS before failing`() {
