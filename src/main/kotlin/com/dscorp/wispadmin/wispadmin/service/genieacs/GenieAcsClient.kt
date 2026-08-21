@@ -408,15 +408,44 @@ class GenieAcsClient(
             if (body.isNullOrBlank()) return null
             return try {
                 val root = ObjectMapper().readTree(body)
+                formatFaultDetail(root)?.let { return it }
                 sequenceOf("detail", "message", "fault", "error")
                     .map { root.path(it) }
                     .firstOrNull { node ->
-                        !node.isMissingNode && !node.isNull && node.asText("").isNotBlank()
+                        !node.isMissingNode && !node.isNull && node.isValueNode && node.asText("").isNotBlank()
                     }
                     ?.asText()
             } catch (_: Exception) {
                 body.trim().take(200).ifBlank { null }
             }
+        }
+
+        private fun formatFaultDetail(root: JsonNode): String? {
+            val code = root.path("code").asText(null)
+            val message = root.path("message").asText(null)
+            val detail = root.path("detail")
+            if (detail.isMissingNode || detail.isNull) {
+                return listOfNotNull(code, message).joinToString(": ").ifBlank { null }
+            }
+            val spvFaults = detail.path("setParameterValuesFault")
+            if (spvFaults.isArray && spvFaults.size() > 0) {
+                return spvFaults.joinToString("; ") { fault ->
+                    val param = fault.path("parameterName").asText("?")
+                        .substringAfterLast('.')
+                    val faultString = fault.path("faultString").asText("error")
+                    val faultCode = fault.path("faultCode").asText(null)
+                    buildString {
+                        append(param).append(": ").append(faultString)
+                        if (!faultCode.isNullOrBlank()) append(" (").append(faultCode).append(')')
+                    }
+                }
+            }
+            if (detail.isObject) {
+                val faultString = detail.path("faultString").asText(null)
+                if (!faultString.isNullOrBlank()) return faultString
+            }
+            if (detail.isValueNode) return detail.asText(null)
+            return listOfNotNull(code, message).joinToString(": ").ifBlank { null }
         }
 
         fun readNestedValue(root: JsonNode, dottedPath: String): String? {

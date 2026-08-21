@@ -252,7 +252,7 @@ class Tr069ProvisioningService(
             sleeper(properties.pollIntervalMs)
         }
 
-        val genieError = setResult.toResponseMessage()
+        val genieError = SSID_VERIFICATION_TIMEOUT_MESSAGE
         return Tr069ProvisionOutcome(
             status = Tr069ProvisionStatus.MANUAL_REQUIRED,
             deviceId = device.id,
@@ -265,12 +265,14 @@ class Tr069ProvisioningService(
     private fun resolveTaskFault(deviceId: String, setResult: GenieAcsTaskResult): String? {
         val taskId = setResult.taskId ?: return null
         val taskFaultBody = client.findFaultBodyForTask(deviceId, taskId) ?: return null
-        return GenieAcsTaskResult(
-            statusCode = setResult.statusCode,
-            body = taskFaultBody,
-            accepted = false,
-            taskId = taskId,
-        ).toResponseMessage()
+        return GenieAcsClient.formatTaskError(
+            GenieAcsTaskResult(
+                statusCode = setResult.statusCode,
+                body = taskFaultBody,
+                accepted = false,
+                taskId = taskId,
+            )
+        )
     }
 
     private fun snapshotFromDevice(
@@ -309,6 +311,9 @@ class Tr069ProvisioningService(
     )
 
     companion object {
+        const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
+            "Los SSIDs no se confirmaron en el ACS dentro del tiempo de espera."
+
         fun cidrToSubnetMask(cidr: String): String {
             val prefix = cidr.substringAfter("/", "24").toIntOrNull()?.coerceIn(0, 32) ?: 24
             val mask = if (prefix == 0) 0 else (-1 shl (32 - prefix))

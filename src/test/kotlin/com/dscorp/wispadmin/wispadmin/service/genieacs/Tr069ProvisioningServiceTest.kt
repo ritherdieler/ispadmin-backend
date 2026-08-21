@@ -205,13 +205,12 @@ class Tr069ProvisioningServiceTest {
 
         assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
         assertEquals(outcome.message, outcome.error)
-        assertTrue(outcome.message!!.startsWith("HTTP 202"))
-        assertTrue(outcome.message!!.contains("Invalid arguments"))
         assertTrue(outcome.message!!.contains("Request denied"))
+        assertTrue(outcome.message!!.contains("ExternalIPAddress"))
     }
 
     @Test
-    fun `SSID verification failure returns GenieACS 202 response message`() {
+    fun `SSID verification failure returns human timeout message`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
@@ -231,8 +230,8 @@ class Tr069ProvisioningServiceTest {
 
         assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
         assertEquals(outcome.message, outcome.error)
-        assertTrue(outcome.message!!.startsWith("HTTP 202"))
-        assertTrue(outcome.message!!.contains("task-1"))
+        assertTrue(outcome.message!!.contains("SSID", ignoreCase = true))
+        assertTrue(outcome.message!!.contains("tiempo de espera", ignoreCase = true))
     }
 
     @Test

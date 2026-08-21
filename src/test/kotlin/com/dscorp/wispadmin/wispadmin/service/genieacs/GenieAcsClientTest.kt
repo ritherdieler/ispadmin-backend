@@ -304,4 +304,33 @@ class GenieAcsClientTest {
             formatted,
         )
     }
+
+    @Test
+    fun `formatTaskError expands cwmp setParameterValuesFault detail`() {
+        val formatted = GenieAcsClient.formatTaskError(
+            GenieAcsTaskResult(
+                statusCode = 202,
+                body = """
+                {
+                  "code":"cwmp.9003",
+                  "message":"Invalid arguments",
+                  "detail":{
+                    "faultString":"Invalid arguments",
+                    "setParameterValuesFault":[
+                      {
+                        "parameterName":"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress",
+                        "faultCode":"9001",
+                        "faultString":"Request denied"
+                      }
+                    ]
+                  }
+                }
+                """.trimIndent(),
+                accepted = false,
+            )
+        )
+
+        assertTrue(formatted.contains("ExternalIPAddress"))
+        assertTrue(formatted.contains("Request denied"))
+    }
 }
