@@ -24,6 +24,10 @@ data class Tr069ModelProfile(
         )
     }
 
+    /**
+     * Single SPV payload for VSOL V2804AX15T: Static IP + VLAN + WiFi in one GenieACS task.
+     * Validated from factory preconfig (DHCP + VLAN 100) without a prior Enable=false step.
+     */
     fun buildParameterValues(
         ip: String,
         subnetMask: String,

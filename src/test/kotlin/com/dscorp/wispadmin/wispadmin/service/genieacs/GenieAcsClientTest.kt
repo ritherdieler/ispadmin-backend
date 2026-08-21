@@ -154,8 +154,48 @@ class GenieAcsClientTest {
             connectionRequest = true,
         )
 
-        assertTrue(result.accepted)
+        assertFalse(result.accepted)
         assertTrue(result.connectionRequestFailed)
+    }
+
+    @Test
+    fun `toResponseMessage returns HTTP status and GenieACS body like response log`() {
+        val body = """{"name":"setParameterValues","_id":"task-abc"}"""
+        val result = GenieAcsTaskResult(
+            statusCode = 202,
+            body = body,
+            accepted = false,
+        )
+
+        assertEquals(
+            "HTTP 202\n$body",
+            result.toResponseMessage(),
+        )
+    }
+
+    @Test
+    fun `findFaultBodyForTask returns fault JSON when channel matches task id`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [{
+                      "device":"dev-1",
+                      "channel":"task_task-abc",
+                      "code":"cwmp.9003",
+                      "message":"Invalid arguments",
+                      "detail":{"faultString":"Invalid arguments"}
+                    }]
+                    """.trimIndent()
+                )
+        )
+
+        val fault = client.findFaultBodyForTask("dev-1", "task-abc")
+
+        assertTrue(fault!!.contains("Invalid arguments"))
+        assertTrue(fault.contains("cwmp.9003"))
     }
 
     @Test
@@ -176,6 +216,77 @@ class GenieAcsClientTest {
         val request = server.takeRequest()
         assertFalse(request.path!!.contains("connection_request"))
         assertTrue(request.body.readUtf8().contains("getParameterValues"))
+    }
+
+    @Test
+    fun `purgeDeviceQueue deletes pending tasks and faults for device`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [
+                      {"_id":"task-old","device":"dev-1","name":"setParameterValues"},
+                      {"_id":"task-old-2","device":"dev-1","name":"getParameterValues"}
+                    ]
+                    """.trimIndent()
+                )
+        )
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [{"_id":"fault-old","device":"dev-1","channel":"task_task-old"}]
+                    """.trimIndent()
+                )
+        )
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val result = client.purgeDeviceQueue("dev-1")
+
+        assertEquals(2, result.tasksDeleted)
+        assertEquals(1, result.faultsDeleted)
+        val listTasks = server.takeRequest()
+        assertEquals("GET", listTasks.method)
+        assertTrue(listTasks.path!!.contains("/tasks/"))
+        val deleteTask1 = server.takeRequest()
+        assertEquals("DELETE", deleteTask1.method)
+        assertTrue(deleteTask1.path!!.contains("task-old"))
+        val deleteTask2 = server.takeRequest()
+        assertEquals("DELETE", deleteTask2.method)
+        assertTrue(deleteTask2.path!!.contains("task-old-2"))
+        val listFaults = server.takeRequest()
+        assertEquals("GET", listFaults.method)
+        assertTrue(listFaults.path!!.contains("/faults/"))
+        val deleteFault = server.takeRequest()
+        assertEquals("DELETE", deleteFault.method)
+        assertTrue(deleteFault.path!!.contains("fault-old"))
+    }
+
+    @Test
+    fun `purgeDeviceQueue returns zero when queue is empty`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("[]")
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("[]")
+        )
+
+        val result = client.purgeDeviceQueue("dev-1")
+
+        assertEquals(0, result.tasksDeleted)
+        assertEquals(0, result.faultsDeleted)
     }
 
     @Test

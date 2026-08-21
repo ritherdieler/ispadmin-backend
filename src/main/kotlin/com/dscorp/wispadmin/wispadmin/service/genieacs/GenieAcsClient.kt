@@ -23,8 +23,18 @@ data class GenieAcsTaskResult(
     val connectionRequestFailed: Boolean = false,
     val taskId: String? = null,
 ) {
-    fun toErrorDetail(): String = GenieAcsClient.formatTaskError(this)
+    fun toErrorDetail(): String = when (statusCode) {
+        202 -> toResponseMessage()
+        else -> GenieAcsClient.formatTaskError(this)
+    }
+
+    fun toResponseMessage(): String = GenieAcsCurlLogger.formatResponse(statusCode, body)
 }
+
+data class GenieAcsQueuePurgeResult(
+    val tasksDeleted: Int,
+    val faultsDeleted: Int,
+)
 
 @Component
 class GenieAcsClient(
@@ -86,6 +96,50 @@ class GenieAcsClient(
         connectionRequest: Boolean = true,
     ): GenieAcsTaskResult {
         return postTask(deviceId, mapOf("name" to "reboot"), connectionRequest)
+    }
+
+    /**
+     * Removes pending tasks and faults for [deviceId] so a new SPV/GPV session is not blocked
+     * by stale lab retries (GenieACS replays queued tasks on every connection request).
+     */
+    fun purgeDeviceQueue(deviceId: String): GenieAcsQueuePurgeResult {
+        val tasksDeleted = deleteResourcesForDevice("/tasks/", deviceId)
+        val faultsDeleted = deleteResourcesForDevice("/faults/", deviceId)
+        if (tasksDeleted > 0 || faultsDeleted > 0) {
+            log.info(
+                "Cola GenieACS purgada para {}: {} tasks, {} faults",
+                deviceId,
+                tasksDeleted,
+                faultsDeleted,
+            )
+        }
+        return GenieAcsQueuePurgeResult(
+            tasksDeleted = tasksDeleted,
+            faultsDeleted = faultsDeleted,
+        )
+    }
+
+    fun findFaultBodyForTask(deviceId: String, taskId: String): String? {
+        val queryJson = objectMapper.writeValueAsString(mapOf("device" to deviceId))
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/faults/")
+            .queryParam("query", queryJson)
+            .build()
+            .encode()
+            .toUri()
+        val body = try {
+            restTemplate.getForObject(uri, String::class.java)
+        } catch (ex: Exception) {
+            log.warn("No se pudo consultar faults de {}: {}", deviceId, ex.message)
+            return null
+        } ?: return null
+        val root = objectMapper.readTree(body)
+        if (!root.isArray) return null
+        val channel = "task_$taskId"
+        return root.firstOrNull { node ->
+            node.path("channel").asText(null) == channel
+        }?.let { objectMapper.writeValueAsString(it) }
     }
 
     fun getDeviceParameterValue(deviceId: String, dottedPath: String): String? {
@@ -157,7 +211,7 @@ class GenieAcsClient(
             buildTaskResult(
                 statusCode = response.statusCodeValue,
                 body = body,
-                accepted = response.statusCodeValue in 200..299,
+                accepted = isAcceptedTaskResponse(response.statusCodeValue, body),
             )
         } catch (ex: HttpStatusCodeException) {
             val body = ex.responseBodyAsString
@@ -166,6 +220,28 @@ class GenieAcsClient(
                 body = body,
                 accepted = false,
             )
+        }
+    }
+
+    private fun isAcceptedTaskResponse(statusCode: Int, body: String?): Boolean {
+        if (statusCode !in 200..299) return false
+        if (statusCode == 202) return !indicatesImmediateTaskFailure(body)
+        return true
+    }
+
+    private fun indicatesImmediateTaskFailure(body: String?): Boolean {
+        if (body.isNullOrBlank()) return false
+        if (body.contains(CR_CREDENTIALS_ERROR, ignoreCase = true)) return true
+        if (extractErrorDetail(body) != null && !looksLikeQueuedTask(body)) return true
+        return false
+    }
+
+    private fun looksLikeQueuedTask(body: String): Boolean {
+        return try {
+            val root = objectMapper.readTree(body)
+            root.has("_id") && root.path("fault").isMissingNode && root.path("error").isMissingNode
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -193,6 +269,65 @@ class GenieAcsClient(
             builder.query("connection_request")
         }
         return builder.build(true).toUri()
+    }
+
+    private fun deleteResourcesForDevice(collectionPath: String, deviceId: String): Int {
+        val ids = listResourceIds(collectionPath, deviceId)
+        var deleted = 0
+        for (id in ids) {
+            if (deleteResource(collectionPath, id)) {
+                deleted++
+            }
+        }
+        return deleted
+    }
+
+    private fun listResourceIds(collectionPath: String, deviceId: String): List<String> {
+        val queryJson = objectMapper.writeValueAsString(mapOf("device" to deviceId))
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path(collectionPath)
+            .queryParam("query", queryJson)
+            .build()
+            .encode()
+            .toUri()
+        val body = try {
+            restTemplate.getForObject(uri, String::class.java)
+        } catch (ex: Exception) {
+            log.warn(
+                "No se pudo listar {} para {}: {}",
+                collectionPath.trim('/'),
+                deviceId,
+                ex.message,
+            )
+            return emptyList()
+        } ?: return emptyList()
+        val root = objectMapper.readTree(body)
+        if (!root.isArray) return emptyList()
+        return root.mapNotNull { node ->
+            node.path("_id").asText(null)?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun deleteResource(collectionPath: String, resourceId: String): Boolean {
+        val encodedId = URLEncoder.encode(resourceId, StandardCharsets.UTF_8).replace("+", "%20")
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("${collectionPath.trimEnd('/')}/$encodedId")
+            .build(true)
+            .toUri()
+        return try {
+            restTemplate.exchange(uri, HttpMethod.DELETE, HttpEntity.EMPTY, String::class.java)
+            true
+        } catch (ex: Exception) {
+            log.warn(
+                "No se pudo eliminar {} {}: {}",
+                collectionPath.trim('/'),
+                resourceId,
+                ex.message,
+            )
+            false
+        }
     }
 
     private fun logCurlPostTask(uri: URI, jsonBody: String) {

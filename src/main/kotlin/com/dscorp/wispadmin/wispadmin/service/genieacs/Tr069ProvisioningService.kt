@@ -131,6 +131,12 @@ class Tr069ProvisioningService(
         val device = found.device
         val baseSnapshot = snapshotFromDevice(device, request)
 
+        try {
+            client.purgeDeviceQueue(device.id)
+        } catch (ex: Exception) {
+            log.warn("No se pudo purgar cola GenieACS de {}: {}", device.id, ex.message)
+        }
+
         val profile = Tr069ModelProfiles.resolve(
             onuTypeName = request.onuTypeName,
             productClass = device.productClass,
@@ -172,11 +178,7 @@ class Tr069ProvisioningService(
             )
             setResult = client.setParameterValues(device.id, values, connectionRequest = false)
             if (setResult.connectionRequestFailed || !setResult.accepted) {
-                val genieError = if (setResult.connectionRequestFailed) {
-                    GenieAcsClient.CR_CREDENTIALS_ERROR
-                } else {
-                    setResult.toErrorDetail()
-                }
+                val genieError = setResult.toErrorDetail()
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.MANUAL_REQUIRED,
                     deviceId = device.id,
@@ -203,6 +205,16 @@ class Tr069ProvisioningService(
             ssid5 = request.wifiSsid5,
         )
 
+        resolveTaskFault(device.id, setResult)?.let { genieError ->
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = device.id,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = snapshotAfterTask,
+            )
+        }
+
         val ssid24Path = "${profileForWan.wlan24Path}.SSID"
         val ssid5Path = "${profileForWan.wlan5Path}.SSID"
         client.getParameterValues(
@@ -215,6 +227,16 @@ class Tr069ProvisioningService(
         )
 
         while (clock() <= deadline) {
+            resolveTaskFault(device.id, setResult)?.let { genieError ->
+                return Tr069ProvisionOutcome(
+                    status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                    deviceId = device.id,
+                    error = genieError,
+                    message = genieError,
+                    acsSnapshot = snapshotAfterTask,
+                )
+            }
+
             val ssid24Ok = request.wifiSsid24.isNullOrBlank() ||
                 client.getDeviceParameterValue(device.id, ssid24Path) == request.wifiSsid24
             val ssid5Ok = request.wifiSsid5.isNullOrBlank() ||
@@ -230,13 +252,25 @@ class Tr069ProvisioningService(
             sleeper(properties.pollIntervalMs)
         }
 
+        val genieError = setResult.toResponseMessage()
         return Tr069ProvisionOutcome(
             status = Tr069ProvisionStatus.MANUAL_REQUIRED,
             deviceId = device.id,
-            error = "SSID no verificado tras setParameterValues",
-            message = "No se pudo verificar la configuración WiFi por TR-069. Configure la ONU manualmente.",
+            error = genieError,
+            message = genieError,
             acsSnapshot = snapshotAfterTask,
         )
+    }
+
+    private fun resolveTaskFault(deviceId: String, setResult: GenieAcsTaskResult): String? {
+        val taskId = setResult.taskId ?: return null
+        val taskFaultBody = client.findFaultBodyForTask(deviceId, taskId) ?: return null
+        return GenieAcsTaskResult(
+            statusCode = setResult.statusCode,
+            body = taskFaultBody,
+            accepted = false,
+            taskId = taskId,
+        ).toResponseMessage()
     }
 
     private fun snapshotFromDevice(

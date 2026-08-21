@@ -55,9 +55,12 @@ class Tr069ProvisioningServiceTest {
     fun `device appears on second poll then COMPLETE`() {
         server.enqueue(emptyDevices())
         server.enqueue(deviceList())
+        emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // getParameterValues
+        server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 2.4
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 5
 
@@ -75,18 +78,56 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
-    fun `setParameterValues uses wanVlanId from request not global property`() {
+    fun `provision purges stale queue before setParameterValues`() {
         server.enqueue(deviceList())
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """[{"_id":"task-stale","device":"B46415-V2804AX15T-12345B4641531C0B6","name":"setParameterValues"}]"""
+                )
+        )
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(emptyFaults())
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        server.takeRequest() // listDevices
+        val listTasks = server.takeRequest()
+        assertTrue(listTasks.path!!.contains("/tasks/"))
+        val deleteStale = server.takeRequest()
+        assertEquals("DELETE", deleteStale.method)
+        assertTrue(deleteStale.path!!.contains("task-stale"))
+        server.takeRequest() // faults list
+    }
+
+    @Test
+    fun `setParameterValues uses wanVlanId from request not global property`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
 
         val outcome = service.provision(sampleRequest().copy(wanVlanId = 100))
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        // 1=listDevices, 2=wan tree, 3=setParameterValues
+        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=setParameterValues
+        server.takeRequest()
+        server.takeRequest()
         server.takeRequest()
         server.takeRequest()
         val setBody = server.takeRequest().body.readUtf8()
@@ -107,6 +148,7 @@ class Tr069ProvisioningServiceTest {
     @Test
     fun `setParameterValues rejected includes GenieACS HTTP status and body in message`() {
         server.enqueue(deviceList())
+        emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(
             MockResponse()
@@ -128,6 +170,7 @@ class Tr069ProvisioningServiceTest {
     @Test
     fun `connection request credentials error returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
+        emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
         server.enqueue(
             MockResponse()
@@ -145,10 +188,51 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest())
 
         assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
-        assertTrue(
-            outcome.message!!.contains("Connection Request", ignoreCase = true) ||
-                outcome.error!!.contains("Incorrect connection request", ignoreCase = true)
+        assertEquals(outcome.message, outcome.error)
+        assertTrue(outcome.message!!.startsWith("HTTP 202"))
+        assertTrue(outcome.message!!.contains("Incorrect connection request credentials"))
+    }
+
+    @Test
+    fun `task fault after HTTP 202 returns GenieACS response message to app`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(taskAccepted())
+        server.enqueue(taskFault(taskId = "task-1"))
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
+        assertEquals(outcome.message, outcome.error)
+        assertTrue(outcome.message!!.startsWith("HTTP 202"))
+        assertTrue(outcome.message!!.contains("Invalid arguments"))
+        assertTrue(outcome.message!!.contains("Request denied"))
+    }
+
+    @Test
+    fun `SSID verification failure returns GenieACS 202 response message`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        val taskBody = """{"name":"setParameterValues","_id":"task-1"}"""
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(202)
+                .addHeader("Content-Type", "application/json")
+                .setBody(taskBody)
         )
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // getParameterValues
+        repeat(4) { server.enqueue(deviceWithSsids("wrong24", "wrong5")) }
+        repeat(4) { server.enqueue(emptyFaults()) }
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.MANUAL_REQUIRED, outcome.status)
+        assertEquals(outcome.message, outcome.error)
+        assertTrue(outcome.message!!.startsWith("HTTP 202"))
+        assertTrue(outcome.message!!.contains("task-1"))
     }
 
     @Test
@@ -208,6 +292,41 @@ class Tr069ProvisioningServiceTest {
         .setResponseCode(202)
         .addHeader("Content-Type", "application/json")
         .setBody("""{"_id":"task-1"}""")
+
+    private fun emptyFaults() = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody("[]")
+
+    private fun emptyDeviceQueue() {
+        server.enqueue(emptyTasks())
+        server.enqueue(emptyFaults())
+    }
+
+    private fun emptyTasks() = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody("[]")
+
+    private fun taskFault(taskId: String) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "device":"B46415-V2804AX15T-12345B4641531C0B6",
+              "channel":"task_$taskId",
+              "code":"cwmp.9003",
+              "message":"Invalid arguments",
+              "detail":{
+                "faultString":"Invalid arguments",
+                "setParameterValuesFault":[
+                  {"parameterName":"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress","faultCode":"9001","faultString":"Request denied"}
+                ]
+              }
+            }]
+            """.trimIndent()
+        )
 
     private fun wanConnectionTree(index: Int) = MockResponse()
         .setResponseCode(200)
