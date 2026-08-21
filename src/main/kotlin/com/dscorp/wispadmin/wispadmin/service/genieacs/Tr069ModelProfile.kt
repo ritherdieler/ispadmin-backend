@@ -67,6 +67,18 @@ data class Tr069ModelProfile(
         return values
     }
 
+    /** Staging prep: DHCP + VLAN before prod static SPV (ONU on MK2 `192.168.255.0/24`). */
+    fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
+        val vlan = vlanId.toString()
+        return listOf(
+            param("$wanIpConnectionPath.AddressingType", "DHCP", "xsd:string"),
+            param("$wanIpConnectionPath.X_CT-COM_VLANIDMark", vlan, "xsd:unsignedInt"),
+            param("$wanIpConnectionPath.X_ZTE-COM_VLANID", vlan, "xsd:unsignedInt"),
+            param("$wanIpConnectionPath.X_ZTE-COM_VLANEnable", "1", "xsd:unsignedInt"),
+            param("$wanGponLinkConfigPath.VLANIDMark", vlan, "xsd:unsignedInt"),
+        )
+    }
+
     private fun param(path: String, value: String, type: String) =
         Tr069ParameterValue(path = path, value = value, type = type)
 }

@@ -158,6 +158,24 @@ class Tr069ProvisioningService(
         }
         val wanIndex = Tr069ModelProfiles.resolveWanConnectionIndex(wanIndices)
         val profileForWan = profile.withWanConnectionIndex(wanIndex)
+        val wanIpPath = "${profileForWan.wanIpConnectionPath}.ExternalIPAddress"
+        val currentWanIp = client.getDeviceParameterValue(device.id, wanIpPath)
+
+        if (isStagingWanIp(currentWanIp)) {
+            log.info(
+                "ONU {} en red staging ({}); SPV intermedio DHCP+VLAN {} antes de prod",
+                device.id,
+                currentWanIp,
+                request.wanVlanId,
+            )
+            val prepValues = profileForWan.buildStagingDhcpParameterValues(request.wanVlanId)
+            val (_, prepFailure) = submitSpv(device.id, prepValues, baseSnapshot)
+            if (prepFailure != null) {
+                return prepFailure
+            }
+            sleeper(properties.pollIntervalMs)
+        }
+
         val values = profileForWan.buildParameterValues(
             ip = ip,
             subnetMask = subnetMask,
@@ -170,50 +188,17 @@ class Tr069ProvisioningService(
             wifiPassword5 = request.wifiPassword5,
         )
 
-        var setResult = client.setParameterValues(device.id, values, connectionRequest = true)
-        if (setResult.connectionRequestFailed) {
-            log.warn(
-                "Connection Request falló para {}; reintentando sin connection_request",
-                device.id
-            )
-            setResult = client.setParameterValues(device.id, values, connectionRequest = false)
-            if (setResult.connectionRequestFailed || !setResult.accepted) {
-                val genieError = setResult.toErrorDetail()
-                return Tr069ProvisionOutcome(
-                    status = Tr069ProvisionStatus.MANUAL_REQUIRED,
-                    deviceId = device.id,
-                    error = genieError,
-                    message = genieError,
-                    acsSnapshot = baseSnapshot.withTask(setResult),
-                )
-            }
-            // Task queued for next Inform — still try to verify within remaining wait window
-        } else if (!setResult.accepted) {
-            val genieError = setResult.toErrorDetail()
-            return Tr069ProvisionOutcome(
-                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
-                deviceId = device.id,
-                error = genieError,
-                message = genieError,
-                acsSnapshot = baseSnapshot.withTask(setResult),
-            )
+        val (mainSpv, mainFailure) = submitSpv(device.id, values, baseSnapshot)
+        if (mainFailure != null) {
+            return mainFailure
         }
+        val setResult = mainSpv!!.result
 
         val snapshotAfterTask = baseSnapshot.withTask(setResult).copy(
             wanIpCache = ip,
             ssid24 = request.wifiSsid24,
             ssid5 = request.wifiSsid5,
         )
-
-        resolveTaskFault(device.id, setResult)?.let { genieError ->
-            return Tr069ProvisionOutcome(
-                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
-                deviceId = device.id,
-                error = genieError,
-                message = genieError,
-                acsSnapshot = snapshotAfterTask,
-            )
-        }
 
         val ssid24Path = "${profileForWan.wlan24Path}.SSID"
         val ssid5Path = "${profileForWan.wlan5Path}.SSID"
@@ -260,6 +245,54 @@ class Tr069ProvisioningService(
             message = genieError,
             acsSnapshot = snapshotAfterTask,
         )
+    }
+
+    private data class SpvSubmission(val result: GenieAcsTaskResult)
+
+    private fun submitSpv(
+        deviceId: String,
+        values: List<Tr069ParameterValue>,
+        baseSnapshot: Tr069AcsSnapshot,
+    ): Pair<SpvSubmission?, Tr069ProvisionOutcome?> {
+        var setResult = client.setParameterValues(deviceId, values, connectionRequest = true)
+        if (setResult.connectionRequestFailed) {
+            log.warn(
+                "Connection Request falló para {}; reintentando sin connection_request",
+                deviceId,
+            )
+            setResult = client.setParameterValues(deviceId, values, connectionRequest = false)
+            if (setResult.connectionRequestFailed || !setResult.accepted) {
+                val genieError = setResult.toErrorDetail()
+                return null to Tr069ProvisionOutcome(
+                    status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                    deviceId = deviceId,
+                    error = genieError,
+                    message = genieError,
+                    acsSnapshot = baseSnapshot.withTask(setResult),
+                )
+            }
+        } else if (!setResult.accepted) {
+            val genieError = setResult.toErrorDetail()
+            return null to Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = deviceId,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = baseSnapshot.withTask(setResult),
+            )
+        }
+
+        resolveTaskFault(deviceId, setResult)?.let { genieError ->
+            return null to Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = deviceId,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = baseSnapshot.withTask(setResult),
+            )
+        }
+
+        return SpvSubmission(setResult) to null
     }
 
     private fun resolveTaskFault(deviceId: String, setResult: GenieAcsTaskResult): String? {
@@ -313,6 +346,12 @@ class Tr069ProvisioningService(
     companion object {
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
             "Los SSIDs no se confirmaron en el ACS dentro del tiempo de espera."
+
+        /** MK2 staging provisioning network — ONU factory DHCP lease before prod alta. */
+        private const val STAGING_WAN_PREFIX = "192.168.255."
+
+        fun isStagingWanIp(ip: String?): Boolean =
+            !ip.isNullOrBlank() && ip.trim().startsWith(STAGING_WAN_PREFIX)
 
         fun cidrToSubnetMask(cidr: String): String {
             val prefix = cidr.substringAfter("/", "24").toIntOrNull()?.coerceIn(0, 32) ?: 24

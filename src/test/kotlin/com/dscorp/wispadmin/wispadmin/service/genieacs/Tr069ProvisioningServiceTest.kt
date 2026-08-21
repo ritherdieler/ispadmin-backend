@@ -57,6 +57,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // getParameterValues
@@ -91,6 +92,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(MockResponse().setResponseCode(200))
         server.enqueue(emptyFaults())
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
@@ -115,6 +117,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
@@ -125,7 +128,8 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest().copy(wanVlanId = 100))
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=setParameterValues
+        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=wan ip, 6=setParameterValues
+        server.takeRequest()
         server.takeRequest()
         server.takeRequest()
         server.takeRequest()
@@ -150,6 +154,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(
             MockResponse()
                 .setResponseCode(400)
@@ -172,6 +177,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(
             MockResponse()
                 .setResponseCode(202)
@@ -198,6 +204,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(taskAccepted())
         server.enqueue(taskFault(taskId = "task-1"))
 
@@ -214,6 +221,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         val taskBody = """{"name":"setParameterValues","_id":"task-1"}"""
         server.enqueue(
             MockResponse()
@@ -232,6 +240,44 @@ class Tr069ProvisioningServiceTest {
         assertEquals(outcome.message, outcome.error)
         assertTrue(outcome.message!!.contains("SSID", ignoreCase = true))
         assertTrue(outcome.message!!.contains("tiempo de espera", ignoreCase = true))
+    }
+
+    @Test
+    fun `staging WAN 255x runs dhcp prep SPV before prod static SPV`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(index = 1))
+        server.enqueue(deviceWanIpRead(wanIp = "192.168.255.249"))
+        server.enqueue(taskAccepted()) // staging prep SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // prod SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // getParameterValues
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+        server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                ip = "192.168.30.213",
+                ipSegment = "192.168.30.0/24",
+                wanVlanId = 100,
+            )
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        server.takeRequest() // listDevices
+        server.takeRequest() // tasks purge
+        server.takeRequest() // faults purge
+        server.takeRequest() // wan tree
+        server.takeRequest() // wan ip read
+        val prepBody = server.takeRequest().body.readUtf8()
+        assertTrue(prepBody.contains("DHCP"), prepBody)
+        assertTrue(!prepBody.contains("192.168.30.213"), prepBody)
+        server.takeRequest() // faults after prep SPV
+        val prodBody = server.takeRequest().body.readUtf8()
+        assertTrue(prodBody.contains("Static"), prodBody)
+        assertTrue(prodBody.contains("192.168.30.213"), prodBody)
     }
 
     @Test
@@ -322,6 +368,24 @@ class Tr069ProvisioningServiceTest {
                 "setParameterValuesFault":[
                   {"parameterName":"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress","faultCode":"9001","faultString":"Request denied"}
                 ]
+              }
+            }]
+            """.trimIndent()
+        )
+
+    private fun deviceWanIpRead(index: Int = 1, wanIp: String) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"B46415-V2804AX15T-12345B4641531C0B6",
+              "InternetGatewayDevice":{
+                "WANDevice":{"1":{
+                  "WANConnectionDevice":{
+                    "$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"$wanIp"}}}}
+                  }
+                }}
               }
             }]
             """.trimIndent()
