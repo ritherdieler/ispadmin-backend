@@ -93,14 +93,6 @@ data class Tr069ModelProfile(
         return values
     }
 
-    fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
-        val values = mutableListOf(
-            param("$wanIpConnectionPath.AddressingType", "DHCP", "xsd:string"),
-        )
-        values += vlanParameterValues(vlanId)
-        return values
-    }
-
     private fun vlanParameterValues(vlanId: Int): List<Tr069ParameterValue> {
         val specs = if (vlanParameters.isNotEmpty()) {
             vlanParameters

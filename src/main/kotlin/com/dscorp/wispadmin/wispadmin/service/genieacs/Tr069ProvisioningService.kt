@@ -164,22 +164,20 @@ class Tr069ProvisioningService(
         }
         val wanIndex = Tr069ModelProfiles.resolveWanConnectionIndex(wanIndices)
         val profileForWan = resolvedProfile.withWanConnectionIndex(wanIndex)
-        val wanIpPath = "${profileForWan.wanIpConnectionPath}.ExternalIPAddress"
-        val currentWanIp = client.getDeviceParameterValue(device.id, wanIpPath)
 
-        if (isStagingWanIp(currentWanIp)) {
-            log.info(
-                "ONU {} en red staging ({}); SPV intermedio DHCP+VLAN {} antes de prod",
-                device.id,
-                currentWanIp,
-                request.wanVlanId,
-            )
-            val prepValues = profileForWan.buildStagingDhcpParameterValues(request.wanVlanId)
-            val (_, prepFailure) = submitSpv(device.id, prepValues, baseSnapshot)
-            if (prepFailure != null) {
-                return prepFailure
+        val wifiValues = profileForWan.buildWifiParameterValues(
+            wifiSsid24 = request.wifiSsid24,
+            wifiPassword24 = request.wifiPassword24,
+            wifiSsid5 = request.wifiSsid5,
+            wifiPassword5 = request.wifiPassword5,
+        )
+        var setResult: GenieAcsTaskResult? = null
+        if (wifiValues.isNotEmpty()) {
+            val (wifiSpv, wifiFailure) = submitSpv(device.id, wifiValues, baseSnapshot)
+            if (wifiFailure != null) {
+                return wifiFailure
             }
-            sleeper(properties.pollIntervalMs)
+            setResult = wifiSpv!!.result
         }
 
         val values = profileForWan.buildWanParameterValues(
@@ -194,21 +192,7 @@ class Tr069ProvisioningService(
         if (wanFailure != null) {
             return wanFailure
         }
-        var setResult = wanSpv!!.result
-
-        val wifiValues = profileForWan.buildWifiParameterValues(
-            wifiSsid24 = request.wifiSsid24,
-            wifiPassword24 = request.wifiPassword24,
-            wifiSsid5 = request.wifiSsid5,
-            wifiPassword5 = request.wifiPassword5,
-        )
-        if (wifiValues.isNotEmpty()) {
-            val (wifiSpv, wifiFailure) = submitSpv(device.id, wifiValues, baseSnapshot)
-            if (wifiFailure != null) {
-                return wifiFailure
-            }
-            setResult = wifiSpv!!.result
-        }
+        setResult = wanSpv!!.result
 
         val snapshotAfterTask = baseSnapshot.withTask(setResult).copy(
             wanIpCache = ip,
@@ -228,7 +212,7 @@ class Tr069ProvisioningService(
         )
 
         while (clock() <= deadline) {
-            resolveTaskFault(device.id, setResult)?.let { genieError ->
+            resolveTaskFault(device.id, setResult!!)?.let { genieError ->
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.MANUAL_REQUIRED,
                     deviceId = device.id,
@@ -368,12 +352,6 @@ class Tr069ProvisioningService(
 
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
             "Los SSIDs no se confirmaron en el ACS dentro del tiempo de espera."
-
-        /** MK2 staging provisioning network — ONU factory DHCP lease before prod alta. */
-        private const val STAGING_WAN_PREFIX = "192.168.255."
-
-        fun isStagingWanIp(ip: String?): Boolean =
-            !ip.isNullOrBlank() && ip.trim().startsWith(STAGING_WAN_PREFIX)
 
         fun cidrToSubnetMask(cidr: String): String {
             val prefix = cidr.substringAfter("/", "24").toIntOrNull()?.coerceIn(0, 32) ?: 24

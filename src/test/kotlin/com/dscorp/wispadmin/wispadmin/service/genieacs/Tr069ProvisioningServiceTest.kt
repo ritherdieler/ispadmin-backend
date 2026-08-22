@@ -74,14 +74,13 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
-    fun `provisioning sends separate WAN and WiFi SPV tasks`() {
+    fun `provisioning sends WiFi SPV before WAN SPV`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted()) // WAN SPV
-        server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // WiFi SPV
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted()) // WAN SPV
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
@@ -91,24 +90,24 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest())
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        skipToSetParameterValuesRequests(1)
-        val wanBody = server.takeRequest().body.readUtf8()
-        assertTrue(wanBody.contains("ExternalIPAddress"), wanBody)
-        assertTrue(!wanBody.contains("WLANConfiguration"), wanBody)
-        server.takeRequest() // faults after WAN
+        server.takeRequest() // listDevices
+        server.takeRequest() // tasks purge
+        server.takeRequest() // faults purge
+        server.takeRequest() // wan tree
         val wifiBody = server.takeRequest().body.readUtf8()
         assertTrue(wifiBody.contains("WLANConfiguration"), wifiBody)
         assertTrue(!wifiBody.contains("ExternalIPAddress"), wifiBody)
+        server.takeRequest() // faults after WiFi
+        val wanBody = server.takeRequest().body.readUtf8()
+        assertTrue(wanBody.contains("ExternalIPAddress"), wanBody)
+        assertTrue(!wanBody.contains("WLANConfiguration"), wanBody)
     }
 
     @Test
-    fun `WiFi SPV fault after successful WAN returns MANUAL_REQUIRED`() {
+    fun `WiFi SPV fault returns MANUAL_REQUIRED without WAN SPV`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted()) // WAN SPV
-        server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // WiFi SPV accepted
         server.enqueue(wifiKeyPassphraseFault(taskId = "task-1"))
 
@@ -123,8 +122,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        enqueueWanAndWifiSpvSuccess()
+        enqueueWifiAndWanSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g")) // SSID 2.4
@@ -157,8 +155,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(MockResponse().setResponseCode(200))
         server.enqueue(emptyFaults())
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        enqueueWanAndWifiSpvSuccess()
+        enqueueWifiAndWanSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -181,8 +178,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        enqueueWanAndWifiSpvSuccess()
+        enqueueWifiAndWanSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -191,12 +187,13 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest().copy(wanVlanId = 100))
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        // 1=listDevices, 2=tasks purge, 3=faults purge, 4=wan tree, 5=wan ip, 6=WAN SPV
+        // listDevices, tasks purge, faults purge, wan tree, WiFi SPV, WAN SPV
         server.takeRequest()
         server.takeRequest()
         server.takeRequest()
         server.takeRequest()
-        server.takeRequest()
+        server.takeRequest() // WiFi SPV
+        server.takeRequest() // faults after WiFi
         val setBody = server.takeRequest().body.readUtf8()
         assertTrue(setBody.contains("\"100\""), "expected VLAN 100 in SPV payload: $setBody")
         assertTrue(setBody.contains("X_CT-COM_VLANIDMark"), setBody)
@@ -217,7 +214,6 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(
             MockResponse()
                 .setResponseCode(400)
@@ -240,7 +236,6 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
         server.enqueue(
             MockResponse()
                 .setResponseCode(202)
@@ -267,8 +262,8 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        server.enqueue(taskAccepted())
+        enqueueWifiSpvSuccess()
+        server.enqueue(taskAccepted()) // WAN SPV
         server.enqueue(taskFault(taskId = "task-1"))
 
         val outcome = service.provision(sampleRequest())
@@ -284,16 +279,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.123.4"))
-        val taskBody = """{"name":"setParameterValues","_id":"task-1"}"""
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(202)
-                .addHeader("Content-Type", "application/json")
-                .setBody(taskBody)
-        )
-        server.enqueue(emptyFaults())
-        enqueueWifiSpvSuccess()
+        enqueueWifiAndWanSpvSuccess()
         server.enqueue(taskAccepted()) // getParameterValues
         repeat(4) { server.enqueue(deviceWithSsids("wrong24", "wrong5")) }
         repeat(4) { server.enqueue(emptyFaults()) }
@@ -307,16 +293,13 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
-    fun `staging WAN 255x runs dhcp prep SPV before prod static SPV`() {
+    fun `staging WAN 255x skips dhcp prep and runs WiFi then prod WAN SPV`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
         server.enqueue(wanConnectionTree(index = 1))
-        server.enqueue(deviceWanIpRead(wanIp = "192.168.255.249"))
-        server.enqueue(taskAccepted()) // staging prep SPV
+        server.enqueue(taskAccepted()) // WiFi SPV
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // prod WAN SPV
-        server.enqueue(emptyFaults())
-        server.enqueue(taskAccepted()) // WiFi SPV
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted()) // getParameterValues
         server.enqueue(emptyFaults())
@@ -336,30 +319,24 @@ class Tr069ProvisioningServiceTest {
         server.takeRequest() // tasks purge
         server.takeRequest() // faults purge
         server.takeRequest() // wan tree
-        server.takeRequest() // wan ip read
-        val prepBody = server.takeRequest().body.readUtf8()
-        assertTrue(prepBody.contains("DHCP"), prepBody)
-        assertTrue(!prepBody.contains("192.168.30.213"), prepBody)
-        server.takeRequest() // faults after prep SPV
+        val wifiBody = server.takeRequest().body.readUtf8()
+        assertTrue(wifiBody.contains("WLANConfiguration"), wifiBody)
+        server.takeRequest() // faults after WiFi
         val prodWanBody = server.takeRequest().body.readUtf8()
         assertTrue(prodWanBody.contains("Static"), prodWanBody)
         assertTrue(prodWanBody.contains("192.168.30.213"), prodWanBody)
-        assertTrue(!prodWanBody.contains("WLANConfiguration"), prodWanBody)
+        assertTrue(!prodWanBody.contains("DHCP"), prodWanBody)
     }
 
-    private fun enqueueWanAndWifiSpvSuccess() {
+    private fun enqueueWifiAndWanSpvSuccess() {
+        enqueueWifiSpvSuccess()
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
-        enqueueWifiSpvSuccess()
     }
 
     private fun enqueueWifiSpvSuccess() {
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
-    }
-
-    private fun skipToSetParameterValuesRequests(count: Int) {
-        repeat(count + 4) { server.takeRequest() }
     }
 
     private fun wifiKeyPassphraseFault(taskId: String) = MockResponse()
@@ -474,24 +451,6 @@ class Tr069ProvisioningServiceTest {
                 "setParameterValuesFault":[
                   {"parameterName":"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress","faultCode":"9001","faultString":"Request denied"}
                 ]
-              }
-            }]
-            """.trimIndent()
-        )
-
-    private fun deviceWanIpRead(index: Int = 1, wanIp: String) = MockResponse()
-        .setResponseCode(200)
-        .addHeader("Content-Type", "application/json")
-        .setBody(
-            """
-            [{
-              "_id":"B46415-V2804AX15T-12345B4641531C0B6",
-              "InternetGatewayDevice":{
-                "WANDevice":{"1":{
-                  "WANConnectionDevice":{
-                    "$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"$wanIp"}}}}
-                  }
-                }}
               }
             }]
             """.trimIndent()

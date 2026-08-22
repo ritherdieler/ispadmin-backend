@@ -97,17 +97,6 @@ class Tr069ModelProfileTest {
     }
 
     @Test
-    fun `buildStagingDhcpParameterValues sets DHCP and VLAN without static IP`() {
-        val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
-        val values = profile.buildStagingDhcpParameterValues(vlanId = 100)
-        val paths = values.map { it.path }
-        assertTrue(paths.any { it.endsWith("AddressingType") })
-        assertTrue(paths.none { it.endsWith("ExternalIPAddress") })
-        assertEquals("DHCP", values.first { it.path.endsWith("AddressingType") }.value)
-        assertEquals("100", values.first { it.path.endsWith("X_CT-COM_VLANIDMark") }.value)
-    }
-
-    @Test
     fun `withWanConnectionIndex rewrites WAN paths`() {
         val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!.withWanConnectionIndex(2)
         assertTrue(profile.wanIpConnectionPath.contains("WANConnectionDevice.2.WANIPConnection.1"))
