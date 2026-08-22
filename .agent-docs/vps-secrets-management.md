@@ -76,7 +76,7 @@ Agrupadas por función; valores **nunca** en este documento.
 | Observabilidad (ingest + dashboard) | `OBS_API_KEY_BACKOFFICE`, `OBS_API_KEY_ASISTENCIAS`, `OBS_API_KEY_ANDROID`, `OBS_API_KEY_DASHBOARD`, `OBS_SESSION_SECRET`, `OBS_DASHBOARD_BASE_URL`, … |
 | NetDiag NOC | `NET_DIAG_ENABLED`, `NET_DIAG_API_KEY`, `NET_DIAG_WHATSAPP_NOC_PHONE` (opcional), `NET_DIAG_SNMP_*`, `NET_DIAG_SYSLOG_*`, `NET_DIAG_LLM_*` |
 | OLT Gateway (SSH) | `OLT_GATEWAY_ENABLED`, `OLT_GATEWAY_API_KEY`, `OLT_GATEWAY_PASSWORD`, `OLT_GATEWAY_HOST`, `OLT_GATEWAY_USERNAME`, … |
-| GenieACS NBI (TR-069 alta fibra) | `GENIEACS_ENABLED`, `GENIEACS_NBI_BASE_URL` (prod típico `http://127.0.0.1:7557`), `GENIEACS_WAIT_TIMEOUT_MS`, `GENIEACS_OFFLINE_WAIT_TIMEOUT_MS`, `GENIEACS_POLL_INTERVAL_MS`, `GENIEACS_TASK_TIMEOUT_MS`, `GENIEACS_CONNECT_TIMEOUT_MS`, `GENIEACS_DEFAULT_DNS`, `GENIEACS_WAN_VLAN_ID` → `genieacs.*` en `application-*.properties`. Credenciales ACS/CPE (`ACS_CPE_*`) viven en `/opt/gigafiber/genieacs/.env`, no en Tomcat. |
+| GenieACS NBI (TR-069 alta fibra) | `GENIEACS_ENABLED`, `GENIEACS_NBI_BASE_URL` (prod típico `http://127.0.0.1:7557`), `GENIEACS_WAIT_TIMEOUT_MS`, `GENIEACS_OFFLINE_WAIT_TIMEOUT_MS`, `GENIEACS_POLL_INTERVAL_MS`, `GENIEACS_TASK_TIMEOUT_MS`, `GENIEACS_CONNECT_TIMEOUT_MS`, `GENIEACS_DEFAULT_DNS`, `GENIEACS_WAN_VLAN_ID`, `GENIEACS_STAGING_WAN_INDEX` (default `1`, WCD TR-069 intocable), `GENIEACS_CLIENT_WAN_INDEX` (default `2`, Internet abonado), `GENIEACS_CLIENT_WAN_NAME_PATTERN` (default `2_INTERNET_R_VID_{vlan}`) → `genieacs.*` en `application-*.properties`. Credenciales ACS/CPE (`ACS_CPE_*`) viven en `/opt/gigafiber/genieacs/.env`, no en Tomcat. |
 
 Contrato completo de propiedades: `src/main/resources/application-prod.properties`.
 

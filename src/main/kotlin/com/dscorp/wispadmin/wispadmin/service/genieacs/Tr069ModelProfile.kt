@@ -29,6 +29,35 @@ data class Tr069ModelProfile(
         )
     }
 
+    /** Prep staging (192.168.255.x): DHCP + VLAN antes del SPV monolítico de producción. */
+    fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
+        val values = mutableListOf(
+            param("$wanIpConnectionPath.AddressingType", "DHCP", "xsd:string"),
+        )
+        values += vlanParameterValues(vlanId)
+        return values
+    }
+
+    fun buildClientInternetWanParameterValues(
+        ip: String,
+        subnetMask: String,
+        gateway: String,
+        dns: String,
+        vlanId: Int,
+        connectionName: String,
+    ): List<Tr069ParameterValue> {
+        val values = mutableListOf(
+            param("$wanIpConnectionPath.Enable", "true", "xsd:boolean"),
+            param("$wanIpConnectionPath.ConnectionType", "IP_Routed", "xsd:string"),
+            param("$wanIpConnectionPath.Name", connectionName, "xsd:string"),
+            param("$wanIpConnectionPath.X_CT-COM_ServiceList", "INTERNET", "xsd:string"),
+            param("$wanIpConnectionPath.X_ZTE-COM_ServiceList", "INTERNET", "xsd:string"),
+            param("$wanIpConnectionPath.NATEnabled", "true", "xsd:boolean"),
+        )
+        values += buildWanParameterValues(ip, subnetMask, gateway, dns, vlanId)
+        return values
+    }
+
     fun buildWanParameterValues(
         ip: String,
         subnetMask: String,
@@ -135,8 +164,11 @@ data class Tr069ModelProfile(
 
 object Tr069ModelProfiles {
 
+    const val STAGING_WAN_INDEX = 1
+    const val CLIENT_WAN_INDEX = 2
+
     private const val IGD = "InternetGatewayDevice"
-    private const val DEFAULT_WAN_INDEX = 1
+    private const val DEFAULT_WAN_INDEX = STAGING_WAN_INDEX
     private const val WAN1 =
         "$IGD.WANDevice.1.WANConnectionDevice.$DEFAULT_WAN_INDEX.WANIPConnection.1"
     private const val WAN_GPON =

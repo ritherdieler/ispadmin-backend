@@ -98,6 +98,18 @@ class GenieAcsClient(
         return postTask(deviceId, mapOf("name" to "reboot"), connectionRequest)
     }
 
+    fun addObject(
+        deviceId: String,
+        objectName: String,
+        connectionRequest: Boolean,
+    ): GenieAcsTaskResult {
+        val payload = mapOf(
+            "name" to "addObject",
+            "objectName" to objectName,
+        )
+        return postTask(deviceId, payload, connectionRequest)
+    }
+
     /**
      * Removes pending tasks and faults for [deviceId] so a new SPV/GPV session is not blocked
      * by stale lab retries (GenieACS replays queued tasks on every connection request).
@@ -165,34 +177,57 @@ class GenieAcsClient(
      * Empty when GenieACS has not reported the WAN tree yet.
      */
     fun listWanConnectionIndices(deviceId: String): List<Int> {
+        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
+        return wanConn.fieldNames().asSequence()
+            .mapNotNull { it.toIntOrNull() }
+            .filter { index -> hasWanIpOnNode(wanConn, index) }
+            .sorted()
+            .toList()
+    }
+
+    /**
+     * Returns every WANConnectionDevice instance index present in the ACS cache,
+     * including slots that still have no WANIPConnection.
+     */
+    fun listWanConnectionDeviceIndices(deviceId: String): List<Int> {
+        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
+        return wanConn.fieldNames().asSequence()
+            .mapNotNull { it.toIntOrNull() }
+            .sorted()
+            .toList()
+    }
+
+    fun hasWanIpConnection(deviceId: String, wanIndex: Int): Boolean {
+        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return false
+        return hasWanIpOnNode(wanConn, wanIndex)
+    }
+
+    private fun hasWanIpOnNode(wanConn: JsonNode, wanIndex: Int): Boolean {
+        val wanIp = wanConn.path(wanIndex.toString()).path("WANIPConnection")
+        return wanIp.path("1").isObject || wanIp.has("1")
+    }
+
+    private fun readWanConnectionDeviceNode(deviceId: String): JsonNode? {
         val projection = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice"
         val uri = deviceUri(deviceId, projection)
         val body = try {
             restTemplate.getForObject(uri, String::class.java)
         } catch (ex: Exception) {
             log.warn("No se pudo listar WANConnectionDevice de {}: {}", deviceId, ex.message)
-            return emptyList()
-        } ?: return emptyList()
+            return null
+        } ?: return null
         val root = objectMapper.readTree(body)
         val deviceNode = when {
             root.isArray && root.size() > 0 -> root[0]
             root.isObject -> root
-            else -> return emptyList()
+            else -> return null
         }
         val wanConn = deviceNode
             .path("InternetGatewayDevice")
             .path("WANDevice")
             .path("1")
             .path("WANConnectionDevice")
-        if (!wanConn.isObject) return emptyList()
-        return wanConn.fieldNames().asSequence()
-            .mapNotNull { it.toIntOrNull() }
-            .filter { index ->
-                wanConn.path(index.toString()).path("WANIPConnection").path("1").isObject ||
-                    wanConn.path(index.toString()).path("WANIPConnection").has("1")
-            }
-            .sorted()
-            .toList()
+        return wanConn.takeIf { it.isObject }
     }
 
     private fun postTask(

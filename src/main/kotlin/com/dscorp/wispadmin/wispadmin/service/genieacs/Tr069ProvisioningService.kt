@@ -156,55 +156,54 @@ class Tr069ProvisioningService(
 
         val gateway = segment.getBaseIpFromRange() + "1"
         val subnetMask = cidrToSubnetMask(segment)
-        val wanIndices = try {
-            client.listWanConnectionIndices(device.id)
-        } catch (ex: Exception) {
-            log.warn("No se pudo descubrir índice WAN de {}: {}", device.id, ex.message)
-            emptyList()
-        }
-        val wanIndex = Tr069ModelProfiles.resolveWanConnectionIndex(wanIndices)
-        val profileForWan = resolvedProfile.withWanConnectionIndex(wanIndex)
+        val clientWanIndex = properties.clientWanIndex
+        val profileForClientWan = resolvedProfile.withWanConnectionIndex(clientWanIndex)
 
-        val wifiValues = profileForWan.buildWifiParameterValues(
-            wifiSsid24 = request.wifiSsid24,
-            wifiPassword24 = request.wifiPassword24,
-            wifiSsid5 = request.wifiSsid5,
-            wifiPassword5 = request.wifiPassword5,
-        )
-        var setResult: GenieAcsTaskResult? = null
-        if (wifiValues.isNotEmpty()) {
-            val (wifiSpv, wifiFailure) = submitSpv(device.id, wifiValues, baseSnapshot)
-            if (wifiFailure != null) {
-                return wifiFailure
-            }
-            setResult = wifiSpv!!.result
-        }
+        ensureClientWanSlot(device.id, clientWanIndex, baseSnapshot)?.let { return it }
 
-        val values = profileForWan.buildWanParameterValues(
+        val connectionName = properties.clientWanNamePattern.replace("{vlan}", request.wanVlanId.toString())
+        val wanValues = profileForClientWan.buildClientInternetWanParameterValues(
             ip = ip,
             subnetMask = subnetMask,
             gateway = gateway,
             dns = properties.defaultDns,
             vlanId = request.wanVlanId,
+            connectionName = connectionName,
         )
-
-        val (wanSpv, wanFailure) = submitSpv(device.id, values, baseSnapshot)
+        val (wanSpv, wanFailure) = submitSpv(device.id, wanValues, baseSnapshot)
         if (wanFailure != null) {
             return wanFailure
         }
-        setResult = wanSpv!!.result
 
-        val snapshotAfterTask = baseSnapshot.withTask(setResult).copy(
+        val wifiValues = profileForClientWan.buildWifiParameterValues(
+            wifiSsid24 = request.wifiSsid24,
+            wifiPassword24 = request.wifiPassword24,
+            wifiSsid5 = request.wifiSsid5,
+            wifiPassword5 = request.wifiPassword5,
+        )
+        val (wifiSpv, wifiFailure) = if (wifiValues.isNotEmpty()) {
+            submitSpv(device.id, wifiValues, baseSnapshot)
+        } else {
+            null to null
+        }
+        if (wifiFailure != null) {
+            return wifiFailure
+        }
+
+        val lastResult = wifiSpv?.result ?: wanSpv!!.result
+        val snapshotAfterTask = baseSnapshot.withTask(lastResult).copy(
             wanIpCache = ip,
             ssid24 = request.wifiSsid24,
             ssid5 = request.wifiSsid5,
         )
 
-        val ssid24Path = "${profileForWan.wlan24Path}.SSID"
-        val ssid5Path = "${profileForWan.wlan5Path}.SSID"
+        val wanIpPath = "${profileForClientWan.wanIpConnectionPath}.ExternalIPAddress"
+        val ssid24Path = "${profileForClientWan.wlan24Path}.SSID"
+        val ssid5Path = "${profileForClientWan.wlan5Path}.SSID"
         client.getParameterValues(
             deviceId = device.id,
             parameterNames = listOfNotNull(
+                wanIpPath,
                 request.wifiSsid24?.let { ssid24Path },
                 request.wifiSsid5?.let { ssid5Path },
             ),
@@ -212,7 +211,7 @@ class Tr069ProvisioningService(
         )
 
         while (clock() <= deadline) {
-            resolveTaskFault(device.id, setResult!!)?.let { genieError ->
+            resolveTaskFault(device.id, lastResult)?.let { genieError ->
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.MANUAL_REQUIRED,
                     deviceId = device.id,
@@ -222,11 +221,12 @@ class Tr069ProvisioningService(
                 )
             }
 
+            val ipOk = client.getDeviceParameterValue(device.id, wanIpPath) == ip
             val ssid24Ok = request.wifiSsid24.isNullOrBlank() ||
                 client.getDeviceParameterValue(device.id, ssid24Path) == request.wifiSsid24
             val ssid5Ok = request.wifiSsid5.isNullOrBlank() ||
                 client.getDeviceParameterValue(device.id, ssid5Path) == request.wifiSsid5
-            if (ssid24Ok && ssid5Ok) {
+            if (ipOk && ssid24Ok && ssid5Ok) {
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.COMPLETE,
                     deviceId = device.id,
@@ -245,6 +245,92 @@ class Tr069ProvisioningService(
             message = genieError,
             acsSnapshot = snapshotAfterTask,
         )
+    }
+
+    private fun ensureClientWanSlot(
+        deviceId: String,
+        clientWanIndex: Int,
+        baseSnapshot: Tr069AcsSnapshot,
+    ): Tr069ProvisionOutcome? {
+        val wcdParent = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice"
+        val slots = try {
+            client.listWanConnectionDeviceIndices(deviceId)
+        } catch (ex: Exception) {
+            log.warn("No se pudo listar WANConnectionDevice de {}: {}", deviceId, ex.message)
+            emptyList()
+        }
+        if (clientWanIndex !in slots) {
+            log.info("ONU {} sin WCD.{}; AddObject WANConnectionDevice", deviceId, clientWanIndex)
+            submitAddObject(deviceId, wcdParent, baseSnapshot)?.let { failure ->
+                val recovered = isResourcesExceeded(failure.error) &&
+                    clientWanIndex in client.listWanConnectionDeviceIndices(deviceId)
+                if (!recovered) return failure
+            }
+            sleeper(properties.pollIntervalMs)
+        }
+        if (!client.hasWanIpConnection(deviceId, clientWanIndex)) {
+            log.info("ONU {} WCD.{} sin WANIPConnection; AddObject WANIP", deviceId, clientWanIndex)
+            submitAddObject(
+                deviceId,
+                "$wcdParent.$clientWanIndex.WANIPConnection",
+                baseSnapshot,
+            )?.let { failure ->
+                val recovered = isResourcesExceeded(failure.error) &&
+                    client.hasWanIpConnection(deviceId, clientWanIndex)
+                if (!recovered) return failure
+            }
+            sleeper(properties.pollIntervalMs)
+        }
+        return null
+    }
+
+    private fun submitAddObject(
+        deviceId: String,
+        objectName: String,
+        baseSnapshot: Tr069AcsSnapshot,
+    ): Tr069ProvisionOutcome? {
+        var result = client.addObject(deviceId, objectName, connectionRequest = true)
+        if (result.connectionRequestFailed) {
+            log.warn(
+                "Connection Request falló para AddObject {}; reintentando sin connection_request",
+                deviceId,
+            )
+            result = client.addObject(deviceId, objectName, connectionRequest = false)
+            if (result.connectionRequestFailed || !result.accepted) {
+                val genieError = result.toErrorDetail()
+                return Tr069ProvisionOutcome(
+                    status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                    deviceId = deviceId,
+                    error = genieError,
+                    message = genieError,
+                    acsSnapshot = baseSnapshot.withTask(result),
+                )
+            }
+        } else if (!result.accepted) {
+            val genieError = result.toErrorDetail()
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = deviceId,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = baseSnapshot.withTask(result),
+            )
+        }
+        resolveTaskFault(deviceId, result)?.let { genieError ->
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = deviceId,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = baseSnapshot.withTask(result),
+            )
+        }
+        return null
+    }
+
+    private fun isResourcesExceeded(error: String?): Boolean {
+        val text = error.orEmpty()
+        return text.contains("9004") || text.contains("Resources exceeded", ignoreCase = true)
     }
 
     private data class SpvSubmission(val result: GenieAcsTaskResult)

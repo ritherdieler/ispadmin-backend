@@ -15,6 +15,12 @@ class GenieAcsProperties {
     var connectTimeoutMs: Long = 5_000
     var defaultDns: String = "8.8.8.8,8.8.4.4"
     var wanVlanId: Int = 1
+    /** WANConnectionDevice de fábrica (TR-069/staging). El alta FIBER no lo modifica. */
+    var stagingWanIndex: Int = 1
+    /** WANConnectionDevice del Internet del abonado (Static prod). */
+    var clientWanIndex: Int = 2
+    /** Nombre TR-069 de la WAN cliente. `{vlan}` se sustituye por `subscription.vlan`. */
+    var clientWanNamePattern: String = "2_INTERNET_R_VID_{vlan}"
     /** Emite cada POST NBI como curl + response HTTP en logs (INFO). Desactivar en prod normal. */
     var logCurl: Boolean = false
 }

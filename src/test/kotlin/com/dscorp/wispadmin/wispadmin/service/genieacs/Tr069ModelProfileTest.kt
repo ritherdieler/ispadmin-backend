@@ -109,4 +109,77 @@ class Tr069ModelProfileTest {
         assertEquals(2, Tr069ModelProfiles.resolveWanConnectionIndex(listOf(2, 3)))
         assertEquals(1, Tr069ModelProfiles.resolveWanConnectionIndex(emptyList()))
     }
+
+    @Test
+    fun `buildClientInternetWanParameterValues targets WCD2 Static INTERNET without WiFi`() {
+        val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
+            .withWanConnectionIndex(Tr069ModelProfiles.CLIENT_WAN_INDEX)
+        val values = profile.buildClientInternetWanParameterValues(
+            ip = "192.168.30.216",
+            subnetMask = "255.255.255.0",
+            gateway = "192.168.30.1",
+            dns = "8.8.8.8,8.8.4.4",
+            vlanId = 100,
+            connectionName = "2_INTERNET_R_VID_100",
+        )
+        val bySuffix = values.associate { it.path.substringAfterLast('.') to it }
+
+        assertTrue(values.all { it.path.contains("WANConnectionDevice.2.") }, values.map { it.path }.toString())
+        assertTrue(values.none { it.path.contains("WANConnectionDevice.1.") }, values.map { it.path }.toString())
+        assertTrue(values.none { it.path.contains("WLANConfiguration") })
+        assertEquals("true", bySuffix.getValue("Enable").value)
+        assertEquals("xsd:boolean", bySuffix.getValue("Enable").type)
+        assertEquals("IP_Routed", bySuffix.getValue("ConnectionType").value)
+        assertEquals("2_INTERNET_R_VID_100", bySuffix.getValue("Name").value)
+        assertEquals("INTERNET", values.first { it.path.endsWith("X_CT-COM_ServiceList") }.value)
+        assertEquals("INTERNET", values.first { it.path.endsWith("X_ZTE-COM_ServiceList") }.value)
+        assertEquals("true", bySuffix.getValue("NATEnabled").value)
+        assertEquals("Static", bySuffix.getValue("AddressingType").value)
+        assertEquals("192.168.30.216", bySuffix.getValue("ExternalIPAddress").value)
+        assertEquals("255.255.255.0", bySuffix.getValue("SubnetMask").value)
+        assertEquals("192.168.30.1", bySuffix.getValue("DefaultGateway").value)
+        assertEquals("8.8.8.8,8.8.4.4", bySuffix.getValue("DNSServers").value)
+        assertEquals("true", bySuffix.getValue("DNSEnabled").value)
+        assertEquals("100", values.first { it.path.endsWith("X_CT-COM_VLANIDMark") }.value)
+        assertEquals("100", values.first { it.path.endsWith("X_ZTE-COM_VLANID") }.value)
+        assertEquals("1", values.first { it.path.endsWith("X_ZTE-COM_VLANEnable") }.value)
+        assertTrue(values.any { it.path.contains("WANGponLinkConfig") && it.path.endsWith("VLANIDMark") })
+    }
+
+    @Test
+    fun `buildStagingDhcpParameterValues sets DHCP and VLAN without static IP or WiFi`() {
+        val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
+        val values = profile.buildStagingDhcpParameterValues(vlanId = 100)
+
+        val paths = values.map { it.path }
+        assertEquals("DHCP", values.first { it.path.endsWith("AddressingType") }.value)
+        assertTrue(paths.any { it.endsWith("X_CT-COM_VLANIDMark") })
+        assertTrue(paths.none { it.endsWith("ExternalIPAddress") })
+        assertTrue(paths.none { it.contains("WLANConfiguration") })
+    }
+
+    @Test
+    fun `buildParameterValues merges WAN and WiFi in monolithic order`() {
+        val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
+        val values = profile.buildParameterValues(
+            ip = "192.168.30.215",
+            subnetMask = "255.255.255.0",
+            gateway = "192.168.30.1",
+            dns = "8.8.8.8,8.8.4.4",
+            vlanId = 100,
+            wifiSsid24 = "puppy",
+            wifiPassword24 = "qqqqqqqq",
+            wifiSsid5 = "bdbdbxbd",
+            wifiPassword5 = "bdbdbdjxxj",
+        )
+        val paths = values.map { it.path }
+
+        val wanEnd = paths.indexOfLast { it.contains("WANIPConnection") || it.contains("WANGponLinkConfig") }
+        val wifiStart = paths.indexOfFirst { it.contains("WLANConfiguration") }
+        assertTrue(wanEnd < wifiStart, "WAN params must precede WiFi in monolithic SPV: $paths")
+
+        val vlanIdIndex = paths.indexOfFirst { it.endsWith("X_ZTE-COM_VLANID") }
+        val vlanEnableIndex = paths.indexOfFirst { it.endsWith("X_ZTE-COM_VLANEnable") }
+        assertTrue(vlanIdIndex < vlanEnableIndex, "VLANID before VLANEnable: $paths")
+    }
 }

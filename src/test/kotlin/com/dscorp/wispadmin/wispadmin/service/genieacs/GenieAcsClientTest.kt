@@ -290,6 +290,63 @@ class GenieAcsClientTest {
     }
 
     @Test
+    fun `addObject posts task with objectName and connection_request`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(202)
+                .addHeader("Content-Type", "application/json")
+                .setBody("""{"_id":"task-add"}""")
+        )
+
+        val result = client.addObject(
+            deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+            objectName = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice",
+            connectionRequest = true,
+        )
+
+        assertTrue(result.accepted)
+        assertEquals("task-add", result.taskId)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertTrue(request.path!!.contains("connection_request"))
+        val body = request.body.readUtf8()
+        assertTrue(body.contains("\"addObject\""), body)
+        assertTrue(body.contains("WANConnectionDevice"), body)
+    }
+
+    @Test
+    fun `listWanConnectionDeviceIndices returns all WCD slots including empty ones`() {
+        server.enqueue(wanTreeBody("""{"1":{"WANIPConnection":{"1":{}}},"2":{}}"""))
+
+        assertEquals(listOf(1, 2), client.listWanConnectionDeviceIndices("dev-1"))
+    }
+
+    @Test
+    fun `hasWanIpConnection is true only when WANIPConnection 1 exists`() {
+        server.enqueue(wanTreeBody("""{"1":{"WANIPConnection":{"1":{}}},"2":{}}"""))
+        server.enqueue(wanTreeBody("""{"1":{"WANIPConnection":{"1":{}}},"2":{}}"""))
+
+        assertTrue(client.hasWanIpConnection("dev-1", 1))
+        assertFalse(client.hasWanIpConnection("dev-1", 2))
+    }
+
+    private fun wanTreeBody(wanConnectionDeviceJson: String) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"dev-1",
+              "InternetGatewayDevice":{
+                "WANDevice":{"1":{
+                  "WANConnectionDevice":$wanConnectionDeviceJson
+                }}
+              }
+            }]
+            """.trimIndent()
+        )
+
+    @Test
     fun `formatTaskError includes HTTP status and GenieACS detail`() {
         val formatted = GenieAcsClient.formatTaskError(
             GenieAcsTaskResult(
