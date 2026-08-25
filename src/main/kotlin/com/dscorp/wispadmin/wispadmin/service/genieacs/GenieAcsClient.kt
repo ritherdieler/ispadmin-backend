@@ -110,6 +110,18 @@ class GenieAcsClient(
         return postTask(deviceId, payload, connectionRequest)
     }
 
+    fun refreshObject(
+        deviceId: String,
+        objectName: String,
+        connectionRequest: Boolean,
+    ): GenieAcsTaskResult {
+        val payload = mapOf(
+            "name" to "refreshObject",
+            "objectName" to objectName,
+        )
+        return postTask(deviceId, payload, connectionRequest)
+    }
+
     /**
      * Removes pending tasks and faults for [deviceId] so a new SPV/GPV session is not blocked
      * by stale lab retries (GenieACS replays queued tasks on every connection request).
@@ -319,6 +331,7 @@ class GenieAcsClient(
             .path("/devices/$encodedId/tasks")
         if (connectionRequest) {
             builder.query("connection_request")
+            builder.queryParam("timeout", properties.taskTimeoutMs)
         }
         return builder.build(true).toUri()
     }

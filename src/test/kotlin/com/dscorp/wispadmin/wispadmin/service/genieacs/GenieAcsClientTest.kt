@@ -309,8 +309,35 @@ class GenieAcsClientTest {
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertTrue(request.path!!.contains("connection_request"))
+        assertTrue(request.path!!.contains("timeout=2000"), request.path)
         val body = request.body.readUtf8()
         assertTrue(body.contains("\"addObject\""), body)
+        assertTrue(body.contains("WANConnectionDevice"), body)
+    }
+
+    @Test
+    fun `refreshObject posts task with objectName connection_request and timeout`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("""{"_id":"task-refresh"}""")
+        )
+
+        val result = client.refreshObject(
+            deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+            objectName = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice",
+            connectionRequest = true,
+        )
+
+        assertTrue(result.accepted)
+        assertEquals("task-refresh", result.taskId)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertTrue(request.path!!.contains("connection_request"), request.path)
+        assertTrue(request.path!!.contains("timeout=2000"), request.path)
+        val body = request.body.readUtf8()
+        assertTrue(body.contains("\"refreshObject\""), body)
         assertTrue(body.contains("WANConnectionDevice"), body)
     }
 

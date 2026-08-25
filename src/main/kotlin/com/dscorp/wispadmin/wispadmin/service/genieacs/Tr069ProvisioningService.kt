@@ -206,7 +206,7 @@ class Tr069ProvisioningService(
                 request.wifiSsid24?.let { ssid24Path },
                 request.wifiSsid5?.let { ssid5Path },
             ),
-            connectionRequest = false,
+            connectionRequest = true,
         )
 
         while (clock() <= deadline) {
@@ -254,6 +254,7 @@ class Tr069ProvisioningService(
         val wcdParent = profile.wcdParentPath()
         val clientWanIndex = profile.clientWanSlotIndex()
         val wanIpInstance = profile.wanIpInstanceIndex()
+        refreshWanConnectionTree(deviceId, wcdParent, baseSnapshot)?.let { return it }
         val slots = try {
             client.listWanConnectionDeviceIndices(deviceId, wcdParent)
         } catch (ex: Exception) {
@@ -286,6 +287,44 @@ class Tr069ProvisioningService(
                 if (!recovered) return failure
             }
             sleeper(properties.pollIntervalMs)
+        }
+        return null
+    }
+
+    /**
+     * ACS Mongo puede conservar un WCD.2 de un alta anterior aunque el CPE lo haya
+     * perdido al reautorizar en OLT. Sin refresh, [listWanConnectionDeviceIndices]
+     * salta el AddObject y el SPV va a un slot fantasma.
+     */
+    private fun refreshWanConnectionTree(
+        deviceId: String,
+        wcdParent: String,
+        baseSnapshot: Tr069AcsSnapshot,
+    ): Tr069ProvisionOutcome? {
+        log.info("ONU {} refreshObject {}", deviceId, wcdParent)
+        var result = client.refreshObject(deviceId, wcdParent, connectionRequest = true)
+        if (result.connectionRequestFailed) {
+            log.warn(
+                "Connection Request falló para refreshObject {}; reintentando sin connection_request",
+                deviceId,
+            )
+            result = client.refreshObject(deviceId, wcdParent, connectionRequest = false)
+            if (result.connectionRequestFailed || !result.accepted) {
+                log.warn("refreshObject de {} falló; se usa caché ACS: {}", deviceId, result.toErrorDetail())
+                return null
+            }
+        } else if (!result.accepted) {
+            log.warn("refreshObject de {} no aceptado; se usa caché ACS: {}", deviceId, result.toErrorDetail())
+            return null
+        }
+        resolveTaskFault(deviceId, result)?.let { genieError ->
+            return Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+                deviceId = deviceId,
+                error = genieError,
+                message = genieError,
+                acsSnapshot = baseSnapshot.withTask(result),
+            )
         }
         return null
     }

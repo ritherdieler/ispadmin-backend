@@ -93,6 +93,28 @@ class Tr069ProvisioningServiceTest {
         assertTrue(!wanSpv.contains("WLANConfiguration"), wanSpv)
         val wifiSpv = posts.first { it.contains("setParameterValues") && it.contains("WLANConfiguration") }
         assertTrue(!wifiSpv.contains("WANIPConnection"), wifiSpv)
+        assertTrue(posts.any { it.contains("\"refreshObject\"") && it.contains("WANConnectionDevice") }, posts.toString())
+    }
+
+    @Test
+    fun `stale ACS WCD2 after OLT reauth still AddObject when refresh shows only WCD1`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueRefreshWanTree()
+        server.enqueue(wanConnectionTree(1))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(wanConnectionTreeWithoutWanIp(1, 2))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        enqueueClientWanAndWifiSuccess("192.168.123.4")
+
+        val outcome = service.provision(sampleRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val posts = drainPostBodies()
+        assertTrue(posts.any { it.contains("\"refreshObject\"") }, posts.toString())
+        assertTrue(posts.any { it.contains("\"addObject\"") && it.contains("WANConnectionDevice\"") }, posts.toString())
     }
 
     @Test
@@ -219,6 +241,7 @@ class Tr069ProvisioningServiceTest {
     fun `addObject fault returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
+        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1))
         server.enqueue(
             MockResponse()
@@ -416,12 +439,19 @@ class Tr069ProvisioningServiceTest {
         assertTrue(outcome.message!!.contains("tiempo de espera", ignoreCase = true))
     }
 
+    private fun enqueueRefreshWanTree() {
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+    }
+
     private fun enqueueClientWanAlreadyPresent() {
+        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1, 2))
         server.enqueue(wanConnectionTree(1, 2))
     }
 
     private fun enqueueCreateClientWan() {
+        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
@@ -431,6 +461,7 @@ class Tr069ProvisioningServiceTest {
     }
 
     private fun enqueueF6600rCreateClientWan() {
+        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         server.enqueue(taskAccepted())
