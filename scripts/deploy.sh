@@ -157,6 +157,20 @@ run_scp() {
   "${SCP_BASE[@]}" -o "ControlPath=$SSH_CONTROL_PATH" "$@"
 }
 
+# WAR (~250 MB, already compressed): rsync -W skips delta, no -z (recompressing a zip is slower).
+# Destination is DOCKER_COMPOSE_DIR — /tmp/ispadmin.war is not writable and scp cannot resume.
+run_rsync() {
+  if ! command -v rsync >/dev/null 2>&1; then
+    echo "rsync is required to upload the WAR (brew install rsync)" >&2
+    exit 1
+  fi
+  local rsh="ssh -p $VPS_PORT -o StrictHostKeyChecking=accept-new -o ControlMaster=no -o ControlPath=$SSH_CONTROL_PATH"
+  if [[ -n "$SSH_IDENTITY_FILE" ]]; then
+    rsh+=" -i $SSH_IDENTITY_FILE"
+  fi
+  rsync -hW --partial --progress -e "$rsh" "$@"
+}
+
 build_war() {
   local models_dir="$PROJECT_DIR/src/main/resources/models"
   for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
@@ -314,25 +328,28 @@ deploy_war() {
     echo "Missing $WAR_PATH" >&2
     exit 1
   fi
-  local war_bytes
+  local war_bytes remote_war
   war_bytes="$(wc -c < "$WAR_PATH" | tr -d ' ')"
-  echo "Deploying $WAR_NAME (${war_bytes} bytes) to container $DOCKER_TOMCAT_CONTAINER ..."
-  run_scp "$WAR_PATH" "$SSH_TARGET:/tmp/$WAR_NAME"
+  remote_war="${DOCKER_COMPOSE_DIR%/}/$WAR_NAME"
+  echo "Uploading $WAR_NAME (${war_bytes} bytes) via rsync to $remote_war ..."
+  run_rsync "$WAR_PATH" "$SSH_TARGET:$remote_war"
+  echo "Deploying $WAR_NAME to container $DOCKER_TOMCAT_CONTAINER ..."
   run_ssh "bash -s" <<EOF
 set -euo pipefail
 CONTAINER='$DOCKER_TOMCAT_CONTAINER'
 CATALINA='$CATALINA_HOME'
 WAR='$WAR_NAME'
+REMOTE_WAR='$remote_war'
 EXPECTED_BYTES='$war_bytes'
 
-remote_bytes="\$(wc -c < "/tmp/\$WAR" | tr -d ' ')"
+remote_bytes="\$(wc -c < "\$REMOTE_WAR" | tr -d ' ')"
 if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
   echo "Remote WAR size mismatch: expected \$EXPECTED_BYTES got \$remote_bytes" >&2
   exit 1
 fi
 
 docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/ispadmin \$CATALINA/webapps/\$WAR"
-docker cp "/tmp/\$WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
+docker cp "\$REMOTE_WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
 
 container_bytes="\$(docker exec "\$CONTAINER" sh -c "wc -c < \$CATALINA/webapps/\$WAR" | tr -d ' ')"
 if [[ "\$container_bytes" != "\$EXPECTED_BYTES" ]]; then
