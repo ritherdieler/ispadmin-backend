@@ -12,6 +12,8 @@ data class Tr069ProfileDraft(
     val wlan24Path: String?,
     val wlan5Path: String?,
     val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
+    val clientWanIpConnectionPath: String? = null,
+    val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
     val warnings: List<String> = emptyList(),
 ) {
     fun toModelProfile(): Tr069ModelProfile = Tr069ModelProfile(
@@ -23,6 +25,8 @@ data class Tr069ProfileDraft(
         wlan24Path = wlan24Path ?: "",
         wlan5Path = wlan5Path ?: "",
         wifiSecurityPrep = wifiSecurityPrep,
+        clientWanIpConnectionPath = clientWanIpConnectionPath,
+        clientVlanParameters = clientVlanParameters,
     )
 }
 
@@ -41,6 +45,7 @@ data class GenieAcsCsvRow(
     val parameter: String,
     val writable: Boolean,
     val value: String?,
+    val valueType: String? = null,
 )
 
 object GenieAcsCsvProfileExtractor {
@@ -48,6 +53,8 @@ object GenieAcsCsvProfileExtractor {
     private val WAN_IP_SUFFIX = Regex("""\.WANConnectionDevice\.(\d+)\.WANIPConnection\.1\.ExternalIPAddress$""")
     private val WLAN_SSID_SUFFIX = Regex("""\.WLANConfiguration\.(\d+)\.SSID$""")
     private val WLAN_KEY_SUFFIX = Regex("""\.WLANConfiguration\.(\d+)\.KeyPassphrase$""")
+    private val CLIENT_WAN_DEVICE_WCD =
+        Regex("""^InternetGatewayDevice\.WANDevice\.2\.WANConnectionDevice\.(\d+)\.WANIPConnection$""")
 
     fun extract(csvContent: String): Tr069ProfileDraft {
         val rows = parseCsv(csvContent)
@@ -82,7 +89,7 @@ object GenieAcsCsvProfileExtractor {
             .forEach { path ->
                 val leaf = path.substringAfterLast('.')
                 val kind = when (leaf) {
-                    "X_ZTE-COM_VLANEnable" -> Tr069VlanValueKind.ENABLE_ONE
+                    "X_ZTE-COM_VLANEnable" -> vlanEnableKind(byParameter[path])
                     else -> Tr069VlanValueKind.VLAN_ID
                 }
                 vlanParameters += Tr069VlanParameterSpec(path = path, valueKind = kind)
@@ -131,6 +138,13 @@ object GenieAcsCsvProfileExtractor {
             keyPassphraseByPath = keyPassphraseByPath,
         )
 
+        val clientWanIpConnectionPath = detectClientWanIpConnectionPath(rows, wanBase)
+        val clientVlanParameters = rewriteVlanParametersToClientWan(
+            vlanParameters = vlanParameters,
+            stagingWanBase = wanBase,
+            clientWanBase = clientWanIpConnectionPath,
+        )
+
         return Tr069ProfileDraft(
             productClass = productClass,
             manufacturer = manufacturer,
@@ -143,6 +157,8 @@ object GenieAcsCsvProfileExtractor {
             wlan24Path = wlan24,
             wlan5Path = wlan5,
             wifiSecurityPrep = wifiSecurityPrep,
+            clientWanIpConnectionPath = clientWanIpConnectionPath,
+            clientVlanParameters = clientVlanParameters,
             warnings = warnings,
         )
     }
@@ -161,7 +177,13 @@ object GenieAcsCsvProfileExtractor {
         if (parameter.isBlank()) return null
         val writable = fields[3].trim().equals("true", ignoreCase = true)
         val value = fields.getOrNull(5)?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotEmpty() }
-        return GenieAcsCsvRow(parameter = parameter, writable = writable, value = value)
+        val valueType = fields.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }
+        return GenieAcsCsvRow(
+            parameter = parameter,
+            writable = writable,
+            value = value,
+            valueType = valueType,
+        )
     }
 
     internal fun splitCsvFields(line: String): List<String> {
@@ -244,6 +266,49 @@ object GenieAcsCsvProfileExtractor {
             return WlanBand.BAND_24
         }
         return WlanBand.UNKNOWN
+    }
+
+    private fun vlanEnableKind(row: GenieAcsCsvRow?): Tr069VlanValueKind {
+        val type = row?.valueType.orEmpty()
+        return if (type.contains("boolean", ignoreCase = true)) {
+            Tr069VlanValueKind.ENABLE_TRUE
+        } else {
+            Tr069VlanValueKind.ENABLE_ONE
+        }
+    }
+
+    /**
+     * Dual-WANDevice (ZTE F6600R): WANDevice.1 = staging TR-069; WANDevice.2.WCD.n
+     * exists without an active WANIPConnection. VSOL/Huawei only have WANDevice.1.
+     */
+    private fun detectClientWanIpConnectionPath(
+        rows: List<GenieAcsCsvRow>,
+        stagingWanBase: String,
+    ): String? {
+        if (stagingWanBase.contains(".WANDevice.2.")) return null
+        val indices = rows
+            .filter { it.writable && CLIENT_WAN_DEVICE_WCD.containsMatchIn(it.parameter) }
+            .mapNotNull { CLIENT_WAN_DEVICE_WCD.find(it.parameter)?.groupValues?.get(1)?.toIntOrNull() }
+            .distinct()
+            .sorted()
+        val wcdIndex = indices.firstOrNull() ?: return null
+        val clientBase = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.$wcdIndex.WANIPConnection.1"
+        val hasActiveIp = rows.any { row ->
+            row.parameter == "$clientBase.ExternalIPAddress" && !row.value.isNullOrBlank()
+        }
+        if (hasActiveIp) return null
+        return clientBase
+    }
+
+    private fun rewriteVlanParametersToClientWan(
+        vlanParameters: List<Tr069VlanParameterSpec>,
+        stagingWanBase: String,
+        clientWanBase: String?,
+    ): List<Tr069VlanParameterSpec> {
+        if (clientWanBase.isNullOrBlank()) return emptyList()
+        return vlanParameters
+            .filter { it.path.startsWith("$stagingWanBase.") }
+            .map { spec -> spec.copy(path = clientWanBase + spec.path.removePrefix(stagingWanBase)) }
     }
 
     private fun requireParam(rows: Map<String, GenieAcsCsvRow>, key: String): String =

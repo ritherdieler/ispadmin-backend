@@ -330,6 +330,35 @@ class GenieAcsClientTest {
         assertFalse(client.hasWanIpConnection("dev-1", 2))
     }
 
+    @Test
+    fun `listWanConnectionDeviceIndices reads custom wcd parent on WANDevice 2`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [{
+                      "_id":"dev-zte",
+                      "InternetGatewayDevice":{
+                        "WANDevice":{"2":{
+                          "WANConnectionDevice":{"1":{},"2":{}}
+                        }}
+                      }
+                    }]
+                    """.trimIndent()
+                )
+        )
+
+        assertEquals(
+            listOf(1, 2),
+            client.listWanConnectionDeviceIndices(
+                "dev-zte",
+                "InternetGatewayDevice.WANDevice.2.WANConnectionDevice",
+            ),
+        )
+    }
+
     private fun wanTreeBody(wanConnectionDeviceJson: String) = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")

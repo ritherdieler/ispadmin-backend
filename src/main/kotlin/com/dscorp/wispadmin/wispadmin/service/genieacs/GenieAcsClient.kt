@@ -176,8 +176,11 @@ class GenieAcsClient(
      * Returns WANConnectionDevice instance indices that expose WANIPConnection.1.
      * Empty when GenieACS has not reported the WAN tree yet.
      */
-    fun listWanConnectionIndices(deviceId: String): List<Int> {
-        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
+    fun listWanConnectionIndices(
+        deviceId: String,
+        wcdParentPath: String = DEFAULT_WCD_PARENT,
+    ): List<Int> {
+        val wanConn = readWanConnectionDeviceNode(deviceId, wcdParentPath) ?: return emptyList()
         return wanConn.fieldNames().asSequence()
             .mapNotNull { it.toIntOrNull() }
             .filter { index -> hasWanIpOnNode(wanConn, index) }
@@ -189,16 +192,23 @@ class GenieAcsClient(
      * Returns every WANConnectionDevice instance index present in the ACS cache,
      * including slots that still have no WANIPConnection.
      */
-    fun listWanConnectionDeviceIndices(deviceId: String): List<Int> {
-        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
+    fun listWanConnectionDeviceIndices(
+        deviceId: String,
+        wcdParentPath: String = DEFAULT_WCD_PARENT,
+    ): List<Int> {
+        val wanConn = readWanConnectionDeviceNode(deviceId, wcdParentPath) ?: return emptyList()
         return wanConn.fieldNames().asSequence()
             .mapNotNull { it.toIntOrNull() }
             .sorted()
             .toList()
     }
 
-    fun hasWanIpConnection(deviceId: String, wanIndex: Int): Boolean {
-        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return false
+    fun hasWanIpConnection(
+        deviceId: String,
+        wanIndex: Int,
+        wcdParentPath: String = DEFAULT_WCD_PARENT,
+    ): Boolean {
+        val wanConn = readWanConnectionDeviceNode(deviceId, wcdParentPath) ?: return false
         return hasWanIpOnNode(wanConn, wanIndex)
     }
 
@@ -207,9 +217,11 @@ class GenieAcsClient(
         return wanIp.path("1").isObject || wanIp.has("1")
     }
 
-    private fun readWanConnectionDeviceNode(deviceId: String): JsonNode? {
-        val projection = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice"
-        val uri = deviceUri(deviceId, projection)
+    private fun readWanConnectionDeviceNode(
+        deviceId: String,
+        wcdParentPath: String = DEFAULT_WCD_PARENT,
+    ): JsonNode? {
+        val uri = deviceUri(deviceId, wcdParentPath)
         val body = try {
             restTemplate.getForObject(uri, String::class.java)
         } catch (ex: Exception) {
@@ -222,12 +234,11 @@ class GenieAcsClient(
             root.isObject -> root
             else -> return null
         }
-        val wanConn = deviceNode
-            .path("InternetGatewayDevice")
-            .path("WANDevice")
-            .path("1")
-            .path("WANConnectionDevice")
-        return wanConn.takeIf { it.isObject }
+        var node = deviceNode
+        for (segment in wcdParentPath.split('.')) {
+            node = node.path(segment)
+        }
+        return node.takeIf { it.isObject }
     }
 
     private fun postTask(
@@ -424,6 +435,7 @@ class GenieAcsClient(
     }
 
     companion object {
+        const val DEFAULT_WCD_PARENT = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice"
         const val CR_CREDENTIALS_ERROR = "Incorrect connection request credentials"
         const val DEFAULT_DEVICE_PROJECTION =
             "_id,_lastInform,_lastBoot,_deviceId,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"

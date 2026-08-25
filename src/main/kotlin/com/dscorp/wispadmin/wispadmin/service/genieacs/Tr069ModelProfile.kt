@@ -15,6 +15,8 @@ data class Tr069ModelProfile(
     val wlan24Path: String,
     val wlan5Path: String,
     val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
+    val clientWanIpConnectionPath: String? = null,
+    val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
 ) {
     fun withWanConnectionIndex(index: Int): Tr069ModelProfile {
         require(index in 1..16) { "WAN connection index fuera de rango: $index" }
@@ -28,6 +30,28 @@ data class Tr069ModelProfile(
             },
         )
     }
+
+    /**
+     * WAN de abonado: perfiles VSOL/Huawei reescriben WCD.{globalClientWanIndex} bajo WANDevice.1.
+     * F6600R (y similares) declaran [clientWanIpConnectionPath] en otro WANDevice y no tocan WCD.1.
+     */
+    fun forClientInternetWan(globalClientWanIndex: Int): Tr069ModelProfile {
+        val clientPath = clientWanIpConnectionPath?.takeIf { it.isNotBlank() }
+            ?: return withWanConnectionIndex(globalClientWanIndex)
+        return copy(
+            wanConnectionDeviceIndex = wcdIndexFromPath(clientPath),
+            wanIpConnectionPath = clientPath,
+            wanGponLinkConfigPath = null,
+            vlanParameters = clientVlanParameters,
+        )
+    }
+
+    fun wcdParentPath(): String {
+        val wcdInstance = wanIpConnectionPath.substringBefore(".WANIPConnection")
+        return wcdInstance.substringBeforeLast('.')
+    }
+
+    fun clientWanSlotIndex(): Int = wcdIndexFromPath(wanIpConnectionPath)
 
     /** Prep staging (192.168.255.x): DHCP + VLAN antes del SPV monolítico de producción. */
     fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
@@ -157,6 +181,14 @@ data class Tr069ModelProfile(
             Regex("""\.WANConnectionDevice\.\d+\."""),
             ".WANConnectionDevice.$newIndex.",
         )
+
+    private fun wcdIndexFromPath(path: String): Int =
+        Regex("""\.WANConnectionDevice\.(\d+)\.""")
+            .find(path)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+            ?: wanConnectionDeviceIndex
 
     private fun param(path: String, value: String, type: String) =
         Tr069ParameterValue(path = path, value = value, type = type)

@@ -29,11 +29,17 @@ data class Tr069ModelProfileEntity(
     @Column(name = "wan_ip_connection_path", nullable = false, length = 512)
     var wanIpConnectionPath: String = "",
 
+    @Column(name = "client_wan_ip_connection_path", length = 512)
+    var clientWanIpConnectionPath: String? = null,
+
     @Column(name = "wan_gpon_link_config_path", length = 512)
     var wanGponLinkConfigPath: String? = null,
 
     @Column(name = "vlan_parameters_json", nullable = false, columnDefinition = "TEXT")
     var vlanParametersJson: String = "[]",
+
+    @Column(name = "client_vlan_parameters_json", columnDefinition = "TEXT")
+    var clientVlanParametersJson: String? = null,
 
     @Column(name = "wlan24_path", length = 512)
     var wlan24Path: String? = null,
@@ -72,6 +78,8 @@ data class Tr069ModelProfileEntity(
             wlan24Path = wlan24Path.orEmpty(),
             wlan5Path = wlan5Path.orEmpty(),
             wifiSecurityPrep = decodeWifiSecurityPrep(objectMapper, wifiSecurityPrepJson),
+            clientWanIpConnectionPath = clientWanIpConnectionPath,
+            clientVlanParameters = decodeVlanParameters(objectMapper, clientVlanParametersJson ?: "[]"),
         )
     }
 
@@ -85,6 +93,8 @@ data class Tr069ModelProfileEntity(
         wlan24Path = wlan24Path,
         wlan5Path = wlan5Path,
         wifiSecurityPrep = decodeWifiSecurityPrep(objectMapper, wifiSecurityPrepJson),
+        clientWanIpConnectionPath = clientWanIpConnectionPath,
+        clientVlanParameters = decodeVlanParameters(objectMapper, clientVlanParametersJson ?: "[]"),
         aliases = decodeAliases(aliasesJson, objectMapper),
         sourceDeviceId = sourceDeviceId,
         sourceSerial = sourceSerial,
@@ -106,8 +116,10 @@ data class Tr069ModelProfileEntity(
             manufacturer = draft.manufacturer,
             wanConnectionDeviceIndex = draft.wanConnectionDeviceIndex,
             wanIpConnectionPath = draft.wanIpConnectionPath,
+            clientWanIpConnectionPath = draft.clientWanIpConnectionPath,
             wanGponLinkConfigPath = draft.wanGponLinkConfigPath,
             vlanParametersJson = encodeVlanParameters(objectMapper, draft.vlanParameters),
+            clientVlanParametersJson = encodeVlanParameters(objectMapper, draft.clientVlanParameters),
             wlan24Path = draft.wlan24Path,
             wlan5Path = draft.wlan5Path,
             wifiSecurityPrepJson = encodeWifiSecurityPrep(objectMapper, draft.wifiSecurityPrep),

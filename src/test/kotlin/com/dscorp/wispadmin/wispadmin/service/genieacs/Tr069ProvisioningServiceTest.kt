@@ -158,6 +158,61 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
+    fun `F6600R uses WANDevice 2 WCD1 without AddObject WCD`() {
+        val f6600r = Tr069ModelProfile(
+            productClass = "F6600R",
+            wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
+            wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
+            wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
+            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            clientVlanParameters = listOf(
+                Tr069VlanParameterSpec(
+                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANID",
+                ),
+                Tr069VlanParameterSpec(
+                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANEnable",
+                    valueKind = Tr069VlanValueKind.ENABLE_TRUE,
+                ),
+            ),
+        )
+        Tr069ModelProfiles.registerDynamicResolver { _, productClass ->
+            if (productClass == "F6600R") f6600r else Tr069ModelProfiles.resolveBuiltin(null, productClass)
+        }
+        server.enqueue(f6600rDeviceList())
+        emptyDeviceQueue()
+        enqueueF6600rCreateClientWan()
+        enqueueF6600rClientWanAndWifiSuccess("192.168.123.4")
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                onuSerial = "ZTEGDC47C838",
+                onuTypeName = "F6600R",
+                wifiSsid24 = "lab-zte-e2e-24",
+                wifiSsid5 = "lab-zte-e2e-5",
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val posts = drainPostBodies()
+        assertTrue(
+            posts.none {
+                it.contains("\"addObject\"") &&
+                    it.contains("WANConnectionDevice\"") &&
+                    !it.contains("WANIPConnection")
+            },
+            posts.toString(),
+        )
+        assertTrue(
+            posts.any { it.contains("\"addObject\"") && it.contains("WANDevice.2.WANConnectionDevice.1.WANIPConnection") },
+            posts.toString(),
+        )
+        val wanSpv = posts.first { it.contains("setParameterValues") && it.contains("ExternalIPAddress") }
+        assertTrue(wanSpv.contains("WANDevice.2.WANConnectionDevice.1"), wanSpv)
+        assertTrue(!wanSpv.contains("WANDevice.1.WANConnectionDevice.2"), wanSpv)
+        assertTrue(wanSpv.contains("192.168.123.4"), wanSpv)
+    }
+
+    @Test
     fun `addObject fault returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
@@ -372,6 +427,25 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(emptyFaults())
     }
 
+    private fun enqueueF6600rCreateClientWan() {
+        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 2, withWanIp = false))
+        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 2, withWanIp = false))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+    }
+
+    private fun enqueueF6600rClientWanAndWifiSuccess(ip: String) {
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp(ip, wanDeviceIndex = 2, wcdIndex = 1))
+        server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
+        server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
+    }
+
     private fun enqueueClientWanAndWifiSuccess(ip: String) {
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
@@ -483,6 +557,32 @@ class Tr069ProvisioningServiceTest {
             """.trimIndent()
         )
 
+    private fun f6600rDeviceList() = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"5872C9-F6600R-ZTEGDC47C838",
+              "_lastInform":"2026-08-25T12:00:00.000Z",
+              "_lastBoot":"2026-08-25T11:55:00.000Z",
+              "_deviceId":{
+                "_SerialNumber":"ZTEGDC47C838",
+                "_ProductClass":"F6600R",
+                "_Manufacturer":"ZTE",
+                "_OUI":"5872C9",
+                "_SoftwareVersion":"V9.0.10P2N38",
+                "_HardwareVersion":"V9.0.21"
+              },
+              "InternetGatewayDevice":{
+                "ManagementServer":{
+                  "ConnectionRequestURL":{"_value":"http://192.168.255.242:7547/tr069"}
+                }
+              }
+            }]
+            """.trimIndent()
+        )
+
     private fun taskAccepted() = MockResponse()
         .setResponseCode(202)
         .addHeader("Content-Type", "application/json")
@@ -523,7 +623,11 @@ class Tr069ProvisioningServiceTest {
             """.trimIndent()
         )
 
-    private fun deviceClientWanIp(wanIp: String) = MockResponse()
+    private fun deviceClientWanIp(
+        wanIp: String,
+        wanDeviceIndex: Int = 1,
+        wcdIndex: Int = 2,
+    ) = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")
         .setBody(
@@ -531,8 +635,8 @@ class Tr069ProvisioningServiceTest {
             [{
               "_id":"B46415-V2804AX15T-12345B4641531C0B6",
               "InternetGatewayDevice":{
-                "WANDevice":{"1":{
-                  "WANConnectionDevice":{"2":{
+                "WANDevice":{"$wanDeviceIndex":{
+                  "WANConnectionDevice":{"$wcdIndex":{
                     "WANIPConnection":{"1":{
                       "ExternalIPAddress":{"_value":"$wanIp"}
                     }}
@@ -543,14 +647,28 @@ class Tr069ProvisioningServiceTest {
             """.trimIndent()
         )
 
-    private fun wanConnectionTree(vararg indices: Int) = wanConnectionTree(indices.toList(), withWanIp = true)
+    private fun wanConnectionTree(vararg indices: Int) = wanConnectionTree(
+        indices = indices.toList(),
+        withWanIp = true,
+        wanDeviceIndex = 1,
+    )
+
+    private fun wanConnectionTree(
+        vararg indices: Int,
+        wanDeviceIndex: Int,
+        withWanIp: Boolean,
+    ) = wanConnectionTree(indices.toList(), withWanIp = withWanIp, wanDeviceIndex = wanDeviceIndex)
 
     private fun wanConnectionTreeWithoutWanIp(vararg indices: Int) =
-        wanConnectionTree(indices.toList(), withWanIp = false)
+        wanConnectionTree(indices.toList(), withWanIp = false, wanDeviceIndex = 1)
 
-    private fun wanConnectionTree(indices: List<Int>, withWanIp: Boolean): MockResponse {
+    private fun wanConnectionTree(
+        indices: List<Int>,
+        withWanIp: Boolean,
+        wanDeviceIndex: Int = 1,
+    ): MockResponse {
         val slots = indices.joinToString(",") { index ->
-            val body = if (withWanIp || index != 2) {
+            val body = if (withWanIp || index != indices.last()) {
                 """"$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.123.4"}}}}"""
             } else {
                 """"$index":{}"""
@@ -565,7 +683,7 @@ class Tr069ProvisioningServiceTest {
                 [{
                   "_id":"B46415-V2804AX15T-12345B4641531C0B6",
                   "InternetGatewayDevice":{
-                    "WANDevice":{"1":{
+                    "WANDevice":{"$wanDeviceIndex":{
                       "WANConnectionDevice":{$slots}
                     }}
                   }
@@ -574,7 +692,12 @@ class Tr069ProvisioningServiceTest {
             )
     }
 
-    private fun deviceWithSsids(ssid24: String, ssid5: String) = MockResponse()
+    private fun deviceWithSsids(
+        ssid24: String,
+        ssid5: String,
+        ssid24Index: Int = 5,
+        ssid5Index: Int = 1,
+    ) = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")
         .setBody(
@@ -584,8 +707,8 @@ class Tr069ProvisioningServiceTest {
               "InternetGatewayDevice":{
                 "LANDevice":{"1":{
                   "WLANConfiguration":{
-                    "5":{"SSID":{"_value":"$ssid24"}},
-                    "1":{"SSID":{"_value":"$ssid5"}}
+                    "$ssid24Index":{"SSID":{"_value":"$ssid24"}},
+                    "$ssid5Index":{"SSID":{"_value":"$ssid5"}}
                   }
                 }}
               }

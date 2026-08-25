@@ -28,6 +28,27 @@ class Tr069ModelProfileImportServiceTest {
         val preview = service.preview(csv)
         assertEquals("HG8145X6", preview.draft.productClass)
         assertTrue(preview.readyToImport)
+        assertEquals(null, preview.draft.clientWanIpConnectionPath)
+    }
+
+    @Test
+    fun `preview detects ZTE F6600R profile from CSV fixture`() {
+        val csv = readFixture("genieacs-exports/zte-f6600r.csv")
+        val preview = service.preview(csv)
+        assertEquals("F6600R", preview.draft.productClass)
+        assertTrue(preview.readyToImport)
+        assertTrue(
+            preview.draft.wlan24Path!!.endsWith("WLANConfiguration.1"),
+            preview.draft.wlan24Path,
+        )
+        assertTrue(
+            preview.draft.wlan5Path!!.endsWith("WLANConfiguration.5"),
+            preview.draft.wlan5Path,
+        )
+        assertTrue(
+            preview.draft.clientWanIpConnectionPath!!.contains("WANDevice.2.WANConnectionDevice.1"),
+            preview.draft.clientWanIpConnectionPath,
+        )
     }
 
     @Test
