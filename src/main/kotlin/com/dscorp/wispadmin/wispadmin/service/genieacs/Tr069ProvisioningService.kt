@@ -85,12 +85,12 @@ class Tr069ProvisioningService(
         }
 
         val waitTimeout = request.waitTimeoutMs ?: properties.waitTimeoutMs
-        val deadline = clock() + waitTimeout
+        val findDeadline = clock() + waitTimeout
         var lastMatch: Tr069SerialMatch = Tr069SerialMatch.None(
             Tr069SerialMatcher.normalizeSuffix(request.onuSerial).orEmpty()
         )
 
-        while (clock() <= deadline) {
+        while (clock() <= findDeadline) {
             val devices = try {
                 client.listDevices()
             } catch (ex: Exception) {
@@ -157,8 +157,9 @@ class Tr069ProvisioningService(
         val gateway = segment.getBaseIpFromRange() + "1"
         val subnetMask = cidrToSubnetMask(segment)
         val profileForClientWan = resolvedProfile.forClientInternetWan(properties.clientWanIndex)
+        val applyDeadline = clock() + waitTimeout
 
-        ensureClientWanSlot(device.id, profileForClientWan, baseSnapshot)?.let { return it }
+        ensureClientWanSlot(device.id, profileForClientWan, baseSnapshot, applyDeadline)?.let { return it }
 
         val connectionName = properties.clientWanNamePattern.replace("{vlan}", request.wanVlanId.toString())
         val wanValues = profileForClientWan.buildClientInternetWanParameterValues(
@@ -169,27 +170,29 @@ class Tr069ProvisioningService(
             vlanId = request.wanVlanId,
             connectionName = connectionName,
         )
-        val (wanSpv, wanFailure) = submitSpv(device.id, wanValues, baseSnapshot)
-        if (wanFailure != null) {
-            return wanFailure
-        }
-
         val wifiValues = profileForClientWan.buildWifiParameterValues(
             wifiSsid24 = request.wifiSsid24,
             wifiPassword24 = request.wifiPassword24,
             wifiSsid5 = request.wifiSsid5,
             wifiPassword5 = request.wifiPassword5,
         )
-        val (wifiSpv, wifiFailure) = if (wifiValues.isNotEmpty()) {
-            submitSpv(device.id, wifiValues, baseSnapshot)
-        } else {
-            null to null
+        val allValues = wanValues + wifiValues
+        var (spv, spvFailure) = submitSpv(device.id, allValues, baseSnapshot)
+        if (spvFailure != null && isMissingParameter(spvFailure.error)) {
+            log.warn(
+                "SPV 9005/parámetro inválido en {}; recreando WANIP y reintentando",
+                device.id,
+            )
+            recreateClientWanIp(device.id, profileForClientWan, baseSnapshot, applyDeadline)?.let { return it }
+            val retry = submitSpv(device.id, allValues, baseSnapshot)
+            spv = retry.first
+            spvFailure = retry.second
         }
-        if (wifiFailure != null) {
-            return wifiFailure
+        if (spvFailure != null) {
+            return spvFailure
         }
 
-        val lastResult = wifiSpv?.result ?: wanSpv!!.result
+        val lastResult = spv!!.result
         val snapshotAfterTask = baseSnapshot.withTask(lastResult).copy(
             wanIpCache = ip,
             ssid24 = request.wifiSsid24,
@@ -209,7 +212,7 @@ class Tr069ProvisioningService(
             connectionRequest = true,
         )
 
-        while (clock() <= deadline) {
+        while (clock() <= applyDeadline) {
             resolveTaskFault(device.id, lastResult)?.let { genieError ->
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.MANUAL_REQUIRED,
@@ -238,7 +241,7 @@ class Tr069ProvisioningService(
 
         val genieError = SSID_VERIFICATION_TIMEOUT_MESSAGE
         return Tr069ProvisionOutcome(
-            status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+            status = Tr069ProvisionStatus.PENDING,
             deviceId = device.id,
             error = genieError,
             message = genieError,
@@ -250,6 +253,7 @@ class Tr069ProvisioningService(
         deviceId: String,
         profile: Tr069ModelProfile,
         baseSnapshot: Tr069AcsSnapshot,
+        applyDeadline: Long,
     ): Tr069ProvisionOutcome? {
         val wcdParent = profile.wcdParentPath()
         val clientWanIndex = profile.clientWanSlotIndex()
@@ -286,9 +290,47 @@ class Tr069ProvisioningService(
                     client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)
                 if (!recovered) return failure
             }
-            sleeper(properties.pollIntervalMs)
+            waitUntilHasWanIp(deviceId, profile, applyDeadline)
         }
         return null
+    }
+
+    private fun recreateClientWanIp(
+        deviceId: String,
+        profile: Tr069ModelProfile,
+        baseSnapshot: Tr069AcsSnapshot,
+        applyDeadline: Long,
+    ): Tr069ProvisionOutcome? {
+        val wcdParent = profile.wcdParentPath()
+        val clientWanIndex = profile.clientWanSlotIndex()
+        val wanIpInstance = profile.wanIpInstanceIndex()
+        submitAddObject(
+            deviceId,
+            "$wcdParent.$clientWanIndex.WANIPConnection",
+            baseSnapshot,
+        )?.let { failure ->
+            val recovered = isResourcesExceeded(failure.error) &&
+                client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)
+            if (!recovered) return failure
+        }
+        waitUntilHasWanIp(deviceId, profile, applyDeadline)
+        return null
+    }
+
+    private fun waitUntilHasWanIp(
+        deviceId: String,
+        profile: Tr069ModelProfile,
+        applyDeadline: Long,
+    ) {
+        val wcdParent = profile.wcdParentPath()
+        val clientWanIndex = profile.clientWanSlotIndex()
+        val wanIpInstance = profile.wanIpInstanceIndex()
+        while (clock() <= applyDeadline) {
+            if (client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)) {
+                return
+            }
+            sleeper(properties.pollIntervalMs)
+        }
     }
 
     /**
@@ -376,6 +418,11 @@ class Tr069ProvisioningService(
     private fun isResourcesExceeded(error: String?): Boolean {
         val text = error.orEmpty()
         return text.contains("9004") || text.contains("Resources exceeded", ignoreCase = true)
+    }
+
+    private fun isMissingParameter(error: String?): Boolean {
+        val text = error.orEmpty()
+        return text.contains("9005") || text.contains("Invalid parameter name", ignoreCase = true)
     }
 
     private data class SpvSubmission(val result: GenieAcsTaskResult)
