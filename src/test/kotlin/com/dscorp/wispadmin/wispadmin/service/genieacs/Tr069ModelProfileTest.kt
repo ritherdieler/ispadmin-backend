@@ -112,30 +112,31 @@ class Tr069ModelProfileTest {
     }
 
     @Test
-    fun `forClientInternetWan uses explicit WANDevice 2 path without rewriting WCD index`() {
+    fun `forClientInternetWan uses sibling WANIPConnection 2 on the same GPON WCD`() {
         val profile = Tr069ModelProfile(
             productClass = "F6600R",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
             wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
             wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
-            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             clientVlanParameters = listOf(
                 Tr069VlanParameterSpec(
-                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANID",
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.X_ZTE-COM_VLANID",
                 ),
                 Tr069VlanParameterSpec(
-                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANEnable",
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.X_ZTE-COM_VLANEnable",
                     valueKind = Tr069VlanValueKind.ENABLE_TRUE,
                 ),
             ),
         )
         val client = profile.forClientInternetWan(2)
         assertEquals(
-            "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             client.wanIpConnectionPath,
         )
         assertEquals(1, client.wanConnectionDeviceIndex)
-        assertEquals("InternetGatewayDevice.WANDevice.2.WANConnectionDevice", client.wcdParentPath())
+        assertEquals(2, client.wanIpInstanceIndex())
+        assertEquals("InternetGatewayDevice.WANDevice.1.WANConnectionDevice", client.wcdParentPath())
         val values = client.buildClientInternetWanParameterValues(
             ip = "192.168.30.10",
             subnetMask = "255.255.255.0",
@@ -144,8 +145,14 @@ class Tr069ModelProfileTest {
             vlanId = 100,
             connectionName = "2_INTERNET_R_VID_100",
         )
-        assertTrue(values.all { it.path.contains("WANDevice.2.WANConnectionDevice.1") }, values.map { it.path }.toString())
-        assertTrue(values.none { it.path.contains("WANDevice.1.WANConnectionDevice.2") }, values.map { it.path }.toString())
+        assertTrue(
+            values.all { it.path.contains("WANDevice.1.WANConnectionDevice.1.WANIPConnection.2") },
+            values.map { it.path }.toString(),
+        )
+        assertTrue(values.none { it.path.contains("WANDevice.2") }, values.map { it.path }.toString())
+        assertTrue(values.none { it.path.contains("WANConnectionDevice.2") }, values.map { it.path }.toString())
+        assertTrue(values.none { it.path.endsWith("X_CT-COM_ServiceList") }, values.map { it.path }.toString())
+        assertEquals("INTERNET", values.first { it.path.endsWith("X_ZTE-COM_ServiceList") }.value)
         assertEquals("true", values.first { it.path.endsWith("X_ZTE-COM_VLANEnable") }.value)
         assertEquals("xsd:boolean", values.first { it.path.endsWith("X_ZTE-COM_VLANEnable") }.type)
     }

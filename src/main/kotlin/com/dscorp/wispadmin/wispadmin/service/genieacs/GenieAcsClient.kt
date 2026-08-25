@@ -207,14 +207,20 @@ class GenieAcsClient(
         deviceId: String,
         wanIndex: Int,
         wcdParentPath: String = DEFAULT_WCD_PARENT,
+        wanIpInstanceIndex: Int = 1,
     ): Boolean {
         val wanConn = readWanConnectionDeviceNode(deviceId, wcdParentPath) ?: return false
-        return hasWanIpOnNode(wanConn, wanIndex)
+        return hasWanIpOnNode(wanConn, wanIndex, wanIpInstanceIndex)
     }
 
-    private fun hasWanIpOnNode(wanConn: JsonNode, wanIndex: Int): Boolean {
+    private fun hasWanIpOnNode(
+        wanConn: JsonNode,
+        wanIndex: Int,
+        wanIpInstanceIndex: Int = 1,
+    ): Boolean {
+        val instanceKey = wanIpInstanceIndex.toString()
         val wanIp = wanConn.path(wanIndex.toString()).path("WANIPConnection")
-        return wanIp.path("1").isObject || wanIp.has("1")
+        return wanIp.path(instanceKey).isObject || wanIp.has(instanceKey)
     }
 
     private fun readWanConnectionDeviceNode(

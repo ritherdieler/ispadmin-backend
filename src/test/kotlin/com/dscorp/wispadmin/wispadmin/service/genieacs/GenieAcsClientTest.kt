@@ -331,6 +331,15 @@ class GenieAcsClientTest {
     }
 
     @Test
+    fun `hasWanIpConnection checks sibling WANIPConnection instance`() {
+        server.enqueue(wanTreeBody("""{"1":{"WANIPConnection":{"1":{}}}}"""))
+        server.enqueue(wanTreeBody("""{"1":{"WANIPConnection":{"1":{}}}}"""))
+
+        assertTrue(client.hasWanIpConnection("dev-1", 1, wanIpInstanceIndex = 1))
+        assertFalse(client.hasWanIpConnection("dev-1", 1, wanIpInstanceIndex = 2))
+    }
+
+    @Test
     fun `listWanConnectionDeviceIndices reads custom wcd parent on WANDevice 2`() {
         server.enqueue(
             MockResponse()

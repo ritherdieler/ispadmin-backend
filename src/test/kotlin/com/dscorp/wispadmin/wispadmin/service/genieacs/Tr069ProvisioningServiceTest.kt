@@ -158,19 +158,19 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
-    fun `F6600R uses WANDevice 2 WCD1 without AddObject WCD`() {
+    fun `F6600R uses sibling WANIPConnection 2 on GPON WCD1`() {
         val f6600r = Tr069ModelProfile(
             productClass = "F6600R",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
             wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
             wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
-            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             clientVlanParameters = listOf(
                 Tr069VlanParameterSpec(
-                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANID",
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.X_ZTE-COM_VLANID",
                 ),
                 Tr069VlanParameterSpec(
-                    path = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANEnable",
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.X_ZTE-COM_VLANEnable",
                     valueKind = Tr069VlanValueKind.ENABLE_TRUE,
                 ),
             ),
@@ -203,12 +203,15 @@ class Tr069ProvisioningServiceTest {
             posts.toString(),
         )
         assertTrue(
-            posts.any { it.contains("\"addObject\"") && it.contains("WANDevice.2.WANConnectionDevice.1.WANIPConnection") },
+            posts.any { it.contains("\"addObject\"") && it.contains("WANDevice.1.WANConnectionDevice.1.WANIPConnection") },
             posts.toString(),
         )
         val wanSpv = posts.first { it.contains("setParameterValues") && it.contains("ExternalIPAddress") }
-        assertTrue(wanSpv.contains("WANDevice.2.WANConnectionDevice.1"), wanSpv)
-        assertTrue(!wanSpv.contains("WANDevice.1.WANConnectionDevice.2"), wanSpv)
+        assertTrue(wanSpv.contains("WANDevice.1.WANConnectionDevice.1.WANIPConnection.2"), wanSpv)
+        assertTrue(!wanSpv.contains("WANDevice.2"), wanSpv)
+        assertTrue(!wanSpv.contains("WANConnectionDevice.2"), wanSpv)
+        assertTrue(!wanSpv.contains("WANIPConnection.1."), wanSpv)
+        assertTrue(!wanSpv.contains("X_CT-COM_ServiceList"), wanSpv)
         assertTrue(wanSpv.contains("192.168.123.4"), wanSpv)
     }
 
@@ -428,8 +431,8 @@ class Tr069ProvisioningServiceTest {
     }
 
     private fun enqueueF6600rCreateClientWan() {
-        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 2, withWanIp = false))
-        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 2, withWanIp = false))
+        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
+        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
     }
@@ -441,7 +444,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
-        server.enqueue(deviceClientWanIp(ip, wanDeviceIndex = 2, wcdIndex = 1))
+        server.enqueue(deviceClientWanIp(ip, wanDeviceIndex = 1, wcdIndex = 1, wanIpInstance = 2))
         server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
         server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
     }
@@ -627,6 +630,7 @@ class Tr069ProvisioningServiceTest {
         wanIp: String,
         wanDeviceIndex: Int = 1,
         wcdIndex: Int = 2,
+        wanIpInstance: Int = 1,
     ) = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")
@@ -637,7 +641,7 @@ class Tr069ProvisioningServiceTest {
               "InternetGatewayDevice":{
                 "WANDevice":{"$wanDeviceIndex":{
                   "WANConnectionDevice":{"$wcdIndex":{
-                    "WANIPConnection":{"1":{
+                    "WANIPConnection":{"$wanIpInstance":{
                       "ExternalIPAddress":{"_value":"$wanIp"}
                     }}
                   }}

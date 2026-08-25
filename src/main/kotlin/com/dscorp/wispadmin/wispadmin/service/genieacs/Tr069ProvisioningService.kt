@@ -253,6 +253,7 @@ class Tr069ProvisioningService(
     ): Tr069ProvisionOutcome? {
         val wcdParent = profile.wcdParentPath()
         val clientWanIndex = profile.clientWanSlotIndex()
+        val wanIpInstance = profile.wanIpInstanceIndex()
         val slots = try {
             client.listWanConnectionDeviceIndices(deviceId, wcdParent)
         } catch (ex: Exception) {
@@ -268,15 +269,20 @@ class Tr069ProvisioningService(
             }
             sleeper(properties.pollIntervalMs)
         }
-        if (!client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent)) {
-            log.info("ONU {} WCD.{} sin WANIPConnection; AddObject WANIP", deviceId, clientWanIndex)
+        if (!client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)) {
+            log.info(
+                "ONU {} WCD.{} sin WANIPConnection.{}; AddObject WANIP",
+                deviceId,
+                clientWanIndex,
+                wanIpInstance,
+            )
             submitAddObject(
                 deviceId,
                 "$wcdParent.$clientWanIndex.WANIPConnection",
                 baseSnapshot,
             )?.let { failure ->
                 val recovered = isResourcesExceeded(failure.error) &&
-                    client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent)
+                    client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)
                 if (!recovered) return failure
             }
             sleeper(properties.pollIntervalMs)

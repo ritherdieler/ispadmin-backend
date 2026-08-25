@@ -15,16 +15,16 @@ class Tr069ModelProfileEntityTest {
         val entity = Tr069ModelProfileEntity(
             productClass = "F6600R",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
-            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             vlanParametersJson = "[]",
-            clientVlanParametersJson = """[{"path":"InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1.X_ZTE-COM_VLANID","valueKind":"VLAN_ID"}]""",
+            clientVlanParametersJson = """[{"path":"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.X_ZTE-COM_VLANID","valueKind":"VLAN_ID"}]""",
             wifiSecurityPrepJson = "[]",
         )
 
         val profile = entity.toModelProfile(objectMapper)
 
         assertEquals(
-            "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.1.WANIPConnection.1",
+            "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             profile.clientWanIpConnectionPath,
         )
         assertEquals(1, profile.clientVlanParameters.size)

@@ -46,7 +46,8 @@ class Tr069ModelProfileImportServiceTest {
             preview.draft.wlan5Path,
         )
         assertTrue(
-            preview.draft.clientWanIpConnectionPath!!.contains("WANDevice.2.WANConnectionDevice.1"),
+            preview.draft.clientWanIpConnectionPath ==
+                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             preview.draft.clientWanIpConnectionPath,
         )
     }

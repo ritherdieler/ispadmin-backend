@@ -53,8 +53,6 @@ object GenieAcsCsvProfileExtractor {
     private val WAN_IP_SUFFIX = Regex("""\.WANConnectionDevice\.(\d+)\.WANIPConnection\.1\.ExternalIPAddress$""")
     private val WLAN_SSID_SUFFIX = Regex("""\.WLANConfiguration\.(\d+)\.SSID$""")
     private val WLAN_KEY_SUFFIX = Regex("""\.WLANConfiguration\.(\d+)\.KeyPassphrase$""")
-    private val CLIENT_WAN_DEVICE_WCD =
-        Regex("""^InternetGatewayDevice\.WANDevice\.2\.WANConnectionDevice\.(\d+)\.WANIPConnection$""")
 
     fun extract(csvContent: String): Tr069ProfileDraft {
         val rows = parseCsv(csvContent)
@@ -138,7 +136,12 @@ object GenieAcsCsvProfileExtractor {
             keyPassphraseByPath = keyPassphraseByPath,
         )
 
-        val clientWanIpConnectionPath = detectClientWanIpConnectionPath(rows, wanBase)
+        val clientWanIpConnectionPath = detectClientWanIpConnectionPath(
+            rows = rows,
+            stagingWanBase = wanBase,
+            productClass = productClass,
+            manufacturer = manufacturer,
+        )
         val clientVlanParameters = rewriteVlanParametersToClientWan(
             vlanParameters = vlanParameters,
             stagingWanBase = wanBase,
@@ -278,26 +281,28 @@ object GenieAcsCsvProfileExtractor {
     }
 
     /**
-     * Dual-WANDevice (ZTE F6600R): WANDevice.1 = staging TR-069; WANDevice.2.WCD.n
-     * exists without an active WANIPConnection. VSOL/Huawei only have WANDevice.1.
+     * ZTE F6600R: WANDevice.2 is a 3G dongle (CWMP 9002). Client internet is a second
+     * WANIPConnection on the same GPON WCD as staging TR-069 (WANIPConnection.2).
+     * VSOL/Huawei keep this null and use WCD.2 under WANDevice.1.
      */
     private fun detectClientWanIpConnectionPath(
         rows: List<GenieAcsCsvRow>,
         stagingWanBase: String,
+        productClass: String,
+        manufacturer: String?,
     ): String? {
-        if (stagingWanBase.contains(".WANDevice.2.")) return null
-        val indices = rows
-            .filter { it.writable && CLIENT_WAN_DEVICE_WCD.containsMatchIn(it.parameter) }
-            .mapNotNull { CLIENT_WAN_DEVICE_WCD.find(it.parameter)?.groupValues?.get(1)?.toIntOrNull() }
-            .distinct()
-            .sorted()
-        val wcdIndex = indices.firstOrNull() ?: return null
-        val clientBase = "InternetGatewayDevice.WANDevice.2.WANConnectionDevice.$wcdIndex.WANIPConnection.1"
-        val hasActiveIp = rows.any { row ->
-            row.parameter == "$clientBase.ExternalIPAddress" && !row.value.isNullOrBlank()
-        }
-        if (hasActiveIp) return null
-        return clientBase
+        if (!usesSiblingWanIpConnection(productClass, manufacturer)) return null
+        if (!stagingWanBase.endsWith(".WANIPConnection.1")) return null
+        val collectionPath = stagingWanBase.removeSuffix(".1")
+        val collectionWritable = rows.any { it.writable && it.parameter == collectionPath }
+        if (!collectionWritable) return null
+        return stagingWanBase.removeSuffix(".1") + ".2"
+    }
+
+    private fun usesSiblingWanIpConnection(productClass: String, manufacturer: String?): Boolean {
+        val pc = productClass.uppercase()
+        val vendor = manufacturer.orEmpty().uppercase()
+        return pc.contains("F6600") || vendor.contains("ZTE")
     }
 
     private fun rewriteVlanParametersToClientWan(

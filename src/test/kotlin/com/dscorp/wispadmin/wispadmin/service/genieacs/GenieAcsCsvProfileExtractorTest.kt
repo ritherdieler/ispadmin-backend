@@ -84,22 +84,27 @@ class GenieAcsCsvProfileExtractorTest {
         )
         assertTrue(draft.wlan24Path!!.endsWith("WLANConfiguration.1"), draft.wlan24Path)
         assertTrue(draft.wlan5Path!!.endsWith("WLANConfiguration.5"), draft.wlan5Path)
-        assertTrue(
-            draft.clientWanIpConnectionPath!!.contains("WANDevice.2.WANConnectionDevice.1.WANIPConnection.1"),
+        assertEquals(
+            "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             draft.clientWanIpConnectionPath,
         )
         assertTrue(
             draft.clientVlanParameters.any {
-                it.path.contains("WANDevice.2.WANConnectionDevice.1") && it.path.endsWith("X_ZTE-COM_VLANID")
+                it.path.contains("WANDevice.1.WANConnectionDevice.1.WANIPConnection.2") &&
+                    it.path.endsWith("X_ZTE-COM_VLANID")
             },
             draft.clientVlanParameters.toString(),
         )
         assertTrue(
             draft.clientVlanParameters.any {
-                it.path.contains("WANDevice.2") &&
+                it.path.contains("WANIPConnection.2") &&
                     it.path.endsWith("X_ZTE-COM_VLANEnable") &&
                     it.valueKind == Tr069VlanValueKind.ENABLE_TRUE
             },
+            draft.clientVlanParameters.toString(),
+        )
+        assertTrue(
+            draft.clientVlanParameters.none { it.path.contains("WANDevice.2") },
             draft.clientVlanParameters.toString(),
         )
         assertTrue(draft.wifiSecurityPrep.isNotEmpty(), "Factory open WiFi export should require WPA prep")
@@ -157,9 +162,12 @@ class GenieAcsCsvProfileExtractorTest {
             connectionName = "2_INTERNET_R_VID_200",
         )
         assertTrue(
-            clientValues.all { it.path.contains("WANDevice.2.WANConnectionDevice.1") },
+            clientValues.all { it.path.contains("WANDevice.1.WANConnectionDevice.1.WANIPConnection.2") },
             clientValues.map { it.path }.toString(),
         )
+        assertTrue(clientValues.none { it.path.contains("WANDevice.2") }, clientValues.map { it.path }.toString())
+        assertTrue(clientValues.none { it.path.contains("WANIPConnection.1.") }, clientValues.map { it.path }.toString())
+        assertTrue(clientValues.none { it.path.endsWith("X_CT-COM_ServiceList") }, clientValues.map { it.path }.toString())
     }
 
     private fun readFixture(path: String): String =

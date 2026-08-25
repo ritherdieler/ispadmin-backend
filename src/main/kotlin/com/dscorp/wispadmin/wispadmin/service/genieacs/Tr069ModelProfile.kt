@@ -32,8 +32,8 @@ data class Tr069ModelProfile(
     }
 
     /**
-     * WAN de abonado: perfiles VSOL/Huawei reescriben WCD.{globalClientWanIndex} bajo WANDevice.1.
-     * F6600R (y similares) declaran [clientWanIpConnectionPath] en otro WANDevice y no tocan WCD.1.
+     * WAN de abonado: VSOL/Huawei reescriben WCD.{globalClientWanIndex} bajo WANDevice.1.
+     * F6600R declara [clientWanIpConnectionPath] como WANIPConnection.2 en el mismo WCD de staging.
      */
     fun forClientInternetWan(globalClientWanIndex: Int): Tr069ModelProfile {
         val clientPath = clientWanIpConnectionPath?.takeIf { it.isNotBlank() }
@@ -52,6 +52,14 @@ data class Tr069ModelProfile(
     }
 
     fun clientWanSlotIndex(): Int = wcdIndexFromPath(wanIpConnectionPath)
+
+    fun wanIpInstanceIndex(): Int =
+        Regex("""\.WANIPConnection\.(\d+)$""")
+            .find(wanIpConnectionPath)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+            ?: 1
 
     /** Prep staging (192.168.255.x): DHCP + VLAN antes del SPV monolítico de producción. */
     fun buildStagingDhcpParameterValues(vlanId: Int): List<Tr069ParameterValue> {
@@ -74,10 +82,12 @@ data class Tr069ModelProfile(
             param("$wanIpConnectionPath.Enable", "true", "xsd:boolean"),
             param("$wanIpConnectionPath.ConnectionType", "IP_Routed", "xsd:string"),
             param("$wanIpConnectionPath.Name", connectionName, "xsd:string"),
-            param("$wanIpConnectionPath.X_CT-COM_ServiceList", "INTERNET", "xsd:string"),
-            param("$wanIpConnectionPath.X_ZTE-COM_ServiceList", "INTERNET", "xsd:string"),
-            param("$wanIpConnectionPath.NATEnabled", "true", "xsd:boolean"),
         )
+        if (includesCtComServiceList()) {
+            values += param("$wanIpConnectionPath.X_CT-COM_ServiceList", "INTERNET", "xsd:string")
+        }
+        values += param("$wanIpConnectionPath.X_ZTE-COM_ServiceList", "INTERNET", "xsd:string")
+        values += param("$wanIpConnectionPath.NATEnabled", "true", "xsd:boolean")
         values += buildWanParameterValues(ip, subnetMask, gateway, dns, vlanId)
         return values
     }
@@ -175,6 +185,10 @@ data class Tr069ModelProfile(
             gponVlan,
         )
     }
+
+    private fun includesCtComServiceList(): Boolean =
+        wanGponLinkConfigPath.orEmpty().contains("X_CT-COM") ||
+            vlanParameters.any { it.path.contains("X_CT-COM") }
 
     private fun rewriteWanIndex(path: String, newIndex: Int): String =
         path.replace(
