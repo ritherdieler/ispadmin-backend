@@ -7,6 +7,7 @@ data class AssistanceTicketDto(
     val id: Int = 0,
     val name: String,
     val phone: String = "",
+    val ip: String? = null,
     val category: String,
     val description: String,
     var status: AssistanceTicketStatus? = AssistanceTicketStatus.PENDING,
