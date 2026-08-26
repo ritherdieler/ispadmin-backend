@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.wispadmin.dto.SubscriptionCutDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionUserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
+import org.hibernate.Hibernate
 import java.time.LocalDate
 import java.util.*
 import javax.persistence.*
@@ -246,8 +247,8 @@ data class Subscription(
         note = note,
         email = email,
         facadePhotoUrl = facadePhotoUrl,
-        pendingInvoiceQuantity = payments.filter { !it.paid }.size,
-        totalDebt = payments.filter { !it.paid }.sumOf { it.amountToPay },
+        pendingInvoiceQuantity = unpaidPayments().size,
+        totalDebt = unpaidPayments().sumOf { it.amountToPay },
         antiquityInMonths = geSubscriptionAntiquity(),
         qualification = getSubscriptionQualification(),
         ics = 10,
@@ -298,8 +299,14 @@ data class Subscription(
         name = getFullName().uppercase(),
     )
 
+    private fun initializedPayments(): Set<Payment> =
+        if (Hibernate.isInitialized(payments)) payments else emptySet()
+
+    private fun unpaidPayments(): List<Payment> =
+        initializedPayments().filter { !it.paid }
+
     private fun getLastPaymentDate(): String? {
-        val lastPayment = payments
+        val lastPayment = initializedPayments()
             .filter { it.paid && it.paymentDateDatetime != null }
             .maxByOrNull { it.paymentDateDatetime!! }
 
@@ -309,7 +316,7 @@ data class Subscription(
     }
 
     fun getSubscriptionQualification(): Int {
-        val paidPaymentDays = payments
+        val paidPaymentDays = initializedPayments()
             .filter { it.paid && it.paymentDateDatetime != null }
             .map { it.paymentDateDatetime!!.dayOfMonth }
 
@@ -327,7 +334,7 @@ data class Subscription(
         }
     }
 
-    fun geSubscriptionAntiquity() = payments.groupBy {
+    fun geSubscriptionAntiquity() = initializedPayments().groupBy {
         val billingDate = it.billingDateDatetime
         Pair(billingDate.year, billingDate.monthValue)
     }.size

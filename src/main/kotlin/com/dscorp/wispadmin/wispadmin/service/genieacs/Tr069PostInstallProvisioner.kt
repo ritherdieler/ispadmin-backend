@@ -26,6 +26,11 @@ class Tr069PostInstallProvisioner(
 ) {
     private val log = LoggerFactory.getLogger(Tr069PostInstallProvisioner::class.java)
 
+    /**
+     * Must run in a transaction: async executor has no OSIV, and [Subscription.toDto]
+     * touches lazy associations (payments, plan, etc.).
+     */
+    @Transactional
     fun apply(dto: SubscriptionDto, request: SubscriptionRequest): SubscriptionDto {
         val subscriptionId = dto.id ?: return enrichDtoWithoutPersist(dto, request)
 
