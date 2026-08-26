@@ -23,6 +23,7 @@ data class Tr069ProvisionRequest(
     val wanVlanId: Int,
     val connectionName: String? = null,
     val identityOnly: Boolean = false,
+    val onPhase: ((String) -> Unit)? = null,
 )
 
 data class Tr069AcsSnapshot(
@@ -88,6 +89,7 @@ class Tr069ProvisioningService(
 
         val waitTimeout = request.waitTimeoutMs ?: properties.waitTimeoutMs
         val findDeadline = clock() + waitTimeout
+        request.onPhase?.invoke("Buscando CPE en GenieACS…")
         var lastMatch: Tr069SerialMatch = Tr069SerialMatch.None(
             Tr069SerialMatcher.normalizeSuffix(request.onuSerial).orEmpty()
         )
@@ -165,6 +167,7 @@ class Tr069ProvisioningService(
         val profileForClientWan = resolvedProfile.forClientInternetWan(properties.clientWanIndex)
         val applyDeadline = clock() + waitTimeout
 
+        request.onPhase?.invoke("Configurando WAN…")
         ensureClientWanSlot(device.id, profileForClientWan, baseSnapshot)?.let { return it }
 
         val connectionName = resolveConnectionName(request)
@@ -183,6 +186,9 @@ class Tr069ProvisioningService(
             wifiPassword5 = request.wifiPassword5,
         )
         val splitHuaweiWifi = profileForClientWan.usesHuaweiWanExtensions() && wifiValues.isNotEmpty()
+        request.onPhase?.invoke(
+            if (splitHuaweiWifi || wifiValues.isEmpty()) "Aplicando WAN…" else "Aplicando WAN y WiFi…"
+        )
         val applyValues = if (splitHuaweiWifi) wanValues else wanValues + wifiValues
         var (spv, spvFailure) = submitSpv(
             device.id,
@@ -209,6 +215,7 @@ class Tr069ProvisioningService(
             return spvFailure
         }
         if (splitHuaweiWifi) {
+            request.onPhase?.invoke("Aplicando WiFi…")
             val wifiSubmit = submitSpv(device.id, wifiValues, baseSnapshot, connectionRequest = true)
             if (wifiSubmit.second != null) {
                 return wifiSubmit.second!!
@@ -239,6 +246,7 @@ class Tr069ProvisioningService(
         val natPath = "${profileForClientWan.wanIpConnectionPath}.NATEnabled"
         val maskPath = "${profileForClientWan.wanIpConnectionPath}.SubnetMask"
         val dnsPath = "${profileForClientWan.wanIpConnectionPath}.DNSServers"
+        request.onPhase?.invoke("Verificando configuración…")
         client.getParameterValues(
             deviceId = device.id,
             parameterNames = listOfNotNull(

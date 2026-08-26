@@ -32,7 +32,8 @@ import java.time.YearMonth
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
+import com.dscorp.wispadmin.wispadmin.service.subscription.RegistrationProgressMapper
 import org.springframework.web.multipart.MultipartFile
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -53,7 +54,7 @@ class SubscriptionController(
     private val eventPublisher: ApplicationEventPublisher,
     private val integrityViolationClassifier: SubscriptionIntegrityViolationClassifier,
     private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
-    private val tr069PostInstallProvisioner: Tr069PostInstallProvisioner,
+    private val tr069AsyncApplicator: Tr069AsyncApplicator,
     private val subscriptionAcsOpsService: SubscriptionAcsOpsService,
     private val subscriptionProvisionService: SubscriptionProvisionService,
 ) {
@@ -150,6 +151,14 @@ class SubscriptionController(
         } else {
             ResponseEntity.notFound().build()
         }
+    }
+
+
+    @GetMapping("/{subscriptionId}/registration-progress")
+    fun getRegistrationProgress(@PathVariable subscriptionId: Int): ResponseEntity<RegistrationProgressDto> {
+        val subscription = repository.findById(subscriptionId).orElse(null)
+            ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(RegistrationProgressMapper.from(subscription.toDto()))
     }
 
     @GetMapping("/{subscriptionId}/acs")
@@ -417,10 +426,10 @@ class SubscriptionController(
                 }
             )
 
-            // TR-069 fuera de la transacción de registerSubscription (espera sync ~90s)
-            val enriched = tr069PostInstallProvisioner.apply(subscription, newSubscription)
-            publishSubscriptionChanged(enriched.id)
-            BaseResponse(data = enriched, status = 200)
+            // TR-069 fuera de la TX y del hilo HTTP (async ~90s); el cliente hace poll de progreso
+            tr069AsyncApplicator.schedule(subscription, newSubscription)
+            publishSubscriptionChanged(subscription.id)
+            BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             handleRegistrationIntegrityViolation(
                 request = newSubscription,
@@ -445,9 +454,9 @@ class SubscriptionController(
                         newSubscription = newSubscription,
                         onSuccess = { }
                     )
-                    val enriched = tr069PostInstallProvisioner.apply(dto, newSubscription)
+                    tr069AsyncApplicator.schedule(dto, newSubscription)
                     return BaseResponse(
-                        data = enriched,
+                        data = dto,
                         status = 200,
                     )
                 }
@@ -471,9 +480,9 @@ class SubscriptionController(
                 }
             )
 
-            val enriched = tr069PostInstallProvisioner.apply(subscription, newSubscription)
-            publishSubscriptionChanged(enriched.id)
-            BaseResponse(data = enriched, status = 200)
+            tr069AsyncApplicator.schedule(subscription, newSubscription)
+            publishSubscriptionChanged(subscription.id)
+            BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
             handleRegistrationIntegrityViolation(
                 request = newSubscription,

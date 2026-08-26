@@ -17,7 +17,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.IInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -43,7 +43,7 @@ class SubscriptionProvisionServiceTest {
     private val installationStrategyFactory = mockk<InstallationStrategyFactory>()
     private val installationStrategy = mockk<IInstallationStrategy>()
     private val errorLogRepository = mockk<ErrorLogRepository>(relaxed = true)
-    private val tr069PostInstallProvisioner = mockk<Tr069PostInstallProvisioner>(relaxed = true)
+    private val tr069AsyncApplicator = mockk<Tr069AsyncApplicator>(relaxed = true)
 
     private val service = SubscriptionProvisionService(
         repository = repository,
@@ -55,7 +55,7 @@ class SubscriptionProvisionServiceTest {
         genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
             enabled = false
         },
-        tr069PostInstallProvisioner = tr069PostInstallProvisioner,
+        tr069AsyncApplicator = tr069AsyncApplicator,
     )
 
     @Test
@@ -94,7 +94,7 @@ class SubscriptionProvisionServiceTest {
             genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
                 enabled = true
             },
-            tr069PostInstallProvisioner = mockk(relaxed = true),
+            tr069AsyncApplicator = mockk(relaxed = true),
         )
         val subscription = baseSubscription()
         enabledService.initializeStatuses(subscription, InstallationType.FIBER)
@@ -125,7 +125,7 @@ class SubscriptionProvisionServiceTest {
             genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
                 enabled = true
             },
-            tr069PostInstallProvisioner = mockk(relaxed = true),
+            tr069AsyncApplicator = mockk(relaxed = true),
         )
         val subscription = baseSubscription().apply {
             fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
@@ -333,7 +333,7 @@ class SubscriptionProvisionServiceTest {
         }
         every { repository.findById(42) } returns Optional.of(subscription)
         every {
-            tr069PostInstallProvisioner.apply(any(), any())
+            tr069AsyncApplicator.applyExclusive(any(), any())
         } returns SubscriptionDto(
             id = 42,
             tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
@@ -343,7 +343,7 @@ class SubscriptionProvisionServiceTest {
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { tr069PostInstallProvisioner.apply(any(), any()) }
+        verify(exactly = 1) { tr069AsyncApplicator.applyExclusive(any(), any()) }
     }
 
     @Test
@@ -359,7 +359,7 @@ class SubscriptionProvisionServiceTest {
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
     }
 
     @Test
@@ -375,7 +375,7 @@ class SubscriptionProvisionServiceTest {
         assertThrows(IllegalStateException::class.java) {
             service.retryTr069(42)
         }
-        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
     }
 
     @Test
@@ -390,7 +390,7 @@ class SubscriptionProvisionServiceTest {
         }
         every { repository.findById(42) } returns Optional.of(subscription)
         every {
-            tr069PostInstallProvisioner.apply(any(), any())
+            tr069AsyncApplicator.applyExclusive(any(), any())
         } returns SubscriptionDto(
             id = 42,
             tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
@@ -399,7 +399,7 @@ class SubscriptionProvisionServiceTest {
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { tr069PostInstallProvisioner.apply(any(), any()) }
+        verify(exactly = 1) { tr069AsyncApplicator.applyExclusive(any(), any()) }
     }
 
     @Test
@@ -416,7 +416,7 @@ class SubscriptionProvisionServiceTest {
         assertThrows(IllegalStateException::class.java) {
             service.retryTr069(42)
         }
-        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
     }
 
     @Test

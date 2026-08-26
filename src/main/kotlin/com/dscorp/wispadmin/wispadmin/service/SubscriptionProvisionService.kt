@@ -15,6 +15,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -33,7 +34,7 @@ class SubscriptionProvisionService(
     private val installationStrategyFactory: InstallationStrategyFactory,
     private val errorLogRepository: ErrorLogRepository,
     private val genieAcsProperties: GenieAcsProperties,
-    @Lazy private val tr069PostInstallProvisioner: Tr069PostInstallProvisioner,
+    @Lazy private val tr069AsyncApplicator: Tr069AsyncApplicator,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
 
@@ -200,7 +201,7 @@ class SubscriptionProvisionService(
         val id = subscription.id ?: return
         try {
             val dto = subscription.toDto()
-            tr069PostInstallProvisioner.apply(dto, request)
+            tr069AsyncApplicator.applyExclusive(dto, request)
             repository.findById(id).ifPresent { refreshed ->
                 subscription.tr069ProvisionStatus = refreshed.tr069ProvisionStatus
                 subscription.tr069LastError = refreshed.tr069LastError
@@ -300,7 +301,7 @@ class SubscriptionProvisionService(
         }
 
         val request = buildRequestFromSubscription(subscription)
-        return tr069PostInstallProvisioner.apply(subscription.toDto(), request)
+        return tr069AsyncApplicator.applyExclusive(subscription.toDto(), request)
     }
 
     private fun isTr069Eligible(subscription: Subscription): Boolean {

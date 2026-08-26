@@ -17,7 +17,7 @@ import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClas
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -39,7 +39,7 @@ class SubscriptionControllerMultipartIdempotencyTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val integrityViolationClassifier = SubscriptionIntegrityViolationClassifier()
     private val ipConflictNocNotifier = mockk<SubscriptionIpConflictNocNotifier>(relaxed = true)
-    private val tr069PostInstallProvisioner = mockk<Tr069PostInstallProvisioner>()
+    private val tr069AsyncApplicator = mockk<Tr069AsyncApplicator>(relaxed = true)
     private val subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>(relaxed = true)
 
     private val controller = SubscriptionController(
@@ -55,14 +55,14 @@ class SubscriptionControllerMultipartIdempotencyTest {
         eventPublisher = eventPublisher,
         integrityViolationClassifier = integrityViolationClassifier,
         ipConflictNocNotifier = ipConflictNocNotifier,
-        tr069PostInstallProvisioner = tr069PostInstallProvisioner,
+        tr069AsyncApplicator = tr069AsyncApplicator,
         subscriptionAcsOpsService = subscriptionAcsOpsService,
         subscriptionProvisionService = mockk(relaxed = true),
     )
 
     @BeforeEach
     fun stubTr069() {
-        every { tr069PostInstallProvisioner.apply(any(), any()) } answers { firstArg() }
+        every { tr069AsyncApplicator.schedule(any(), any()) } returns Unit
     }
 
     @Test

@@ -17,7 +17,7 @@ import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClas
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -44,7 +44,7 @@ class SubscriptionControllerAcsEndpointsTest {
         eventPublisher = mockk(relaxed = true),
         integrityViolationClassifier = SubscriptionIntegrityViolationClassifier(),
         ipConflictNocNotifier = mockk(relaxed = true),
-        tr069PostInstallProvisioner = mockk(relaxed = true),
+        tr069AsyncApplicator = mockk(relaxed = true),
         subscriptionAcsOpsService = subscriptionAcsOpsService,
         subscriptionProvisionService = subscriptionProvisionService,
     )

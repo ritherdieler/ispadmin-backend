@@ -134,6 +134,16 @@ class Tr069PostInstallProvisioner(
                 wanVlanId = wanVlanId,
                 connectionName = connectionName,
                 identityOnly = identityOnly,
+                onPhase = { phase ->
+                    persistStatus(
+                        subscriptionId = subscriptionId,
+                        request = request,
+                        status = Tr069ProvisionStatus.PENDING,
+                        deviceId = null,
+                        error = null,
+                        messageOverride = phase,
+                    )
+                },
             )
         )
 
