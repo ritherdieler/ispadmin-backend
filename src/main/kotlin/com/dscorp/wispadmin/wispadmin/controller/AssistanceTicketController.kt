@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.controller
 import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicket
 import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicketStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.applyReschedule
 import com.dscorp.wispadmin.wispadmin.dto.AssistanceTicketDto
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.requestbody.AssistanceTicketRequest
@@ -382,14 +383,15 @@ class AssistanceTicketController(
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ticket.toDto())
         }
 
-        ticket.scheduledAt = Date(request.scheduledAt)
+        val oldStatus = ticket.status.name
+        ticket.applyReschedule(request.scheduledAt)
 
         val updatedTicket = repository.save(ticket)
         val ticketDto = updatedTicket.toDto()
 
         ticketNotificationService.notifyTicketStatusChange(
             ticketId = ticket.id.toLong(),
-            oldStatus = ticket.status.name,
+            oldStatus = oldStatus,
             newStatus = ticket.status.name
         )
 
@@ -410,10 +412,11 @@ fun getPriorityLabel(priority: Int): String {
     return priorityLabel
 }
 
-private fun AssistanceTicket.toDto(): AssistanceTicketDto = AssistanceTicketDto(
+internal fun AssistanceTicket.toDto(): AssistanceTicketDto = AssistanceTicketDto(
     id = id,
     name = subscription?.getFullName() ?: externalCustomerName!!.uppercase(),
     phone = phone,
+    ip = subscription?.ip?.takeIf { it.isNotBlank() },
     category = category,
     description = description,
     status = status,

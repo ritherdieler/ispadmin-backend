@@ -38,6 +38,11 @@ data class AssistanceTicket(
 
 )
 
+fun AssistanceTicket.applyReschedule(scheduledAtMillis: Long) {
+    scheduledAt = Date(scheduledAtMillis)
+    status = AssistanceTicketStatus.PENDING
+}
+
 enum class AssistanceTicketStatus(val status: String) {
     PENDING("Por Atender"),
     ASSIGNED("Asignado"),
