@@ -1,22 +1,11 @@
-# Reglas Estrictas de Contexto para el Proyecto
+# Reglas de contexto — WispAdmin backend
 
-Siempre que analices código o generes nuevas funciones, lee y aplica de forma obligatoria las directrices avanzadas definidas en las siguientes habilidades locales:
+Este repo es Spring Boot/Kotlin (WAR), no Android. Perfil: `.cursor/context/project-profile.md`
 
-## Skills transversales (web / móvil)
-- `.skills/react-best-practices/SKILL.md`
-- `.skills/mobile-best-practices/SKILL.md`
+## Skills de este repo
 
-## Skills de plataforma existentes
-- `Skills/kotlin-backend/SKILL.md`
-- `Skills/performance/r8-analyzer/SKILL.md` (cuando haya optimización Android/R8)
-- `Skills/testing/testing-setup/SKILL.md`
-- `Skills/security/android-intent-security/SKILL.md` (cuando haya Intents/seguridad Android)
+- `.cursor/skills/` — workflows (feature, TDD, endpoint, review)
+- `Skills/kotlin-backend/SKILL.md` — notas HTTPS/mapas (acotado)
+- Diccionario: `.cursor/rules/domain-dictionary.mdc`
 
-## Reglas Cursor
-- `.cursor/rules/main.mdc` — estándares globales (siempre activas)
-- `.cursor/rules/always-tdd.mdc` — TDD obligatorio Red-Green-Refactor (siempre activo)
-- `.cursor/rules/solid-architecture.mdc` — SOLID y código escalable (siempre activo)
-- `.cursor/rules/domain-dictionary.mdc` — términos de dominio, nomenclatura y contratos DTO/API
-- `.cursor/rules/command-runner.mdc` — lint, types y tests antes de cerrar tareas
-- `.cursor/rules/tdd.mdc` — complemento TDD (alcance y excepciones)
-- `.cursor/rules/configuracionia.mdc` — controllers retornan DTOs
+No apliques skills de Jetpack Compose / R8 / Navigation 3 al backend. Esos docs en `Skills/` y `.skills/mobile-best-practices` son referencia para la app **IpsAdmin**, no para este código.
