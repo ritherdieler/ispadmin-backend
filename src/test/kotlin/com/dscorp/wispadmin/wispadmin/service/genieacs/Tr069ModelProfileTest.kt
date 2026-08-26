@@ -134,8 +134,13 @@ class Tr069ModelProfileTest {
         val paths = values.map { it.path }
         assertTrue(paths.none { it.endsWith("BeaconType") }, paths.toString())
         assertTrue(paths.any { it.endsWith("WLANConfiguration.1.SSID") })
-        assertTrue(paths.any { it.endsWith("WLANConfiguration.1.KeyPassphrase") })
+        assertTrue(paths.any { it.endsWith("WLANConfiguration.1.PreSharedKey.1.KeyPassphrase") }, paths.toString())
+        assertTrue(paths.none { it.endsWith("WLANConfiguration.1.KeyPassphrase") }, paths.toString())
         assertEquals("wifi24", values.first { it.path.endsWith("WLANConfiguration.1.SSID") }.value)
+        assertEquals(
+            "pass24",
+            values.first { it.path.endsWith("WLANConfiguration.1.PreSharedKey.1.KeyPassphrase") }.value,
+        )
     }
 
     @Test

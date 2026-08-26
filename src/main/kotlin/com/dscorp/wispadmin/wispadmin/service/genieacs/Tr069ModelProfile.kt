@@ -195,7 +195,13 @@ data class Tr069ModelProfile(
             values += param("$wlanPath.SSID", ssid, "xsd:string")
         }
         if (!password.isNullOrBlank()) {
-            values += param("$wlanPath.KeyPassphrase", password, "xsd:string")
+            // HG8145X6 rejects top-level KeyPassphrase (9007); PSK goes under PreSharedKey.1.
+            val passphrasePath = if (usesHuaweiWanExtensions()) {
+                "$wlanPath.PreSharedKey.1.KeyPassphrase"
+            } else {
+                "$wlanPath.KeyPassphrase"
+            }
+            values += param(passphrasePath, password, "xsd:string")
         }
         return values
     }
