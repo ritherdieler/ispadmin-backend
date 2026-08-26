@@ -4,6 +4,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
+import com.dscorp.wispadmin.wispadmin.data.model.Onu
+import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.OnuDto
@@ -17,6 +19,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -30,6 +33,7 @@ class Tr069PostInstallProvisionerTest {
     private val cipher = mockk<CrmSecretCipher>(relaxed = true)
     private val acsSyncService = mockk<SubscriptionAcsSyncService>(relaxed = true)
     private val fiberInstallationStrategy = mockk<FiberInstallationStrategy>()
+    private val tagger = mockk<GenieAcsSubscriptionTagger>(relaxed = true)
     private lateinit var provisioner: Tr069PostInstallProvisioner
 
     @BeforeEach
@@ -41,6 +45,7 @@ class Tr069PostInstallProvisionerTest {
             cipher = cipher,
             acsSyncService = acsSyncService,
             fiberInstallationStrategy = fiberInstallationStrategy,
+            tagger = tagger,
         )
         every { fiberInstallationStrategy.resolveVlan(any()) } returns "100"
         every { repository.save(any()) } answers { firstArg() }
@@ -89,10 +94,162 @@ class Tr069PostInstallProvisionerTest {
         )
 
         assertEquals(100, requestSlot.captured.wanVlanId)
+        assertEquals("10 INTERNET JUAN PEREZ", requestSlot.captured.connectionName)
+        assertFalse(requestSlot.captured.identityOnly)
+        verify {
+            tagger.apply(
+                deviceId = "dev-1",
+                subscriptionId = 10,
+                kind = GenieAcsServiceKind.INTERNET,
+                fullName = "Juan Perez",
+                previousDeviceId = null,
+            )
+        }
+    }
+
+    @Test
+    fun `FIBER duo plan uses DUO connection name`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.COMPLETE).apply {
+            plan = Plan(id = 1, name = "Duo 200 Mbps", type = InstallationType.FIBER)
+        }
+        every { repository.findById(10) } returns Optional.of(subscription)
+        val requestSlot = slot<Tr069ProvisionRequest>()
+        every { provisioningService.provision(capture(requestSlot)) } returns Tr069ProvisionOutcome(
+            status = Tr069ProvisionStatus.COMPLETE,
+            deviceId = "dev-1",
+            message = "ok",
+        )
+
+        provisioner.apply(
+            SubscriptionDto(
+                id = 10,
+                installationType = InstallationType.FIBER,
+                oltProvisionStatus = OltProvisionStatus.COMPLETE,
+                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
+            ),
+            fiberRequest(vlan = "100"),
+        )
+
+        assertEquals("10 DUO JUAN PEREZ", requestSlot.captured.connectionName)
+        verify {
+            tagger.apply(
+                deviceId = "dev-1",
+                subscriptionId = 10,
+                kind = GenieAcsServiceKind.DUO,
+                fullName = "Juan Perez",
+                previousDeviceId = null,
+            )
+        }
+    }
+
+    @Test
+    fun `ONLY_TV with ONU provisions identity Name only and tags`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.COMPLETE).apply {
+            installationType = InstallationType.ONLY_TV_FIBER
+            ip = null
+            fiberOnu = Onu(sn = "VSOL0031C0B6", onu_type_name = "VSOLVA74")
+            plan = Plan(id = 2, name = "TV Cable", type = InstallationType.ONLY_TV_FIBER)
+        }
+        every { repository.findById(10) } returns Optional.of(subscription)
+        val requestSlot = slot<Tr069ProvisionRequest>()
+        every { provisioningService.provision(capture(requestSlot)) } returns Tr069ProvisionOutcome(
+            status = Tr069ProvisionStatus.COMPLETE,
+            deviceId = "dev-tv",
+            message = "ok",
+        )
+
+        provisioner.apply(
+            SubscriptionDto(
+                id = 10,
+                installationType = InstallationType.ONLY_TV_FIBER,
+                oltProvisionStatus = OltProvisionStatus.COMPLETE,
+                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
+            ),
+            fiberRequest(vlan = "100").copy(
+                installationType = InstallationType.ONLY_TV_FIBER,
+                wifiSsid24 = null,
+                wifiSsid5 = null,
+            ),
+        )
+
+        assertTrue(requestSlot.captured.identityOnly)
+        assertEquals("10 TV JUAN PEREZ", requestSlot.captured.connectionName)
+        verify {
+            tagger.apply(
+                deviceId = "dev-tv",
+                subscriptionId = 10,
+                kind = GenieAcsServiceKind.TV,
+                fullName = "Juan Perez",
+                previousDeviceId = null,
+            )
+        }
+    }
+
+    @Test
+    fun `ONLY_TV CATV without ONU skips GenieACS`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.NA).apply {
+            installationType = InstallationType.ONLY_TV_FIBER
+            fiberOnu = null
+            oltProvisionStatus = OltProvisionStatus.NA
+            tr069ProvisionStatus = Tr069ProvisionStatus.NA
+        }
+        every { repository.findById(10) } returns Optional.of(subscription)
+
+        val dto = provisioner.apply(
+            SubscriptionDto(
+                id = 10,
+                installationType = InstallationType.ONLY_TV_FIBER,
+                oltProvisionStatus = OltProvisionStatus.NA,
+                tr069ProvisionStatus = Tr069ProvisionStatus.NA,
+            ),
+            fiberRequest(vlan = "100").copy(
+                installationType = InstallationType.ONLY_TV_FIBER,
+                onu = null,
+            ),
+        )
+
+        verify(exactly = 0) { provisioningService.provision(any()) }
+        verify(exactly = 0) { tagger.apply(any(), any(), any(), any(), any()) }
+        assertEquals(Tr069ProvisionStatus.NA, dto.tr069ProvisionStatus)
+    }
+
+    @Test
+    fun `tags apply on MANUAL_REQUIRED when deviceId is present and previous device is cleared`() {
+        val subscription = fiberSubscription(olt = OltProvisionStatus.COMPLETE).apply {
+            tr069DeviceId = "old-dev"
+        }
+        every { repository.findById(10) } returns Optional.of(subscription)
+        every { provisioningService.provision(any()) } returns Tr069ProvisionOutcome(
+            status = Tr069ProvisionStatus.MANUAL_REQUIRED,
+            deviceId = "dev-1",
+            error = "SPV 9008",
+        )
+
+        provisioner.apply(
+            SubscriptionDto(
+                id = 10,
+                installationType = InstallationType.FIBER,
+                oltProvisionStatus = OltProvisionStatus.COMPLETE,
+                tr069ProvisionStatus = Tr069ProvisionStatus.PENDING,
+            ),
+            fiberRequest(vlan = "100"),
+        )
+
+        verify {
+            tagger.apply(
+                deviceId = "dev-1",
+                subscriptionId = 10,
+                kind = GenieAcsServiceKind.INTERNET,
+                fullName = "Juan Perez",
+                previousDeviceId = "old-dev",
+            )
+        }
     }
 
     private fun fiberSubscription(olt: OltProvisionStatus) = Subscription(
         id = 10,
+        firstName = "Juan",
+        lastName = "Perez",
         installationType = InstallationType.FIBER,
         ip = "192.168.30.10",
         vlan = "100",

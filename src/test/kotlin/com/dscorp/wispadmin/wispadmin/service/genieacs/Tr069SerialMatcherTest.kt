@@ -67,6 +67,23 @@ class Tr069SerialMatcherTest {
         assertTrue(result is Tr069SerialMatch.InvalidSerial)
     }
 
+    @Test
+    fun `findUnique maps SmartOLT HWTC serial to ACS hex serial`() {
+        val devices = listOf(
+            device("00259E-HG8145X6-48575443C6FBA6AA", "48575443C6FBA6AA"),
+        )
+
+        val result = Tr069SerialMatcher.findUnique("HWTCC6FBA6AA", devices)
+
+        assertTrue(result is Tr069SerialMatch.Found)
+        assertEquals(
+            "00259E-HG8145X6-48575443C6FBA6AA",
+            (result as Tr069SerialMatch.Found).device.id,
+        )
+        assertEquals("FBA6AA", Tr069SerialMatcher.normalizeSuffix("HWTCC6FBA6AA"))
+        assertEquals("FBA6AA", Tr069SerialMatcher.normalizeSuffix("48575443C6FBA6AA"))
+    }
+
     private fun device(id: String, serial: String) = GenieAcsDevice(
         id = id,
         serialNumber = serial,

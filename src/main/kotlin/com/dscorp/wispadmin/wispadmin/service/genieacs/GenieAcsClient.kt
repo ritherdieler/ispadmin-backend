@@ -143,6 +143,52 @@ class GenieAcsClient(
         )
     }
 
+    fun addTag(deviceId: String, tag: String): Boolean {
+        return exchangeDeviceTag(deviceId, tag, HttpMethod.POST)
+    }
+
+    fun deleteTag(deviceId: String, tag: String): Boolean {
+        return exchangeDeviceTag(deviceId, tag, HttpMethod.DELETE)
+    }
+
+    fun listTags(deviceId: String): List<String> {
+        val uri = deviceUri(deviceId, "_tags")
+        val body = try {
+            restTemplate.getForObject(uri, String::class.java)
+        } catch (ex: Exception) {
+            log.warn("No se pudo listar tags de {}: {}", deviceId, ex.message)
+            return emptyList()
+        } ?: return emptyList()
+        val root = objectMapper.readTree(body)
+        val deviceNode = when {
+            root.isArray && root.size() > 0 -> root[0]
+            root.isObject -> root
+            else -> return emptyList()
+        }
+        val tags = deviceNode.path("_tags")
+        if (!tags.isArray) return emptyList()
+        return tags.mapNotNull { node ->
+            node.asText(null)?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun exchangeDeviceTag(deviceId: String, tag: String, method: HttpMethod): Boolean {
+        val encodedId = URLEncoder.encode(deviceId, StandardCharsets.UTF_8).replace("+", "%20")
+        val encodedTag = URLEncoder.encode(tag, StandardCharsets.UTF_8).replace("+", "%20")
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/devices/$encodedId/tags/$encodedTag")
+            .build(true)
+            .toUri()
+        return try {
+            restTemplate.exchange(uri, method, HttpEntity.EMPTY, String::class.java)
+            true
+        } catch (ex: Exception) {
+            log.warn("No se pudo {} tag {} en {}: {}", method, tag, deviceId, ex.message)
+            false
+        }
+    }
+
     fun findFaultBodyForTask(deviceId: String, taskId: String): String? {
         val queryJson = objectMapper.writeValueAsString(mapOf("device" to deviceId))
         val uri = UriComponentsBuilder

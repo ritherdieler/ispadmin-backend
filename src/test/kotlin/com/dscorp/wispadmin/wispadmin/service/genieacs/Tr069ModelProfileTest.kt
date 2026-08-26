@@ -74,12 +74,55 @@ class Tr069ModelProfileTest {
     }
 
     @Test
-    fun `buildWifiParameterValues applies security prep before KeyPassphrase for Huawei profile`() {
+    fun `Huawei client WAN uses X_HW_SERVICELIST LANBIND and no ZTE leaves`() {
+        val client = huaweiHg8145Profile().forClientInternetWan(2)
+        val values = client.buildClientInternetWanParameterValues(
+            ip = "192.168.30.250",
+            subnetMask = "255.255.255.0",
+            gateway = "192.168.30.1",
+            dns = "8.8.8.8,8.8.4.4",
+            vlanId = 100,
+            connectionName = "2_INTERNET_R_VID_100",
+        )
+        val paths = values.map { it.path }
+
+        assertTrue(values.all { it.path.contains("WANConnectionDevice.2.") }, paths.toString())
+        assertEquals("INTERNET", values.first { it.path.endsWith("X_HW_SERVICELIST") }.value)
+        assertEquals("AlwaysOn", values.first { it.path.endsWith("ConnectionTrigger") }.value)
+        assertEquals("true", values.first { it.path.endsWith("X_HW_IPv4Enable") }.value)
+        assertEquals("100", values.first { it.path.endsWith("X_HW_VLAN") }.value)
+        assertEquals("xsd:unsignedInt", values.first { it.path.endsWith("X_HW_VLAN") }.type)
+        assertTrue(values.none { it.path.contains("X_ZTE-COM_") }, paths.toString())
+        assertTrue(values.none { it.path.contains("X_CT-COM_") }, paths.toString())
+        assertTrue(values.none { it.path.contains("WLANConfiguration") }, paths.toString())
+        listOf("Lan1Enable", "Lan4Enable", "SSID1Enable", "SSID4Enable").forEach { leaf ->
+            val param = values.first { it.path.endsWith("X_HW_LANBIND.$leaf") }
+            assertEquals("1", param.value)
+            assertEquals("xsd:unsignedInt", param.type)
+        }
+        assertTrue(client.usesHuaweiWanExtensions())
+        val isolated = client.buildIsolatedL3ParameterValues(
+            subnetMask = "255.255.255.0",
+            dns = "8.8.8.8,8.8.4.4",
+        )
+        assertEquals(
+            listOf("NATEnabled", "DNSServers", "DNSEnabled", "SubnetMask"),
+            isolated.map { it.path.substringAfterLast('.') },
+        )
+    }
+
+    @Test
+    fun `Huawei wifi SPV is SSID and PSK only without BeaconType`() {
         val profile = Tr069ModelProfile(
             productClass = "HG8145X6",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
             wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
             wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
+            vlanParameters = listOf(
+                Tr069VlanParameterSpec(
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.X_HW_VLAN",
+                ),
+            ),
             wifiSecurityPrep = Tr069WifiSecurityDefaults.STANDARD_OPEN_WIFI_PREP,
         )
         val values = profile.buildWifiParameterValues(
@@ -89,11 +132,10 @@ class Tr069ModelProfileTest {
             wifiPassword5 = "pass5",
         )
         val paths = values.map { it.path }
-
-        val key24Index = paths.indexOfFirst { it.endsWith("WLANConfiguration.1.KeyPassphrase") }
-        val beacon24Index = paths.indexOfFirst { it.endsWith("WLANConfiguration.1.BeaconType") }
-        assertTrue(key24Index > beacon24Index, paths.toString())
-        assertEquals("11i", values.first { it.path.endsWith("WLANConfiguration.1.BeaconType") }.value)
+        assertTrue(paths.none { it.endsWith("BeaconType") }, paths.toString())
+        assertTrue(paths.any { it.endsWith("WLANConfiguration.1.SSID") })
+        assertTrue(paths.any { it.endsWith("WLANConfiguration.1.KeyPassphrase") })
+        assertEquals("wifi24", values.first { it.path.endsWith("WLANConfiguration.1.SSID") }.value)
     }
 
     @Test
@@ -201,6 +243,19 @@ class Tr069ModelProfileTest {
     }
 
     @Test
+    fun `buildIdentityNameParameterValues only sets WAN Name`() {
+        val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
+            .withWanConnectionIndex(Tr069ModelProfiles.CLIENT_WAN_INDEX)
+        val values = profile.buildIdentityNameParameterValues("744 TV JUAN PEREZ")
+        assertEquals(2, values.size)
+        assertEquals("744 TV JUAN PEREZ", values.first { it.path.endsWith(".Name") }.value)
+        assertEquals("744 TV JUAN PEREZ", values.first { it.path.endsWith(".Alias") }.value)
+        assertTrue(values.all { it.path.contains("WANConnectionDevice.2.") })
+        assertTrue(values.all { it.type == "xsd:string" })
+        assertTrue(values.none { it.path.contains("ExternalIPAddress") })
+    }
+
+    @Test
     fun `buildStagingDhcpParameterValues sets DHCP and VLAN without static IP or WiFi`() {
         val profile = Tr069ModelProfiles.resolveBuiltin("V2804AX15T", null)!!
         val values = profile.buildStagingDhcpParameterValues(vlanId = 100)
@@ -236,4 +291,17 @@ class Tr069ModelProfileTest {
         val vlanEnableIndex = paths.indexOfFirst { it.endsWith("X_ZTE-COM_VLANEnable") }
         assertTrue(vlanIdIndex < vlanEnableIndex, "VLANID before VLANEnable: $paths")
     }
+
+    private fun huaweiHg8145Profile() = Tr069ModelProfile(
+        productClass = "HG8145X6",
+        wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
+        wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
+        wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
+        vlanParameters = listOf(
+            Tr069VlanParameterSpec(
+                path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.X_HW_VLAN",
+            ),
+        ),
+        wifiSecurityPrep = Tr069WifiSecurityDefaults.STANDARD_OPEN_WIFI_PREP,
+    )
 }

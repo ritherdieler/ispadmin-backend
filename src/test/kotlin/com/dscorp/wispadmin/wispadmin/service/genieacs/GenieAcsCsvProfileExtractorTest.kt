@@ -130,6 +130,20 @@ class GenieAcsCsvProfileExtractorTest {
         assertTrue(values.any { it.path.endsWith("X_HW_VLAN") && it.value == "100" })
         assertTrue(values.any { it.path.endsWith("WLANConfiguration.1.SSID") && it.value == "wifi24" })
         assertTrue(values.any { it.path.endsWith("WLANConfiguration.5.SSID") && it.value == "wifi5" })
+        val client = profile.forClientInternetWan(2)
+        val clientValues = client.buildClientInternetWanParameterValues(
+            ip = "192.168.30.10",
+            subnetMask = "255.255.255.0",
+            gateway = "192.168.30.1",
+            dns = "8.8.8.8",
+            vlanId = 100,
+            connectionName = "2_INTERNET_R_VID_100",
+        )
+        assertTrue(clientValues.any { it.path.contains("WANConnectionDevice.2") && it.path.endsWith("X_HW_VLAN") })
+        assertTrue(clientValues.any { it.path.endsWith("X_HW_SERVICELIST") && it.value == "INTERNET" })
+        assertTrue(clientValues.any { it.path.endsWith("X_HW_LANBIND.Lan1Enable") && it.value == "1" })
+        assertTrue(clientValues.none { it.path.contains("X_ZTE-COM_") }, clientValues.map { it.path }.toString())
+        assertTrue(client.usesHuaweiWanExtensions())
     }
 
     @Test

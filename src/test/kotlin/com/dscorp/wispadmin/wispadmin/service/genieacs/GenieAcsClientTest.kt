@@ -412,6 +412,60 @@ class GenieAcsClientTest {
         )
 
     @Test
+    fun `addTag posts encoded tag path`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val ok = client.addTag("B46415-V2804AX15T-12345B4641531C0B6", "c:JUAN PEREZ")
+
+        assertTrue(ok)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertTrue(request.path!!.contains("/devices/"))
+        assertTrue(request.path!!.contains("/tags/"))
+        assertTrue(request.path!!.contains("JUAN"), request.path)
+        assertTrue(
+            request.path!!.contains("JUAN%20PEREZ") || request.path!!.contains("JUAN+PEREZ"),
+            request.path,
+        )
+    }
+
+    @Test
+    fun `deleteTag deletes encoded tag path`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val ok = client.deleteTag("dev-1", "sub-744")
+
+        assertTrue(ok)
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertTrue(request.path!!.contains("/tags/sub-744"), request.path)
+    }
+
+    @Test
+    fun `listTags reads _tags array from device projection`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [{
+                      "_id":"dev-1",
+                      "_tags":["sub-10","lab","c:OLD"]
+                    }]
+                    """.trimIndent()
+                )
+        )
+
+        val tags = client.listTags("dev-1")
+
+        assertEquals(listOf("sub-10", "lab", "c:OLD"), tags)
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertTrue(request.path!!.contains("projection=_tags") || request.path!!.contains("projection=_tags"), request.path)
+    }
+
+    @Test
     fun `formatTaskError includes HTTP status and GenieACS detail`() {
         val formatted = GenieAcsClient.formatTaskError(
             GenieAcsTaskResult(

@@ -105,6 +105,74 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
+    fun `initializeStatuses ONLY_TV CATV sets olt and tr069 NA`() {
+        val subscription = baseSubscription().apply { fiberOnu = null }
+        service.initializeStatuses(subscription, InstallationType.ONLY_TV_FIBER)
+        assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
+        assertEquals(OltProvisionStatus.NA, subscription.oltProvisionStatus)
+        assertEquals(Tr069ProvisionStatus.NA, subscription.tr069ProvisionStatus)
+    }
+
+    @Test
+    fun `initializeStatuses ONLY_TV with ONU sets olt and tr069 PENDING when ACS on`() {
+        val enabledService = SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository,
+            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
+                enabled = true
+            },
+            tr069PostInstallProvisioner = mockk(relaxed = true),
+        )
+        val subscription = baseSubscription().apply {
+            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+        }
+        enabledService.initializeStatuses(subscription, InstallationType.ONLY_TV_FIBER)
+        assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
+        assertEquals(OltProvisionStatus.PENDING, subscription.oltProvisionStatus)
+        assertEquals(Tr069ProvisionStatus.PENDING, subscription.tr069ProvisionStatus)
+    }
+
+    @Test
+    fun `applyInstallationResult ONLY_TV with ONU marks olt COMPLETE`() {
+        val subscription = baseSubscription().apply {
+            installationType = InstallationType.ONLY_TV_FIBER
+            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+            mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
+            oltProvisionStatus = OltProvisionStatus.PENDING
+            tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+        }
+        service.applyInstallationResult(
+            subscription,
+            InstallationResult(queueAdded = false, onuAuthorized = true, onuSn = "VSOL0031C0B6"),
+            InstallationType.ONLY_TV_FIBER,
+        )
+        assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
+        assertEquals(OltProvisionStatus.COMPLETE, subscription.oltProvisionStatus)
+        assertEquals(Tr069ProvisionStatus.PENDING, subscription.tr069ProvisionStatus)
+    }
+
+    @Test
+    fun `applyInstallationResult ONLY_TV CATV keeps olt and tr069 NA`() {
+        val subscription = baseSubscription().apply {
+            installationType = InstallationType.ONLY_TV_FIBER
+            mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
+            oltProvisionStatus = OltProvisionStatus.NA
+            tr069ProvisionStatus = Tr069ProvisionStatus.NA
+        }
+        service.applyInstallationResult(
+            subscription,
+            InstallationResult(queueAdded = false),
+            InstallationType.ONLY_TV_FIBER,
+        )
+        assertEquals(OltProvisionStatus.NA, subscription.oltProvisionStatus)
+        assertEquals(Tr069ProvisionStatus.NA, subscription.tr069ProvisionStatus)
+    }
+
+    @Test
     fun `applyInstallationResult marks complete and clears retry when queue ok`() {
         val subscription = baseSubscription().apply {
             mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
@@ -301,6 +369,47 @@ class SubscriptionProvisionServiceTest {
             installationType = InstallationType.FIBER
             oltProvisionStatus = OltProvisionStatus.PENDING
             tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
+        }
+        every { repository.findById(42) } returns Optional.of(subscription)
+
+        assertThrows(IllegalStateException::class.java) {
+            service.retryTr069(42)
+        }
+        verify(exactly = 0) { tr069PostInstallProvisioner.apply(any(), any()) }
+    }
+
+    @Test
+    fun `retryTr069 applies for ONLY_TV with ONU`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.ONLY_TV_FIBER
+            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+            vlan = "100"
+        }
+        every { repository.findById(42) } returns Optional.of(subscription)
+        every {
+            tr069PostInstallProvisioner.apply(any(), any())
+        } returns SubscriptionDto(
+            id = 42,
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
+        )
+
+        val result = service.retryTr069(42)
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
+        verify(exactly = 1) { tr069PostInstallProvisioner.apply(any(), any()) }
+    }
+
+    @Test
+    fun `retryTr069 throws for ONLY_TV without ONU`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.ONLY_TV_FIBER
+            fiberOnu = null
+            oltProvisionStatus = OltProvisionStatus.NA
+            tr069ProvisionStatus = Tr069ProvisionStatus.NA
         }
         every { repository.findById(42) } returns Optional.of(subscription)
 

@@ -8,6 +8,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -83,32 +84,34 @@ class Tr069ProvisioningServiceTest {
         val outcome = service.provision(sampleRequest())
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
-        val posts = drainPostBodies()
-        assertTrue(posts.any { it.contains("\"addObject\"") && it.contains("WANConnectionDevice\"") }, posts.toString())
-        assertTrue(posts.any { it.contains("WANConnectionDevice.2.WANIPConnection") }, posts.toString())
-        val spvs = posts.filter { it.contains("setParameterValues") }
-        assertEquals(1, spvs.size, posts.toString())
-        val wanAndWifiSpv = spvs.first()
+        val requests = drainAllRequests()
+        val addObjects = requests.filter { it.method == "POST" && it.body.contains("\"addObject\"") }
+        assertEquals(2, addObjects.size, requests.toString())
+        assertTrue(addObjects.all { !it.path.contains("connection_request") }, addObjects.map { it.path }.toString())
+        assertTrue(addObjects.any { it.body.contains("WANConnectionDevice\"") }, addObjects.map { it.body }.toString())
+        assertTrue(
+            addObjects.any { it.body.contains("WANConnectionDevice.2.WANIPConnection") },
+            addObjects.map { it.body }.toString(),
+        )
+        val spvPosts = requests.filter { it.method == "POST" && it.body.contains("setParameterValues") }
+        assertEquals(1, spvPosts.size, requests.toString())
+        assertTrue(spvPosts.first().path.contains("connection_request"), spvPosts.first().path)
+        val wanAndWifiSpv = spvPosts.first().body
         assertTrue(wanAndWifiSpv.contains("WANConnectionDevice.2"), wanAndWifiSpv)
         assertTrue(wanAndWifiSpv.contains("INTERNET"), wanAndWifiSpv)
         assertTrue(wanAndWifiSpv.contains("192.168.123.4"), wanAndWifiSpv)
         assertTrue(wanAndWifiSpv.contains("WLANConfiguration"), wanAndWifiSpv)
-        assertTrue(posts.any { it.contains("\"refreshObject\"") && it.contains("WANConnectionDevice") }, posts.toString())
+        assertTrue(
+            requests.none { it.method == "POST" && it.body.contains("\"refreshObject\"") },
+            "cold start must skip refreshObject",
+        )
     }
 
     @Test
-    fun `after AddObject waits until WANIP exists before SPV`() {
+    fun `queues AddObject then SPV without waiting for WANIP in ACS cache`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
-        enqueueRefreshWanTree()
-        server.enqueue(wanConnectionTree(1))
-        server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTreeWithoutWanIp(1, 2))
-        server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTreeWithoutWanIp(1, 2))
-        server.enqueue(wanConnectionTree(1, 2))
+        enqueueCreateClientWan()
         enqueueClientWanAndWifiSuccess("192.168.123.4")
 
         val outcome = service.provision(sampleRequest())
@@ -118,28 +121,23 @@ class Tr069ProvisioningServiceTest {
         val firstSpvIndex = requests.indexOfFirst { request ->
             request.method == "POST" && request.body.contains("setParameterValues")
         }
-        assertTrue(firstSpvIndex > 0, "expected SPV after waiting for WANIP")
+        assertTrue(firstSpvIndex > 0, "expected SPV after queued AddObject")
         val wanGetsBeforeSpv = requests.take(firstSpvIndex).count { request ->
             request.method == "GET" && request.path.contains("WANConnectionDevice")
         }
-        assertTrue(
-            wanGetsBeforeSpv >= 3,
-            "expected extra WAN tree poll after AddObject before SPV, got $wanGetsBeforeSpv",
-        )
+        assertTrue(wanGetsBeforeSpv <= 2, "S1 must not poll ACS until WANIP exists, got $wanGetsBeforeSpv")
     }
 
     @Test
     fun `stale ACS WCD2 after OLT reauth still AddObject when refresh shows only WCD1`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(1, 2))
         enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTreeWithoutWanIp(1, 2))
+        server.enqueue(wanConnectionTree(1))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTree(1, 2))
         enqueueClientWanAndWifiSuccess("192.168.123.4")
 
         val outcome = service.provision(sampleRequest())
@@ -271,10 +269,90 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
+    fun `Huawei HG8145 queues WAN SPV then WiFi SPV with one CR and X_HW leaves`() {
+        registerHuaweiProfile()
+        server.enqueue(huaweiDeviceList())
+        emptyDeviceQueue()
+        enqueueCreateClientWan()
+        enqueueHuaweiApplySuccess("192.168.30.250")
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                onuSerial = "48575443C6FBA6AA",
+                onuTypeName = "HG8145X6",
+                ip = "192.168.30.250",
+                ipSegment = "192.168.30.0/24",
+                wanVlanId = 100,
+                wifiSsid24 = "lab-hg8145-24",
+                wifiSsid5 = "lab-hg8145-5",
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val requests = drainAllRequests()
+        val addObjects = requests.filter { it.method == "POST" && it.body.contains("\"addObject\"") }
+        assertTrue(addObjects.all { !it.path.contains("connection_request") }, addObjects.map { it.path }.toString())
+        val spvs = requests.filter { it.method == "POST" && it.body.contains("setParameterValues") }
+        assertEquals(2, spvs.size, spvs.map { it.body.take(80) }.toString())
+        val wanSpv = spvs.first { it.body.contains("ExternalIPAddress") }
+        val wifiSpv = spvs.first { it.body.contains("WLANConfiguration") }
+        assertTrue(!wanSpv.path.contains("connection_request"), wanSpv.path)
+        assertTrue(wifiSpv.path.contains("connection_request"), wifiSpv.path)
+        assertTrue(wanSpv.body.contains("X_HW_SERVICELIST"), wanSpv.body)
+        assertTrue(wanSpv.body.contains("X_HW_LANBIND"), wanSpv.body)
+        assertTrue(wanSpv.body.contains("X_HW_VLAN"), wanSpv.body)
+        assertTrue(!wanSpv.body.contains("X_ZTE-COM_"), wanSpv.body)
+        assertTrue(!wanSpv.body.contains("WLANConfiguration"), wanSpv.body)
+        assertTrue(!wifiSpv.body.contains("BeaconType"), wifiSpv.body)
+        assertTrue(!wifiSpv.body.contains("ExternalIPAddress"), wifiSpv.body)
+    }
+
+    @Test
+    fun `Huawei isolated L3 SPV when GPV leaves NAT off and empty mask`() {
+        registerHuaweiProfile()
+        server.enqueue(huaweiDeviceList())
+        emptyDeviceQueue()
+        enqueueClientWanAlreadyPresent()
+        server.enqueue(taskAccepted())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        server.enqueue(deviceHuaweiL3(nat = false, mask = "", dns = "192.168.0.1"))
+        server.enqueue(deviceHuaweiL3(nat = false, mask = "", dns = "192.168.0.1"))
+        server.enqueue(deviceHuaweiL3(nat = false, mask = "", dns = "192.168.0.1"))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp("192.168.30.250"))
+        server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
+        server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                onuSerial = "48575443C6FBA6AA",
+                onuTypeName = "HG8145X6",
+                ip = "192.168.30.250",
+                ipSegment = "192.168.30.0/24",
+                wanVlanId = 100,
+                wifiSsid24 = "lab-hg8145-24",
+                wifiSsid5 = "lab-hg8145-5",
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val posts = drainPostBodies()
+        val isolated = posts.last { it.contains("setParameterValues") }
+        assertTrue(isolated.contains("NATEnabled"), isolated)
+        assertTrue(isolated.contains("SubnetMask"), isolated)
+        assertTrue(isolated.contains("DNSServers"), isolated)
+        assertTrue(!isolated.contains("WLANConfiguration"), isolated)
+    }
+
+    @Test
     fun `addObject fault returns MANUAL_REQUIRED`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
-        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1))
         server.enqueue(
             MockResponse()
@@ -365,6 +443,50 @@ class Tr069ProvisioningServiceTest {
         assertTrue(wanSpv.contains("\"100\""), "expected VLAN 100 in SPV payload: $wanSpv")
         assertTrue(wanSpv.contains("X_CT-COM_VLANIDMark"), wanSpv)
         assertTrue(wanSpv.contains("2_INTERNET_R_VID_100"), wanSpv)
+    }
+
+    @Test
+    fun `connectionName override is used in WAN SPV`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueClientWanAlreadyPresent()
+        enqueueClientWanAndWifiSuccess("192.168.123.4")
+
+        val outcome = service.provision(
+            sampleRequest().copy(connectionName = "744 INTERNET JUAN PEREZ"),
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val wanSpv = drainPostBodies().first { it.contains("setParameterValues") && it.contains("ExternalIPAddress") }
+        assertTrue(wanSpv.contains("744 INTERNET JUAN PEREZ"), wanSpv)
+        assertFalse(wanSpv.contains("2_INTERNET_R_VID_1"), wanSpv)
+    }
+
+    @Test
+    fun `identityOnly sets WAN Name without IP or WiFi`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(wanConnectionTree(1))
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                ip = null,
+                ipSegment = null,
+                wifiSsid24 = null,
+                wifiSsid5 = null,
+                identityOnly = true,
+                connectionName = "12 TV CARLOS LOPEZ",
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val bodies = drainPostBodies()
+        val nameSpv = bodies.first { it.contains("setParameterValues") }
+        assertTrue(nameSpv.contains("12 TV CARLOS LOPEZ"), nameSpv)
+        assertFalse(nameSpv.contains("ExternalIPAddress"), nameSpv)
+        assertFalse(nameSpv.contains("SSID"), nameSpv)
     }
 
     @Test
@@ -498,8 +620,6 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(taskAccepted())
         server.enqueue(invalidParameterNameFault(taskId = "task-1"))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTree(1, 2))
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
@@ -525,29 +645,25 @@ class Tr069ProvisioningServiceTest {
     }
 
     private fun enqueueClientWanAlreadyPresent() {
+        server.enqueue(wanConnectionTree(1, 2))
         enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1, 2))
         server.enqueue(wanConnectionTree(1, 2))
     }
 
     private fun enqueueCreateClientWan() {
-        enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTreeWithoutWanIp(1, 2))
+        server.enqueue(wanConnectionTree(1))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTree(1, 2))
     }
 
     private fun enqueueF6600rCreateClientWan() {
+        server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         enqueueRefreshWanTree()
         server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         server.enqueue(wanConnectionTree(1, wanDeviceIndex = 1, withWanIp = true))
         server.enqueue(taskAccepted())
-        server.enqueue(emptyFaults())
-        server.enqueue(wanConnectionTreeWithWanIpInstance(wcdIndex = 1, wanIpInstance = 2, wanDeviceIndex = 1))
     }
 
     private fun enqueueF6600rClientWanAndWifiSuccess(ip: String) {
@@ -568,6 +684,41 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceClientWanIp(ip))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
+    }
+
+    private fun registerHuaweiProfile() {
+        val huawei = Tr069ModelProfile(
+            productClass = "HG8145X6",
+            wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
+            wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
+            wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
+            vlanParameters = listOf(
+                Tr069VlanParameterSpec(
+                    path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.X_HW_VLAN",
+                ),
+            ),
+            wifiSecurityPrep = Tr069WifiSecurityDefaults.STANDARD_OPEN_WIFI_PREP,
+        )
+        Tr069ModelProfiles.registerDynamicResolver { onuTypeName, productClass ->
+            if (onuTypeName == "HG8145X6" || productClass == "HG8145X6") {
+                huawei
+            } else {
+                Tr069ModelProfiles.resolveBuiltin(onuTypeName, productClass)
+            }
+        }
+    }
+
+    private fun enqueueHuaweiApplySuccess(ip: String) {
+        server.enqueue(taskAccepted())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        repeat(3) { server.enqueue(emptyDevices()) }
+        server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp(ip))
+        server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
+        server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
     }
 
     private data class RecordedCall(
@@ -702,6 +853,32 @@ class Tr069ProvisioningServiceTest {
               "InternetGatewayDevice":{
                 "ManagementServer":{
                   "ConnectionRequestURL":{"_value":"http://192.168.123.4:7547/tr069"}
+                }
+              }
+            }]
+            """.trimIndent()
+        )
+
+    private fun huaweiDeviceList() = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"00259E-HG8145X6-48575443C6FBA6AA",
+              "_lastInform":"2026-08-25T12:00:00.000Z",
+              "_lastBoot":"2026-08-25T11:55:00.000Z",
+              "_deviceId":{
+                "_SerialNumber":"48575443C6FBA6AA",
+                "_ProductClass":"HG8145X6",
+                "_Manufacturer":"Huawei Technologies Co., Ltd",
+                "_OUI":"00259E",
+                "_SoftwareVersion":"V5R021C10S165",
+                "_HardwareVersion":"V5R021"
+              },
+              "InternetGatewayDevice":{
+                "ManagementServer":{
+                  "ConnectionRequestURL":{"_value":"http://192.168.255.245:7547/tr069"}
                 }
               }
             }]
@@ -867,6 +1044,35 @@ class Tr069ProvisioningServiceTest {
                 """.trimIndent()
             )
     }
+
+    private fun deviceHuaweiL3(
+        nat: Boolean,
+        mask: String,
+        dns: String,
+        wanDeviceIndex: Int = 1,
+        wcdIndex: Int = 2,
+        wanIpInstance: Int = 1,
+    ) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"00259E-HG8145X6-48575443C6FBA6AA",
+              "InternetGatewayDevice":{
+                "WANDevice":{"$wanDeviceIndex":{
+                  "WANConnectionDevice":{"$wcdIndex":{
+                    "WANIPConnection":{"$wanIpInstance":{
+                      "NATEnabled":{"_value":"$nat"},
+                      "SubnetMask":{"_value":"$mask"},
+                      "DNSServers":{"_value":"$dns"}
+                    }}
+                  }}
+                }}
+              }
+            }]
+            """.trimIndent()
+        )
 
     private fun deviceWithSsids(
         ssid24: String,

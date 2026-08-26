@@ -179,7 +179,10 @@ class SubscriptionService(
                 newSubscription.installationType
             )
 
-            if (newSubscription.installationType == InstallationType.FIBER) {
+            if (newSubscription.installationType == InstallationType.FIBER ||
+                (newSubscription.installationType == InstallationType.ONLY_TV_FIBER &&
+                    newSubscription.onu != null)
+            ) {
                 processOnuForFiber(subscriptionToSave, newSubscription)
             }
 

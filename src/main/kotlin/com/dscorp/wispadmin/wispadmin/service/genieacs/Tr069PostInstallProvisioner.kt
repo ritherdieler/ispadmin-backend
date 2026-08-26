@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import org.slf4j.LoggerFactory
@@ -21,6 +22,7 @@ class Tr069PostInstallProvisioner(
     private val cipher: CrmSecretCipher,
     private val acsSyncService: SubscriptionAcsSyncService,
     private val fiberInstallationStrategy: FiberInstallationStrategy,
+    private val tagger: GenieAcsSubscriptionTagger,
 ) {
     private val log = LoggerFactory.getLogger(Tr069PostInstallProvisioner::class.java)
 
@@ -47,7 +49,10 @@ class Tr069PostInstallProvisioner(
     ): SubscriptionDto {
         persistWifiFields(subscriptionId, request)
 
-        if (!properties.enabled || request.installationType != InstallationType.FIBER) {
+        val subscription = repository.findById(subscriptionId).orElse(null)
+            ?: return enrichDtoWithoutPersist(dto, request)
+
+        if (!shouldProvisionTr069(request, subscription)) {
             return persistStatus(
                 subscriptionId = subscriptionId,
                 request = request,
@@ -61,9 +66,6 @@ class Tr069PostInstallProvisioner(
         if (dto.tr069ProvisionStatus == Tr069ProvisionStatus.COMPLETE) {
             return repository.findById(subscriptionId).map { it.toDto() }.orElse(dto)
         }
-
-        val subscription = repository.findById(subscriptionId).orElse(null)
-            ?: return enrichDtoWithoutPersist(dto, request)
 
         val oltStatus = subscription.oltProvisionStatus ?: dto.oltProvisionStatus
         if (oltStatus != OltProvisionStatus.COMPLETE) {
@@ -91,14 +93,32 @@ class Tr069PostInstallProvisioner(
         if (request.vlan.isNullOrBlank() && !subscription.vlan.isNullOrBlank()) {
             request.vlan = subscription.vlan
         }
-        val wanVlanId = fiberInstallationStrategy.resolveVlan(
-            subscription.apply {
-                if (vlan.isNullOrBlank()) {
-                    vlan = request.vlan
-                }
-            }
-        ).toInt()
 
+        val identityOnly = request.installationType == InstallationType.ONLY_TV_FIBER
+        val wanVlanId = if (identityOnly) {
+            SubscriptionVlanRules.requireAppVlan(request.vlan ?: subscription.vlan).toInt()
+        } else {
+            fiberInstallationStrategy.resolveVlan(
+                subscription.apply {
+                    if (vlan.isNullOrBlank()) {
+                        vlan = request.vlan
+                    }
+                }
+            ).toInt()
+        }
+
+        val kind = GenieAcsSubscriptionTags.serviceKind(
+            installationType = request.installationType ?: subscription.installationType,
+            planType = subscription.plan?.type,
+            planName = subscription.plan?.name,
+        )
+        val fullName = customerFullName(subscription, request)
+        val connectionName = GenieAcsSubscriptionTags.wanConnectionName(
+            subscriptionId = subscriptionId,
+            kind = kind,
+            fullName = fullName,
+        )
+        val previousDeviceId = subscription.tr069DeviceId
         val smartoltSerial = request.onu?.sn ?: subscription.fiberOnu?.sn
         val outcome = provisioningService.provision(
             Tr069ProvisionRequest(
@@ -112,6 +132,8 @@ class Tr069PostInstallProvisioner(
                 wifiPassword5 = resolvePassword(request.wifiPassword5, subscription.wifiPassword5Enc),
                 waitTimeoutMs = waitTimeout,
                 wanVlanId = wanVlanId,
+                connectionName = connectionName,
+                identityOnly = identityOnly,
             )
         )
 
@@ -123,8 +145,57 @@ class Tr069PostInstallProvisioner(
             error = outcome.error,
             messageOverride = outcome.message,
         )
+        applySubscriptionTags(
+            deviceId = outcome.deviceId,
+            subscriptionId = subscriptionId,
+            kind = kind,
+            fullName = fullName,
+            previousDeviceId = previousDeviceId,
+        )
         syncAcsSnapshot(subscriptionId, outcome, smartoltSerial)
         return enriched
+    }
+
+    private fun shouldProvisionTr069(
+        request: SubscriptionRequest,
+        subscription: Subscription?,
+    ): Boolean {
+        if (!properties.enabled) return false
+        return when (request.installationType) {
+            InstallationType.FIBER -> true
+            InstallationType.ONLY_TV_FIBER ->
+                request.onu != null || subscription?.fiberOnu != null
+            InstallationType.WIRELESS -> false
+        }
+    }
+
+    private fun customerFullName(subscription: Subscription, request: SubscriptionRequest): String {
+        val fromEntity = listOf(subscription.firstName, subscription.lastName)
+            .mapNotNull { it?.trim()?.takeIf { part -> part.isNotBlank() && part != "null" } }
+            .joinToString(" ")
+        if (fromEntity.isNotBlank()) return fromEntity
+        return "${request.firstName} ${request.lastName}".trim()
+    }
+
+    private fun applySubscriptionTags(
+        deviceId: String?,
+        subscriptionId: Int,
+        kind: GenieAcsServiceKind,
+        fullName: String,
+        previousDeviceId: String?,
+    ) {
+        val id = deviceId?.takeIf { it.isNotBlank() } ?: return
+        try {
+            tagger.apply(
+                deviceId = id,
+                subscriptionId = subscriptionId,
+                kind = kind,
+                fullName = fullName,
+                previousDeviceId = previousDeviceId,
+            )
+        } catch (ex: Exception) {
+            log.warn("Fallo no bloqueante al etiquetar device {} de {}: {}", id, subscriptionId, ex.message)
+        }
     }
 
     private fun syncAcsSnapshot(
@@ -242,7 +313,7 @@ class Tr069PostInstallProvisioner(
     private fun enrichDtoWithoutPersist(dto: SubscriptionDto, request: SubscriptionRequest): SubscriptionDto {
         val status = when {
             !properties.enabled -> Tr069ProvisionStatus.NA
-            request.installationType != InstallationType.FIBER -> Tr069ProvisionStatus.NA
+            !shouldProvisionTr069(request, null) -> Tr069ProvisionStatus.NA
             else -> dto.tr069ProvisionStatus ?: Tr069ProvisionStatus.PENDING
         }
         return dto.copy(

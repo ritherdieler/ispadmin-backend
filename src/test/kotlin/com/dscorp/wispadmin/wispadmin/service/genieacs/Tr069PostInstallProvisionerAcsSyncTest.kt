@@ -27,6 +27,7 @@ class Tr069PostInstallProvisionerAcsSyncTest {
     private val cipher = mockk<CrmSecretCipher>(relaxed = true)
     private val acsSyncService = mockk<SubscriptionAcsSyncService>(relaxed = true)
     private val fiberInstallationStrategy = mockk<FiberInstallationStrategy>()
+    private val tagger = mockk<GenieAcsSubscriptionTagger>(relaxed = true)
     private lateinit var provisioner: Tr069PostInstallProvisioner
 
     @BeforeEach
@@ -38,6 +39,7 @@ class Tr069PostInstallProvisionerAcsSyncTest {
             cipher = cipher,
             acsSyncService = acsSyncService,
             fiberInstallationStrategy = fiberInstallationStrategy,
+            tagger = tagger,
         )
         every { fiberInstallationStrategy.resolveVlan(any()) } returns "1"
         every { repository.findById(10) } returns Optional.of(

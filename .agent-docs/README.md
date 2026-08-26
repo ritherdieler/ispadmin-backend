@@ -58,6 +58,8 @@
 | **GenieACS — despliegue VPS** | [genieacs-despliegue-gigafiber.md](./genieacs-despliegue-gigafiber.md) (incluye snapshot `subscription_acs` V26) |
 | **GenieACS — plan implementación VPS** | [genieacs-plan-implementacion-vps.md](./genieacs-plan-implementacion-vps.md) |
 | **GenieACS — parámetros writable VSOL V2804AX15T** | [genieacs-vsol-v2804-parametros.md](./genieacs-vsol-v2804-parametros.md) |
+| **E2E TR-069 — validación de modelo (incl. lab HG8145X6 WAN)** | [tr069-e2e-validacion-modelo.md](./tr069-e2e-validacion-modelo.md) |
+| **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |
 | **Catálogo comandos RouterOS MK2 piloto** | [mikrotik-mk2-comandos-catalogo.md](./mikrotik-mk2-comandos-catalogo.md) |

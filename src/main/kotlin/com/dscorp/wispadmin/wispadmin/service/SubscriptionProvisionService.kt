@@ -53,8 +53,13 @@ class SubscriptionProvisionService(
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
-                subscription.oltProvisionStatus = OltProvisionStatus.NA
-                subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
+                val hasOnu = subscription.fiberOnu != null
+                subscription.oltProvisionStatus =
+                    if (hasOnu) OltProvisionStatus.PENDING else OltProvisionStatus.NA
+                subscription.tr069ProvisionStatus = when {
+                    hasOnu && genieAcsProperties.enabled -> Tr069ProvisionStatus.PENDING
+                    else -> Tr069ProvisionStatus.NA
+                }
             }
         }
     }
@@ -81,7 +86,15 @@ class SubscriptionProvisionService(
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
-                subscription.oltProvisionStatus = OltProvisionStatus.NA
+                val hasOnu = subscription.fiberOnu != null || result.onuSn != null
+                if (hasOnu) {
+                    subscription.oltProvisionStatus =
+                        if (result.onuAuthorized) OltProvisionStatus.COMPLETE
+                        else OltProvisionStatus.PENDING
+                } else {
+                    subscription.oltProvisionStatus = OltProvisionStatus.NA
+                    subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
+                }
             }
         }
 
@@ -181,7 +194,7 @@ class SubscriptionProvisionService(
 
     private fun maybeRetryTr069(subscription: Subscription, request: SubscriptionRequest) {
         if (!genieAcsProperties.enabled) return
-        if (subscription.installationType != InstallationType.FIBER) return
+        if (!isTr069Eligible(subscription)) return
         if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) return
         if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING) return
         val id = subscription.id ?: return
@@ -267,8 +280,8 @@ class SubscriptionProvisionService(
         val subscription = repository.findById(subscriptionId)
             .orElseThrow { NoSuchElementException("Suscripción $subscriptionId no encontrada") }
 
-        if (subscription.installationType != InstallationType.FIBER) {
-            throw IllegalStateException("El reintento TR-069 solo aplica a instalaciones FIBER")
+        if (!isTr069Eligible(subscription)) {
+            throw IllegalStateException("El reintento TR-069 solo aplica a instalaciones FIBER o TV con ONU")
         }
         if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) {
             throw IllegalStateException(
@@ -288,6 +301,14 @@ class SubscriptionProvisionService(
 
         val request = buildRequestFromSubscription(subscription)
         return tr069PostInstallProvisioner.apply(subscription.toDto(), request)
+    }
+
+    private fun isTr069Eligible(subscription: Subscription): Boolean {
+        return when (subscription.installationType) {
+            InstallationType.FIBER -> true
+            InstallationType.ONLY_TV_FIBER -> subscription.fiberOnu != null
+            else -> false
+        }
     }
 
     private fun persistProvisionError(ex: Exception) {
