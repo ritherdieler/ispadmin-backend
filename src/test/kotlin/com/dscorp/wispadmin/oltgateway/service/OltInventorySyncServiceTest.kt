@@ -16,6 +16,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
 import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import io.mockk.every
@@ -43,9 +44,13 @@ class OltInventorySyncServiceTest {
     private val syncRunRepository = mockk<OltMgrSyncRunRepository>()
     private val taskRepository = mockk<OltMgrTaskRepository>()
     private val cliBus = mockk<OltCliBus>()
+    private val snmpClient = mockk<OltSnmpClient>()
     private val properties = OltGatewayProperties().apply {
         oltId = "gigafiber-ma5608t"
         sync.skipWhenWriteRunning = true
+        // Legacy unit tests mock SSH inventory; production path is SNMP-first.
+        snmp.enabled = false
+        snmp.allowSshInventoryFallback = true
     }
 
     private lateinit var service: OltInventorySyncService
@@ -65,7 +70,8 @@ class OltInventorySyncServiceTest {
             syncRunRepository = syncRunRepository,
             taskRepository = taskRepository,
             properties = properties,
-            cliBus = cliBus
+            cliBus = cliBus,
+            snmpClient = snmpClient
         )
         every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         every { taskRepository.existsByStatus("running") } returns false
@@ -88,6 +94,7 @@ class OltInventorySyncServiceTest {
         every { onuRepository.save(any()) } answers {
             firstArg<OltMgrOnu>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
         }
+        every { onuRepository.flush() } returns Unit
         every { auditLogRepository.saveAll(any<Iterable<OltMgrAuditLog>>()) } answers {
             firstArg<Iterable<OltMgrAuditLog>>().toList()
         }
@@ -115,6 +122,217 @@ class OltInventorySyncServiceTest {
         assertEquals(olt, savedOnu.olt)
         assertNotNull(savedOnu.status)
         assertEquals("online", savedOnu.status?.runState)
+    }
+
+    @Test
+    fun `syncInventoryFromSnmp usa cliente SNMP y no SSH`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "SNSNMP0001", slot = 1, port = 0, ontId = 2, runState = "online")
+        )
+        val saved = slot<Iterable<OltMgrOnu>>()
+        every { onuRepository.saveAll(capture(saved)) } answers { firstArg<Iterable<OltMgrOnu>>().toList() }
+
+        val result = service.syncInventoryFromSnmp()
+
+        assertEquals(1, result.inserted)
+        assertNull(result.skippedReason)
+        assertEquals("SNSNMP0001", saved.captured.single().sn)
+        verify(exactly = 1) { snmpClient.listConfiguredOnus() }
+        verify(exactly = 0) { queryFacade.listOnusParsed() }
+    }
+
+    @Test
+    fun `syncInventory usa SNMP cuando snmp enabled (SSH deprecado)`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        properties.snmp.allowSshInventoryFallback = false
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "SNSCHED001", slot = 0, port = 1, ontId = 0, runState = "offline")
+        )
+        every { onuRepository.saveAll(any<Iterable<OltMgrOnu>>()) } answers {
+            firstArg<Iterable<OltMgrOnu>>().toList()
+        }
+
+        val result = service.syncInventory()
+
+        assertEquals(1, result.inserted)
+        verify(exactly = 1) { snmpClient.listConfiguredOnus() }
+        verify(exactly = 0) { queryFacade.listOnusParsed() }
+    }
+
+    @Test
+    fun `syncInventory exige SNMP si fallback SSH desactivado`() {
+        properties.snmp.enabled = false
+        properties.snmp.allowSshInventoryFallback = false
+        val result = service.syncInventory()
+        assertEquals("snmp_required", result.skippedReason)
+        verify(exactly = 0) { queryFacade.listOnusParsed() }
+        verify(exactly = 0) { snmpClient.listConfiguredOnus() }
+    }
+
+    @Test
+    fun `syncInventoryFromSnmp skipped si snmp disabled`() {
+        properties.snmp.enabled = false
+        val result = service.syncInventoryFromSnmp()
+        assertEquals("snmp_required", result.skippedReason)
+        verify(exactly = 0) { snmpClient.listConfiguredOnus() }
+    }
+
+    @Test
+    fun `SNMP empareja SN hex CLI con vendor y migra a formato canonico`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        val existing = OltMgrOnu(
+            id = 21L,
+            sn = "56534F4C0086F6E9",
+            externalId = "gigafiber-ma5608t_0_0_0",
+            olt = olt,
+            board = 0,
+            port = 0,
+            onuIndex = 0,
+            name = "legacy-hex",
+            importedFromOlt = true,
+            status = OltMgrOnuStatusCurrent(
+                onu = OltMgrOnu(id = 21L, sn = "56534F4C0086F6E9", externalId = "x", olt = olt),
+                onuId = 21L,
+                runState = "offline"
+            )
+        )
+        existing.status?.onu = existing
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "VSOL0086F6E9", slot = 0, port = 0, ontId = 0, runState = "online")
+        )
+        val saved = slot<Iterable<OltMgrOnu>>()
+        every { onuRepository.saveAll(capture(saved)) } answers { firstArg<Iterable<OltMgrOnu>>().toList() }
+
+        val result = service.syncInventoryFromSnmp()
+
+        assertEquals(0, result.inserted)
+        assertEquals(1, result.updated)
+        assertEquals(0, result.softDeleted)
+        assertEquals("VSOL0086F6E9", existing.sn)
+        assertEquals("online", existing.status?.runState)
+        assertTrue(saved.captured.any { it.id == 21L && it.sn == "VSOL0086F6E9" })
+    }
+
+    @Test
+    fun `soft-deleted previos que ocupan FSP se tombstonean antes de insert`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        val deleted = OltMgrOnu(
+            id = 205L,
+            sn = "54504C4754742A88",
+            externalId = "gigafiber-ma5608t_1_1_16",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 16,
+            importedFromOlt = true,
+            deletedAt = Instant.parse("2026-08-04T09:53:34Z")
+        )
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(deleted)
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "HWTCNEWA0001", slot = 1, port = 1, ontId = 16, runState = "online")
+        )
+        val savedBatches = mutableListOf<List<OltMgrOnu>>()
+        every { onuRepository.saveAll(any<Iterable<OltMgrOnu>>()) } answers {
+            val list = firstArg<Iterable<OltMgrOnu>>().toList()
+            savedBatches += list
+            list
+        }
+
+        val result = service.syncInventoryFromSnmp()
+
+        assertEquals(1, result.inserted)
+        assertEquals(0, result.softDeleted)
+        assertTrue(deleted.board < 0)
+        assertTrue(deleted.externalId.contains("deleted"))
+        assertTrue(savedBatches.first().any { it.id == 205L && it.board < 0 })
+    }
+
+    @Test
+    fun `soft delete libera posicion unique para insert en mismo sync`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        val existing = OltMgrOnu(
+            id = 22L,
+            sn = "485754430000F944",
+            externalId = "gigafiber-ma5608t_1_0_25",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 25,
+            importedFromOlt = true
+        )
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "HWTCNEW00001", slot = 1, port = 0, ontId = 25, runState = "online")
+        )
+        val savedBatches = mutableListOf<List<OltMgrOnu>>()
+        every { onuRepository.saveAll(any<Iterable<OltMgrOnu>>()) } answers {
+            val list = firstArg<Iterable<OltMgrOnu>>().toList()
+            savedBatches += list
+            list
+        }
+
+        val result = service.syncInventoryFromSnmp()
+
+        assertEquals(1, result.softDeleted)
+        assertEquals(1, result.inserted)
+        assertNotNull(existing.deletedAt)
+        // Tombstone must leave (1,0,25) free before insert flush
+        assertTrue(existing.board < 0 || existing.externalId.contains("deleted"))
+        assertTrue(savedBatches.size >= 2, "expected phased flush, got ${savedBatches.size}")
+        assertTrue(savedBatches.first().any { it.id == 22L && it.deletedAt != null })
+        assertTrue(savedBatches.last().any { it.sn == "HWTCNEW00001" && it.board == 1 && it.port == 0 && it.onuIndex == 25 })
+    }
+
+    @Test
+    fun `swap de posiciones entre dos ONUs no choca unique`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        val a = OltMgrOnu(
+            id = 31L,
+            sn = "SNSWAP0000A",
+            externalId = "gigafiber-ma5608t_1_0_1",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 1,
+            importedFromOlt = true
+        )
+        val b = OltMgrOnu(
+            id = 32L,
+            sn = "SNSWAP0000B",
+            externalId = "gigafiber-ma5608t_1_0_2",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 2,
+            importedFromOlt = true
+        )
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(a, b)
+        every { snmpClient.listConfiguredOnus() } returns listOf(
+            summary(sn = "SNSWAP0000A", slot = 1, port = 0, ontId = 2, runState = "online"),
+            summary(sn = "SNSWAP0000B", slot = 1, port = 0, ontId = 1, runState = "online")
+        )
+        val savedBatches = mutableListOf<List<OltMgrOnu>>()
+        every { onuRepository.saveAll(any<Iterable<OltMgrOnu>>()) } answers {
+            val list = firstArg<Iterable<OltMgrOnu>>().toList()
+            savedBatches += list
+            list
+        }
+
+        val result = service.syncInventoryFromSnmp()
+
+        assertEquals(0, result.inserted)
+        assertEquals(2, result.updated)
+        assertEquals(2, a.onuIndex)
+        assertEquals(1, b.onuIndex)
+        assertTrue(savedBatches.size >= 2, "expected staging flush before final positions")
     }
 
     @Test

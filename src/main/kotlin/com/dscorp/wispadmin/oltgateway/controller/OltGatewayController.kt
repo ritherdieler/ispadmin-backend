@@ -2,10 +2,14 @@ package com.dscorp.wispadmin.oltgateway.controller
 
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.ErrorResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.HealthResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.OltInfoDto
+import com.dscorp.wispadmin.oltgateway.dto.OltSnmpTrapEventDto
+import com.dscorp.wispadmin.oltgateway.dto.OltSnmpTrapRecentDto
+import com.dscorp.wispadmin.oltgateway.dto.OltSnmpTrapVarbindDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuDetailDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuSummaryListDto
 import com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto
@@ -15,6 +19,7 @@ import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
+import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
 import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -43,7 +48,9 @@ import javax.validation.constraints.Pattern
 class OltGatewayController(
     private val queryFacade: OltGatewayQueryFacade,
     private val inventorySyncService: OltInventorySyncService,
-    private val signalPollService: OltSignalPollService
+    private val signalPollService: OltSignalPollService,
+    private val properties: OltGatewayProperties,
+    private val recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer
 ) {
 
     @GetMapping("/health")
@@ -84,7 +91,11 @@ class OltGatewayController(
     fun oltInfo(): OltInfoDto = queryFacade.oltInfo()
 
     @GetMapping("/onus/autofind")
-    @Operation(summary = "ONUs en autofind", description = "Lista ONUs no confirmadas. Contrato compatible SmartOLT.")
+    @Operation(
+        summary = "ONUs en autofind",
+        description = "Lista ONUs no confirmadas (SNMP listAutofind cuando snmp.enabled; SSH deprecado). " +
+            "Contrato compatible SmartOLT."
+    )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
@@ -131,7 +142,7 @@ class OltGatewayController(
     ): SmartOltOnuBySnResponseDto = queryFacade.bySn(sn)
 
     @GetMapping("/onus")
-    @Operation(summary = "Listado de ONUs", description = "Resumen nativo de ONUs en slots 0/1.")
+    @Operation(summary = "Listado de ONUs", description = "Resumen live vía SNMP listConfiguredOnus (SSH inventory deprecado). Preferir /onus/configured para DB.")
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
@@ -172,7 +183,11 @@ class OltGatewayController(
     ): ConfiguredOnuPageDto = inventorySyncService.listConfigured(page, size)
 
     @PostMapping("/admin/sync/inventory")
-    @Operation(summary = "Sync inventario manual", description = "Ejecuta sync SSH→DB inventory+status y devuelve SyncResult.")
+    @Operation(
+        summary = "Sync inventario (SNMP)",
+        description = "Inventario SN+estado vía SNMP→DB. SSH inventory está deprecado; " +
+            "solo si olt.gateway.snmp.allow-ssh-inventory-fallback=true."
+    )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
@@ -201,8 +216,45 @@ class OltGatewayController(
         )
     }
 
+    @PostMapping("/admin/sync/snmp-inventory")
+    @Operation(
+        summary = "Sync inventario vía SNMP",
+        description = "GETBULK SN+runState → DB (sin SSH). Requiere olt.gateway.snmp.enabled + community RO."
+    )
+    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Resultado del sync SNMP",
+                content = [Content(schema = Schema(implementation = SyncResultDto::class))]
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "API key ausente o inválida",
+                content = [Content(schema = Schema(implementation = ErrorResponseDto::class))]
+            )
+        ]
+    )
+    fun syncSnmpInventory(): SyncResultDto {
+        val result = inventorySyncService.syncInventoryFromSnmp()
+        return SyncResultDto(
+            inserted = result.inserted,
+            updated = result.updated,
+            softDeleted = result.softDeleted,
+            unchanged = result.unchanged,
+            durationMs = result.durationMs,
+            skippedReason = result.skippedReason,
+            error = result.error
+        )
+    }
+
     @PostMapping("/admin/sync/signal")
-    @Operation(summary = "Sync señal óptica manual", description = "Poll óptico SSH→DB (signal_poll) y devuelve SignalPollResult.")
+    @Operation(
+        summary = "Sync señal óptica (SNMP)",
+        description = "GETBULK óptica SNMP→DB (~5 min scheduler). SSH display ont optical-info está deprecado; " +
+            "solo si olt.gateway.snmp.allow-ssh-signal-fallback=true."
+    )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
@@ -227,6 +279,47 @@ class OltGatewayController(
             durationMs = result.durationMs,
             skippedReason = result.skippedReason,
             error = result.error
+        )
+    }
+
+    @GetMapping("/admin/snmp/traps/recent")
+    @Operation(
+        summary = "Traps SNMP recientes (dump)",
+        description = "Buffer en memoria del receptor ASN.1 Huawei (udp olt.gateway.snmp.trap.listen-port). " +
+            "No reusa NetDiag :1620 MikroTik. Requiere trap.enabled=true para recibir."
+    )
+    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Últimos traps recibidos",
+                content = [Content(schema = Schema(implementation = OltSnmpTrapRecentDto::class))]
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "API key ausente o inválida",
+                content = [Content(schema = Schema(implementation = ErrorResponseDto::class))]
+            )
+        ]
+    )
+    fun recentSnmpTraps(
+        @RequestParam(defaultValue = "50") @Min(1) @Max(200) limit: Int
+    ): OltSnmpTrapRecentDto {
+        val trap = properties.snmp.trap
+        return OltSnmpTrapRecentDto(
+            enabled = trap.enabled,
+            listenPort = trap.listenPort,
+            items = recentOltSnmpTrapBuffer.recent(limit).map { event ->
+                OltSnmpTrapEventDto(
+                    receivedAt = event.receivedAt.toString(),
+                    sourceHost = event.sourceHost,
+                    community = event.community,
+                    trapOid = event.trapOid,
+                    trapLabel = event.trapLabel,
+                    varbinds = event.varbinds.map { OltSnmpTrapVarbindDto(it.oid, it.value) }
+                )
+            }
         )
     }
 
@@ -291,7 +384,10 @@ class OltGatewayController(
     ): OnuDetailDto = queryFacade.onuDetail(slot, port, ontId)
 
     @GetMapping("/onus/{slot}/{port}/{ontId}/optical")
-    @Operation(summary = "Info óptica de ONU", description = "RX/TX, temperatura, voltaje y bias.")
+    @Operation(
+        summary = "Info óptica de ONU",
+        description = "RX/TX/OLT-Rx vía SNMP listOptical por puerto (SSH optical-info deprecado)."
+    )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [

@@ -14,6 +14,12 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * SSH inventory reader (`display ont info 0/{slot} all`).
+ * Deprecated: inventory and live listOnus use SNMP [OltSnmpClient.listConfiguredOnus] when enabled.
+ * Kept only for [OltGatewayProperties.SnmpProperties.allowSshInventoryFallback].
+ */
+@Deprecated("SSH inventory is deprecated; use SNMP listConfiguredOnus()")
 class ParallelOnuInventoryReader(
     private val cliBus: OltCliBus,
     private val boardParser: BoardParser,

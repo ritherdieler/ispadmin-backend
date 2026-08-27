@@ -136,3 +136,23 @@ data class ConfiguredOnuPageDto(
     val totalElements: Long,
     val totalPages: Int
 )
+
+data class OltSnmpTrapVarbindDto(
+    val oid: String,
+    val value: String
+)
+
+data class OltSnmpTrapEventDto(
+    val receivedAt: String,
+    val sourceHost: String? = null,
+    val community: String? = null,
+    val trapOid: String? = null,
+    val trapLabel: String? = null,
+    val varbinds: List<OltSnmpTrapVarbindDto> = emptyList()
+)
+
+data class OltSnmpTrapRecentDto(
+    val enabled: Boolean,
+    val listenPort: Int,
+    val items: List<OltSnmpTrapEventDto>
+)

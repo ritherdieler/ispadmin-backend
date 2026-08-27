@@ -26,6 +26,11 @@ import com.dscorp.wispadmin.oltgateway.service.OltSignalPollScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
 import com.dscorp.wispadmin.oltgateway.service.SignalCategoryCalculator
 import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpBusRegistry
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpTrapReceiver
+import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
+import com.dscorp.wispadmin.oltgateway.snmp.Snmp4jOltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import com.dscorp.wispadmin.oltgateway.ssh.OltCommandExecutor
 import com.dscorp.wispadmin.oltgateway.ssh.OltSshClient
@@ -80,6 +85,7 @@ class OltGatewayConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
+    @Suppress("DEPRECATION")
     fun parallelOnuInventoryReader(
         oltCliBus: OltCliBus,
         boardParser: BoardParser,
@@ -108,7 +114,8 @@ class OltGatewayConfig {
         boardParser: BoardParser,
         autofindParser: AutofindParser,
         onuInfoBySnParser: OnuInfoBySnParser,
-        opticalInfoParser: OpticalInfoParser
+        opticalInfoParser: OpticalInfoParser,
+        snmpClient: ObjectProvider<OltSnmpClient>
     ): OltGatewayQueryFacade {
         return OltGatewayQueryService(
             commandExecutor = oltCommandExecutor,
@@ -120,7 +127,8 @@ class OltGatewayConfig {
             boardParser = boardParser,
             autofindParser = autofindParser,
             onuInfoBySnParser = onuInfoBySnParser,
-            opticalInfoParser = opticalInfoParser
+            opticalInfoParser = opticalInfoParser,
+            snmpClient = snmpClient.ifAvailable
         )
     }
 
@@ -200,6 +208,35 @@ class OltGatewayConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "olt.gateway.snmp", name = ["enabled"], havingValue = "true")
+    fun oltSnmpBusRegistry(properties: OltGatewayProperties): OltSnmpBusRegistry {
+        return OltSnmpBusRegistry(acquireTimeoutMs = properties.snmp.acquireTimeoutMs)
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "olt.gateway.snmp", name = ["enabled"], havingValue = "true")
+    fun oltSnmpClient(
+        properties: OltGatewayProperties,
+        oltSnmpBusRegistry: OltSnmpBusRegistry
+    ): OltSnmpClient {
+        return Snmp4jOltSnmpClient(properties, oltSnmpBusRegistry)
+    }
+
+    @Bean
+    fun recentOltSnmpTrapBuffer(properties: OltGatewayProperties): RecentOltSnmpTrapBuffer {
+        return RecentOltSnmpTrapBuffer(properties.snmp.trap.bufferSize)
+    }
+
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "olt.gateway.snmp.trap", name = ["enabled"], havingValue = "true")
+    fun oltSnmpTrapReceiver(
+        properties: OltGatewayProperties,
+        recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer
+    ): OltSnmpTrapReceiver {
+        return OltSnmpTrapReceiver(properties, recentOltSnmpTrapBuffer).also { it.start() }
+    }
+
+    @Bean
     fun oltInventorySyncService(
         queryFacade: OltGatewayQueryFacade,
         oltRepository: OltMgrOltRepository,
@@ -210,6 +247,7 @@ class OltGatewayConfig {
         taskRepository: OltMgrTaskRepository,
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
+        snmpClient: ObjectProvider<OltSnmpClient>,
         transactionManager: PlatformTransactionManager
     ): OltInventorySyncService {
         return OltInventorySyncService(
@@ -222,6 +260,7 @@ class OltGatewayConfig {
             taskRepository = taskRepository,
             properties = properties,
             cliBus = cliBus.ifAvailable,
+            snmpClient = snmpClient.ifAvailable,
             transactionTemplate = TransactionTemplate(transactionManager)
         )
     }
@@ -247,7 +286,8 @@ class OltGatewayConfig {
         opticalInfoParser: OpticalInfoParser,
         signalCategoryCalculator: SignalCategoryCalculator,
         properties: OltGatewayProperties,
-        cliBus: ObjectProvider<OltCliBus>
+        cliBus: ObjectProvider<OltCliBus>,
+        snmpClient: ObjectProvider<OltSnmpClient>
     ): OltSignalPollService {
         return OltSignalPollService(
             oltRepository = oltRepository,
@@ -258,7 +298,8 @@ class OltGatewayConfig {
             opticalInfoParser = opticalInfoParser,
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
-            cliBus = cliBus.ifAvailable
+            cliBus = cliBus.ifAvailable,
+            snmpClient = snmpClient.ifAvailable
         )
     }
 

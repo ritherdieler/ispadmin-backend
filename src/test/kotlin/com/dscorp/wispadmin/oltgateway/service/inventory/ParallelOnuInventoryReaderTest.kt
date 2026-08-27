@@ -23,6 +23,7 @@ import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+@Suppress("DEPRECATION")
 class ParallelOnuInventoryReaderTest {
 
     private val cliBus = mockk<OltCliBus>()

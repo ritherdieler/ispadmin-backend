@@ -19,6 +19,8 @@ import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
 import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
+import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
@@ -38,12 +40,17 @@ open class OltInventorySyncService(
     taskRepository: OltMgrTaskRepository,
     properties: OltGatewayProperties,
     cliBus: OltCliBus? = null,
-    transactionTemplate: TransactionTemplate? = null
+    transactionTemplate: TransactionTemplate? = null,
+    snmpClient: OltSnmpClient? = null
 ) {
 
     companion object {
         private val logger = LoggerFactory.getLogger(OltInventorySyncService::class.java)
         private const val NAME_MAX = 512
+        /** Soft-deleted rows keep unique (olt,board,port,onu_index); park them here. */
+        private const val TOMBSTONE_BOARD = -1
+        /** Temporary board while swapping positions in the same sync flush. */
+        private const val STAGING_BOARD = -2
         private val running = AtomicBoolean(false)
         private val lastStartedAtRef = AtomicReference<Instant?>(null)
         private val lastResultRef = AtomicReference<SyncResult?>(null)
@@ -57,6 +64,7 @@ open class OltInventorySyncService(
         private val taskRepositoryRef = AtomicReference<OltMgrTaskRepository?>(null)
         private val cliBusRef = AtomicReference<OltCliBus?>(null)
         private val transactionTemplateRef = AtomicReference<TransactionTemplate?>(null)
+        private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
     }
 
     init {
@@ -70,6 +78,7 @@ open class OltInventorySyncService(
         taskRepositoryRef.set(taskRepository)
         cliBusRef.set(cliBus)
         transactionTemplateRef.set(transactionTemplate)
+        snmpClientRef.set(snmpClient)
     }
 
     private fun props(): OltGatewayProperties {
@@ -99,6 +108,8 @@ open class OltInventorySyncService(
         taskRepositoryRef.get() ?: error("OltMgrTaskRepository unavailable")
 
     private fun cliBus(): OltCliBus? = cliBusRef.get()
+
+    private fun snmpClient(): OltSnmpClient? = snmpClientRef.get()
 
     fun isRunning(): Boolean = running.get()
 
@@ -150,6 +161,38 @@ open class OltInventorySyncService(
     }
 
     open fun syncInventory(): SyncResult {
+        return syncInventoryInternal(source = resolveInventorySource())
+    }
+
+    open fun syncInventoryFromSnmp(): SyncResult {
+        return syncInventoryInternal(source = InventorySource.SNMP)
+    }
+
+    private enum class InventorySource { SSH, SNMP }
+
+    /**
+     * Inventory sync is SNMP-first. SSH is deprecated for this task and only used when
+     * [OltGatewayProperties.SnmpProperties.allowSshInventoryFallback] is true.
+     */
+    private fun resolveInventorySource(): InventorySource {
+        val properties = props()
+        val snmpReady = properties.snmp.enabled &&
+            properties.snmp.roCommunity.isNotBlank() &&
+            snmpClient() != null
+        if (snmpReady) {
+            return InventorySource.SNMP
+        }
+        if (properties.snmp.allowSshInventoryFallback) {
+            logger.warn(
+                "Inventory sync using deprecated SSH path " +
+                    "(enable olt.gateway.snmp + OLT_GATEWAY_SNMP_RO_COMMUNITY to use SNMP)"
+            )
+            return InventorySource.SSH
+        }
+        return InventorySource.SNMP
+    }
+
+    private fun syncInventoryInternal(source: InventorySource): SyncResult {
         if (!running.compareAndSet(false, true)) {
             return SyncResult(skippedReason = "sync_already_running").also { lastResultRef.set(it) }
         }
@@ -165,7 +208,21 @@ open class OltInventorySyncService(
             }
             val olt = oltRepository().findByName(properties.oltId)
                 .orElseThrow { IllegalStateException("OLT seed missing for ${properties.oltId}") }
-            val snapshot = queryFacade().listOnusParsed()
+            val snapshot = when (source) {
+                InventorySource.SSH -> {
+                    @Suppress("DEPRECATION")
+                    queryFacade().listOnusParsed()
+                }
+                InventorySource.SNMP -> {
+                    val client = snmpClient()
+                        ?: return finish(SyncResult(skippedReason = "snmp_client_unavailable"), startedAt)
+                    if (!properties.snmp.enabled || properties.snmp.roCommunity.isBlank()) {
+                        return finish(SyncResult(skippedReason = "snmp_required"), startedAt)
+                    }
+                    logger.info("Inventory sync via SNMP GETBULK (SSH inventory deprecated)")
+                    client.listConfiguredOnus()
+                }
+            }
             if (snapshot.isEmpty()) {
                 return finish(
                     SyncResult(skippedReason = "empty_snapshot"),
@@ -188,7 +245,7 @@ open class OltInventorySyncService(
                 startedAt
             )
         } catch (ex: Exception) {
-            logger.warn("Inventory sync failed: {}", ex.message)
+            logger.warn("Inventory sync failed (source={}): {}", source, ex.message)
             return finish(
                 SyncResult(error = ex.message),
                 startedAt
@@ -200,10 +257,30 @@ open class OltInventorySyncService(
 
     open fun persistSnapshot(olt: OltMgrOlt, snapshot: List<ParsedOnuSummary>): SyncResult {
         val now = Instant.now()
-        val bySn = snapshot.associateBy { it.sn.uppercase() }
+        val bySn = snapshot.associateBy { HuaweiGponSnmpCodec.normalizeOntSn(it.sn) }
         val existing = onuRepository().findByOlt_IdWithStatus(olt.id!!)
-        val existingBySn = existing.associateBy { it.sn.uppercase() }
+        val existingBySn = linkedMapOf<String, OltMgrOnu>()
+        for (onu in existing) {
+            if (onu.deletedAt != null) continue
+            existingBySn[HuaweiGponSnmpCodec.normalizeOntSn(onu.sn)] = onu
+        }
+        for (onu in existing) {
+            if (onu.deletedAt == null) continue
+            existingBySn.putIfAbsent(HuaweiGponSnmpCodec.normalizeOntSn(onu.sn), onu)
+        }
         val pending = PendingWrites()
+        val softDeletedOnus = linkedSetOf<OltMgrOnu>()
+        val positionMovers = mutableListOf<PositionMove>()
+
+        // Soft-deleted rows still hold unique (olt,board,port,onu_index). Free them first.
+        val staleDeleted = existing.filter { it.deletedAt != null && it.board >= 0 }
+        if (staleDeleted.isNotEmpty()) {
+            for (onu in staleDeleted) {
+                tombstoneDeletedOnu(onu, onu.deletedAt ?: now)
+            }
+            onuRepository().saveAll(staleDeleted)
+            onuRepository().flush()
+        }
 
         var inserted = 0
         var updated = 0
@@ -211,13 +288,30 @@ open class OltInventorySyncService(
         var softDeleted = 0
 
         for (parsed in snapshot) {
-            val current = existingBySn[parsed.sn.uppercase()]
+            val normSn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
+            val current = existingBySn[normSn]
             if (current == null) {
                 pending.onus += buildNewOnu(olt, parsed, now)
                 inserted++
             } else {
+                val beforeBoard = current.board
+                val beforePort = current.port
+                val beforeIndex = current.onuIndex
                 when (applyUpdate(olt, current, parsed, now, pending)) {
-                    UpdateOutcome.UPDATED -> updated++
+                    UpdateOutcome.UPDATED -> {
+                        updated++
+                        if (current.board != beforeBoard ||
+                            current.port != beforePort ||
+                            current.onuIndex != beforeIndex
+                        ) {
+                            positionMovers += PositionMove(
+                                onu = current,
+                                board = current.board,
+                                port = current.port,
+                                onuIndex = current.onuIndex
+                            )
+                        }
+                    }
                     UpdateOutcome.UNCHANGED -> unchanged++
                 }
             }
@@ -225,10 +319,9 @@ open class OltInventorySyncService(
 
         for (onu in existing) {
             if (onu.deletedAt != null) continue
-            if (!bySn.containsKey(onu.sn.uppercase())) {
-                onu.deletedAt = now
-                onu.updatedAt = now
-                pending.onus += onu
+            if (!bySn.containsKey(HuaweiGponSnmpCodec.normalizeOntSn(onu.sn))) {
+                tombstoneDeletedOnu(onu, now)
+                softDeletedOnus += onu
                 pending.audits += OltMgrAuditLog(
                     olt = olt,
                     onu = onu,
@@ -240,12 +333,37 @@ open class OltInventorySyncService(
             }
         }
 
+        // Unique (olt,board,port,onu_index) ignores deleted_at — free slots before insert/move.
+        // Must flush so MySQL sees tombstones/staging before the final batch.
+        if (softDeletedOnus.isNotEmpty()) {
+            onuRepository().saveAll(softDeletedOnus)
+            onuRepository().flush()
+        }
+        if (positionMovers.isNotEmpty()) {
+            for (move in positionMovers) {
+                stagePosition(move.onu)
+            }
+            onuRepository().saveAll(positionMovers.map { it.onu })
+            onuRepository().flush()
+            for (move in positionMovers) {
+                move.onu.board = move.board
+                move.onu.port = move.port
+                move.onu.onuIndex = move.onuIndex
+                move.onu.externalId = externalId(move.board, move.port, move.onuIndex)
+            }
+        }
+
+        // Avoid double-saving soft-deleted rows in the final batch.
+        pending.onus.removeAll(softDeletedOnus)
         flushPending(pending)
+        onuRepository().flush()
         logger.info(
-            "Inventory sync persisted onus={} statuses={} audits={}",
+            "Inventory sync persisted onus={} statuses={} audits={} softDeleted={} movers={}",
             pending.onus.size,
             pending.statuses.size,
-            pending.audits.size
+            pending.audits.size,
+            softDeletedOnus.size,
+            positionMovers.size
         )
         return SyncResult(
             inserted = inserted,
@@ -253,6 +371,24 @@ open class OltInventorySyncService(
             softDeleted = softDeleted,
             unchanged = unchanged
         )
+    }
+
+    /** Moves a soft-deleted ONU off its F/S/P so the unique key can be reused. */
+    private fun tombstoneDeletedOnu(onu: OltMgrOnu, now: Instant) {
+        onu.deletedAt = now
+        onu.updatedAt = now
+        onu.board = TOMBSTONE_BOARD
+        onu.port = 0
+        onu.onuIndex = (onu.id ?: 0L).toInt().coerceAtLeast(0)
+        onu.externalId = "${props().oltId}_deleted_${onu.id}"
+    }
+
+    /** Temporary unique F/S/P while swapping / moving before final positions are flushed. */
+    private fun stagePosition(onu: OltMgrOnu) {
+        onu.board = STAGING_BOARD
+        onu.port = 0
+        onu.onuIndex = (onu.id ?: 0L).toInt().coerceAtLeast(0)
+        onu.externalId = "${props().oltId}_staging_${onu.id}"
     }
 
     private fun flushPending(pending: PendingWrites) {
@@ -322,6 +458,14 @@ open class OltInventorySyncService(
                 source = "sync",
                 details = """{"sn":"${onu.sn}","board":${parsed.slot},"port":${parsed.port},"onu_index":${parsed.ontId}}"""
             )
+        }
+
+        val canonicalSn = parsed.sn.trim().uppercase()
+        if (onu.sn != canonicalSn &&
+            HuaweiGponSnmpCodec.normalizeOntSn(onu.sn) == HuaweiGponSnmpCodec.normalizeOntSn(canonicalSn)
+        ) {
+            onu.sn = canonicalSn
+            onuChanged = true
         }
 
         if (onu.importedFromOlt) {
@@ -429,6 +573,13 @@ open class OltInventorySyncService(
         val onus: LinkedHashSet<OltMgrOnu> = linkedSetOf(),
         val statuses: LinkedHashSet<OltMgrOnuStatusCurrent> = linkedSetOf(),
         val audits: MutableList<OltMgrAuditLog> = mutableListOf()
+    )
+
+    private data class PositionMove(
+        val onu: OltMgrOnu,
+        val board: Int,
+        val port: Int,
+        val onuIndex: Int
     )
 
     private enum class UpdateOutcome {

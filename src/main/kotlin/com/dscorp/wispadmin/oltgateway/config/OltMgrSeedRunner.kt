@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOltModel
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltModelRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpModelLimits
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -65,9 +66,15 @@ class OltMgrSeedRunner(
 
     private fun upsertModel(): OltMgrOltModel {
         val code = properties.modelCode.ifBlank { "MA5608T" }
+        val snmpWalks = OltSnmpModelLimits.maxConcurrentWalks(code)
         val existing = oltModelRepository.findByCode(code)
         if (existing.isPresent) {
-            return existing.get()
+            val model = existing.get()
+            if (model.maxConcurrentSnmpWalks != snmpWalks) {
+                model.maxConcurrentSnmpWalks = snmpWalks
+                return oltModelRepository.save(model)
+            }
+            return model
         }
         val created = oltModelRepository.save(
             OltMgrOltModel(
@@ -76,15 +83,17 @@ class OltMgrSeedRunner(
                 product = code,
                 family = "MA5600T",
                 maxConcurrentCliSessions = 4,
+                maxConcurrentSnmpWalks = snmpWalks,
                 maxSlotProbe = properties.inventory.maxSlotProbe,
                 defaultPortsPerGponBoard = properties.inventory.defaultPortsPerGponBoard,
-                notes = "Exclusive gateway CLI user; use all max_concurrent_cli_sessions for inventory reads"
+                notes = "CLI: exclusive gateway user, max_concurrent_cli_sessions=4. SNMP: max_concurrent_snmp_walks=$snmpWalks (model limit)"
             )
         )
         logger.info(
-            "Seeded olt_mgr_olt_model code={} maxConcurrentCliSessions={}",
+            "Seeded olt_mgr_olt_model code={} maxConcurrentCliSessions={} maxConcurrentSnmpWalks={}",
             created.code,
-            created.maxConcurrentCliSessions
+            created.maxConcurrentCliSessions,
+            created.maxConcurrentSnmpWalks
         )
         return created
     }

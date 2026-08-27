@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOltModel
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
+import javax.persistence.Column
 import javax.persistence.FetchType
 import javax.persistence.ManyToOne
 import javax.persistence.Table
@@ -26,5 +27,13 @@ class OltMgrOltModelMappingTest {
         assertNotNull(manyToOne)
         assertEquals(FetchType.LAZY, manyToOne.fetch)
         assertEquals(true, manyToOne.optional)
+    }
+
+    @Test
+    fun `model maps max concurrent snmp walks column`() {
+        val field = OltMgrOltModel::class.java.getDeclaredField("maxConcurrentSnmpWalks")
+        val column = field.getAnnotation(Column::class.java)
+        assertNotNull(column)
+        assertEquals("max_concurrent_snmp_walks", column.name)
     }
 }

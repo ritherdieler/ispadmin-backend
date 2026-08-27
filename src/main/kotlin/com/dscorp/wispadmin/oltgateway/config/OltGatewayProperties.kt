@@ -37,9 +37,53 @@ class OltGatewayProperties {
 
     val reachability: ReachabilityProperties = ReachabilityProperties()
 
+    val snmp: SnmpProperties = SnmpProperties()
+
     class ReachabilityProperties {
         var failureThreshold: Int = 2
         var backoffMs: Long = 120_000
+    }
+
+    class SnmpProperties {
+        /** When true and roCommunity is set, SNMP inventory client bean + sync are available. */
+        var enabled: Boolean = false
+        var port: Int = 161
+        var roCommunity: String = ""
+        var timeoutMs: Long = 5000
+        var retries: Int = 1
+        var maxRepetitions: Int = 25
+        /**
+         * Deprecated escape hatch: allow inventory sync via SSH when SNMP is unavailable.
+         * Default false — inventory sync is SNMP-only when this module is the intended path.
+         */
+        var allowSshInventoryFallback: Boolean = false
+        /**
+         * Deprecated escape hatch: allow optical signal poll via SSH when SNMP is unavailable.
+         * Default false — signal poll is SNMP-only.
+         */
+        var allowSshSignalFallback: Boolean = false
+        /** Walk Rx/Tx/OLT-Rx columns concurrently on full-table optical poll. */
+        var opticalParallelColumns: Boolean = true
+        /** Max concurrent per-port optical walks when [opticalPerPortWalks] is true. */
+        var opticalParallelPorts: Int = 3
+        /** If true, GETBULK per GPON port (slower on MA5608T). Default false = full-table. */
+        var opticalPerPortWalks: Boolean = false
+        /** With per-port walks: only ports that have online ONUs in DB. */
+        var opticalOnlineOnly: Boolean = true
+        /** How long to wait for this OLT's SNMP bus permit before failing. */
+        var acquireTimeoutMs: Long = 300_000
+        val trap: TrapProperties = TrapProperties()
+    }
+
+    class TrapProperties {
+        /** ASN.1 SNMPv2c trap listener (Huawei OLT). Off until receptor + target are ready. */
+        var enabled: Boolean = false
+        var listenPort: Int = 1162
+        var bindAddress: String = "0.0.0.0"
+        /** If non-blank, ignore traps whose community does not match. */
+        var community: String = ""
+        var bufferSize: Int = 100
+        var dispatcherThreads: Int = 2
     }
 
     class MockProperties {
@@ -57,7 +101,8 @@ class OltGatewayProperties {
         var inventoryIntervalMs: Long = 600000
         var inventoryInitialDelayMs: Long = 30000
         var signalEnabled: Boolean = true
-        var signalIntervalMs: Long = 600000
+        /** Default 5 min — ~3x SNMP optical walk (~104 s). */
+        var signalIntervalMs: Long = 300000
         var signalInitialDelayMs: Long = 90000
         var alarmEnabled: Boolean = true
         var alarmIntervalMs: Long = 120000

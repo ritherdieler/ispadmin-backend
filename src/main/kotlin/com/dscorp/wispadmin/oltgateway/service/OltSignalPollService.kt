@@ -14,6 +14,10 @@ import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOpticalInfo
 import com.dscorp.wispadmin.oltgateway.service.inventory.GponSlotInfo
 import com.dscorp.wispadmin.oltgateway.service.inventory.OltGponTopologyDiscovery
+import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OpticalPollScope
+import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntOptical
 import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliSession
@@ -35,7 +39,8 @@ open class OltSignalPollService(
     opticalInfoParser: OpticalInfoParser,
     signalCategoryCalculator: SignalCategoryCalculator,
     properties: OltGatewayProperties,
-    cliBus: OltCliBus? = null
+    cliBus: OltCliBus? = null,
+    snmpClient: OltSnmpClient? = null
 ) {
 
     companion object {
@@ -52,6 +57,7 @@ open class OltSignalPollService(
         private val opticalInfoParserRef = AtomicReference<OpticalInfoParser?>(null)
         private val signalCategoryCalculatorRef = AtomicReference<SignalCategoryCalculator?>(null)
         private val cliBusRef = AtomicReference<OltCliBus?>(null)
+        private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
     }
 
     init {
@@ -64,6 +70,7 @@ open class OltSignalPollService(
         opticalInfoParserRef.set(opticalInfoParser)
         signalCategoryCalculatorRef.set(signalCategoryCalculator)
         cliBusRef.set(cliBus)
+        snmpClientRef.set(snmpClient)
     }
 
     private fun props(): OltGatewayProperties {
@@ -94,6 +101,8 @@ open class OltSignalPollService(
 
     private fun cliBus(): OltCliBus? = cliBusRef.get()
 
+    private fun snmpClient(): OltSnmpClient? = snmpClientRef.get()
+
     fun isRunning(): Boolean = running.get()
 
     fun lastStartedAt(): Instant? = lastStartedAtRef.get()
@@ -111,16 +120,43 @@ open class OltSignalPollService(
     }
 
     open fun pollSignals(): SignalPollResult {
+        return pollSignalsInternal(source = resolveSignalSource())
+    }
+
+    open fun pollSignalsFromSnmp(): SignalPollResult {
+        return pollSignalsInternal(source = SignalSource.SNMP)
+    }
+
+    private enum class SignalSource { SSH, SNMP }
+
+    /**
+     * Signal poll is SNMP-first. SSH optical collection is deprecated for this task.
+     */
+    private fun resolveSignalSource(): SignalSource {
+        val properties = props()
+        val snmpReady = properties.snmp.enabled &&
+            properties.snmp.roCommunity.isNotBlank() &&
+            snmpClient() != null
+        if (snmpReady) {
+            return SignalSource.SNMP
+        }
+        if (properties.snmp.allowSshSignalFallback) {
+            logger.warn(
+                "Signal poll using deprecated SSH optical path " +
+                    "(enable olt.gateway.snmp + OLT_GATEWAY_SNMP_RO_COMMUNITY to use SNMP)"
+            )
+            return SignalSource.SSH
+        }
+        return SignalSource.SNMP
+    }
+
+    private fun pollSignalsInternal(source: SignalSource): SignalPollResult {
         if (!running.compareAndSet(false, true)) {
             return SignalPollResult(skippedReason = "sync_already_running").also { lastResultRef.set(it) }
         }
         val startedAt = Instant.now()
         lastStartedAtRef.set(startedAt)
         try {
-            val bus = cliBus()
-            if (bus == null) {
-                return finish(SignalPollResult(skippedReason = "cli_bus_unavailable"), startedAt)
-            }
             val properties = props()
             if (properties.sync.skipWhenWriteRunning && taskRepository().existsByStatus("running")) {
                 return finish(SignalPollResult(skippedReason = "write_task_running"), startedAt)
@@ -128,15 +164,10 @@ open class OltSignalPollService(
             val olt = oltRepository().findByName(properties.oltId)
                 .orElseThrow { IllegalStateException("OLT seed missing for ${properties.oltId}") }
 
-            val capture = when (val busResult = bus.execute(CliJobType.SIGNAL_POLL) { session ->
-                pollOnSession(session)
-            }) {
-                is CliBusResult.Ok -> busResult.value
-                is CliBusResult.Skipped -> return finish(
-                    SignalPollResult(skippedReason = busResult.reason),
-                    startedAt
-                )
-            }
+            val capture = when (source) {
+                SignalSource.SNMP -> captureViaSnmp(properties, olt.id!!)
+                SignalSource.SSH -> captureViaSshDeprecated()
+            } ?: return finish(SignalPollResult(skippedReason = lastSkipReason), startedAt)
 
             val onusUpdated = applyOpticalUpdates(olt.id!!, capture.rows)
             return finish(
@@ -148,13 +179,89 @@ open class OltSignalPollService(
                 startedAt
             )
         } catch (ex: Exception) {
-            logger.warn("Signal poll failed: {}", ex.message)
+            logger.warn("Signal poll failed (source={}): {}", source, ex.message)
             return finish(SignalPollResult(error = ex.message), startedAt)
         } finally {
             running.set(false)
         }
     }
 
+    @Volatile
+    private var lastSkipReason: String? = null
+
+    private fun captureViaSnmp(properties: OltGatewayProperties, oltId: Long): PollCapture? {
+        lastSkipReason = null
+        val client = snmpClient()
+        if (client == null) {
+            lastSkipReason = "snmp_client_unavailable"
+            return null
+        }
+        if (!properties.snmp.enabled || properties.snmp.roCommunity.isBlank()) {
+            lastSkipReason = "snmp_required"
+            return null
+        }
+        val optical = if (properties.snmp.opticalPerPortWalks) {
+            val onus = onuRepository().findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }
+            val ports = OpticalPollScope.portsFromOnus(onus, properties.snmp.opticalOnlineOnly)
+            if (ports.isEmpty()) {
+                lastSkipReason = "no_onus_to_poll"
+                return null
+            }
+            logger.info(
+                "Signal poll via SNMP GETBULK per-port ports={} onlineOnly={} parallelPorts={}",
+                ports.size,
+                properties.snmp.opticalOnlineOnly,
+                properties.snmp.opticalParallelPorts
+            )
+            client.listOptical(ports)
+        } else {
+            logger.info(
+                "Signal poll via SNMP GETBULK full-table parallelColumns={}",
+                properties.snmp.opticalParallelColumns
+            )
+            client.listOptical(null)
+        }
+        val rows = optical.map { it.toOpticalRow() }
+        val slots = rows.map { it.slot }.toSet().size
+        val portsPolled = rows.map { it.slot to it.port }.toSet().size
+        return PollCapture(slotsPolled = slots, portsPolled = portsPolled, rows = rows)
+    }
+
+    private fun SnmpOntOptical.toOpticalRow(): OpticalRow {
+        val fsp = HuaweiGponSnmpCodec.decodeIfIndex(key.ifIndex)
+        return OpticalRow(
+            slot = fsp.slot,
+            port = fsp.port,
+            optical = ParsedOpticalInfo(
+                ontId = key.ontId,
+                rxPowerDbm = onuRxDbm,
+                txPowerDbm = onuTxDbm,
+                oltRxPowerDbm = oltRxDbm
+            )
+        )
+    }
+
+    /** @deprecated SSH optical poll — only when allowSshSignalFallback=true. */
+    @Deprecated("SSH optical signal poll is deprecated; use SNMP listOptical()")
+    private fun captureViaSshDeprecated(): PollCapture? {
+        lastSkipReason = null
+        val bus = cliBus()
+        if (bus == null) {
+            lastSkipReason = "cli_bus_unavailable"
+            return null
+        }
+        return when (val busResult = bus.execute(CliJobType.SIGNAL_POLL) { session ->
+            pollOnSession(session)
+        }) {
+            is CliBusResult.Ok -> busResult.value
+            is CliBusResult.Skipped -> {
+                lastSkipReason = busResult.reason
+                null
+            }
+        }
+    }
+
+    @Deprecated("SSH optical path")
     private fun pollOnSession(session: HuaweiCliSession): PollCapture {
         val topology = discoverTopology(session)
         val rows = mutableListOf<OpticalRow>()
@@ -188,6 +295,7 @@ open class OltSignalPollService(
         )
     }
 
+    @Deprecated("SSH optical path")
     private fun pollPortOptical(
         session: HuaweiCliSession,
         slot: Int,
@@ -200,6 +308,7 @@ open class OltSignalPollService(
         return pollPortOpticalBulk(session, slot, port, reenter = true)
     }
 
+    @Deprecated("SSH optical path")
     private fun pollPortOpticalBulk(
         session: HuaweiCliSession,
         slot: Int,
@@ -234,10 +343,12 @@ open class OltSignalPollService(
         }
     }
 
+    @Deprecated("SSH optical path")
     private fun enterGponInterface(session: HuaweiCliSession, slot: Int) {
         session.execute("interface gpon 0/$slot")
     }
 
+    @Deprecated("SSH optical path")
     private fun discoverTopology(session: HuaweiCliSession): List<GponSlotInfo> {
         val properties = props()
         val model = oltRepository().findByName(properties.oltId).map { it.model }.orElse(null)
@@ -278,25 +389,32 @@ open class OltSignalPollService(
         now: Instant,
         pending: MutableSet<OltMgrOnuStatusCurrent>
     ): Boolean {
-        val category = signalCategoryCalculator().fromOnuRxDbm(optical.rxPowerDbm)?.value
         val onuRx = toDecimal(optical.rxPowerDbm)
         val onuTx = toDecimal(optical.txPowerDbm)
         val oltRx = toDecimal(optical.oltRxPowerDbm)
         val temperature = optical.temperatureC?.toInt()
         val status = onu.status
         if (status != null) {
-            if (!opticalChanged(status, onuRx, onuTx, oltRx, temperature, category)) {
+            // Null from a failed SNMP column must not wipe a previous good reading.
+            val nextRx = onuRx ?: status.onuRxDbm
+            val nextTx = onuTx ?: status.onuTxDbm
+            val nextOltRx = oltRx ?: status.oltRxDbm
+            val nextTemp = temperature ?: status.temperatureC
+            val nextCategory = signalCategoryCalculator().fromOnuRxDbm(nextRx?.toDouble())?.value
+                ?: status.signalCategory
+            if (!opticalChanged(status, nextRx, nextTx, nextOltRx, nextTemp, nextCategory)) {
                 return false
             }
-            status.onuRxDbm = onuRx
-            status.onuTxDbm = onuTx
-            status.oltRxDbm = oltRx
-            status.temperatureC = temperature
-            status.signalCategory = category
+            status.onuRxDbm = nextRx
+            status.onuTxDbm = nextTx
+            status.oltRxDbm = nextOltRx
+            status.temperatureC = nextTemp
+            status.signalCategory = nextCategory
             status.polledAt = now
             pending += status
             return true
         }
+        val category = signalCategoryCalculator().fromOnuRxDbm(optical.rxPowerDbm)?.value
         val created = OltMgrOnuStatusCurrent(
             onu = onu,
             runState = "offline",

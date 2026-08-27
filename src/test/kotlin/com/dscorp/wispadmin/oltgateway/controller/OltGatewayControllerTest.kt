@@ -32,9 +32,19 @@ class OltGatewayControllerTest {
     private val queryFacade = mockk<OltGatewayQueryFacade>()
     private val inventorySyncService = mockk<OltInventorySyncService>()
     private val signalPollService = mockk<OltSignalPollService>()
+    private val properties = com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties()
+    private val trapBuffer = com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer(10)
 
     private val mockMvc: MockMvc = MockMvcBuilders
-        .standaloneSetup(OltGatewayController(queryFacade, inventorySyncService, signalPollService))
+        .standaloneSetup(
+            OltGatewayController(
+                queryFacade,
+                inventorySyncService,
+                signalPollService,
+                properties,
+                trapBuffer
+            )
+        )
         .setControllerAdvice(OltGatewayExceptionHandler())
         .build()
 
@@ -121,6 +131,24 @@ class OltGatewayControllerTest {
     }
 
     @Test
+    fun `admin sync snmp-inventory dispara syncInventoryFromSnmp`() {
+        every { inventorySyncService.syncInventoryFromSnmp() } returns SyncResult(
+            inserted = 5,
+            updated = 0,
+            softDeleted = 0,
+            unchanged = 10,
+            durationMs = 40
+        )
+
+        mockMvc.perform(post("/api/olt-gateway/admin/sync/snmp-inventory"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.inserted").value(5))
+            .andExpect(jsonPath("$.unchanged").value(10))
+
+        verify(exactly = 1) { inventorySyncService.syncInventoryFromSnmp() }
+    }
+
+    @Test
     fun `admin sync signal dispara poll y retorna SignalPollResult`() {
         every { signalPollService.pollSignals() } returns SignalPollResult(
             slotsPolled = 2,
@@ -201,5 +229,15 @@ class OltGatewayControllerTest {
             .andExpect(jsonPath("$.totalElements").value(1))
             .andExpect(jsonPath("$.items[0].sn").value("4857544311E70E9A"))
             .andExpect(jsonPath("$.items[0].runState").value("online"))
+    }
+
+    @Test
+    fun `traps recent retorna buffer vacio cuando listener off`() {
+        mockMvc.perform(get("/api/olt-gateway/admin/snmp/traps/recent"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.enabled").value(false))
+            .andExpect(jsonPath("$.listenPort").value(1162))
+            .andExpect(jsonPath("$.items").isArray)
+            .andExpect(jsonPath("$.items").isEmpty)
     }
 }

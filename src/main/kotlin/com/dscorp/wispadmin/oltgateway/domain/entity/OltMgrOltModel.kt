@@ -29,6 +29,10 @@ class OltMgrOltModel(
     @Column(name = "max_concurrent_cli_sessions", nullable = false)
     var maxConcurrentCliSessions: Int = 1,
 
+    /** Max overlapping SNMP GETBULK this model survives. MA5608T = 1. */
+    @Column(name = "max_concurrent_snmp_walks", nullable = false)
+    var maxConcurrentSnmpWalks: Int = 1,
+
     @Column(name = "max_slot_probe", nullable = false)
     var maxSlotProbe: Int = 7,
 
