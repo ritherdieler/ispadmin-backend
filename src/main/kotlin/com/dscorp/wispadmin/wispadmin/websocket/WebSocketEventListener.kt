@@ -16,15 +16,17 @@ class WebSocketEventListener {
     
     @Autowired
     private lateinit var deviceResourcesWebSocket: DeviceResourcesWebSocket
+
+    @Autowired
+    private lateinit var subscriptionTrafficWebSocket: SubscriptionTrafficWebSocket
     
     @EventListener
     fun handleWebSocketDisconnectListener(event: SessionDisconnectEvent) {
         val sessionId = event.sessionId
         logger.info("🔌 WebSocket desconectado - SessionId: $sessionId")
         
-        // Limpiar recursos del monitoreo de tráfico
         interfaceTrafficWebSocket.handleUserDisconnect(sessionId)
-        // Limpiar recursos del monitoreo de recursos
         deviceResourcesWebSocket.handleUserDisconnect(sessionId)
+        subscriptionTrafficWebSocket.handleUserDisconnect(sessionId)
     }
 } 

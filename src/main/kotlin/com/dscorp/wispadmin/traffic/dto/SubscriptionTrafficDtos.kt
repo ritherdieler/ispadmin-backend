@@ -40,6 +40,18 @@ data class SubscriptionTrafficSummaryDto(
     val activeDays: Int
 )
 
+data class SubscriptionTrafficLiveTickDto(
+    val subscriptionId: Int,
+    val timestamp: String,
+    val rxMbps: Double?,
+    val txMbps: Double?,
+    val rxBytesDelta: Long,
+    val txBytesDelta: Long,
+    val sessionRxBytes: Long,
+    val sessionTxBytes: Long,
+    val queueFound: Boolean = true
+)
+
 data class SubscriptionTrafficPollResultDto(
     val devicesPolled: Int = 0,
     val subscriptionsMatched: Int = 0,

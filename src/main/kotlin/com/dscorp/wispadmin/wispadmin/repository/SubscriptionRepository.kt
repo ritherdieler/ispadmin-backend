@@ -118,6 +118,15 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun findForTrafficPolling(): List<Subscription>
 
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        LEFT JOIN FETCH s.hostDevice
+        WHERE s.id = :id
+        """
+    )
+    fun findByIdWithHostDevice(id: Int): Subscription?
+
     @Query("SELECT s.ip FROM Subscription s WHERE s.serviceStatus = 'ACTIVE' AND s.ip IS NOT NULL AND s.ip <> ''")
     fun findActiveIps(): List<String>
 
