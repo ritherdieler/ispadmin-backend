@@ -39,7 +39,7 @@ class SubscriptionTrafficWebSocket(
     private val cleanupScheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
 
     private val sessionTimeoutMs = 5 * 60 * 1000L
-    private val monitorIntervalMs = 1000L
+    private val monitorIntervalMs = 2000L
 
     init {
         cleanupScheduler.scheduleAtFixedRate({
