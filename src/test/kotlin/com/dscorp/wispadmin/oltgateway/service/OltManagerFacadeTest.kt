@@ -81,12 +81,37 @@ class OltManagerFacadeTest {
         every { queryFacade.autofindParsed() } returns listOf(
             ParsedAutofindOnt(frame = 0, slot = 0, port = 2, sn = "4857544311E70E9A", equipmentId = "HG8245H")
         )
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(any()) } returns Optional.empty()
 
         val response = facade.unconfiguredOnus()
 
         assertTrue(response.status)
         assertEquals("4857544311E70E9A", response.response[0].sn)
         assertEquals("0", response.response[0].board)
+    }
+
+    @Test
+    fun `unconfiguredOnus excluye SN ya autorizados en inventario`() {
+        every { queryFacade.autofindParsed() } returns listOf(
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "HWTCC6FBA6AA"),
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 0, sn = "HWTC0086CD49")
+        )
+        val existing = OltMgrOnu(
+            id = 7L,
+            sn = "HWTC0086CD49",
+            externalId = "gigafiber-ma5608t_1_0_1",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 1
+        )
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull("HWTCC6FBA6AA") } returns Optional.empty()
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull("HWTC0086CD49") } returns Optional.of(existing)
+
+        val response = facade.unconfiguredOnus()
+
+        assertEquals(1, response.response.size)
+        assertEquals("HWTCC6FBA6AA", response.response[0].sn)
     }
 
     @Test

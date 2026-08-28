@@ -12,12 +12,19 @@ class SnmpOpticalMergerTest {
         val merged = SnmpOpticalMerger.merge(
             rx = mapOf(key to -5.62),
             tx = mapOf(key to 1.63),
-            oltRx = mapOf(key to -26.39)
+            oltRx = mapOf(key to -26.39),
+            temperatureC = mapOf(key to 48.5),
+            biasCurrentMa = mapOf(key to 10.0),
+            distanceM = mapOf(key to 795)
         )
         assertEquals(1, merged.size)
-        assertEquals(-5.62, merged.single().onuRxDbm)
-        assertEquals(1.63, merged.single().onuTxDbm)
-        assertEquals(-26.39, merged.single().oltRxDbm)
+        val row = merged.single()
+        assertEquals(-5.62, row.onuRxDbm)
+        assertEquals(1.63, row.onuTxDbm)
+        assertEquals(-26.39, row.oltRxDbm)
+        assertEquals(48.5, row.temperatureC)
+        assertEquals(10.0, row.biasCurrentMa)
+        assertEquals(795, row.distanceM)
     }
 
     @Test
@@ -27,11 +34,15 @@ class SnmpOpticalMergerTest {
         val merged = SnmpOpticalMerger.merge(
             rx = mapOf(k1 to -10.0, k2 to -11.0),
             tx = mapOf(k1 to 2.0),
-            oltRx = emptyMap()
+            oltRx = emptyMap(),
+            temperatureC = mapOf(k2 to 40.0),
+            biasCurrentMa = emptyMap(),
+            distanceM = emptyMap()
         )
         assertEquals(2, merged.size)
         val row2 = merged.first { it.key.ontId == 2 }
         assertNull(row2.onuTxDbm)
         assertEquals(-11.0, row2.onuRxDbm)
+        assertEquals(40.0, row2.temperatureC)
     }
 }

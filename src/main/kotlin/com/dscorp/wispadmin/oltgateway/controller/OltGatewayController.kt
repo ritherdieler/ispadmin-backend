@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.oltgateway.controller
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.ErrorResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.HealthResponseDto
@@ -14,11 +15,13 @@ import com.dscorp.wispadmin.oltgateway.dto.OnuDetailDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuSummaryListDto
 import com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
+import com.dscorp.wispadmin.oltgateway.dto.SmartOltImportResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
+import com.dscorp.wispadmin.oltgateway.service.SmartOltImportService
 import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
 import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
 import io.swagger.v3.oas.annotations.Operation
@@ -49,6 +52,7 @@ class OltGatewayController(
     private val queryFacade: OltGatewayQueryFacade,
     private val inventorySyncService: OltInventorySyncService,
     private val signalPollService: OltSignalPollService,
+    private val smartOltImportService: SmartOltImportService,
     private val properties: OltGatewayProperties,
     private val recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer
 ) {
@@ -179,8 +183,55 @@ class OltGatewayController(
     )
     fun listConfiguredOnus(
         @RequestParam(defaultValue = "0") @Min(0) page: Int,
-        @RequestParam(defaultValue = "50") @Min(1) @Max(200) size: Int
-    ): ConfiguredOnuPageDto = inventorySyncService.listConfigured(page, size)
+        @RequestParam(defaultValue = "50") @Min(1) @Max(200) size: Int,
+        @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) board: Int?,
+        @RequestParam(required = false) port: Int?,
+        @RequestParam(required = false) oltId: Long?,
+        @RequestParam(required = false) zoneId: Long?,
+        @RequestParam(required = false) vlan: Int?,
+        @RequestParam(required = false) onuTypeId: Long?,
+        @RequestParam(required = false) onuTypeName: String?,
+        @RequestParam(required = false) customProfile: String?,
+        @RequestParam(required = false) ponType: String?,
+        @RequestParam(required = false) mode: String?,
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) runState: String?,
+        @RequestParam(required = false) signalCategory: String?,
+        @RequestParam(required = false) splitterId: Long?,
+        @RequestParam(required = false) configurationMethod: String?,
+        @RequestParam(required = false) wanMode: String?,
+        @RequestParam(required = false) mgmtIpMode: String?,
+        @RequestParam(required = false) importedSynced: Boolean?,
+        @RequestParam(required = false) lastResyncFailed: Boolean?,
+        @RequestParam(required = false) lineProfileMaptype: String?
+    ): ConfiguredOnuPageDto = inventorySyncService.listConfigured(
+        page = page,
+        size = size,
+        filter = ConfiguredOnuFilter(
+            q = q,
+            board = board,
+            port = port,
+            oltId = oltId,
+            zoneId = zoneId,
+            vlan = vlan,
+            onuTypeId = onuTypeId,
+            onuTypeName = onuTypeName,
+            customProfile = customProfile,
+            ponType = ponType,
+            mode = mode,
+            status = status,
+            runState = runState,
+            signalCategory = signalCategory,
+            splitterId = splitterId,
+            configurationMethod = configurationMethod,
+            wanMode = wanMode,
+            mgmtIpMode = mgmtIpMode,
+            importedSynced = importedSynced,
+            lastResyncFailed = lastResyncFailed,
+            lineProfileMaptype = lineProfileMaptype
+        )
+    )
 
     @PostMapping("/admin/sync/inventory")
     @Operation(
@@ -281,6 +332,32 @@ class OltGatewayController(
             error = result.error
         )
     }
+
+    @PostMapping("/admin/import/smartolt")
+    @Operation(
+        summary = "Import one-shot SmartOLT",
+        description = "Hidrata catálogos (zones, onu types) y metadatos de negocio en olt_mgr_* desde SmartOLT cloud. " +
+            "Idempotente por SN; no reemplaza posición PON del sync SNMP."
+    )
+    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Resultado del import",
+                content = [Content(schema = Schema(implementation = SmartOltImportResultDto::class))]
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "API key ausente o inválida",
+                content = [Content(schema = Schema(implementation = ErrorResponseDto::class))]
+            )
+        ]
+    )
+    fun importFromSmartOlt(
+        @RequestParam(defaultValue = "100") @Min(1) @Max(500) pageSize: Int,
+        @RequestParam(required = false) maxPages: Int?
+    ): SmartOltImportResultDto = smartOltImportService.importFromSmartOlt(pageSize, maxPages)
 
     @GetMapping("/admin/snmp/traps/recent")
     @Operation(

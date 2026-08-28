@@ -81,20 +81,18 @@ class OltGatewayQueryServiceTest {
     }
 
     @Test
-    fun `autofind usa SNMP cuando snmp ready`() {
+    fun `autofind usa CLI aunque snmp este ready porque la tabla SNMP retiene fantasmas`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "ro"
-        every { snmpClient.listAutofind() } returns listOf(
-            ParsedAutofindOnt(sn = "VSOL0086F6E9", frame = 0, slot = 1, port = 2)
-        )
+        properties.snmp.allowSshInventoryFallback = false
+        every { commandExecutor.run("display ont autofind all") } returns FixtureLoader.load("display-ont-autofind-all.txt")
 
         val result = service.autofind()
 
         assertTrue(result.status)
-        assertEquals(1, result.response.size)
-        assertEquals("VSOL0086F6E9", result.response[0].sn)
-        verify(exactly = 1) { snmpClient.listAutofind() }
-        verify(exactly = 0) { commandExecutor.run(any()) }
+        assertEquals(2, result.response.size)
+        verify(exactly = 1) { commandExecutor.run("display ont autofind all") }
+        verify(exactly = 0) { snmpClient.listAutofind() }
     }
 
     @Test
@@ -241,6 +239,32 @@ class OltGatewayQueryServiceTest {
         assertEquals(-24.95, result.oltRxPowerDbm!!, 0.001)
         verify(exactly = 1) { snmpClient.listOptical(listOf(GponFsp(frame = 0, slot = 1, port = 7))) }
         verify(exactly = 0) { commandExecutor.adhoc(any()) }
+    }
+
+    @Test
+    fun `optical SNMP propaga temperatura distancia y match`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "ro"
+        val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(1, 7)
+        every { snmpClient.listOptical(listOf(GponFsp(frame = 0, slot = 1, port = 7))) } returns listOf(
+            SnmpOntOptical(
+                key = SnmpOntKey(ifIndex = ifIndex, ontId = 0),
+                onuRxDbm = -20.4,
+                onuTxDbm = 2.17,
+                oltRxDbm = -24.95,
+                temperatureC = 48.5,
+                biasCurrentMa = 10.2,
+                distanceM = 795,
+                matchState = "match"
+            )
+        )
+
+        val result = service.optical(slot = 1, port = 7, ontId = 0)
+
+        assertEquals(48.5, result.temperatureC!!, 0.001)
+        assertEquals(10.2, result.biasCurrentMa!!, 0.001)
+        assertEquals(795, result.distanceM)
+        assertEquals("match", result.matchState)
     }
 
     @Test

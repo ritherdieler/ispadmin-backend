@@ -73,6 +73,39 @@ class HuaweiGponSnmpCodecTest {
     }
 
     @Test
+    fun `match status 1 match 2 mismatch`() {
+        assertEquals("match", HuaweiGponSnmpCodec.decodeMatchState(1))
+        assertEquals("mismatch", HuaweiGponSnmpCodec.decodeMatchState(2))
+        assertNull(HuaweiGponSnmpCodec.decodeMatchState(-1))
+    }
+
+    @Test
+    fun `ranging metros ignora invalid -1`() {
+        assertEquals(795, HuaweiGponSnmpCodec.decodeRangingMeters(795))
+        assertNull(HuaweiGponSnmpCodec.decodeRangingMeters(-1))
+        assertNull(HuaweiGponSnmpCodec.decodeRangingMeters(0))
+    }
+
+    @Test
+    fun `last down cause mapea codigos Huawei`() {
+        assertEquals("los", HuaweiGponSnmpCodec.decodeLastDownCause(1))
+        assertEquals("pwr", HuaweiGponSnmpCodec.decodeLastDownCause(13))
+        assertNull(HuaweiGponSnmpCodec.decodeLastDownCause(-1))
+    }
+
+    @Test
+    fun `temperatura DDM usa grados o centesimas`() {
+        assertEquals(48.0, HuaweiGponSnmpCodec.decodeTemperatureC(48)!!, 0.001)
+        assertEquals(48.5, HuaweiGponSnmpCodec.decodeTemperatureC(4850)!!, 0.001)
+    }
+
+    @Test
+    fun `bias DDM convierte a mA`() {
+        assertEquals(10.0, HuaweiGponSnmpCodec.decodeBiasCurrentMa(10000)!!, 0.001)
+        assertEquals(12.5, HuaweiGponSnmpCodec.decodeBiasCurrentMa(12500)!!, 0.001)
+    }
+
+    @Test
     fun `potencia ONT Rx Tx divide por 100`() {
         assertEquals(-5.72, HuaweiGponSnmpCodec.decodeOntPowerDbm(-572)!!, 0.001)
         assertEquals(1.63, HuaweiGponSnmpCodec.decodeOntPowerDbm(163)!!, 0.001)

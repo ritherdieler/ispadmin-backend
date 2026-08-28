@@ -1,0 +1,16 @@
+{
+  "response": [
+    {
+      "id": "1",
+      "name": "HG8245H",
+      "pon_type": "gpon",
+      "capability": "Bridging/Routing",
+      "ethernet_ports": "4",
+      "wifi_ports": "2",
+      "voip_ports": "0",
+      "catv": "0",
+      "allow_custom_profiles": "1"
+    }
+  ],
+  "status": true
+}

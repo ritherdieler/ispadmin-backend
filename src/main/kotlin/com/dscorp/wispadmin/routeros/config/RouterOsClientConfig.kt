@@ -39,6 +39,15 @@ class RouterOsClientConfig(
         )
     }
 
+    @Bean("trafficPollMikrotikClient", destroyMethod = "close")
+    fun trafficPollMikrotikClient(objectMapper: ObjectMapper): MikrotikClient {
+        return RouterOs7RestAdapter(
+            properties = properties,
+            objectMapper = objectMapper,
+            mockEnabled = false
+        )
+    }
+
     companion object {
         fun sslVerifyDisabledWarning(properties: RouterOsClientProperties): String? {
             if (!properties.rest.verifySsl) {

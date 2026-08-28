@@ -22,8 +22,17 @@ class RouterOs7RestSession(
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    override fun print(path: String, query: Map<String, String>): List<Map<String, String>> {
+    override fun print(
+        path: String,
+        query: Map<String, String>,
+        proplist: List<String>
+    ): List<Map<String, String>> {
         val bodyNode = objectMapper.createObjectNode()
+        if (proplist.isNotEmpty()) {
+            val propArray = objectMapper.createArrayNode()
+            proplist.forEach { propArray.add(it) }
+            bodyNode.set<com.fasterxml.jackson.databind.node.ArrayNode>(".proplist", propArray)
+        }
         if (query.isNotEmpty()) {
             val queryStack = objectMapper.createArrayNode()
             query.forEach { (key, value) ->

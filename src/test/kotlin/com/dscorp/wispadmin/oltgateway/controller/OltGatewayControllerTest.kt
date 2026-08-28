@@ -32,6 +32,7 @@ class OltGatewayControllerTest {
     private val queryFacade = mockk<OltGatewayQueryFacade>()
     private val inventorySyncService = mockk<OltInventorySyncService>()
     private val signalPollService = mockk<OltSignalPollService>()
+    private val smartOltImportService = mockk<com.dscorp.wispadmin.oltgateway.service.SmartOltImportService>()
     private val properties = com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties()
     private val trapBuffer = com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer(10)
 
@@ -41,6 +42,7 @@ class OltGatewayControllerTest {
                 queryFacade,
                 inventorySyncService,
                 signalPollService,
+                smartOltImportService,
                 properties,
                 trapBuffer
             )
@@ -202,7 +204,7 @@ class OltGatewayControllerTest {
 
     @Test
     fun `onus configured retorna pagina desde DB`() {
-        every { inventorySyncService.listConfigured(0, 50) } returns ConfiguredOnuPageDto(
+        every { inventorySyncService.listConfigured(0, 50, any()) } returns ConfiguredOnuPageDto(
             items = listOf(
                 ConfiguredOnuItemDto(
                     id = 1L,

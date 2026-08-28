@@ -36,7 +36,9 @@ class CancelledOnuReuseService(
         while (current != null) {
             val message = current.message?.lowercase()
             if (message != null &&
-                (message.contains("sn_already_exists") || message.contains("already exists on this olt"))
+                (message.contains("sn_already_exists") ||
+                    message.contains("already exists on this olt") ||
+                    message.contains("already authorized"))
             ) {
                 return true
             }

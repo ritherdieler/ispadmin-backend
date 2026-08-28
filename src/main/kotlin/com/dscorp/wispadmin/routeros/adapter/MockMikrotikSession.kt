@@ -3,7 +3,11 @@ package com.dscorp.wispadmin.routeros.adapter
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 
 class MockMikrotikSession : MikrotikSession {
-    override fun print(path: String, query: Map<String, String>): List<Map<String, String>> = emptyList()
+    override fun print(
+        path: String,
+        query: Map<String, String>,
+        proplist: List<String>
+    ): List<Map<String, String>> = emptyList()
 
     override fun call(path: String, args: Map<String, String>): List<Map<String, String>> = emptyList()
 

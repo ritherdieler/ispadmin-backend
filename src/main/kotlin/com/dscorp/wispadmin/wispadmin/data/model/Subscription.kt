@@ -7,6 +7,8 @@ import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionUserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import org.hibernate.Hibernate
+import org.hibernate.annotations.NotFound
+import org.hibernate.annotations.NotFoundAction
 import java.time.LocalDate
 import java.util.*
 import javax.persistence.*
@@ -104,6 +106,7 @@ data class Subscription(
     var napBox: NapBox? = null,
 
     @OneToOne(fetch = FetchType.EAGER, cascade = [CascadeType.ALL])
+    @NotFound(action = NotFoundAction.IGNORE)
     var fiberOnu: Onu? = null,
 
     @OneToOne(fetch = FetchType.EAGER)

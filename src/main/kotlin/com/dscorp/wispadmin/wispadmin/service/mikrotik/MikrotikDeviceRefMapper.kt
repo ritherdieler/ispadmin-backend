@@ -7,8 +7,16 @@ import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionManager
 
 object MikrotikDeviceRefMapper {
 
-    fun toDeviceRef(device: NetworkDeviceConnection, classicPort: Int): MikrotikDeviceRef {
-        val connectionData = NetworkDeviceConnectionManager.getConnectionData(device)
+    fun toDeviceRef(
+        device: NetworkDeviceConnection,
+        classicPort: Int,
+        applyDevConnectionOverride: Boolean = true
+    ): MikrotikDeviceRef {
+        val connectionData = if (applyDevConnectionOverride) {
+            NetworkDeviceConnectionManager.getConnectionData(device)
+        } else {
+            device
+        }
         val deviceId = when (device) {
             is NetworkDevice -> device.id.toString()
             else -> connectionData.ipAddress ?: "unknown"

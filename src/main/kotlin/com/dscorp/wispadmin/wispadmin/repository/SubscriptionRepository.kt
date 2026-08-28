@@ -107,6 +107,17 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("SELECT s FROM Subscription s WHERE s.serviceStatus = 'ACTIVE'")
     fun findActiveSubscriptions(): List<Subscription>
 
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.hostDevice
+        WHERE s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
+        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND s.hostDevice IS NOT NULL
+        """
+    )
+    fun findForTrafficPolling(): List<Subscription>
+
     @Query("SELECT s.ip FROM Subscription s WHERE s.serviceStatus = 'ACTIVE' AND s.ip IS NOT NULL AND s.ip <> ''")
     fun findActiveIps(): List<String>
 
@@ -373,6 +384,29 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         """
     )
     fun findActiveByFiberOnuSn(sn: String, suffix: String): List<Subscription>
+
+    @Query(
+        """
+        SELECT UPPER(o.sn), s.ip
+        FROM Subscription s
+        JOIN s.fiberOnu o
+        WHERE s.serviceStatus = 'ACTIVE'
+        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND UPPER(o.sn) IN :sns
+        """
+    )
+    fun findActiveIpSnPairsByFiberOnuSnIn(@Param("sns") sns: Collection<String>): List<Array<Any>>
+
+    @Query(
+        """
+        SELECT LOWER(TRIM(CONCAT(COALESCE(s.firstName, ''), ' ', COALESCE(s.lastName, '')))), s.ip
+        FROM Subscription s
+        WHERE s.serviceStatus = 'ACTIVE'
+        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND LOWER(TRIM(CONCAT(COALESCE(s.firstName, ''), ' ', COALESCE(s.lastName, '')))) IN :names
+        """
+    )
+    fun findActiveIpNamePairsByFullNameIn(@Param("names") names: Collection<String>): List<Array<Any>>
 
     @Query(
         """

@@ -108,11 +108,7 @@ class OltGatewayQueryService(
     }
 
     override fun autofindParsed(): List<ParsedAutofindOnt> {
-        if (snmpReady()) {
-            return snmpClient!!.listAutofind()
-        }
-        requireSshInventoryFallback("autofind")
-        return autofindViaSshDeprecated()
+        return autofindViaSsh()
     }
 
     override fun bySnParsed(sn: String): ParsedOnuBySn? {
@@ -189,15 +185,16 @@ class OltGatewayQueryService(
             ontId = ontId,
             rxPowerDbm = match.onuRxDbm,
             txPowerDbm = match.onuTxDbm,
-            temperatureC = null,
+            temperatureC = match.temperatureC,
             voltageV = null,
-            biasCurrentMa = null,
-            oltRxPowerDbm = match.oltRxDbm
+            biasCurrentMa = match.biasCurrentMa,
+            oltRxPowerDbm = match.oltRxDbm,
+            distanceM = match.distanceM,
+            matchState = match.matchState
         )
     }
 
-    @Deprecated("SSH autofind is deprecated; use SNMP listAutofind()")
-    private fun autofindViaSshDeprecated(): List<ParsedAutofindOnt> {
+    private fun autofindViaSsh(): List<ParsedAutofindOnt> {
         val output = commandExecutor.run("display ont autofind all")
         return autofindParser.parse(output)
     }

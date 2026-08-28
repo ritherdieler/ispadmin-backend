@@ -12,7 +12,11 @@ data class SnmpOntOptical(
     val key: SnmpOntKey,
     val onuRxDbm: Double?,
     val onuTxDbm: Double?,
-    val oltRxDbm: Double?
+    val oltRxDbm: Double?,
+    val temperatureC: Double? = null,
+    val biasCurrentMa: Double? = null,
+    val distanceM: Int? = null,
+    val matchState: String? = null
 )
 
 interface OltSnmpClient {

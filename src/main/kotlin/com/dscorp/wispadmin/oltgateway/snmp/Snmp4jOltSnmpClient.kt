@@ -45,6 +45,24 @@ class Snmp4jOltSnmpClient(
         val statusByKey = walkColumn(HuaweiGponSnmpOids.ONT_RUN_STATUS, SnmpJobType.INVENTORY) { vb ->
             HuaweiGponSnmpCodec.decodeRunState(vb.variable.toInt())
         }
+        val matchByKey = walkColumn(HuaweiGponSnmpOids.ONT_MATCH_STATUS, SnmpJobType.INVENTORY) { vb ->
+            HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
+        }
+        val distanceByKey = walkColumn(HuaweiGponSnmpOids.ONT_RANGING, SnmpJobType.INVENTORY) { vb ->
+            HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
+        }
+        val lastDownByKey = walkColumn(HuaweiGponSnmpOids.ONT_LAST_DOWN_CAUSE, SnmpJobType.INVENTORY) { vb ->
+            HuaweiGponSnmpCodec.decodeLastDownCause(vb.variable.toInt())
+        }
+        val descriptionByKey = walkColumn(HuaweiGponSnmpOids.ONT_DESCRIPTION, SnmpJobType.INVENTORY) { vb ->
+            decodeDisplayString(vb)
+        }
+        val lineProfByKey = walkColumn(HuaweiGponSnmpOids.ONT_LINE_PROF_NAME, SnmpJobType.INVENTORY) { vb ->
+            decodeDisplayString(vb)
+        }
+        val srvProfByKey = walkColumn(HuaweiGponSnmpOids.ONT_SERVICE_PROF_NAME, SnmpJobType.INVENTORY) { vb ->
+            decodeDisplayString(vb)
+        }
         return snByKey.mapNotNull { (key, sn) ->
             val fsp = HuaweiGponSnmpCodec.decodeIfIndex(key.ifIndex)
             ParsedOnuSummary(
@@ -53,7 +71,13 @@ class Snmp4jOltSnmpClient(
                 port = fsp.port,
                 ontId = key.ontId,
                 sn = sn,
-                runState = statusByKey[key]
+                runState = statusByKey[key],
+                matchState = matchByKey[key],
+                description = descriptionByKey[key],
+                distanceM = distanceByKey[key],
+                lastDownCause = lastDownByKey[key],
+                lineProfileName = lineProfByKey[key],
+                serviceProfileName = srvProfByKey[key]
             )
         }.sortedWith(compareBy({ it.slot }, { it.port }, { it.ontId }))
     }
@@ -75,24 +99,7 @@ class Snmp4jOltSnmpClient(
     override fun listOptical(ports: Collection<GponFsp>?): List<SnmpOntOptical> {
         val portList = ports?.distinct()?.takeIf { it.isNotEmpty() }
         return if (portList == null) {
-            fetchOpticalColumns(
-                label = "full",
-                rx = {
-                    walkColumn(HuaweiGponSnmpOids.ONT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
-                        HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-                    }
-                },
-                tx = {
-                    walkColumn(HuaweiGponSnmpOids.ONT_TX_POWER, SnmpJobType.OPTICAL) { vb ->
-                        HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-                    }
-                },
-                oltRx = {
-                    walkColumn(HuaweiGponSnmpOids.OLT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
-                        HuaweiGponSnmpCodec.decodeOltRxPowerDbm(vb.variable.toInt())
-                    }
-                }
-            )
+            fetchOpticalColumns(label = "full")
         } else {
             fetchOpticalForPorts(portList)
         }
@@ -108,7 +115,6 @@ class Snmp4jOltSnmpClient(
 
     private fun fetchOpticalForPort(port: GponFsp): List<SnmpOntOptical> {
         val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(port.slot, port.port)
-        // Per-port walks are small; sequential columns avoid overloading the OLT agent.
         val rx = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_RX_POWER, ifIndex, SnmpJobType.OPTICAL) { vb ->
             HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
         }
@@ -118,29 +124,97 @@ class Snmp4jOltSnmpClient(
         val oltRx = walkColumnForIfIndex(HuaweiGponSnmpOids.OLT_RX_POWER, ifIndex, SnmpJobType.OPTICAL) { vb ->
             HuaweiGponSnmpCodec.decodeOltRxPowerDbm(vb.variable.toInt())
         }
-        val merged = SnmpOpticalMerger.merge(rx, tx, oltRx)
+        val temperatureC = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE, ifIndex, SnmpJobType.OPTICAL) { vb ->
+            HuaweiGponSnmpCodec.decodeTemperatureC(vb.variable.toInt())
+        }
+        val biasCurrentMa = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_OPTICAL_BIAS, ifIndex, SnmpJobType.OPTICAL) { vb ->
+            HuaweiGponSnmpCodec.decodeBiasCurrentMa(vb.variable.toInt())
+        }
+        val distanceM = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_RANGING, ifIndex, SnmpJobType.OPTICAL) { vb ->
+            HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
+        }
+        val matchState = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_MATCH_STATUS, ifIndex, SnmpJobType.OPTICAL) { vb ->
+            HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
+        }
+        val merged = SnmpOpticalMerger.merge(
+            rx = rx,
+            tx = tx,
+            oltRx = oltRx,
+            temperatureC = temperatureC,
+            biasCurrentMa = biasCurrentMa,
+            distanceM = distanceM,
+            matchState = matchState
+        )
         logger.debug("SNMP optical merged scope={}/{} rows={}", port.slot, port.port, merged.size)
         return merged
     }
 
-    private fun fetchOpticalColumns(
-        label: String,
-        rx: () -> Map<SnmpOntKey, Double?>,
-        tx: () -> Map<SnmpOntKey, Double?>,
-        oltRx: () -> Map<SnmpOntKey, Double?>
-    ): List<SnmpOntOptical> {
-        val rxSafe = { safeColumn("rx", rx) }
-        val txSafe = { safeColumn("tx", tx) }
-        val oltSafe = { safeColumn("oltRx", oltRx) }
+    private fun fetchOpticalColumns(label: String): List<SnmpOntOptical> {
+        val rx = { safeDoubleColumn("rx") {
+            walkColumn(HuaweiGponSnmpOids.ONT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
+            }
+        } }
+        val tx = { safeDoubleColumn("tx") {
+            walkColumn(HuaweiGponSnmpOids.ONT_TX_POWER, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
+            }
+        } }
+        val oltRx = { safeDoubleColumn("oltRx") {
+            walkColumn(HuaweiGponSnmpOids.OLT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeOltRxPowerDbm(vb.variable.toInt())
+            }
+        } }
+        val temperatureC = { safeDoubleColumn("temperatureC") {
+            walkColumn(HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeTemperatureC(vb.variable.toInt())
+            }
+        } }
+        val biasCurrentMa = { safeDoubleColumn("biasCurrentMa") {
+            walkColumn(HuaweiGponSnmpOids.ONT_OPTICAL_BIAS, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeBiasCurrentMa(vb.variable.toInt())
+            }
+        } }
+        val distanceM = { safeIntColumn("distanceM") {
+            walkColumn(HuaweiGponSnmpOids.ONT_RANGING, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
+            }
+        } }
+        val matchState = { safeStringColumn("matchState") {
+            walkColumn(HuaweiGponSnmpOids.ONT_MATCH_STATUS, SnmpJobType.OPTICAL) { vb ->
+                HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
+            }
+        } }
+
         val merged = if (!properties.snmp.opticalParallelColumns) {
-            SnmpOpticalMerger.merge(rxSafe(), txSafe(), oltSafe())
+            SnmpOpticalMerger.merge(
+                rx = rx(),
+                tx = tx(),
+                oltRx = oltRx(),
+                temperatureC = temperatureC(),
+                biasCurrentMa = biasCurrentMa(),
+                distanceM = distanceM(),
+                matchState = matchState()
+            )
         } else {
-            val executor = Executors.newFixedThreadPool(3)
+            val executor = Executors.newFixedThreadPool(7)
             try {
-                val rxFuture = executor.submit<Map<SnmpOntKey, Double?>> { rxSafe() }
-                val txFuture = executor.submit<Map<SnmpOntKey, Double?>> { txSafe() }
-                val oltFuture = executor.submit<Map<SnmpOntKey, Double?>> { oltSafe() }
-                SnmpOpticalMerger.merge(rxFuture.get(), txFuture.get(), oltFuture.get())
+                val rxFuture = executor.submit<Map<SnmpOntKey, Double?>> { rx() }
+                val txFuture = executor.submit<Map<SnmpOntKey, Double?>> { tx() }
+                val oltFuture = executor.submit<Map<SnmpOntKey, Double?>> { oltRx() }
+                val tempFuture = executor.submit<Map<SnmpOntKey, Double?>> { temperatureC() }
+                val biasFuture = executor.submit<Map<SnmpOntKey, Double?>> { biasCurrentMa() }
+                val distFuture = executor.submit<Map<SnmpOntKey, Int?>> { distanceM() }
+                val matchFuture = executor.submit<Map<SnmpOntKey, String?>> { matchState() }
+                SnmpOpticalMerger.merge(
+                    rx = rxFuture.get(),
+                    tx = txFuture.get(),
+                    oltRx = oltFuture.get(),
+                    temperatureC = tempFuture.get(),
+                    biasCurrentMa = biasFuture.get(),
+                    distanceM = distFuture.get(),
+                    matchState = matchFuture.get()
+                )
             } catch (ex: ExecutionException) {
                 val cause = ex.cause
                 if (cause is IOException) throw cause
@@ -156,10 +230,34 @@ class Snmp4jOltSnmpClient(
         return merged
     }
 
-    private fun safeColumn(
+    private fun safeDoubleColumn(
         name: String,
         walk: () -> Map<SnmpOntKey, Double?>
     ): Map<SnmpOntKey, Double?> {
+        return try {
+            walk()
+        } catch (ex: Exception) {
+            logger.warn("SNMP optical column {} failed: {}", name, ex.message)
+            emptyMap()
+        }
+    }
+
+    private fun safeIntColumn(
+        name: String,
+        walk: () -> Map<SnmpOntKey, Int?>
+    ): Map<SnmpOntKey, Int?> {
+        return try {
+            walk()
+        } catch (ex: Exception) {
+            logger.warn("SNMP optical column {} failed: {}", name, ex.message)
+            emptyMap()
+        }
+    }
+
+    private fun safeStringColumn(
+        name: String,
+        walk: () -> Map<SnmpOntKey, String?>
+    ): Map<SnmpOntKey, String?> {
         return try {
             walk()
         } catch (ex: Exception) {
@@ -176,6 +274,15 @@ class Snmp4jOltSnmpClient(
         } else {
             null
         }
+    }
+
+    private fun decodeDisplayString(vb: VariableBinding): String? {
+        val variable = vb.variable
+        val text = when (variable) {
+            is OctetString -> variable.toString()
+            else -> variable.toString()
+        }.trim()
+        return text.takeIf { it.isNotEmpty() && it != "NULL" }
     }
 
     private fun <T> walkColumn(

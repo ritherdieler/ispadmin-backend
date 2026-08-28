@@ -10,10 +10,21 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrAuditLogRepositor
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
+import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
+import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
+import com.dscorp.wispadmin.oltgateway.dto.BoardPortCatalogDto
+import com.dscorp.wispadmin.oltgateway.dto.CatalogItemDto
+import com.dscorp.wispadmin.oltgateway.dto.CatalogStringItemDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuDetailDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuHistoryDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuHistoryItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuItemDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuLiveStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
+import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
@@ -24,6 +35,7 @@ import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
@@ -41,11 +53,14 @@ open class OltInventorySyncService(
     properties: OltGatewayProperties,
     cliBus: OltCliBus? = null,
     transactionTemplate: TransactionTemplate? = null,
-    snmpClient: OltSnmpClient? = null
+    snmpClient: OltSnmpClient? = null,
+    zoneRepository: OltMgrZoneRepository? = null,
+    onuTypeRepository: OltMgrOnuTypeRepository? = null
 ) {
 
     companion object {
         private val logger = LoggerFactory.getLogger(OltInventorySyncService::class.java)
+        private val SIGNAL_CATEGORY_CALCULATOR = SignalCategoryCalculator()
         private const val NAME_MAX = 512
         /** Soft-deleted rows keep unique (olt,board,port,onu_index); park them here. */
         private const val TOMBSTONE_BOARD = -1
@@ -65,6 +80,8 @@ open class OltInventorySyncService(
         private val cliBusRef = AtomicReference<OltCliBus?>(null)
         private val transactionTemplateRef = AtomicReference<TransactionTemplate?>(null)
         private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
+        private val zoneRepositoryRef = AtomicReference<OltMgrZoneRepository?>(null)
+        private val onuTypeRepositoryRef = AtomicReference<OltMgrOnuTypeRepository?>(null)
     }
 
     init {
@@ -78,6 +95,8 @@ open class OltInventorySyncService(
         taskRepositoryRef.set(taskRepository)
         cliBusRef.set(cliBus)
         transactionTemplateRef.set(transactionTemplate)
+        zoneRepositoryRef.set(zoneRepository)
+        onuTypeRepositoryRef.set(onuTypeRepository)
         snmpClientRef.set(snmpClient)
     }
 
@@ -111,6 +130,10 @@ open class OltInventorySyncService(
 
     private fun snmpClient(): OltSnmpClient? = snmpClientRef.get()
 
+    private fun zoneRepository(): OltMgrZoneRepository? = zoneRepositoryRef.get()
+
+    private fun onuTypeRepository(): OltMgrOnuTypeRepository? = onuTypeRepositoryRef.get()
+
     fun isRunning(): Boolean = running.get()
 
     fun lastStartedAt(): Instant? = lastStartedAtRef.get()
@@ -128,29 +151,43 @@ open class OltInventorySyncService(
     }
 
     @Transactional(readOnly = true)
-    open fun listConfigured(page: Int, size: Int): ConfiguredOnuPageDto {
-        val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 200))
-        val result = onuRepository().findByDeletedAtIsNull(pageable)
-        val items = result.content.map { onu ->
-            val status = onu.status
-            ConfiguredOnuItemDto(
-                id = onu.id!!,
-                sn = onu.sn,
-                externalId = onu.externalId,
-                board = onu.board,
-                port = onu.port,
-                onuIndex = onu.onuIndex,
-                name = onu.name,
-                importedFromOlt = onu.importedFromOlt,
-                runState = status?.runState,
-                matchState = status?.matchState,
-                polledAt = status?.polledAt?.toString(),
-                onuRxDbm = status?.onuRxDbm?.toDouble(),
-                onuTxDbm = status?.onuTxDbm?.toDouble(),
-                oltRxDbm = status?.oltRxDbm?.toDouble(),
-                signalCategory = status?.signalCategory
-            )
-        }
+    open fun listConfigured(
+        page: Int,
+        size: Int,
+        filter: ConfiguredOnuFilter = ConfiguredOnuFilter()
+    ): ConfiguredOnuPageDto {
+        val pageable = PageRequest.of(
+            page.coerceAtLeast(0),
+            size.coerceIn(1, 200),
+            Sort.by(Sort.Order.desc("authorizationDate").nullsLast())
+        )
+        val resolved = resolveFilter(filter)
+        val result = onuRepository().findConfiguredFiltered(
+            q = resolved.q,
+            board = resolved.board,
+            port = resolved.port,
+            oltId = resolved.oltId,
+            zoneId = resolved.zoneId,
+            vlan = resolved.vlan,
+            onuTypeId = resolved.onuTypeId,
+            onuTypeName = resolved.onuTypeName,
+            customProfile = resolved.customProfile,
+            ponType = resolved.ponType,
+            mode = resolved.mode,
+            runState = resolved.runState,
+            signalCategory = resolved.signalCategory,
+            splitterId = resolved.splitterId,
+            configurationMethod = resolved.configurationMethod,
+            wanMode = resolved.wanMode,
+            mgmtIpMode = resolved.mgmtIpMode,
+            importedSynced = resolved.importedSynced,
+            lastResyncFailed = resolved.lastResyncFailed,
+            lineProfileMaptype = resolved.lineProfileMaptype,
+            administrativeStatus = resolved.administrativeStatus,
+            lastDownCause = resolved.lastDownCause,
+            pageable = pageable
+        )
+        val items = result.content.map { onu -> toConfiguredItem(onu) }
         return ConfiguredOnuPageDto(
             items = items,
             page = result.number,
@@ -158,6 +195,312 @@ open class OltInventorySyncService(
             totalElements = result.totalElements,
             totalPages = result.totalPages
         )
+    }
+
+    @Transactional(readOnly = true)
+    open fun getConfiguredByExternalId(externalId: String): ConfiguredOnuDetailDto? {
+        val key = externalId.trim()
+        if (key.isEmpty()) return null
+        val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        return toConfiguredDetail(onu)
+    }
+
+    @Transactional
+    open fun getLiveStatusByExternalId(externalId: String): ConfiguredOnuLiveStatusDto? {
+        val key = externalId.trim()
+        if (key.isEmpty()) return null
+        val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        val detail = queryFacade().onuDetail(onu.board, onu.port, onu.onuIndex)
+        val optical = queryFacade().optical(onu.board, onu.port, onu.onuIndex)
+        val matchState = optical.matchState ?: onu.status?.matchState
+        val distanceM = optical.distanceM ?: onu.status?.distanceM
+        val temperatureC = optical.temperatureC
+        persistLiveOpticalSnapshot(
+            onu = onu,
+            temperatureC = temperatureC,
+            distanceM = optical.distanceM,
+            matchState = optical.matchState,
+            onuRxDbm = optical.rxPowerDbm,
+            onuTxDbm = optical.txPowerDbm,
+            oltRxDbm = optical.oltRxPowerDbm
+        )
+        return ConfiguredOnuLiveStatusDto(
+            sn = detail.sn.ifBlank { onu.sn },
+            runState = detail.runState,
+            matchState = matchState,
+            controlFlag = detail.controlFlag,
+            description = detail.description,
+            onuRxDbm = optical.rxPowerDbm,
+            onuTxDbm = optical.txPowerDbm,
+            oltRxDbm = optical.oltRxPowerDbm,
+            temperatureC = temperatureC,
+            voltageV = optical.voltageV,
+            biasCurrentMa = optical.biasCurrentMa,
+            distanceM = distanceM,
+            lineProfileName = detail.lineProfileName ?: onu.lineProfileName,
+            serviceProfileName = detail.serviceProfileName ?: onu.serviceProfileName
+        )
+    }
+
+    private fun persistLiveOpticalSnapshot(
+        onu: OltMgrOnu,
+        temperatureC: Double?,
+        distanceM: Int?,
+        matchState: String?,
+        onuRxDbm: Double?,
+        onuTxDbm: Double?,
+        oltRxDbm: Double?
+    ) {
+        val status = onu.status ?: return
+        var changed = false
+        if (temperatureC != null) {
+            val nextTemp = temperatureC.toInt()
+            if (status.temperatureC != nextTemp) {
+                status.temperatureC = nextTemp
+                changed = true
+            }
+        }
+        if (distanceM != null && status.distanceM != distanceM) {
+            status.distanceM = distanceM
+            changed = true
+        }
+        if (matchState != null && status.matchState != matchState) {
+            status.matchState = matchState
+            changed = true
+        }
+        if (onuRxDbm != null) {
+            val next = java.math.BigDecimal.valueOf(onuRxDbm).setScale(2, java.math.RoundingMode.HALF_UP)
+            if (status.onuRxDbm == null || status.onuRxDbm!!.compareTo(next) != 0) {
+                status.onuRxDbm = next
+                changed = true
+            }
+        }
+        if (onuTxDbm != null) {
+            val next = java.math.BigDecimal.valueOf(onuTxDbm).setScale(2, java.math.RoundingMode.HALF_UP)
+            if (status.onuTxDbm == null || status.onuTxDbm!!.compareTo(next) != 0) {
+                status.onuTxDbm = next
+                changed = true
+            }
+        }
+        if (oltRxDbm != null) {
+            val next = java.math.BigDecimal.valueOf(oltRxDbm).setScale(2, java.math.RoundingMode.HALF_UP)
+            if (status.oltRxDbm == null || status.oltRxDbm!!.compareTo(next) != 0) {
+                status.oltRxDbm = next
+                changed = true
+            }
+        }
+        if (!changed) return
+        status.polledAt = Instant.now()
+        statusRepository().save(status)
+    }
+
+    @Transactional(readOnly = true)
+    open fun getHistoryByExternalId(externalId: String, limit: Int = 50): ConfiguredOnuHistoryDto? {
+        val key = externalId.trim()
+        if (key.isEmpty()) return null
+        val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        val size = limit.coerceIn(1, 200)
+        val logs = auditLogRepository().findByOnu_IdOrderByCreatedAtDesc(
+            onu.id!!,
+            PageRequest.of(0, size)
+        )
+        return ConfiguredOnuHistoryDto(
+            items = logs.map { log ->
+                ConfiguredOnuHistoryItemDto(
+                    id = log.id!!,
+                    action = log.action,
+                    userId = log.userId,
+                    ipAddress = log.ipAddress,
+                    details = log.details,
+                    createdAt = log.createdAt.toString()
+                )
+            }
+        )
+    }
+
+    @Transactional(readOnly = true)
+    open fun listCatalogs(): OnuCatalogsDto {
+        val olts = oltRepository().findAll().mapNotNull { olt ->
+            val id = olt.id ?: return@mapNotNull null
+            CatalogItemDto(id = id, name = olt.name)
+        }
+        val zones = zoneRepository()?.findAll()?.mapNotNull { z ->
+            val id = z.id ?: return@mapNotNull null
+            CatalogItemDto(id = id, name = z.name)
+        } ?: emptyList()
+        val types = onuTypeRepository()?.findAll()?.mapNotNull { t ->
+            val id = t.id ?: return@mapNotNull null
+            CatalogItemDto(id = id, name = t.name)
+        } ?: emptyList()
+        val splitters = onuRepository().findDistinctSplitterIds().map { id ->
+            CatalogItemDto(id = id, name = "Splitter $id")
+        }
+        return OnuCatalogsDto(
+            olts = olts,
+            zones = zones,
+            onuTypes = types,
+            vlans = onuRepository().findDistinctVlans(),
+            profiles = onuRepository().findDistinctProfiles().map { CatalogStringItemDto(it) },
+            splitters = splitters,
+            ponTypes = onuRepository().findDistinctPonTypes().map { CatalogStringItemDto(it) }
+        )
+    }
+
+    @Transactional(readOnly = true)
+    open fun listBoardsPorts(oltId: Long? = null, board: Int? = null): BoardPortCatalogDto {
+        return BoardPortCatalogDto(
+            boards = onuRepository().findDistinctBoards(oltId),
+            ports = onuRepository().findDistinctPorts(oltId, board)
+        )
+    }
+
+    private fun resolveFilter(filter: ConfiguredOnuFilter): ConfiguredOnuFilter {
+        val q = filter.q?.trim()?.takeIf { it.isNotEmpty() }
+        var runState = filter.runState?.trim()?.takeIf { it.isNotEmpty() }
+        var administrativeStatus = filter.administrativeStatus?.trim()?.takeIf { it.isNotEmpty() }
+        var lastDownCause = filter.lastDownCause?.trim()?.takeIf { it.isNotEmpty() }
+        when (filter.status?.trim()?.lowercase()) {
+            "online" -> runState = "online"
+            "offline" -> runState = "offline"
+            "disabled" -> administrativeStatus = "disabled"
+            "pwrfail" -> lastDownCause = "pwr"
+            "los" -> lastDownCause = "los"
+        }
+        val wanMode = when (filter.wanMode?.trim()?.lowercase()) {
+            "setup via onu webpage", "onu_webpage" -> "onu_webpage"
+            "dhcp" -> "dhcp"
+            "static", "static ip (from ip pools)" -> "static"
+            "pppoe" -> "pppoe"
+            else -> filter.wanMode?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        return filter.copy(
+            q = q,
+            onuTypeName = filter.onuTypeName?.trim()?.takeIf { it.isNotEmpty() },
+            customProfile = filter.customProfile?.trim()?.takeIf { it.isNotEmpty() },
+            ponType = filter.ponType?.trim()?.takeIf { it.isNotEmpty() },
+            mode = filter.mode?.trim()?.takeIf { it.isNotEmpty() },
+            runState = runState,
+            signalCategory = filter.signalCategory?.trim()?.takeIf { it.isNotEmpty() },
+            configurationMethod = filter.configurationMethod?.trim()?.takeIf { it.isNotEmpty() },
+            wanMode = wanMode,
+            mgmtIpMode = filter.mgmtIpMode?.trim()?.takeIf { it.isNotEmpty() },
+            lineProfileMaptype = filter.lineProfileMaptype?.trim()?.takeIf { it.isNotEmpty() },
+            administrativeStatus = administrativeStatus,
+            lastDownCause = lastDownCause
+        )
+    }
+
+    private fun toConfiguredItem(onu: OltMgrOnu): ConfiguredOnuItemDto {
+        val status = onu.status
+        val type = onu.onuType
+        return ConfiguredOnuItemDto(
+            id = onu.id!!,
+            sn = onu.sn,
+            externalId = onu.externalId,
+            board = onu.board,
+            port = onu.port,
+            onuIndex = onu.onuIndex,
+            name = onu.name,
+            importedFromOlt = onu.importedFromOlt,
+            runState = status?.runState,
+            matchState = status?.matchState,
+            polledAt = status?.polledAt?.toString(),
+            onuRxDbm = status?.onuRxDbm?.toDouble(),
+            onuTxDbm = status?.onuTxDbm?.toDouble(),
+            oltRxDbm = status?.oltRxDbm?.toDouble(),
+            signalCategory = resolveSignalCategory(status),
+            oltId = onu.olt.id,
+            oltName = onu.olt.name,
+            zoneName = onu.zone?.name ?: onu.zoneName,
+            splitterId = onu.splitterId,
+            mode = onu.mode,
+            vlan = onu.mainVlanId,
+            onuTypeName = type?.name ?: onu.onuTypeName,
+            authorizationDate = onu.authorizationDate?.toString(),
+            administrativeStatus = onu.administrativeStatus,
+            lastDownCause = status?.lastDownCause,
+            hasVoip = (type?.voipPorts ?: 0) > 0,
+            hasTv = (type?.catvPorts ?: 0) > 0,
+            ponType = onu.ponType,
+            customProfile = onu.customProfile,
+            syncedAfterImport = onu.syncedAfterImport,
+            lastResyncFailed = onu.lastResyncFailed,
+            configurationMethod = onu.configurationMethod,
+            wanMode = onu.wanMode,
+            mgmtIpMode = onu.mgmtIpMode,
+            ipAddress = onu.ipAddress,
+            address = onu.address,
+            contact = onu.contact
+        )
+    }
+
+    private fun toConfiguredDetail(onu: OltMgrOnu): ConfiguredOnuDetailDto {
+        val status = onu.status
+        val type = onu.onuType
+        return ConfiguredOnuDetailDto(
+            id = onu.id!!,
+            sn = onu.sn,
+            externalId = onu.externalId,
+            board = onu.board,
+            port = onu.port,
+            onuIndex = onu.onuIndex,
+            name = onu.name,
+            importedFromOlt = onu.importedFromOlt,
+            runState = status?.runState,
+            matchState = status?.matchState,
+            polledAt = status?.polledAt?.toString(),
+            onuRxDbm = status?.onuRxDbm?.toDouble(),
+            onuTxDbm = status?.onuTxDbm?.toDouble(),
+            oltRxDbm = status?.oltRxDbm?.toDouble(),
+            signalCategory = resolveSignalCategory(status),
+            oltId = onu.olt.id,
+            oltName = onu.olt.name,
+            zoneName = onu.zone?.name ?: onu.zoneName,
+            splitterId = onu.splitterId,
+            splitterPort = onu.splitterPort,
+            mode = onu.mode,
+            vlan = onu.mainVlanId,
+            onuTypeName = type?.name ?: onu.onuTypeName,
+            authorizationDate = onu.authorizationDate?.toString(),
+            administrativeStatus = onu.administrativeStatus,
+            lastDownCause = status?.lastDownCause,
+            hasVoip = (type?.voipPorts ?: 0) > 0,
+            hasTv = (type?.catvPorts ?: 0) > 0,
+            ponType = onu.ponType,
+            gponChannel = onu.gponChannel,
+            customProfile = onu.customProfile,
+            syncedAfterImport = onu.syncedAfterImport,
+            lastResyncFailed = onu.lastResyncFailed,
+            configurationMethod = onu.configurationMethod,
+            wanMode = onu.wanMode,
+            mgmtIpMode = onu.mgmtIpMode,
+            mgmtVlanId = onu.mgmtVlanId,
+            mgmtIpAddress = onu.mgmtIpAddress,
+            tr069Profile = null,
+            ipAddress = onu.ipAddress,
+            subnetMask = onu.subnetMask,
+            defaultGateway = onu.defaultGateway,
+            dns1 = onu.dns1,
+            dns2 = onu.dns2,
+            address = onu.address,
+            contact = onu.contact,
+            latitude = onu.latitude?.toDouble(),
+            longitude = onu.longitude?.toDouble(),
+            lineProfileName = onu.lineProfileName,
+            serviceProfileName = onu.serviceProfileName,
+            lastStatusChange = status?.lastStatusChange?.toString(),
+            temperatureC = status?.temperatureC?.toDouble(),
+            distanceM = status?.distanceM,
+            ethernetPortCount = type?.ethernetPorts ?: 0,
+            wifiPortCount = type?.wifiPorts ?: 0,
+            servicePorts = emptyList()
+        )
+    }
+
+    private fun resolveSignalCategory(status: OltMgrOnuStatusCurrent?): String? {
+        val fromRx = SIGNAL_CATEGORY_CALCULATOR.fromOnuRxDbm(status?.onuRxDbm?.toDouble())?.value
+        if (fromRx != null) return fromRx
+        return status?.signalCategory
     }
 
     open fun syncInventory(): SyncResult {
@@ -421,8 +764,16 @@ open class OltInventorySyncService(
             onu = onu,
             runState = parsed.runState ?: "offline",
             matchState = parsed.matchState,
+            distanceM = parsed.distanceM,
+            lastDownCause = parsed.lastDownCause,
             polledAt = now
         )
+        if (!parsed.lineProfileName.isNullOrBlank()) {
+            onu.lineProfileName = parsed.lineProfileName.trim()
+        }
+        if (!parsed.serviceProfileName.isNullOrBlank()) {
+            onu.serviceProfileName = parsed.serviceProfileName.trim()
+        }
         return onu
     }
 
@@ -474,6 +825,16 @@ open class OltInventorySyncService(
                 onu.name = desc
                 onuChanged = true
             }
+            val lineProf = parsed.lineProfileName?.trim()?.takeIf { it.isNotEmpty() }
+            if (lineProf != null && onu.lineProfileName != lineProf) {
+                onu.lineProfileName = lineProf
+                onuChanged = true
+            }
+            val srvProf = parsed.serviceProfileName?.trim()?.takeIf { it.isNotEmpty() }
+            if (srvProf != null && onu.serviceProfileName != srvProf) {
+                onu.serviceProfileName = srvProf
+                onuChanged = true
+            }
         }
 
         val statusChanged = applyStatus(onu, parsed, now, pending)
@@ -497,23 +858,37 @@ open class OltInventorySyncService(
     ): Boolean {
         val runState = parsed.runState ?: "offline"
         val matchState = parsed.matchState
+        val distanceM = parsed.distanceM
+        val lastDownCause = parsed.lastDownCause
         val status = onu.status
         if (status == null) {
             val created = OltMgrOnuStatusCurrent(
                 onu = onu,
                 runState = runState,
                 matchState = matchState,
+                distanceM = distanceM,
+                lastDownCause = lastDownCause,
                 polledAt = now
             )
             onu.status = created
             pending.statuses += created
             return true
         }
-        if (status.runState == runState && status.matchState == matchState) {
+        if (status.runState == runState &&
+            status.matchState == matchState &&
+            (distanceM == null || status.distanceM == distanceM) &&
+            (lastDownCause == null || status.lastDownCause == lastDownCause)
+        ) {
             return false
         }
         status.runState = runState
         status.matchState = matchState
+        if (distanceM != null) {
+            status.distanceM = distanceM
+        }
+        if (lastDownCause != null) {
+            status.lastDownCause = lastDownCause
+        }
         status.polledAt = now
         pending.statuses += status
         return true

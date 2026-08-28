@@ -72,6 +72,31 @@ class RouterOs7RestAdapterUnitTest {
     }
 
     @Test
+    fun `print queue simple with proplist sends proplist in body`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """[{"target":"10.0.0.1/32","bytes":"1000/2000","rate":"500/1000","packets":"10/20"}]"""
+                )
+                .addHeader("Content-Type", "application/json")
+        )
+
+        val rows = adapter.withSession(device.copy(port = server.port)) { session ->
+            session.print(
+                "/queue/simple",
+                proplist = listOf(".id", "target", "name", "bytes", "rate", "packets")
+            )
+        }
+
+        assertEquals("10.0.0.1/32", rows.first()["target"])
+        val recorded = server.takeRequest()
+        val body = recorded.body.readUtf8()
+        assertTrue(body.contains("\".proplist\""))
+        assertTrue(body.contains("bytes"))
+    }
+
+    @Test
     fun `print system resource returns version`() {
         server.enqueue(
             MockResponse()

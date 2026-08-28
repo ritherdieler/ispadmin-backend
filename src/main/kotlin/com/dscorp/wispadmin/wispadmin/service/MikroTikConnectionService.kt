@@ -87,6 +87,24 @@ class MikroTikConnectionService(
             path == "/ip/firewall/filter" -> listOf(
                 mapOf(".id" to "*20", "comment" to "CORTADO POR DEUDA - MOCK", "disabled" to "false")
             )
+            path == "/queue/simple" -> listOf(
+                mapOf(
+                    ".id" to "*30",
+                    "name" to "id:1, usuario:Mock Cliente, plan:100M",
+                    "target" to "10.10.10.20/32",
+                    "bytes" to "1000000/2000000",
+                    "rate" to "500000/1000000",
+                    "packets" to "1000/2000"
+                ),
+                mapOf(
+                    ".id" to "*31",
+                    "name" to "id:2, usuario:Mock Cliente 2, plan:50M",
+                    "target" to "10.10.10.21/32",
+                    "bytes" to "500000/800000",
+                    "rate" to "250000/400000",
+                    "packets" to "500/800"
+                )
+            )
             else -> emptyList()
         }
     }

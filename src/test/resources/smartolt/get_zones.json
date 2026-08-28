@@ -1,0 +1,17 @@
+{
+  "response": [
+    {
+      "id": "1",
+      "name": "Zone 1",
+      "imported_date": "2024-01-01",
+      "imported_from_olt": "0"
+    },
+    {
+      "id": "2",
+      "name": "Zone 2",
+      "imported_date": "2024-01-01",
+      "imported_from_olt": "0"
+    }
+  ],
+  "status": true
+}

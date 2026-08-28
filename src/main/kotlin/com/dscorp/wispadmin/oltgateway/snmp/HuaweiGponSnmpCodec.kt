@@ -53,6 +53,38 @@ object HuaweiGponSnmpCodec {
         else -> null
     }
 
+    fun decodeMatchState(raw: Int): String? = when (raw) {
+        1 -> "match"
+        2 -> "mismatch"
+        else -> null
+    }
+
+    fun decodeRangingMeters(raw: Int): Int? {
+        if (raw <= 0) return null
+        return raw
+    }
+
+    /**
+     * Last-down cause codes from HUAWEI-XPON / community MA5608T docs.
+     * Maps to compact tokens used by UI (los / pwr).
+     */
+    fun decodeLastDownCause(raw: Int): String? = when (raw) {
+        1, 2 -> "los"
+        13 -> "pwr"
+        -1 -> null
+        else -> if (raw > 0) "code_$raw" else null
+    }
+
+    fun decodeTemperatureC(raw: Int): Double? {
+        if (raw == INVALID_POWER || raw == -1) return null
+        return if (kotlin.math.abs(raw) >= 1000) raw / 100.0 else raw.toDouble()
+    }
+
+    fun decodeBiasCurrentMa(raw: Int): Double? {
+        if (raw == INVALID_POWER || raw < 0) return null
+        return raw / 1000.0
+    }
+
     /** ONT Rx/Tx: SNMP integer in 0.01 dBm units. */
     fun decodeOntPowerDbm(raw: Int): Double? {
         if (raw == INVALID_POWER) return null

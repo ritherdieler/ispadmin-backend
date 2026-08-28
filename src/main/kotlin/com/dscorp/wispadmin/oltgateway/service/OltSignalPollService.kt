@@ -236,7 +236,10 @@ open class OltSignalPollService(
                 ontId = key.ontId,
                 rxPowerDbm = onuRxDbm,
                 txPowerDbm = onuTxDbm,
-                oltRxPowerDbm = oltRxDbm
+                oltRxPowerDbm = oltRxDbm,
+                temperatureC = temperatureC,
+                biasCurrentMa = biasCurrentMa,
+                distanceM = distanceM
             )
         )
     }
@@ -393,22 +396,24 @@ open class OltSignalPollService(
         val onuTx = toDecimal(optical.txPowerDbm)
         val oltRx = toDecimal(optical.oltRxPowerDbm)
         val temperature = optical.temperatureC?.toInt()
+        val distanceM = optical.distanceM
         val status = onu.status
         if (status != null) {
-            // Null from a failed SNMP column must not wipe a previous good reading.
             val nextRx = onuRx ?: status.onuRxDbm
             val nextTx = onuTx ?: status.onuTxDbm
             val nextOltRx = oltRx ?: status.oltRxDbm
             val nextTemp = temperature ?: status.temperatureC
+            val nextDistance = distanceM ?: status.distanceM
             val nextCategory = signalCategoryCalculator().fromOnuRxDbm(nextRx?.toDouble())?.value
                 ?: status.signalCategory
-            if (!opticalChanged(status, nextRx, nextTx, nextOltRx, nextTemp, nextCategory)) {
+            if (!opticalChanged(status, nextRx, nextTx, nextOltRx, nextTemp, nextDistance, nextCategory)) {
                 return false
             }
             status.onuRxDbm = nextRx
             status.onuTxDbm = nextTx
             status.oltRxDbm = nextOltRx
             status.temperatureC = nextTemp
+            status.distanceM = nextDistance
             status.signalCategory = nextCategory
             status.polledAt = now
             pending += status
@@ -422,6 +427,7 @@ open class OltSignalPollService(
             onuTxDbm = onuTx,
             oltRxDbm = oltRx,
             temperatureC = temperature,
+            distanceM = distanceM,
             signalCategory = category,
             polledAt = now
         )
@@ -436,12 +442,14 @@ open class OltSignalPollService(
         onuTx: BigDecimal?,
         oltRx: BigDecimal?,
         temperature: Int?,
+        distanceM: Int?,
         category: String?
     ): Boolean {
         return !decimalsEqual(status.onuRxDbm, onuRx) ||
             !decimalsEqual(status.onuTxDbm, onuTx) ||
             !decimalsEqual(status.oltRxDbm, oltRx) ||
             status.temperatureC != temperature ||
+            status.distanceM != distanceM ||
             status.signalCategory != category
     }
 

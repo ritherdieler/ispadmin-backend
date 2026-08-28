@@ -23,6 +23,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
+import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
@@ -42,7 +43,11 @@ open class OltManagerFacade(
 
     @Transactional(readOnly = true)
     open fun unconfiguredOnus(): SmartOltUnconfiguredOnusResponseDto {
-        return mapper.toUnconfirmedOnuResponse(queryFacade.autofindParsed(), properties.oltId)
+        val pending = queryFacade.autofindParsed().filter { parsed ->
+            val sn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
+            sn.isNotBlank() && onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isEmpty
+        }
+        return mapper.toUnconfirmedOnuResponse(pending, properties.oltId)
     }
 
     @Transactional
@@ -140,7 +145,9 @@ open class OltManagerFacade(
                     mainVlanId = vlan,
                     customProfile = request.custom_profile,
                     authorizationDate = Instant.now(),
-                    administrativeStatus = "enabled"
+                    administrativeStatus = "enabled",
+                    importedFromOlt = false,
+                    syncedAfterImport = true
                 )
             )
             val status = OltMgrOnuStatusCurrent(onu = onu, runState = "offline", polledAt = Instant.now())

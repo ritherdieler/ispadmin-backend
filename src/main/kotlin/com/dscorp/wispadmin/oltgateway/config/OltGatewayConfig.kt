@@ -25,6 +25,8 @@ import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
 import com.dscorp.wispadmin.oltgateway.service.SignalCategoryCalculator
+import com.dscorp.wispadmin.oltgateway.service.SmartOltImportService
+import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltCatalogClient
 import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpBusRegistry
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
@@ -245,6 +247,8 @@ class OltGatewayConfig {
         auditLogRepository: OltMgrAuditLogRepository,
         syncRunRepository: OltMgrSyncRunRepository,
         taskRepository: OltMgrTaskRepository,
+        zoneRepository: OltMgrZoneRepository,
+        onuTypeRepository: OltMgrOnuTypeRepository,
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
         snmpClient: ObjectProvider<OltSnmpClient>,
@@ -261,7 +265,9 @@ class OltGatewayConfig {
             properties = properties,
             cliBus = cliBus.ifAvailable,
             snmpClient = snmpClient.ifAvailable,
-            transactionTemplate = TransactionTemplate(transactionManager)
+            transactionTemplate = TransactionTemplate(transactionManager),
+            zoneRepository = zoneRepository,
+            onuTypeRepository = onuTypeRepository
         )
     }
 
@@ -312,5 +318,28 @@ class OltGatewayConfig {
     )
     fun oltSignalPollScheduler(signalPollService: OltSignalPollService): OltSignalPollScheduler {
         return OltSignalPollScheduler(signalPollService)
+    }
+
+    @Bean
+    fun smartOltImportService(
+        catalogClient: SmartOltCatalogClient,
+        oltRepository: OltMgrOltRepository,
+        zoneRepository: OltMgrZoneRepository,
+        onuTypeRepository: OltMgrOnuTypeRepository,
+        onuRepository: OltMgrOnuRepository,
+        statusRepository: OltMgrOnuStatusCurrentRepository,
+        auditLogRepository: OltMgrAuditLogRepository,
+        properties: OltGatewayProperties
+    ): SmartOltImportService {
+        return SmartOltImportService(
+            catalogClient = catalogClient,
+            oltRepository = oltRepository,
+            zoneRepository = zoneRepository,
+            onuTypeRepository = onuTypeRepository,
+            onuRepository = onuRepository,
+            statusRepository = statusRepository,
+            auditLogRepository = auditLogRepository,
+            properties = properties
+        )
     }
 }

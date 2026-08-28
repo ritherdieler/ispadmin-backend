@@ -13,12 +13,15 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
 import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -701,6 +704,603 @@ class OltInventorySyncServiceTest {
         assertTrue(run.captured.durationMs >= 0)
     }
 
+    @Test
+    fun `listConfigured ordena por authorizationDate descendente por defecto`() {
+        val pageableSlot = slot<org.springframework.data.domain.Pageable>()
+        every {
+            onuRepository.findConfiguredFiltered(
+                q = null,
+                board = null,
+                port = null,
+                oltId = null,
+                zoneId = null,
+                vlan = null,
+                onuTypeId = null,
+                onuTypeName = null,
+                customProfile = null,
+                ponType = null,
+                mode = null,
+                runState = null,
+                signalCategory = null,
+                splitterId = null,
+                configurationMethod = null,
+                wanMode = null,
+                mgmtIpMode = null,
+                importedSynced = null,
+                lastResyncFailed = null,
+                lineProfileMaptype = null,
+                administrativeStatus = null,
+                lastDownCause = null,
+                pageable = capture(pageableSlot)
+            )
+        } returns org.springframework.data.domain.PageImpl(
+            emptyList(),
+            PageRequest.of(0, 50),
+            0
+        )
+
+        service.listConfigured(page = 0, size = 50)
+
+        val order = pageableSlot.captured.sort.getOrderFor("authorizationDate")
+        assertNotNull(order)
+        assertEquals(Sort.Direction.DESC, order!!.direction)
+    }
+
+    @Test
+    fun `listConfigured aplica filtros y pagina`() {
+        val page = org.springframework.data.domain.PageImpl(
+            listOf(
+                OltMgrOnu(
+                    id = 10L,
+                    sn = "HWTCABCDEF01",
+                    externalId = "ext-10",
+                    olt = olt,
+                    board = 1,
+                    port = 2,
+                    onuIndex = 3,
+                    name = "Cliente A",
+                    importedFromOlt = true
+                ).also {
+                    it.status = OltMgrOnuStatusCurrent(
+                        onu = it,
+                        runState = "online",
+                        matchState = "match",
+                        polledAt = Instant.parse("2026-08-27T12:00:00Z"),
+                        onuRxDbm = java.math.BigDecimal("-18.5"),
+                        signalCategory = "Good"
+                    )
+                }
+            ),
+            org.springframework.data.domain.PageRequest.of(0, 20),
+            1
+        )
+        every {
+            onuRepository.findConfiguredFiltered(
+                q = "HWTC",
+                board = 1,
+                port = 2,
+                oltId = null,
+                zoneId = null,
+                vlan = null,
+                onuTypeId = null,
+                onuTypeName = null,
+                customProfile = null,
+                ponType = null,
+                mode = null,
+                runState = "online",
+                signalCategory = "Good",
+                splitterId = null,
+                configurationMethod = null,
+                wanMode = null,
+                mgmtIpMode = null,
+                importedSynced = null,
+                lastResyncFailed = null,
+                lineProfileMaptype = null,
+                administrativeStatus = null,
+                lastDownCause = null,
+                pageable = any()
+            )
+        } returns page
+
+        val result = service.listConfigured(
+            page = 0,
+            size = 20,
+            filter = ConfiguredOnuFilter(
+                q = "HWTC",
+                board = 1,
+                port = 2,
+                runState = "online",
+                signalCategory = "Good"
+            )
+        )
+
+        assertEquals(1, result.items.size)
+        assertEquals("HWTCABCDEF01", result.items[0].sn)
+        assertEquals("online", result.items[0].runState)
+        assertEquals("good", result.items[0].signalCategory)
+        assertEquals(-18.5, result.items[0].onuRxDbm)
+        assertEquals(1, result.totalElements)
+        verify(exactly = 1) {
+            onuRepository.findConfiguredFiltered(
+                "HWTC", 1, 2, null, null, null, null, null, null, null, null,
+                "online", "Good", null, null, null, null, null, null, null, null, null, any()
+            )
+        }
+    }
+
+    @Test
+    fun `listConfigured recalcula signalCategory desde onuRxDbm aunque DB este stale`() {
+        val page = org.springframework.data.domain.PageImpl(
+            listOf(
+                OltMgrOnu(
+                    id = 11L,
+                    sn = "VSOL00872399",
+                    externalId = "ext-11",
+                    olt = olt,
+                    board = 0,
+                    port = 0,
+                    onuIndex = 1,
+                    importedFromOlt = true
+                ).also {
+                    it.status = OltMgrOnuStatusCurrent(
+                        onu = it,
+                        runState = "online",
+                        polledAt = Instant.parse("2026-08-27T12:00:00Z"),
+                        onuRxDbm = java.math.BigDecimal("-2.01"),
+                        signalCategory = "critical"
+                    )
+                }
+            ),
+            org.springframework.data.domain.PageRequest.of(0, 20),
+            1
+        )
+        every {
+            onuRepository.findConfiguredFiltered(
+                q = null,
+                board = null,
+                port = null,
+                oltId = null,
+                zoneId = null,
+                vlan = null,
+                onuTypeId = null,
+                onuTypeName = null,
+                customProfile = null,
+                ponType = null,
+                mode = null,
+                runState = null,
+                signalCategory = null,
+                splitterId = null,
+                configurationMethod = null,
+                wanMode = null,
+                mgmtIpMode = null,
+                importedSynced = null,
+                lastResyncFailed = null,
+                lineProfileMaptype = null,
+                administrativeStatus = null,
+                lastDownCause = null,
+                pageable = any()
+            )
+        } returns page
+
+        val result = service.listConfigured(page = 0, size = 20)
+
+        assertEquals("good", result.items[0].signalCategory)
+        assertEquals(-2.01, result.items[0].onuRxDbm)
+    }
+
+    @Test
+    fun `listConfigured trata q en blanco como null`() {
+        every {
+            onuRepository.findConfiguredFiltered(
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, any()
+            )
+        } returns org.springframework.data.domain.Page.empty()
+
+        service.listConfigured(page = 0, size = 50, filter = ConfiguredOnuFilter(q = "   "))
+
+        verify(exactly = 1) {
+            onuRepository.findConfiguredFiltered(
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, any()
+            )
+        }
+    }
+
+    @Test
+    fun `listConfigured mapea status pwrfail a lastDownCause`() {
+        every {
+            onuRepository.findConfiguredFiltered(
+                q = null,
+                board = null,
+                port = null,
+                oltId = null,
+                zoneId = null,
+                vlan = null,
+                onuTypeId = null,
+                onuTypeName = null,
+                customProfile = null,
+                ponType = null,
+                mode = null,
+                runState = null,
+                signalCategory = null,
+                splitterId = null,
+                configurationMethod = null,
+                wanMode = null,
+                mgmtIpMode = null,
+                importedSynced = null,
+                lastResyncFailed = null,
+                lineProfileMaptype = null,
+                administrativeStatus = null,
+                lastDownCause = "pwr",
+                pageable = any()
+            )
+        } returns org.springframework.data.domain.Page.empty()
+
+        service.listConfigured(page = 0, size = 50, filter = ConfiguredOnuFilter(status = "pwrfail"))
+
+        verify(exactly = 1) {
+            onuRepository.findConfiguredFiltered(
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, "pwr", any()
+            )
+        }
+    }
+
+    @Test
+    fun `getConfiguredByExternalId mapea campos de detalle desde BD`() {
+        val zone = OltMgrZone(id = 10L, name = "Zone 1")
+        val onu = OltMgrOnu(
+            id = 1551L,
+            sn = "ZTEGDC47DAD1",
+            externalId = "gigafiber-ma5608t_1_1_25",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 25,
+            name = "WILI MORILLO",
+            importedFromOlt = true,
+            zone = zone,
+            zoneName = "Zone 1",
+            splitterId = 42L,
+            splitterPort = 3,
+            mode = "routing",
+            mainVlanId = 100,
+            ponType = "gpon",
+            gponChannel = "gpon",
+            customProfile = "Generic_1",
+            wanMode = "onu_webpage",
+            configurationMethod = "omci",
+            mgmtIpMode = "inactive",
+            mgmtVlanId = null,
+            mgmtIpAddress = null,
+            address = "Calle 1",
+            contact = "999",
+            lineProfileName = "line-1",
+            serviceProfileName = "svc-1",
+            authorizationDate = Instant.parse("2026-08-26T17:39:06Z")
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onu = it,
+                runState = "online",
+                matchState = "match",
+                polledAt = Instant.parse("2026-08-27T12:00:00Z"),
+                onuRxDbm = java.math.BigDecimal("-20.96"),
+                oltRxDbm = java.math.BigDecimal("-25.53"),
+                onuTxDbm = java.math.BigDecimal("2.14"),
+                temperatureC = 37,
+                distanceM = 795,
+                lastDownCause = null,
+                lastStatusChange = Instant.parse("2026-08-27T11:00:00Z")
+            )
+        }
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_1_25") } returns Optional.of(onu)
+
+        val detail = service.getConfiguredByExternalId("gigafiber-ma5608t_1_1_25")
+
+        assertNotNull(detail)
+        assertEquals("ZTEGDC47DAD1", detail!!.sn)
+        assertEquals("gigafiber-ma5608t_1_1_25", detail.externalId)
+        assertEquals(1, detail.board)
+        assertEquals(1, detail.port)
+        assertEquals(25, detail.onuIndex)
+        assertEquals("WILI MORILLO", detail.name)
+        assertEquals("gigafiber-ma5608t", detail.oltName)
+        assertEquals("Zone 1", detail.zoneName)
+        assertEquals(42L, detail.splitterId)
+        assertEquals(3, detail.splitterPort)
+        assertEquals("routing", detail.mode)
+        assertEquals(100, detail.vlan)
+        assertEquals("gpon", detail.gponChannel)
+        assertEquals("Generic_1", detail.customProfile)
+        assertEquals("onu_webpage", detail.wanMode)
+        assertEquals("omci", detail.configurationMethod)
+        assertEquals("inactive", detail.mgmtIpMode)
+        assertEquals(-20.96, detail.onuRxDbm)
+        assertEquals(-25.53, detail.oltRxDbm)
+        assertEquals(37.0, detail.temperatureC)
+        assertEquals(795, detail.distanceM)
+        assertEquals("online", detail.runState)
+        assertEquals("line-1", detail.lineProfileName)
+        assertEquals("svc-1", detail.serviceProfileName)
+        assertEquals("Calle 1", detail.address)
+        assertEquals("999", detail.contact)
+    }
+
+    @Test
+    fun `getConfiguredByExternalId retorna null si no existe`() {
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
+
+        assertNull(service.getConfiguredByExternalId("missing"))
+    }
+
+    @Test
+    fun `getLiveStatusByExternalId combina onuDetail y optical`() {
+        val onu = OltMgrOnu(
+            id = 1551L,
+            sn = "ZTEGDC47DAD1",
+            externalId = "gigafiber-ma5608t_1_1_25",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 25,
+            name = "WILI MORILLO",
+            importedFromOlt = true
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onu = it,
+                runState = "offline",
+                matchState = "mismatch",
+                distanceM = 795
+            )
+        }
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_1_25") } returns Optional.of(onu)
+        every { queryFacade.onuDetail(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OnuDetailDto(
+            sn = "ZTEGDC47DAD1",
+            frame = 0,
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            description = "WILI MORILLO",
+            runState = "online",
+            controlFlag = "active",
+            lineProfileId = 1,
+            lineProfileName = "line-1",
+            serviceProfileId = 2,
+            serviceProfileName = "svc-1"
+        )
+        every { queryFacade.optical(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto(
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            rxPowerDbm = -20.96,
+            txPowerDbm = 2.14,
+            temperatureC = 48.5,
+            voltageV = 3.3,
+            biasCurrentMa = 10.0,
+            oltRxPowerDbm = -25.53
+        )
+
+        val live = service.getLiveStatusByExternalId("gigafiber-ma5608t_1_1_25")
+
+        assertNotNull(live)
+        assertEquals("ZTEGDC47DAD1", live!!.sn)
+        assertEquals("online", live.runState)
+        assertEquals("active", live.controlFlag)
+        assertEquals("WILI MORILLO", live.description)
+        assertEquals("mismatch", live.matchState)
+        assertEquals(-20.96, live.onuRxDbm)
+        assertEquals(2.14, live.onuTxDbm)
+        assertEquals(-25.53, live.oltRxDbm)
+        assertEquals(48.5, live.temperatureC)
+        assertEquals(795, live.distanceM)
+        assertEquals("line-1", live.lineProfileName)
+        assertEquals("svc-1", live.serviceProfileName)
+        verify(exactly = 1) { queryFacade.onuDetail(1, 1, 25) }
+        verify(exactly = 1) { queryFacade.optical(1, 1, 25) }
+    }
+
+    @Test
+    fun `getLiveStatusByExternalId prefiere match y distancia del optical SNMP`() {
+        val onu = OltMgrOnu(
+            id = 1551L,
+            sn = "ZTEGDC47DAD1",
+            externalId = "gigafiber-ma5608t_1_1_25",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 25,
+            importedFromOlt = true
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onu = it,
+                runState = "offline",
+                matchState = "mismatch",
+                distanceM = 100
+            )
+        }
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_1_25") } returns Optional.of(onu)
+        every { queryFacade.onuDetail(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OnuDetailDto(
+            sn = "ZTEGDC47DAD1",
+            frame = 0,
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            description = null,
+            runState = "online",
+            controlFlag = null,
+            lineProfileId = null,
+            lineProfileName = null,
+            serviceProfileId = null,
+            serviceProfileName = null
+        )
+        every { queryFacade.optical(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto(
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            rxPowerDbm = -21.0,
+            txPowerDbm = 2.0,
+            temperatureC = 49.0,
+            voltageV = null,
+            biasCurrentMa = 11.0,
+            oltRxPowerDbm = -25.0,
+            distanceM = 795,
+            matchState = "match"
+        )
+
+        val live = service.getLiveStatusByExternalId("gigafiber-ma5608t_1_1_25")
+
+        assertNotNull(live)
+        assertEquals("match", live!!.matchState)
+        assertEquals(795, live.distanceM)
+        assertEquals(49.0, live.temperatureC)
+        assertEquals(11.0, live.biasCurrentMa)
+    }
+
+    @Test
+    fun `getLiveStatusByExternalId persiste temperatura y distancia en status`() {
+        val onu = OltMgrOnu(
+            id = 1551L,
+            sn = "ZTEGDC47DAD1",
+            externalId = "gigafiber-ma5608t_1_1_25",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 25,
+            importedFromOlt = true
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onu = it,
+                runState = "offline",
+                matchState = null,
+                distanceM = null,
+                temperatureC = null
+            )
+        }
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_1_25") } returns Optional.of(onu)
+        every { queryFacade.onuDetail(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OnuDetailDto(
+            sn = "ZTEGDC47DAD1",
+            frame = 0,
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            description = null,
+            runState = "online",
+            controlFlag = null,
+            lineProfileId = null,
+            lineProfileName = null,
+            serviceProfileId = null,
+            serviceProfileName = null
+        )
+        every { queryFacade.optical(1, 1, 25) } returns com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto(
+            slot = 1,
+            port = 1,
+            ontId = 25,
+            rxPowerDbm = -21.0,
+            txPowerDbm = 2.0,
+            temperatureC = 37.0,
+            voltageV = null,
+            biasCurrentMa = 11.0,
+            oltRxPowerDbm = -25.0,
+            distanceM = 795,
+            matchState = "match"
+        )
+        every { statusRepository.save(any()) } answers { firstArg() }
+
+        service.getLiveStatusByExternalId("gigafiber-ma5608t_1_1_25")
+
+        assertEquals(37, onu.status?.temperatureC)
+        assertEquals(795, onu.status?.distanceM)
+        assertEquals("match", onu.status?.matchState)
+        verify(exactly = 1) { statusRepository.save(onu.status!!) }
+    }
+
+    @Test
+    fun `getLiveStatusByExternalId retorna null si no existe`() {
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
+
+        assertNull(service.getLiveStatusByExternalId("missing"))
+    }
+
+    @Test
+    fun `getHistoryByExternalId mapea audit logs de la ONU`() {
+        val onu = OltMgrOnu(
+            id = 1551L,
+            sn = "ZTEGDC47DAD1",
+            externalId = "gigafiber-ma5608t_1_1_25",
+            olt = olt,
+            board = 1,
+            port = 1,
+            onuIndex = 25,
+            name = "WILI MORILLO",
+            importedFromOlt = true
+        )
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_1_25") } returns Optional.of(onu)
+        every {
+            auditLogRepository.findByOnu_IdOrderByCreatedAtDesc(1551L, any())
+        } returns listOf(
+            OltMgrAuditLog(
+                id = 9L,
+                olt = olt,
+                onu = onu,
+                action = "reboot_onu",
+                userId = 1L,
+                source = "api",
+                ipAddress = "10.0.0.1",
+                details = """{"sn":"ZTEGDC47DAD1"}""",
+                createdAt = Instant.parse("2026-08-27T15:00:00Z")
+            )
+        )
+
+        val history = service.getHistoryByExternalId("gigafiber-ma5608t_1_1_25", limit = 20)
+
+        assertNotNull(history)
+        assertEquals(1, history!!.items.size)
+        assertEquals(9L, history.items[0].id)
+        assertEquals("reboot_onu", history.items[0].action)
+        assertEquals(1L, history.items[0].userId)
+        assertEquals("10.0.0.1", history.items[0].ipAddress)
+        assertEquals("""{"sn":"ZTEGDC47DAD1"}""", history.items[0].details)
+        assertEquals("2026-08-27T15:00:00Z", history.items[0].createdAt)
+    }
+
+    @Test
+    fun `getHistoryByExternalId retorna null si no existe`() {
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
+
+        assertNull(service.getHistoryByExternalId("missing"))
+    }
+
+    @Test
+    fun `insert persiste distancia lastDown y perfiles SNMP`() {
+        every { queryFacade.listOnusParsed() } returns listOf(
+            summary(
+                sn = "SNEXTRAS01",
+                slot = 1,
+                port = 1,
+                ontId = 25,
+                runState = "online",
+                matchState = "match",
+                description = "WILI",
+                distanceM = 795,
+                lastDownCause = "los",
+                lineProfileName = "line-1",
+                serviceProfileName = "svc-1"
+            )
+        )
+        val saved = slot<Iterable<OltMgrOnu>>()
+        every { onuRepository.saveAll(capture(saved)) } answers { firstArg<Iterable<OltMgrOnu>>().toList() }
+
+        val result = service.syncInventory()
+
+        assertEquals(1, result.inserted)
+        val savedOnu = saved.captured.single()
+        assertEquals(795, savedOnu.status?.distanceM)
+        assertEquals("los", savedOnu.status?.lastDownCause)
+        assertEquals("line-1", savedOnu.lineProfileName)
+        assertEquals("svc-1", savedOnu.serviceProfileName)
+    }
+
     private fun summary(
         sn: String,
         slot: Int,
@@ -708,7 +1308,11 @@ class OltInventorySyncServiceTest {
         ontId: Int,
         runState: String? = "online",
         matchState: String? = "match",
-        description: String? = null
+        description: String? = null,
+        distanceM: Int? = null,
+        lastDownCause: String? = null,
+        lineProfileName: String? = null,
+        serviceProfileName: String? = null
     ) = ParsedOnuSummary(
         frame = 0,
         slot = slot,
@@ -719,6 +1323,10 @@ class OltInventorySyncServiceTest {
         runState = runState,
         configState = "normal",
         matchState = matchState,
-        description = description
+        description = description,
+        distanceM = distanceM,
+        lastDownCause = lastDownCause,
+        lineProfileName = lineProfileName,
+        serviceProfileName = serviceProfileName
     )
 }

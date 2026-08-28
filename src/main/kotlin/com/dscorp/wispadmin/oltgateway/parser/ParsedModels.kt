@@ -49,7 +49,11 @@ data class ParsedOnuSummary(
     val runState: String? = null,
     val configState: String? = null,
     val matchState: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val distanceM: Int? = null,
+    val lastDownCause: String? = null,
+    val lineProfileName: String? = null,
+    val serviceProfileName: String? = null
 )
 
 data class ParsedOpticalInfo(
@@ -59,5 +63,6 @@ data class ParsedOpticalInfo(
     val oltRxPowerDbm: Double? = null,
     val temperatureC: Double? = null,
     val voltageV: Double? = null,
-    val biasCurrentMa: Double? = null
+    val biasCurrentMa: Double? = null,
+    val distanceM: Int? = null
 )
