@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.traffic.service
 import com.dscorp.wispadmin.routeros.RouterOsTrafficCounterParser
 import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficLiveTickDto
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 
 data class SubscriptionTrafficLiveTickState(
     val lastRxBytes: Long? = null,
@@ -25,11 +26,12 @@ object SubscriptionTrafficLiveTickBuilder {
         intervalSeconds: Double = 1.0,
         timestamp: LocalDateTime = LocalDateTime.now()
     ): SubscriptionTrafficLiveTickBuildResult {
+        val tickTimestamp = timestamp.truncatedTo(ChronoUnit.SECONDS).toString()
         if (queueRow == null) {
             return SubscriptionTrafficLiveTickBuildResult(
                 tick = SubscriptionTrafficLiveTickDto(
                     subscriptionId = subscriptionId,
-                    timestamp = timestamp.toString(),
+                    timestamp = tickTimestamp,
                     rxMbps = null,
                     txMbps = null,
                     rxBytesDelta = 0L,
@@ -48,7 +50,7 @@ object SubscriptionTrafficLiveTickBuilder {
             return SubscriptionTrafficLiveTickBuildResult(
                 tick = SubscriptionTrafficLiveTickDto(
                     subscriptionId = subscriptionId,
-                    timestamp = timestamp.toString(),
+                    timestamp = tickTimestamp,
                     rxMbps = null,
                     txMbps = null,
                     rxBytesDelta = 0L,
@@ -83,7 +85,7 @@ object SubscriptionTrafficLiveTickBuilder {
         return SubscriptionTrafficLiveTickBuildResult(
             tick = SubscriptionTrafficLiveTickDto(
                 subscriptionId = subscriptionId,
-                timestamp = timestamp.toString(),
+                timestamp = tickTimestamp,
                 rxMbps = rxMbps,
                 txMbps = txMbps,
                 rxBytesDelta = rxDelta,

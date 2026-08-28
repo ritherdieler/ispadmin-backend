@@ -84,4 +84,15 @@ class SubscriptionTrafficLiveTickBuilderTest {
         assertEquals(5000L, result.tick.sessionRxBytes)
         assertNull(result.tick.rxMbps?.takeIf { it > 0 })
     }
+
+    @Test
+    fun `buildFromQueueRow truncates timestamp to seconds`() {
+        val result = SubscriptionTrafficLiveTickBuilder.buildFromQueueRow(
+            subscriptionId = 1,
+            queueRow = mapOf("target" to "10.0.0.5/32", "bytes" to "0/0", "rate" to "0/0"),
+            previous = SubscriptionTrafficLiveTickState(),
+            timestamp = LocalDateTime.parse("2026-08-28T10:00:00.123456789")
+        )
+        assertEquals("2026-08-28T10:00:00", result.tick.timestamp)
+    }
 }
