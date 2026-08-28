@@ -57,7 +57,7 @@ class SubscriptionTrafficController(
     @GetMapping("/{id}/traffic/day")
     fun getTrafficDay(
         @PathVariable id: Int,
-        @RequestParam date: LocalDate
+        @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate
     ): SubscriptionTrafficDayDto {
         return queryService.getDay(id, date)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Subscription not found")
