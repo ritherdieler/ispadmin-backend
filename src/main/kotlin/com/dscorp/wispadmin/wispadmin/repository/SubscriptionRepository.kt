@@ -111,6 +111,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         """
         SELECT DISTINCT s FROM Subscription s
         LEFT JOIN FETCH s.hostDevice
+        LEFT JOIN FETCH s.plan
         WHERE s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
         AND s.ip IS NOT NULL AND s.ip <> ''
         AND s.hostDevice IS NOT NULL

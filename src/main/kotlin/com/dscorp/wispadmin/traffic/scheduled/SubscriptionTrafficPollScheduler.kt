@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.traffic.scheduled
 
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficPollService
+import com.dscorp.wispadmin.traffic.service.TrafficAggregationJobService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
@@ -9,15 +10,16 @@ import org.springframework.stereotype.Component
 @Component
 @ConditionalOnProperty(prefix = "traffic.poll", name = ["enabled"], havingValue = "true", matchIfMissing = true)
 class SubscriptionTrafficPollScheduler(
-    private val pollService: SubscriptionTrafficPollService
+    private val pollService: SubscriptionTrafficPollService,
+    private val aggregationJobService: TrafficAggregationJobService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(SubscriptionTrafficPollScheduler::class.java)
     }
 
     @Scheduled(
-        fixedDelayString = "\${traffic.poll.interval-ms:300000}",
-        initialDelayString = "\${traffic.poll.initial-delay-ms:120000}"
+        fixedDelayString = "\${traffic.poll.interval-ms:60000}",
+        initialDelayString = "\${traffic.poll.initial-delay-ms:30000}"
     )
     fun scheduledPoll() {
         val result = pollService.pollTraffic()
@@ -38,6 +40,13 @@ class SubscriptionTrafficPollScheduler(
                 result.samplesWritten,
                 result.durationMs
             )
+        }
+        if (result.skippedReason == null) {
+            try {
+                aggregationJobService.catchUpFiveMinute()
+            } catch (ex: Exception) {
+                logger.warn("Post-poll five-minute catch-up failed: {}", ex.message)
+            }
         }
     }
 }

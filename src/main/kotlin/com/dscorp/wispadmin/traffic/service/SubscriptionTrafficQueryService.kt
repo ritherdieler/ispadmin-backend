@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficPointDto
 import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficSeriesDto
 import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficSummaryDto
 import com.dscorp.wispadmin.traffic.entity.SubscriptionTrafficSample
+import com.dscorp.wispadmin.traffic.entity.TrafficSampleStatus
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficDailyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficHourlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficMonthlyRepository
@@ -45,14 +46,15 @@ open class SubscriptionTrafficQueryService(
         val points = when (normalized) {
             "sample" -> sampleRepository
                 .findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(subscriptionId, rangeFrom, rangeTo)
+                .filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }
                 .takeLast(MAX_POINTS)
                 .map {
                     SubscriptionTrafficPointDto(
                         bucketStart = it.bucketStart.toString(),
-                        rxBytes = it.rxBytesDelta,
-                        txBytes = it.txBytesDelta,
-                        avgMbpsDown = it.avgMbpsDown,
-                        avgMbpsUp = it.avgMbpsUp
+                        rxBytes = it.rxBytesDelta ?: 0,
+                        txBytes = it.txBytesDelta ?: 0,
+                        avgMbpsDown = it.avgMbpsDown ?: 0.0,
+                        avgMbpsUp = it.avgMbpsUp ?: 0.0
                     )
                 }
             "hourly" -> hourlyRepository
@@ -172,7 +174,7 @@ open class SubscriptionTrafficQueryService(
             subscriptionId,
             from,
             to.minusSeconds(1)
-        )
+        ).filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }
         val hourlyPoints = aggregateSamplesToHourlyPoints(samples)
         val totals = SubscriptionTrafficDayTotalsDto(
             rxBytes = hourlyPoints.sumOf { it.rxBytes },
@@ -199,10 +201,10 @@ open class SubscriptionTrafficQueryService(
                 val bucketStart = group.first().bucketStart.withMinute(0).withSecond(0).withNano(0)
                 SubscriptionTrafficPointDto(
                     bucketStart = bucketStart.toString(),
-                    rxBytes = group.sumOf { it.rxBytesDelta },
-                    txBytes = group.sumOf { it.txBytesDelta },
-                    avgMbpsDown = group.map { it.avgMbpsDown }.average(),
-                    avgMbpsUp = group.map { it.avgMbpsUp }.average()
+                    rxBytes = group.sumOf { it.rxBytesDelta ?: 0 },
+                    txBytes = group.sumOf { it.txBytesDelta ?: 0 },
+                    avgMbpsDown = group.mapNotNull { it.avgMbpsDown }.averageOrZero(),
+                    avgMbpsUp = group.mapNotNull { it.avgMbpsUp }.averageOrZero()
                 )
             }
     }
@@ -227,4 +229,6 @@ open class SubscriptionTrafficQueryService(
     }
 
     private fun bytesToGb(bytes: Long): Double = bytes / (1024.0 * 1024.0 * 1024.0)
+
+    private fun List<Double>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
 }

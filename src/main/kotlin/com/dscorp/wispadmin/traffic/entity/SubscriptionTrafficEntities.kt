@@ -9,14 +9,22 @@ import javax.persistence.GenerationType
 import javax.persistence.Id
 import javax.persistence.IdClass
 import javax.persistence.Index
+import javax.persistence.EnumType
+import javax.persistence.Enumerated
 import javax.persistence.Table
+import javax.persistence.UniqueConstraint
+
+enum class TrafficSampleStatus { OK, BASELINE, MISSING, RESET, INVALID, STALE, UNSUPPORTED }
+enum class TrafficSourceRunStatus { RUNNING, OK, PARTIAL, FAILED }
+enum class TrafficAnomalyType { TRAFFIC_MISSING, NO_TRAFFIC, PLAN_SATURATION, TRAFFIC_SPIKE, TRAFFIC_DROP, PATTERN_DEVIATION }
+enum class TrafficAnomalyStatus { OPEN, CLOSED }
 
 @Entity
 @Table(
     name = "subscription_traffic_sample",
+    uniqueConstraints = [UniqueConstraint(name = "uk_traffic_sample_sub_bucket", columnNames = ["subscription_id", "bucket_start"])],
     indexes = [
-        Index(name = "idx_traffic_sample_bucket", columnList = "bucket_start"),
-        Index(name = "idx_traffic_sample_sub_bucket", columnList = "subscription_id, bucket_start")
+        Index(name = "idx_traffic_sample_bucket", columnList = "bucket_start")
     ]
 )
 data class SubscriptionTrafficSample(
@@ -33,17 +41,45 @@ data class SubscriptionTrafficSample(
     @Column(name = "bucket_start", nullable = false)
     var bucketStart: LocalDateTime = LocalDateTime.now(),
 
-    @Column(name = "rx_bytes_delta", nullable = false)
-    var rxBytesDelta: Long = 0,
+    @Column(name = "collected_at")
+    var collectedAt: LocalDateTime? = null,
 
-    @Column(name = "tx_bytes_delta", nullable = false)
-    var txBytesDelta: Long = 0,
+    @Column(name = "interval_seconds")
+    var intervalSeconds: Int? = null,
 
-    @Column(name = "avg_mbps_down", nullable = false)
-    var avgMbpsDown: Double = 0.0,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sample_status", nullable = false, length = 24)
+    var sampleStatus: TrafficSampleStatus = TrafficSampleStatus.OK,
 
-    @Column(name = "avg_mbps_up", nullable = false)
-    var avgMbpsUp: Double = 0.0,
+    @Column(name = "error_reason", length = 255)
+    var errorReason: String? = null,
+
+    @Column(name = "source_run_id")
+    var sourceRunId: Long? = null,
+
+    @Column(name = "queue_id", length = 96)
+    var queueId: String? = null,
+
+    @Column(name = "queue_name", length = 160)
+    var queueName: String? = null,
+
+    @Column(name = "plan_download_mbps")
+    var planDownloadMbps: Int? = null,
+
+    @Column(name = "plan_upload_mbps")
+    var planUploadMbps: Int? = null,
+
+    @Column(name = "rx_bytes_delta")
+    var rxBytesDelta: Long? = null,
+
+    @Column(name = "tx_bytes_delta")
+    var txBytesDelta: Long? = null,
+
+    @Column(name = "avg_mbps_down")
+    var avgMbpsDown: Double? = null,
+
+    @Column(name = "avg_mbps_up")
+    var avgMbpsUp: Double? = null,
 
     @Column(name = "counter_reset", nullable = false)
     var counterReset: Boolean = false
@@ -87,7 +123,18 @@ data class SubscriptionTrafficHourly(
     var p95MbpsUp: Double = 0.0,
 
     @Column(name = "sample_count", nullable = false)
-    var sampleCount: Int = 0
+    var sampleCount: Int = 0,
+    var avgMbpsDown: Double = 0.0,
+    var avgMbpsUp: Double = 0.0,
+    var expectedSampleCount: Int = 0,
+    var coveragePct: Double = 0.0,
+    var planDownloadMbps: Int? = null,
+    var planUploadMbps: Int? = null,
+    var utilizationDownPct: Double? = null,
+    var utilizationUpPct: Double? = null,
+    var secondsOver80: Int = 0,
+    var secondsOver90: Int = 0,
+    var secondsOver95: Int = 0
 )
 
 @Entity
@@ -128,7 +175,19 @@ data class SubscriptionTrafficDaily(
     var p95MbpsUp: Double = 0.0,
 
     @Column(name = "active_hours", nullable = false)
-    var activeHours: Int = 0
+    var activeHours: Int = 0,
+    var avgMbpsDown: Double = 0.0,
+    var avgMbpsUp: Double = 0.0,
+    var sampleCount: Int = 0,
+    var expectedSampleCount: Int = 0,
+    var coveragePct: Double = 0.0,
+    var planDownloadMbps: Int? = null,
+    var planUploadMbps: Int? = null,
+    var utilizationDownPct: Double? = null,
+    var utilizationUpPct: Double? = null,
+    var secondsOver80: Int = 0,
+    var secondsOver90: Int = 0,
+    var secondsOver95: Int = 0
 )
 
 @Entity
@@ -166,7 +225,16 @@ data class SubscriptionTrafficMonthly(
     var p95MbpsUp: Double = 0.0,
 
     @Column(name = "active_days", nullable = false)
-    var activeDays: Int = 0
+    var activeDays: Int = 0,
+    var avgMbpsDown: Double = 0.0,
+    var avgMbpsUp: Double = 0.0,
+    var sampleCount: Int = 0,
+    var expectedSampleCount: Int = 0,
+    var coveragePct: Double = 0.0,
+    var planDownloadMbps: Int? = null,
+    var planUploadMbps: Int? = null,
+    var utilizationDownPct: Double? = null,
+    var utilizationUpPct: Double? = null
 )
 
 @Entity

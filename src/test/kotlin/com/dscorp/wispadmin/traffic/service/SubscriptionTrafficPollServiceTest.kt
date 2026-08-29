@@ -12,6 +12,7 @@ import com.dscorp.wispadmin.traffic.entity.SubscriptionTrafficCounterState
 import com.dscorp.wispadmin.traffic.entity.SubscriptionTrafficSample
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficCounterStateRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
+import com.dscorp.wispadmin.traffic.repository.TrafficSourceRunRepository
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
@@ -31,6 +32,7 @@ class SubscriptionTrafficPollServiceTest {
     private val subscriptionRepository = mockk<SubscriptionRepository>()
     private val sampleRepository = mockk<SubscriptionTrafficSampleRepository>(relaxed = true)
     private val counterStateRepository = mockk<SubscriptionTrafficCounterStateRepository>(relaxed = true)
+    private val sourceRunRepository = mockk<TrafficSourceRunRepository>(relaxed = true)
     private val mikrotikClient = mockk<MikrotikClient>()
     private val routerOsClientProperties = RouterOsClientProperties()
     private val trafficProperties = TrafficProperties()
@@ -39,13 +41,14 @@ class SubscriptionTrafficPollServiceTest {
         subscriptionRepository = subscriptionRepository,
         sampleRepository = sampleRepository,
         counterStateRepository = counterStateRepository,
+        sourceRunRepository = sourceRunRepository,
         mikrotikClient = mikrotikClient,
         routerOsClientProperties = routerOsClientProperties,
         trafficProperties = trafficProperties
     )
 
     @Test
-    fun `pollTraffic establece baseline sin sample en primer poll`() {
+    fun `pollTraffic establece baseline explicito en primer poll`() {
         val device = NetworkDevice(id = 9, name = "MK1", ipAddress = "10.0.0.1", username = "admin", password = "x")
         val subscription = Subscription(
             id = 42,
@@ -56,6 +59,9 @@ class SubscriptionTrafficPollServiceTest {
         )
         every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription)
         every { counterStateRepository.findById(42) } returns Optional.empty()
+        every { sampleRepository.findBySubscriptionIdAndBucketStart(any(), any()) } returns null
+        every { sampleRepository.save(any()) } answers { firstArg() }
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
         val stateSlot = slot<SubscriptionTrafficCounterState>()
         every { counterStateRepository.save(capture(stateSlot)) } answers { firstArg() }
         val session = mockk<MikrotikSession>()
@@ -74,9 +80,9 @@ class SubscriptionTrafficPollServiceTest {
 
         assertEquals(1, result.devicesPolled)
         assertEquals(1, result.subscriptionsMatched)
-        assertEquals(0, result.samplesWritten)
+        assertEquals(1, result.samplesWritten)
         assertEquals(2000L, stateSlot.captured.lastRxBytes)
-        verify(exactly = 0) { sampleRepository.save(any()) }
+        verify(atLeast = 1) { sampleRepository.save(match { it.sampleStatus.name == "BASELINE" }) }
     }
 
     @Test
@@ -100,6 +106,7 @@ class SubscriptionTrafficPollServiceTest {
             )
         )
         every { sampleRepository.findBySubscriptionIdAndBucketStart(any(), any()) } returns null
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
         val sampleSlot = slot<SubscriptionTrafficSample>()
         every { sampleRepository.save(capture(sampleSlot)) } answers { firstArg() }
         every { counterStateRepository.save(any()) } answers { firstArg() }
@@ -157,6 +164,9 @@ class SubscriptionTrafficPollServiceTest {
         )
         every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription)
         every { counterStateRepository.findById(615) } returns Optional.empty()
+        every { sampleRepository.findBySubscriptionIdAndBucketStart(any(), any()) } returns null
+        every { sampleRepository.save(any()) } answers { firstArg() }
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
         every { counterStateRepository.save(any()) } answers { firstArg() }
 
         val session = mockk<MikrotikSession>()
@@ -184,6 +194,7 @@ class SubscriptionTrafficPollServiceTest {
             subscriptionRepository,
             sampleRepository,
             counterStateRepository,
+            sourceRunRepository,
             mikrotikClient,
             routerOsClientProperties,
             TrafficProperties(poll = TrafficProperties.PollProperties(enabled = false))

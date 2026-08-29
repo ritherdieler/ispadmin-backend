@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.traffic.controller
 
 import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficPollResultDto
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficPollService
+import com.dscorp.wispadmin.traffic.service.TrafficAggregationJobService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -13,8 +14,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 class SubscriptionTrafficPollControllerTest {
 
     private val pollService = mockk<SubscriptionTrafficPollService>()
+    private val aggregationJobService = mockk<TrafficAggregationJobService>(relaxed = true)
     private val mockMvc: MockMvc = MockMvcBuilders
-        .standaloneSetup(SubscriptionTrafficPollController(pollService))
+        .standaloneSetup(SubscriptionTrafficPollController(pollService, aggregationJobService))
         .build()
 
     @Test

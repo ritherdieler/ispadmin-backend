@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.routeros.RouterOsTrafficCounterParser
 import com.dscorp.wispadmin.traffic.dto.SubscriptionTrafficLiveTickDto
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import java.time.format.DateTimeFormatter
 
 data class SubscriptionTrafficLiveTickState(
     val lastRxBytes: Long? = null,
@@ -26,7 +27,7 @@ object SubscriptionTrafficLiveTickBuilder {
         intervalSeconds: Double = 1.0,
         timestamp: LocalDateTime = LocalDateTime.now()
     ): SubscriptionTrafficLiveTickBuildResult {
-        val tickTimestamp = timestamp.truncatedTo(ChronoUnit.SECONDS).toString()
+        val tickTimestamp = timestamp.truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
         if (queueRow == null) {
             return SubscriptionTrafficLiveTickBuildResult(
                 tick = SubscriptionTrafficLiveTickDto(
