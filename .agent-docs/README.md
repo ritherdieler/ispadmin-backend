@@ -3,6 +3,7 @@
 | Tema | Archivo |
 |------|---------|
 | **Diagnóstico técnico convergente — especificación v1.2 (Documento 2)** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
+| **Deploy prod service-health 2026-08-30 (opt-in off)** | [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **NetDiag Fase 1 (polls / alertas / WhatsApp / LLM)** | [netdiag-fase1.md](./netdiag-fase1.md) |
 | **NetDiag Fase 1.5 (ROS7 netwatch / optical / traps / syslog)** | [netdiag-fase1.5.md](./netdiag-fase1.5.md) |
