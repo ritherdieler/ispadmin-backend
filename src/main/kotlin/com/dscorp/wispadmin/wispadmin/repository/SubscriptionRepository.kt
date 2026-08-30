@@ -12,6 +12,15 @@ import java.util.*
 import java.time.LocalDateTime
 
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
+    @org.springframework.data.jpa.repository.Lock(javax.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Subscription s where s.id = :id")
+    fun lockIdentityOwner(@Param("id") id: Int): Subscription?
+
+    fun findByTr069DeviceId(deviceId: String): List<Subscription>
+
+    @Query("select s from Subscription s left join fetch s.fiberOnu where upper(s.fiberOnu.sn) = upper(:sn)")
+    fun findByExactOnuSerial(@Param("sn") sn: String): List<Subscription>
+
 
     fun findByClientRequestId(clientRequestId: String): Optional<Subscription>
 

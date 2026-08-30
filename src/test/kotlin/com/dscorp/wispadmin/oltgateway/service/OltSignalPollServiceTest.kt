@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class OltSignalPollServiceTest {
 
+    private val publisher = mockk<org.springframework.context.ApplicationEventPublisher>(relaxed=true)
     private val cliBus = mockk<OltCliBus>()
     private val snmpClient = mockk<OltSnmpClient>()
     private val oltRepository = mockk<OltMgrOltRepository>()
@@ -91,7 +92,8 @@ class OltSignalPollServiceTest {
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
             cliBus = cliBus,
-            snmpClient = snmpClient
+            snmpClient = snmpClient,
+            eventPublisher = publisher
         )
         every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         every { taskRepository.existsByStatus("running") } returns false
@@ -146,6 +148,7 @@ class OltSignalPollServiceTest {
         )
 
         assertEquals(0, updated)
+        verify { publisher.publishEvent(match<OltOpticalObservation> { it.rows.single().optical.rxPowerDbm == -18.54 }) }
         verify(exactly = 0) { statusRepository.save(any()) }
         verify(exactly = 0) { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) }
         verify(exactly = 0) { statusRepository.findById(any()) }

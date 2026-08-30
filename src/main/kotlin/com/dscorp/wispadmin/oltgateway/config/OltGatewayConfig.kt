@@ -252,7 +252,8 @@ class OltGatewayConfig {
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
         snmpClient: ObjectProvider<OltSnmpClient>,
-        transactionManager: PlatformTransactionManager
+        transactionManager: PlatformTransactionManager,
+        eventPublisher: org.springframework.context.ApplicationEventPublisher
     ): OltInventorySyncService {
         return OltInventorySyncService(
             queryFacade = queryFacade,
@@ -267,7 +268,8 @@ class OltGatewayConfig {
             snmpClient = snmpClient.ifAvailable,
             transactionTemplate = TransactionTemplate(transactionManager),
             zoneRepository = zoneRepository,
-            onuTypeRepository = onuTypeRepository
+            onuTypeRepository = onuTypeRepository,
+            eventPublisher = eventPublisher
         )
     }
 
@@ -293,7 +295,8 @@ class OltGatewayConfig {
         signalCategoryCalculator: SignalCategoryCalculator,
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
-        snmpClient: ObjectProvider<OltSnmpClient>
+        snmpClient: ObjectProvider<OltSnmpClient>,
+        eventPublisher: org.springframework.context.ApplicationEventPublisher
     ): OltSignalPollService {
         return OltSignalPollService(
             oltRepository = oltRepository,
@@ -305,7 +308,8 @@ class OltGatewayConfig {
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
             cliBus = cliBus.ifAvailable,
-            snmpClient = snmpClient.ifAvailable
+            snmpClient = snmpClient.ifAvailable,
+            eventPublisher = eventPublisher
         )
     }
 

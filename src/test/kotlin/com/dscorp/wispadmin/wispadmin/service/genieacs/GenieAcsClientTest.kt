@@ -509,4 +509,24 @@ class GenieAcsClientTest {
         assertTrue(formatted.contains("ExternalIPAddress"))
         assertTrue(formatted.contains("Request denied"))
     }
+    @Test
+    fun `read cache merges bounded leaf projections without creating tasks`() {
+        val projection=(1..60).joinToString(",") { "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.AssociatedDevice.$it.AssociatedDeviceRssi" }
+        repeat(3) { batch -> server.enqueue(MockResponse().setBody("""[{"_id":"d","_lastInform":"2026-08-30T10:00:00Z","metric$batch":{"_value":$batch}}]""")) }
+        val result=client.readDeviceCache(listOf("d"),projection).single()
+        assertEquals(2,result.path("metric2").path("_value").asInt())
+        repeat(3) {
+            val request=server.takeRequest()
+            assertEquals("GET",request.method)
+            assertTrue(request.path!!.startsWith("/devices/")); assertTrue(request.path!!.length<7500)
+            assertFalse(request.path!!.contains("connection_request"))
+        }
+    }
+    @Test
+    fun `changing Inform across NBI chunks discards mixed session`() {
+        val projection=(1..30).joinToString(",") { "field$it" }
+        server.enqueue(MockResponse().setBody("""[{"_id":"d","_lastInform":"2026-08-30T10:00:00Z"}]"""))
+        server.enqueue(MockResponse().setBody("""[{"_id":"d","_lastInform":"2026-08-30T11:00:00Z"}]"""))
+        assertTrue(client.readDeviceCache(listOf("d"),projection).isEmpty())
+    }
 }

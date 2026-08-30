@@ -14,10 +14,9 @@ class WispAdminOntSubscriptionAdapter(
 ) : NetDiagOntSubscriptionPort {
 
     override fun findActiveByOnuSn(sn: String): OntSubscriptionInfo? {
-        val suffix = if (sn.length >= SUFFIX_LENGTH) sn.takeLast(SUFFIX_LENGTH) else sn
-        val matches = subscriptionRepository.findActiveByFiberOnuSn(sn, suffix)
-        if (matches.isEmpty()) return null
-        val subscription = matches.minByOrNull { it.id ?: Int.MAX_VALUE } ?: return null
+        // Ambiguous identity must never disclose an arbitrary subscriber in NOC/LLM context.
+        val matches = subscriptionRepository.findByExactOnuSerial(sn).filter { it.serviceStatus.name == "ACTIVE" }
+        val subscription = matches.singleOrNull() ?: return null
         return toInfo(subscription)
     }
 
@@ -34,7 +33,4 @@ class WispAdminOntSubscriptionAdapter(
         )
     }
 
-    companion object {
-        private const val SUFFIX_LENGTH = 8
-    }
 }

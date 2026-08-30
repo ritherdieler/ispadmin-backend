@@ -40,6 +40,7 @@ interface NetDiagProbeRunRepository : JpaRepository<NetDiagProbeRun, Long> {
 
 @Repository
 interface NetDiagIncidentRepository : JpaRepository<NetDiagIncident, Long> {
+    fun findTopByDedupKeyAndStatusOrderByOpenedAtDesc(dedupKey: String, status: String): NetDiagIncident?
     fun findByStatusOrderByOpenedAtDesc(status: String): List<NetDiagIncident>
     fun findByDedupKeyAndStatus(dedupKey: String, status: String): Optional<NetDiagIncident>
     fun findByTarget_IdAndStatus(targetId: Long, status: String): List<NetDiagIncident>
@@ -99,6 +100,9 @@ interface NetDiagTrapEventRepository : JpaRepository<NetDiagTrapEvent, Long> {
 
 @Repository
 interface NetDiagOltLogEventRepository : JpaRepository<NetDiagOltLogEvent, Long> {
+    @Query("select e from NetDiagOltLogEvent e where e.receivedAt > :at or (e.receivedAt = :at and e.id > :id) order by e.receivedAt,e.id")
+    fun findChanges(@Param("at") at: Instant,@Param("id") id: Long,page: Pageable): List<NetDiagOltLogEvent>
+
     fun findTop50ByTargetIdOrderByReceivedAtDesc(targetId: Long): List<NetDiagOltLogEvent>
 
     fun findTop50ByBoardAndPortOrderByReceivedAtDesc(board: Int, port: Int): List<NetDiagOltLogEvent>

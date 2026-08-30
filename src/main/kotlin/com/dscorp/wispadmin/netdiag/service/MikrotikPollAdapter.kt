@@ -79,7 +79,9 @@ class MikrotikPollAdapter(
                 name = row["name"].orEmpty(),
                 type = row["type"].orEmpty(),
                 running = row["running"].equals("true", ignoreCase = true),
-                disabled = row["disabled"].equals("true", ignoreCase = true)
+                disabled = row["disabled"].equals("true", ignoreCase = true),
+                rxErrors = row["rx-error"]?.toLongOrNull(), txErrors = row["tx-error"]?.toLongOrNull(),
+                rxDrops = row["rx-drop"]?.toLongOrNull(), txDrops = row["tx-drop"]?.toLongOrNull()
             )
         }
         val health = session.print("/system/health").map { row ->
@@ -102,7 +104,8 @@ class MikrotikPollAdapter(
                 uptimeRaw = uptimeRaw,
                 uptimeSeconds = RouterOsUptimeParser.parseSeconds(uptimeRaw),
                 cpuLoad = it["cpu-load"]?.toIntOrNull() ?: it["cpuLoad"]?.toIntOrNull(),
-                version = it["version"]
+                version = it["version"],
+                freeMemoryBytes = it["free-memory"]?.toLongOrNull(), totalMemoryBytes = it["total-memory"]?.toLongOrNull()
             )
         }
         val netwatch = netwatchAdapter.collect(session, monitorConfig)

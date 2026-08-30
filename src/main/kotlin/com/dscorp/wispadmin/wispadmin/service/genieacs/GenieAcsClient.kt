@@ -59,6 +59,40 @@ class GenieAcsClient(
         return root.mapNotNull { parseDevice(it) }
     }
 
+    /** Cache-only allowlist reads. Bound each URI to avoid HTTP header limits on large projections. */
+    fun readDeviceCache(deviceIds: List<String>, projection: String): List<JsonNode> {
+        require(deviceIds.size in 1..50)
+        val merged = linkedMapOf<String, com.fasterxml.jackson.databind.node.ObjectNode>()
+        val unstable = mutableSetOf<String>()
+        fun merge(into: com.fasterxml.jackson.databind.node.ObjectNode, from: JsonNode) {
+            from.fields().forEachRemaining { entry ->
+                val previous = into.get(entry.key)
+                if (previous is com.fasterxml.jackson.databind.node.ObjectNode && entry.value.isObject) merge(previous, entry.value)
+                else into.set<JsonNode>(entry.key, entry.value)
+            }
+        }
+        for (ids in deviceIds.chunked(10)) for (fields in projection.split(',').chunked(24)) {
+            val query = objectMapper.writeValueAsString(mapOf("_id" to mapOf("\$in" to ids)))
+            val uri = UriComponentsBuilder.fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+                .path("/devices/").queryParam("query", query)
+                .queryParam("projection", (listOf("_id", "_lastInform") + fields).distinct().joinToString(","))
+                .build().encode().toUri()
+            require(uri.toASCIIString().length < 7500) { "NBI_QUERY_TOO_LONG" }
+            val body = restTemplate.getForObject(uri, String::class.java) ?: continue
+            val root = objectMapper.readTree(body)
+            require(root.isArray) { "INVALID_NBI_RESPONSE" }
+            for (device in root) {
+                val id = device.path("_id").asText()
+                val previous = merged[id]
+                if (previous != null && previous.path("_lastInform") != device.path("_lastInform")) unstable += id
+                val target = previous ?: objectMapper.createObjectNode().also { merged[id] = it }
+                merge(target, device)
+            }
+        }
+        // Do not combine parameter trees from different CWMP sessions; the next tick retries them.
+        return merged.filterKeys { it !in unstable }.values.toList()
+    }
+
     fun findDeviceBySerialSuffix(suffix: String): List<GenieAcsDevice> {
         val normalized = suffix.uppercase()
         return listDevices().filter { device ->
@@ -76,8 +110,12 @@ class GenieAcsClient(
             "name" to "setParameterValues",
             "parameterValues" to values.map { listOf(it.path, it.value, it.type) },
         )
-        return postTask(deviceId, payload, connectionRequest)
+        return postTask(deviceId, payload, connectionRequest, sensitive = true)
     }
+
+    /** Operator configuration must never be included in curl/debug logs. */
+    fun setParameterValuesPrivate(deviceId: String, values: List<Tr069ParameterValue>, connectionRequest: Boolean): GenieAcsTaskResult =
+        postTask(deviceId, mapOf("name" to "setParameterValues", "parameterValues" to values.map { listOf(it.path,it.value,it.type) }), connectionRequest, sensitive = true)
 
     fun getParameterValues(
         deviceId: String,
@@ -309,11 +347,12 @@ class GenieAcsClient(
         deviceId: String,
         payload: Map<String, Any>,
         connectionRequest: Boolean,
+        sensitive: Boolean = false,
     ): GenieAcsTaskResult {
         val uri = taskUri(deviceId, connectionRequest)
         val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val jsonBody = objectMapper.writeValueAsString(payload)
-        logCurlPostTask(uri, jsonBody)
+        if (!sensitive) logCurlPostTask(uri, jsonBody)
         val entity = HttpEntity(jsonBody, headers)
         return try {
             val response = restTemplate.exchange(uri, HttpMethod.POST, entity, String::class.java)
@@ -322,6 +361,7 @@ class GenieAcsClient(
                 statusCode = response.statusCodeValue,
                 body = body,
                 accepted = isAcceptedTaskResponse(response.statusCodeValue, body),
+                sensitive = sensitive,
             )
         } catch (ex: HttpStatusCodeException) {
             val body = ex.responseBodyAsString
@@ -329,6 +369,7 @@ class GenieAcsClient(
                 statusCode = ex.rawStatusCode,
                 body = body,
                 accepted = false,
+                sensitive = sensitive,
             )
         }
     }
@@ -359,8 +400,9 @@ class GenieAcsClient(
         statusCode: Int,
         body: String?,
         accepted: Boolean,
+        sensitive: Boolean = false,
     ): GenieAcsTaskResult {
-        logGenieAcsResponse(statusCode, body)
+        if (!sensitive) logGenieAcsResponse(statusCode, body)
         return GenieAcsTaskResult(
             statusCode = statusCode,
             body = body,

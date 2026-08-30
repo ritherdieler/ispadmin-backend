@@ -220,7 +220,7 @@ class NetDiagLlmContextServiceTest {
         assertTrue(markdown.contains("HWTC00000003"))
         assertTrue(markdown.contains("dying-gasp"))
         assertTrue(markdown.contains("## Abonado ONT"))
-        assertTrue(markdown.contains("Juan Perez"))
+        assertFalse(markdown.contains("Juan Perez"))
         assertTrue(markdown.contains("NAP-05"))
 
         assertFalse(markdown.contains("No hay probe_run"))
@@ -263,6 +263,7 @@ class NetDiagLlmContextServiceTest {
         @Suppress("UNCHECKED_CAST")
         val subscription = ontSubscription["subscription"] as Map<String, Any?>
         assertEquals(555, subscription["subscriptionId"])
-        assertEquals("Juan Perez", subscription["customerName"])
+        assertFalse(subscription.containsKey("customerName"))
+        assertFalse(subscription.toString().contains("Juan Perez"))
     }
 }

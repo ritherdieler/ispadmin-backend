@@ -40,10 +40,12 @@ open class OltSignalPollService(
     signalCategoryCalculator: SignalCategoryCalculator,
     properties: OltGatewayProperties,
     cliBus: OltCliBus? = null,
-    snmpClient: OltSnmpClient? = null
+    snmpClient: OltSnmpClient? = null,
+    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null
 ) {
 
     companion object {
+        private val telemetryPublisher = AtomicReference<org.springframework.context.ApplicationEventPublisher?>(null)
         private val logger = LoggerFactory.getLogger(OltSignalPollService::class.java)
         private val running = AtomicBoolean(false)
         private val lastStartedAtRef = AtomicReference<Instant?>(null)
@@ -61,6 +63,7 @@ open class OltSignalPollService(
     }
 
     init {
+        telemetryPublisher.set(eventPublisher)
         propertiesRef.set(properties)
         oltRepositoryRef.set(oltRepository)
         onuRepositoryRef.set(onuRepository)
@@ -369,6 +372,7 @@ open class OltSignalPollService(
         if (rows.isEmpty()) {
             return 0
         }
+        telemetryPublisher.get()?.publishEvent(OltOpticalObservation(oltId, Instant.now(), rows))
         val onus = onuRepository().findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }
         val byKey = onus.associateBy { Triple(it.board, it.port, it.onuIndex) }
         val now = Instant.now()
@@ -468,6 +472,11 @@ open class OltSignalPollService(
         val finished = Instant.now()
         val withDuration = result.copy(durationMs = finished.toEpochMilli() - startedAt.toEpochMilli())
         lastResultRef.set(withDuration)
+        if (telemetryPublisher.get() != null && (result.error != null || result.skippedReason != null)) {
+            val oltId = oltRepository().findByName(props().oltId).orElse(null)?.id
+            if (oltId != null) telemetryPublisher.get()?.publishEvent(OltOpticalFailure(oltId, finished,
+                if (result.error != null) "OPTICAL_POLL_FAILED" else "OPTICAL_POLL_SKIPPED"))
+        }
         return withDuration
     }
 

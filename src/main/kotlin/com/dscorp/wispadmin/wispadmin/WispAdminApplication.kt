@@ -13,9 +13,9 @@ import org.springframework.scheduling.annotation.EnableAsync
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.transaction.annotation.EnableTransactionManagement
 
-@SpringBootApplication(scanBasePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.routeros", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic"])
-@EntityScan(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic"])
-@EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic"])
+@SpringBootApplication(scanBasePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.routeros", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
+@EntityScan(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
+@EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
 
 @EnableScheduling
 @EnableAsync

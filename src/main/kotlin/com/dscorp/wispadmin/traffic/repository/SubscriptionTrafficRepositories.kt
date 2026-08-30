@@ -116,6 +116,9 @@ interface TrafficSourceRunRepository : JpaRepository<TrafficSourceRun, Long> {
 }
 
 interface TrafficAnomalyEventRepository : JpaRepository<TrafficAnomalyEvent, Long> {
+    @Query("select e from TrafficAnomalyEvent e where e.lastEvaluatedAt > :at or (e.lastEvaluatedAt = :at and e.id > :id) order by e.lastEvaluatedAt, e.id")
+    fun findChanges(@Param("at") at: LocalDateTime, @Param("id") id: Long, page: org.springframework.data.domain.Pageable): List<TrafficAnomalyEvent>
+
     fun findByDedupeKey(dedupeKey: String): TrafficAnomalyEvent?
     fun findByEventStatusOrderByStartedAtDesc(status: TrafficAnomalyStatus): List<TrafficAnomalyEvent>
     fun findBySubscriptionIdAndStartedAtBetweenOrderByStartedAtDesc(subscriptionId: Int, from: LocalDateTime, to: LocalDateTime): List<TrafficAnomalyEvent>

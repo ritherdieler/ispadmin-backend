@@ -291,7 +291,6 @@ class NetDiagLlmContextService(
             appendField(sb, "Last down cause", ont.lastDownCause)
             ont.subscription?.let { sub ->
                 appendField(sb, "Suscripción ID", sub.subscriptionId?.toString())
-                appendField(sb, "Cliente", sub.customerName)
                 appendField(sb, "Estado servicio", sub.serviceStatus)
                 appendField(sb, "NAP", sub.napBoxCode)
             }
@@ -348,7 +347,6 @@ class NetDiagLlmContextService(
 
     private fun subscriptionMap(sub: OntSubscriptionInfo): Map<String, Any?> = linkedMapOf(
         "subscriptionId" to sub.subscriptionId,
-        "customerName" to sub.customerName,
         "serviceStatus" to sub.serviceStatus,
         "napBoxCode" to sub.napBoxCode
     )

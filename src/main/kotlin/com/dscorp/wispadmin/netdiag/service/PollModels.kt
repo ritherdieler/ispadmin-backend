@@ -26,7 +26,9 @@ data class InterfaceSnapshot(
     val name: String,
     val type: String,
     val running: Boolean,
-    val disabled: Boolean
+    val disabled: Boolean,
+    val rxErrors: Long? = null, val txErrors: Long? = null,
+    val rxDrops: Long? = null, val txDrops: Long? = null
 )
 
 data class HealthSnapshot(
@@ -43,7 +45,8 @@ data class ResourceSnapshot(
     val uptimeRaw: String?,
     val uptimeSeconds: Long?,
     val cpuLoad: Int?,
-    val version: String?
+    val version: String?,
+    val freeMemoryBytes: Long? = null, val totalMemoryBytes: Long? = null
 )
 
 data class NetwatchSnapshot(

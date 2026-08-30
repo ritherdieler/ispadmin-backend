@@ -55,10 +55,12 @@ open class OltInventorySyncService(
     transactionTemplate: TransactionTemplate? = null,
     snmpClient: OltSnmpClient? = null,
     zoneRepository: OltMgrZoneRepository? = null,
-    onuTypeRepository: OltMgrOnuTypeRepository? = null
+    onuTypeRepository: OltMgrOnuTypeRepository? = null,
+    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null
 ) {
 
     companion object {
+        private val telemetryPublisher = AtomicReference<org.springframework.context.ApplicationEventPublisher?>(null)
         private val logger = LoggerFactory.getLogger(OltInventorySyncService::class.java)
         private val SIGNAL_CATEGORY_CALCULATOR = SignalCategoryCalculator()
         private const val NAME_MAX = 512
@@ -85,6 +87,7 @@ open class OltInventorySyncService(
     }
 
     init {
+        telemetryPublisher.set(eventPublisher)
         propertiesRef.set(properties)
         queryFacadeRef.set(queryFacade)
         oltRepositoryRef.set(oltRepository)
@@ -747,6 +750,7 @@ open class OltInventorySyncService(
     }
 
     private fun buildNewOnu(olt: OltMgrOlt, parsed: ParsedOnuSummary, now: Instant): OltMgrOnu {
+        telemetryPublisher.get()?.publishEvent(OltStateObservation(parsed.sn, parsed.runState, parsed.lastDownCause, now))
         val onu = OltMgrOnu(
             sn = parsed.sn,
             externalId = externalId(parsed.slot, parsed.port, parsed.ontId),
@@ -856,6 +860,7 @@ open class OltInventorySyncService(
         now: Instant,
         pending: PendingWrites
     ): Boolean {
+        telemetryPublisher.get()?.publishEvent(OltStateObservation(onu.sn, parsed.runState, parsed.lastDownCause, now))
         val runState = parsed.runState ?: "offline"
         val matchState = parsed.matchState
         val distanceM = parsed.distanceM
