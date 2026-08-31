@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficHourlyReposito
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficAnomalyEventRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficSourceRunRepository
+import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
@@ -175,6 +176,7 @@ class BandwidthIntelligenceServiceTest {
         id = id,
         ip = "10.0.0.$id",
         hostDevice = NetworkDevice(id = routerId, name = "R$routerId"),
-        plan = Plan(id = planId, name = "P$planId", downloadSpeed = download, uploadSpeed = download / 2)
+        plan = Plan(id = planId, name = "P$planId", downloadSpeed = download, uploadSpeed = download / 2),
+        equipmentCondition = EquipmentCondition.LOAN
     )
 }
