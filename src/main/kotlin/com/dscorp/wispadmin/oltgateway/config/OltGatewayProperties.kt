@@ -52,6 +52,8 @@ class OltGatewayProperties {
         var timeoutMs: Long = 5000
         var retries: Int = 1
         var maxRepetitions: Int = 25
+        /** Small pacing interval between GETBULK pages; protects constrained OLT agents. */
+        var requestIntervalMs: Long = 100
         /**
          * Deprecated escape hatch: allow inventory sync via SSH when SNMP is unavailable.
          * Default false — inventory sync is SNMP-only when this module is the intended path.

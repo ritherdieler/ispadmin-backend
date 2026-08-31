@@ -17,9 +17,6 @@ import org.snmp4j.smi.OctetString
 import org.snmp4j.smi.UdpAddress
 import org.snmp4j.smi.VariableBinding
 import org.snmp4j.transport.DefaultUdpTransportMapping
-import org.snmp4j.util.DefaultPDUFactory
-import org.snmp4j.util.TreeEvent
-import org.snmp4j.util.TreeUtils
 import java.io.IOException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -290,29 +287,13 @@ class Snmp4jOltSnmpClient(
         type: SnmpJobType,
         map: (VariableBinding) -> T?
     ): Map<SnmpOntKey, T> {
-        val root = OID(columnOid)
-        val result = linkedMapOf<SnmpOntKey, T>()
-        withSnmp(type) { snmp, target ->
-            val treeUtils = TreeUtils(snmp, DefaultPDUFactory())
-            treeUtils.maxRepetitions = properties.snmp.maxRepetitions
-            @Suppress("UNCHECKED_CAST")
-            val events = treeUtils.getSubtree(target, root) as List<TreeEvent>
-            for (event in events) {
-                if (event.isError) {
-                    throw IOException("SNMP walk error on $columnOid: ${event.errorMessage}")
-                }
-                val vbs = event.variableBindings ?: continue
-                for (vb in vbs) {
-                    val oid = vb.oid ?: continue
-                    if (!oid.startsWith(root)) continue
-                    val key = parseOntKey(root, oid) ?: continue
-                    val mapped = map(vb) ?: continue
-                    result[key] = mapped
-                }
-            }
-        }
-        logger.debug("SNMP walk {} rows={}", columnOid, result.size)
-        return result
+        return walkColumn(
+            root = OID(columnOid),
+            label = columnOid,
+            type = type,
+            keyFromOid = ::parseOntKey,
+            map = map
+        )
     }
 
     private fun <T> walkColumnForIfIndex(
@@ -322,27 +303,77 @@ class Snmp4jOltSnmpClient(
         map: (VariableBinding) -> T?
     ): Map<SnmpOntKey, T> {
         val root = OID("$columnOid.$ifIndex")
+        return walkColumn(
+            root = root,
+            label = "$columnOid.$ifIndex",
+            type = type,
+            keyFromOid = { columnRoot, oid -> parseOntKeyForPort(columnRoot, oid, ifIndex) },
+            map = map
+        )
+    }
+
+    /**
+     * Uses bounded GETBULK requests instead of [TreeUtils]. Some Huawei OLTs
+     * drop a page intermittently; TreeUtils then waits indefinitely and holds
+     * the per-OLT SNMP bus. Each page here is governed by the target timeout
+     * and retry policy, so a loss is reported as a recoverable poll failure.
+     */
+    private fun <T> walkColumn(
+        root: OID,
+        label: String,
+        type: SnmpJobType,
+        keyFromOid: (OID, OID) -> SnmpOntKey?,
+        map: (VariableBinding) -> T?
+    ): Map<SnmpOntKey, T> {
         val result = linkedMapOf<SnmpOntKey, T>()
         withSnmp(type) { snmp, target ->
-            val treeUtils = TreeUtils(snmp, DefaultPDUFactory())
-            treeUtils.maxRepetitions = properties.snmp.maxRepetitions
-            @Suppress("UNCHECKED_CAST")
-            val events = treeUtils.getSubtree(target, root) as List<TreeEvent>
-            for (event in events) {
-                if (event.isError) {
-                    throw IOException("SNMP walk error on $columnOid.$ifIndex: ${event.errorMessage}")
+            var cursor = root
+            var completed = false
+            while (!completed) {
+                val request = PDU().apply {
+                    this.type = PDU.GETBULK
+                    nonRepeaters = 0
+                    maxRepetitions = properties.snmp.maxRepetitions
+                    add(VariableBinding(cursor))
                 }
-                val vbs = event.variableBindings ?: continue
-                for (vb in vbs) {
-                    val oid = vb.oid ?: continue
-                    if (!oid.startsWith(root)) continue
-                    val key = parseOntKeyForPort(root, oid, ifIndex) ?: continue
-                    val mapped = map(vb) ?: continue
+                val response = snmp.send(request, target).response
+                    ?: throw IOException("SNMP walk error on $label: request timed out")
+                if (response.errorStatus != PDU.noError) {
+                    throw IOException("SNMP walk error on $label: ${response.errorStatusText}")
+                }
+                if (response.size() == 0) {
+                    throw IOException("SNMP walk error on $label: empty response")
+                }
+                for (index in 0 until response.size()) {
+                    val binding = response.get(index) ?: continue
+                    val oid = binding.oid
+                    if (oid == null) {
+                        completed = true
+                        break
+                    }
+                    if (binding.variable.isException || !oid.startsWith(root)) {
+                        completed = true
+                        break
+                    }
+                    if (oid.compareTo(cursor) <= 0) {
+                        throw IOException("SNMP walk error on $label: non-advancing response")
+                    }
+                    cursor = oid
+                    val key = keyFromOid(root, oid) ?: continue
+                    val mapped = map(binding) ?: continue
                     result[key] = mapped
+                }
+                if (!completed && properties.snmp.requestIntervalMs > 0) {
+                    try {
+                        Thread.sleep(properties.snmp.requestIntervalMs)
+                    } catch (ex: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw IOException("SNMP walk error on $label: interrupted", ex)
+                    }
                 }
             }
         }
-        logger.debug("SNMP walk {}.{} rows={}", columnOid, ifIndex, result.size)
+        logger.debug("SNMP walk {} rows={}", label, result.size)
         return result
     }
 

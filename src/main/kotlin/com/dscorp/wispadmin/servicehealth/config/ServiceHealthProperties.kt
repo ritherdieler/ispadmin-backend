@@ -11,6 +11,8 @@ class ServiceHealthProperties {
     var acsEnabled = false
     var correlationEnabled = false
     var sharedIncidentsEnabled = false
+    /** New shared-incident notifications remain opt-in; BlastRadiusService never sends them unless wired explicitly. */
+    var sharedIncidentNotificationsEnabled = false
     var actionsEnabled = false
     var configEnabled = false
     // An empty allowlist intentionally collects nothing. Reads remain available.
@@ -31,6 +33,7 @@ class ServiceHealthProperties {
     var runRetentionDays = 30L
     var eventRetentionDays = 180L
     var actionCooldownSeconds = 600L
+    var acsGpvCooldownSeconds = 900L
     var crConcurrency = 3
     fun collects(id: Int?) = enabled && id != null && id in pilotSubscriptionIds
 }

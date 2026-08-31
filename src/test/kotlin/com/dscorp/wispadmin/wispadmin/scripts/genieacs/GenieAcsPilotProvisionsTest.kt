@@ -20,7 +20,9 @@ class GenieAcsPilotProvisionsTest {
         assertFalse(inform.contains("{value: now}"), inform)
         assertTrue(inform.contains("ConnectionRequestPassword"), inform)
         assertTrue(inform.contains("{value: 1}"), inform)
-        assertTrue(inform.contains("PeriodicInformInterval"), inform)
+        assertFalse(inform.contains("PeriodicInformInterval"), inform)
+        assertFalse(inform.contains("PeriodicInformEnable"), inform)
+        assertFalse(inform.contains("PeriodicInformTime"), inform)
         assertTrue(inform.contains("\$set"), "mongosh 7 requires \$set on provision updates: $inform")
     }
 
@@ -45,6 +47,10 @@ class GenieAcsPilotProvisionsTest {
         val default = nbi.substringAfter("DEFAULT = ").substringBefore("def put_provision")
         assertFalse(inform.contains("value: now"), inform)
         assertTrue(inform.contains("value: 1"), inform)
+        assertFalse(inform.contains("PeriodicInformInterval"), inform)
+        assertFalse(inform.contains("PeriodicInformEnable"), inform)
+        assertFalse(inform.contains("PeriodicInformTime"), inform)
+        assertTrue(nbi.contains("PeriodicInformInterval"), nbi)
         assertFalse(default.contains("Hosts.Host"), default)
         assertTrue(default.contains("ExternalIPAddress"), default)
     }
@@ -55,6 +61,9 @@ class GenieAcsPilotProvisionsTest {
         assertFalse(inform.contains("{value: now}"), inform)
         assertTrue(inform.contains("{value: 1}"), inform)
         assertTrue(inform.contains("ConnectionRequestPassword"), inform)
+        assertFalse(inform.contains("PeriodicInformInterval"), inform)
+        assertFalse(inform.contains("PeriodicInformEnable"), inform)
+        assertFalse(inform.contains("PeriodicInformTime"), inform)
     }
 
     @Test

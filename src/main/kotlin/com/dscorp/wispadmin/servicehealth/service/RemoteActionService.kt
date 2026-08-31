@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.service.genieacs.*
+import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
 import org.springframework.http.HttpStatus
@@ -32,7 +33,8 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
     private val cursors: HealthCursorRepository,private val subscriptions: SubscriptionRepository,
     private val acs: SubscriptionAcsRepository,private val wifi: WifiCurrentRepository,private val identity: IdentityService,
     private val client: GenieAcsClient,private val genie: GenieAcsProperties,private val tx: TransactionTemplate,
-    private val json: ObjectMapper) {
+    private val json: ObjectMapper,
+    private val subscriptionService: SubscriptionService? = null) {
     fun digest(value: String): String {
         require(properties.stationHmacKey.toByteArray().size>=32) { "HMAC_KEY_NOT_CONFIGURED" }
         val mac=Mac.getInstance("HmacSHA256"); mac.init(SecretKeySpec(properties.stationHmacKey.toByteArray(),"HmacSHA256"))
@@ -84,6 +86,18 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
             throw ResponseStatusException(HttpStatus.CONFLICT,"Clave reutilizada con otra operación")
         return result(existing)
     }
+    fun reboot(id: Int, actor: HealthActor, key: String): ActionResult {
+        replay(id, actor, key, "REBOOT_ONU", digest("REBOOT_ONU:$id"))?.let { return it }
+        val (action, created) = reserve(id, actor, key, "REBOOT_ONU", digest("REBOOT_ONU:$id"), false)
+        if (!created) return result(action)
+        return try {
+            requireNotNull(subscriptionService) { "Reinicio no disponible" }.rebootFiberOnu(id)
+            result(finish(action.id!!, "PENDING"))
+        } catch (_: Exception) {
+            result(finish(action.id!!, "UNVERIFIED", error = "OLT_REQUEST_UNCONFIRMED"))
+        }
+    }
+
     fun refresh(id: Int,actor: HealthActor,key: String): ActionResult {
         replay(id,actor,key,"WIFI_REFRESH",digest("WIFI_REFRESH:$id"))?.let { return it }
         val device=deviceForAction(id)
@@ -97,16 +111,7 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         return try {
             val root=client.readDeviceCache(listOf(device.first),WifiTelemetry.projection()).singleOrNull()
                 ?: throw IllegalStateException("CACHE_MISSING")
-            val model=device.second
-            val paths=mutableListOf<String>()
-            for(radio in WifiTelemetry.radios(model).keys) {
-                val base="${WifiTelemetry.ROOT}.WLANConfiguration.$radio"
-                paths+="$base.TotalAssociations"
-                for(index in 1..WifiTelemetry.MAX_STATIONS) for(field in WifiTelemetry.stationFields) {
-                    val path="$base.AssociatedDevice.$index.$field"
-                    if(!WifiTelemetry.node(root,path).isMissingNode) paths+=path
-                }
-            }
+            val paths=WifiTelemetry.gpvPaths(root,device.second)
             require(paths.isNotEmpty()) { "UNSUPPORTED" }
             val response=client.getParameterValues(device.first,paths,connectionRequest=true)
             result(finish(action.id!!,if(response.accepted) "PENDING" else "FAILED",response.taskId,if(response.accepted) null else "ACS_REJECTED"))

@@ -5,6 +5,7 @@
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
 | **Diagnóstico técnico convergente — especificación v1.2** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
+| **Deploy prod Wi-Fi ACS `observed_at` / V36 2026-08-31** | [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md) |
 | **Deploy prod service-health 2026-08-30 (opt-in off)** | [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |

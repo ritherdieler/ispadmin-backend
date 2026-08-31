@@ -64,15 +64,15 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         return seriesData(id,window.first,window.second)
     }
     private fun seriesData(id: Int,from: Instant,to: Instant): Map<String,Any> = mapOf(
-        "optical" to optical.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,from,to).map { s -> mapOf(
+        "optical" to optical.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
             "id" to s.id,"observed_at" to s.observedAt,"collected_at" to s.collectedAt,"onu_id" to s.onuId,
             "onu_sn" to s.onuSn,"olt_id" to s.oltId,"board" to s.board,"port" to s.port,
             "onu_rx_dbm" to s.onuRxDbm,"onu_tx_dbm" to s.onuTxDbm,"olt_rx_dbm" to s.oltRxDbm,
             "temperature_c" to s.temperatureC,"distance_m" to s.distanceM,"bias_ma" to s.biasMa,"voltage_v" to s.voltageV,"quality_status" to s.qualityStatus) },
-        "wifi_counts" to counts.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,from,to).map { s -> mapOf(
+        "wifi_counts" to counts.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
             "id" to s.id,"observed_at" to s.observedAt,"associated_device_count" to s.associatedDeviceCount,
             "associated_2g" to s.associated2g,"associated_5g" to s.associated5g,"lan_device_count" to s.lanDeviceCount,"quality_status" to s.qualityStatus) },
-        "wifi_signal" to stations.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,from,to).map { s -> mapOf(
+        "wifi_signal" to stations.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
             "reading_id" to s.countSampleId,"observed_at" to s.observedAt,"band" to s.band,"rssi" to s.rssi,"snr" to s.snr,"quality_status" to s.qualityStatus) }
     )
 
@@ -81,12 +81,12 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
                  @RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="50") size: Int,request: HttpServletRequest): Map<String,Any> {
         access.require(request); reader.requireExists(id)
         val w=window(from,to); val pagination=page(page,size)
-        val result=events.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtDesc(id,w.first,w.second,pagination)
+        val result=events.pageBySubscriptionInUtcWindow(id,w.first,w.second,pagination)
         return mapOf("items" to result.content.map { e -> mapOf("id" to e.id,"observed_at" to e.observedAt,
             "ended_at" to e.endedAt,"status" to e.eventStatus,"diagnosis" to json.readTree(e.diagnosisJson),
             "identity" to json.readTree(e.identitySnapshotJson),"suppressing_incident_id" to e.suppressingIncidentId) },
             "page" to result.number,"total_elements" to result.totalElements,"total_pages" to result.totalPages,
-            "actions" to actions.findBySubscriptionIdAndCreatedAtBetweenOrderByCreatedAtDesc(id,w.first,w.second).take(100).map { a ->
+            "actions" to actions.listBySubscriptionCreatedInUtcWindow(id,w.first,w.second).take(100).map { a ->
                 mapOf("id" to a.id,"observed_at" to a.createdAt,"action" to a.action,"status" to a.status,"actor_id" to a.actorId) })
     }
 
@@ -97,7 +97,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         val onu=onus.findByExternalIdAndDeletedAtIsNull(externalId).orElseThrow { NoSuchElementException("ONU inexistente") }
         val id=identity.resolveOnu(onu.sn)
         val w=window(from,to)
-        val data=optical.findByOnuIdAndObservedAtBetweenOrderByObservedAtAsc(onu.id!!,w.first,w.second).map { sample ->
+        val data=optical.listByOnuInUtcWindow(onu.id!!,w.first,w.second).map { sample ->
             mapOf("id" to sample.id,"observed_at" to sample.observedAt,"onu_id" to sample.onuId,"onu_sn" to sample.onuSn,
                 "subscription_id" to sample.subscriptionId,"onu_rx_dbm" to sample.onuRxDbm,"onu_tx_dbm" to sample.onuTxDbm,
                 "olt_rx_dbm" to sample.oltRxDbm,"quality_status" to sample.qualityStatus)
@@ -105,6 +105,12 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         return if(id==null) mapOf("optical" to data) else mapOf("subscription_id" to id,"optical" to data)
     }
 
+    @PostMapping("/subscription/{id}/service-health/reboot")
+    fun reboot(@PathVariable id: Int, request: HttpServletRequest): ResponseEntity<ActionResult> {
+        val actor = access.require(request)
+        val result = remote.reboot(id, actor, access.confirmation(request))
+        return ResponseEntity.status(if (result.status in setOf("PENDING", "RUNNING")) 202 else 200).body(result)
+    }
     @PostMapping("/subscription/{id}/acs/wifi-refresh")
     fun refresh(@PathVariable id: Int,request: HttpServletRequest): ResponseEntity<ActionResult> {
         val actor=access.require(request); val result=remote.refresh(id,actor,access.confirmation(request))

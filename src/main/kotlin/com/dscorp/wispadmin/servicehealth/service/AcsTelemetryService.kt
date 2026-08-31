@@ -5,15 +5,14 @@ import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsClient
+import com.fasterxml.jackson.databind.JsonNode
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.Duration
-import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.time.format.DateTimeFormatter
 import java.sql.Timestamp
 
 @Service
@@ -23,15 +22,17 @@ class AcsTelemetryService(
     private val identity: IdentityService, private val counts: WifiCountSampleRepository,
     private val stations: WifiStationSampleRepository, private val current: WifiCurrentRepository,
     private val cursors: HealthCursorRepository, private val runs: TelemetryRunRepository,
-    private val profiles: ReadCapabilityProfileRepository, private val tx: TransactionTemplate
+    private val profiles: ReadCapabilityProfileRepository, private val actions: RemoteActionRepository,
+    private val tx: TransactionTemplate
 ) {
-    /** MySQL DATETIME(6) stores microseconds; normalize every key/value timestamp before JDBC binding. */
     private fun sqlTimestamp(value: Instant): Timestamp = Timestamp.from(value.truncatedTo(ChronoUnit.MICROS))
+
+    private data class PendingGpv(val deviceId: String, val model: String, val root: JsonNode)
 
     @Scheduled(fixedDelayString="\${service.health.acs-interval-ms:120000}",initialDelayString="\${service.health.acs-initial-delay-ms:45000}")
     fun poll() {
         if(!properties.enabled || !properties.acsEnabled || properties.pilotSubscriptionIds.isEmpty()) return
-        // Serialize across backend instances. The lock is also the durable watcher checkpoint boundary.
+        val pending = mutableListOf<PendingGpv>()
         try { tx.executeWithoutResult {
             if(cursors.lock("acs-watcher") == null) return@executeWithoutResult
             val now=Instant.now()
@@ -73,6 +74,10 @@ class AcsTelemetryService(
                         cursor.observedAt=inform; cursor.updatedAt=now
                         if(!WifiTelemetry.shouldPersist(parsed)) {
                             if(parsed.count.qualityStatus==Quality.UNSUPPORTED) run.unsupportedCount++ else run.missingCount++
+                            val gpvCursor=cursors.findById(AcsWifiRefreshPlanner.cursorKey(deviceId)).orElse(null)
+                            if(AcsWifiRefreshPlanner.shouldEnqueue(parsed.count.errorReason,gpvCursor?.observedAt,now,properties.acsGpvCooldownSeconds)) {
+                                pending += PendingGpv(deviceId, model, device)
+                            }
                             cursors.save(cursor)
                             run.lagSeconds=maxOf(run.lagSeconds,Duration.between(inform,now).seconds.coerceAtLeast(0))
                             continue
@@ -107,16 +112,41 @@ class AcsTelemetryService(
                 }
                 run.completedAt=Instant.now()
             } catch (_: Exception) {
-                // Never log an NBI body, URL or device tree.
                 run.qualityStatus=Quality.ERROR; run.errorCount++; run.errorReason="ACS_CACHE_READ_FAILED"; run.completedAt=Instant.now()
             }
             runs.save(run)
         } } catch (e: Exception) {
-            // A persistence failure rolls samples and cursors back together. Record it outside that transaction.
             tx.executeWithoutResult {
                 runs.save(TelemetryRun(source="ACS",equipmentKey="genieacs",startedAt=Instant.now(),completedAt=Instant.now(),
                     qualityStatus=Quality.ERROR,errorCount=1,
                     errorReason="ACS_TRANSACTION_ROLLED_BACK_${e.javaClass.simpleName}".take(120)))
+            }
+        }
+        enqueueStaleParameterRefresh(pending)
+    }
+
+    private fun enqueueStaleParameterRefresh(pending: List<PendingGpv>) {
+        if (pending.isEmpty()) return
+        val limit = properties.crConcurrency.coerceIn(1, 3)
+        var inFlight = actions.findByStatus("RUNNING").count { it.action in setOf("WIFI_REFRESH", "CONFIG", "REBOOT_ACS") }
+        for (item in pending) {
+            if (inFlight >= limit) break
+            val paths = WifiTelemetry.gpvPaths(item.root, item.model)
+            if (paths.isEmpty()) continue
+            val accepted = try {
+                client.getParameterValues(item.deviceId, paths, connectionRequest = true).accepted
+            } catch (_: Exception) {
+                false
+            }
+            if (!accepted) continue
+            inFlight++
+            tx.executeWithoutResult {
+                val key = AcsWifiRefreshPlanner.cursorKey(item.deviceId)
+                val cursor = cursors.findById(key).orElse(HealthCursor(cursorKey = key))
+                val now = Instant.now()
+                cursor.observedAt = now
+                cursor.updatedAt = now
+                cursors.save(cursor)
             }
         }
     }

@@ -54,7 +54,7 @@ class HealthEvidenceReader(
         // Legacy polledAt conflates optical and inventory timestamps and is deliberately not used for state freshness.
         sources+=Evidence("OLT","run_state",seen,state?.state,qualityAt(seen,now,properties.stateFreshSeconds),
             onu?.id?.toString(),onu?.externalId?.let { "/onus/configured/$it" })
-        val optics=optical.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,from,now)
+        val optics=optical.listBySubscriptionInUtcWindow(id,from,now)
             .filter { it.onuSn.equals(ids["ONU"],ignoreCase=true) && it.oltId.toString()==ids["OLT"] && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] }
         val lastOptical=optics.lastOrNull()
         sources+=Evidence("OLT","onu_rx_dbm",lastOptical?.observedAt,lastOptical?.onuRxDbm,
@@ -127,15 +127,15 @@ class HealthEvidenceReader(
                 .filter { parent -> ancestors.none { it.id==parent.id } }.distinctBy { it.id }
             ancestors+=next; frontier=next
         }
-        val allowedReadings=counts.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,now.minusSeconds(21600),now)
+        val allowedReadings=counts.listBySubscriptionInUtcWindow(id,now.minusSeconds(21600),now)
             .filter { it.deviceId==ids["ACS"] }.mapNotNull { it.id }.toSet()
-        val wifiStations=if(wifiSupported && ids["ACS"]!=null) stations.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,now.minusSeconds(21600),now)
+        val wifiStations=if(wifiSupported && ids["ACS"]!=null) stations.listBySubscriptionInUtcWindow(id,now.minusSeconds(21600),now)
             .filter { it.countSampleId in allowedReadings } else emptyList()
         val signalAt=wifiStations.maxOfOrNull { it.observedAt }
         sources+=Evidence("ACS","wifi_signal",signalAt,mapOf("rssi_min" to wifiStations.mapNotNull { it.rssi }.minOrNull(),"snr_min" to wifiStations.mapNotNull { it.snr }.minOrNull()),
             if(!wifiSupported) Quality.UNSUPPORTED else qualityAt(signalAt,now,properties.periodicInformSeconds*2))
         return HealthInputs(id,now,ids,sources,optics,
-            states.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id,from,now).filter { it.onuSn.equals(ids["ONU"],true) && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] },
+            states.listBySubscriptionInUtcWindow(id,from,now).filter { it.onuSn.equals(ids["ONU"],true) && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] },
             wifiStations,
             trafficEvidence.findBySubscriptionIdAndEventStatus(id,"OPEN").filter { trafficIdentitySince==null || it.observedAt>=trafficIdentitySince },reasonSet,ancestors,sub.serviceStatus.name,
             mapOf("id" to sub.plan?.id,"download_mbps" to sub.plan?.downloadSpeed,"upload_mbps" to sub.plan?.uploadSpeed))

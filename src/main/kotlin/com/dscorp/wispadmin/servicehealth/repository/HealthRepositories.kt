@@ -14,14 +14,64 @@ import javax.persistence.LockModeType
 
 interface OpticalSampleRepository : JpaRepository<OpticalSample, Long> {
     fun findTopBySubscriptionIdOrderByObservedAtDesc(id: Int): OpticalSample?
-    fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<OpticalSample>
-    fun findByOnuIdAndObservedAtBetweenOrderByObservedAtAsc(id: Long, from: Instant, to: Instant): List<OpticalSample>
+
+    @Query(
+        value = """
+        select * from olt_mgr_onu_optical_sample
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at asc
+        """,
+        nativeQuery = true
+    )
+    fun findOpticalBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<OpticalSample>
+
+    @Query(
+        value = """
+        select * from olt_mgr_onu_optical_sample
+        where onu_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at asc
+        """,
+        nativeQuery = true
+    )
+    fun findOpticalByOnuUtcRange(
+        @Param("id") id: Long,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<OpticalSample>
+
+
 }
+
 interface OnuStateEventRepository : JpaRepository<OnuStateEvent, Long> {
     fun existsBySourceAndSourceEventId(source: String, id: Long): Boolean
     fun findTopByOnuIdOrderByObservedAtDesc(id: Long): OnuStateEvent?
-    fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<OnuStateEvent>
+
+    @Query(
+        value = """
+        select * from service_onu_state_event
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at asc
+        """,
+        nativeQuery = true
+    )
+    fun findStateBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<OnuStateEvent>
+
 }
+
 interface WifiCountSampleRepository : JpaRepository<WifiCountSample, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -64,15 +114,48 @@ interface WifiCountSampleRepository : JpaRepository<WifiCountSample, Long> {
     fun findByDeviceIdAndSubscriptionIdAndInformAt(deviceId: String, subscriptionId: Int, informAt: Instant): WifiCountSample?
     fun findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId: String, subscriptionId: Int, observedAt: Instant): WifiCountSample?
     fun findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc(deviceId: String, subscriptionId: Int): WifiCountSample?
-    /** Compare the persisted UTC text to avoid JDBC session-timezone conversion on legacy TIMESTAMP columns. */
     @Query(value = "select id from acs_wifi_count_sample where device_id = :deviceId and subscription_id = :subscriptionId and date_format(inform_at, '%Y-%m-%d %H:%i:%s') = :informText limit 1", nativeQuery = true)
     fun findIdByDeviceIdAndSubscriptionIdAndInformText(@Param("deviceId") deviceId: String, @Param("subscriptionId") subscriptionId: Int, @Param("informText") informText: String): Long?
-    fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<WifiCountSample>
+
+    @Query(
+        value = """
+        select * from acs_wifi_count_sample
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at asc
+        """,
+        nativeQuery = true
+    )
+    fun findWifiCountBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<WifiCountSample>
+
 }
+
 interface WifiStationSampleRepository : JpaRepository<WifiStationSample, Long> {
     fun findByCountSampleId(id: Long): List<WifiStationSample>
-    fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<WifiStationSample>
+
+    @Query(
+        value = """
+        select * from acs_wifi_station_sample
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at asc
+        """,
+        nativeQuery = true
+    )
+    fun findWifiStationBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<WifiStationSample>
+
 }
+
 interface WifiCurrentRepository : JpaRepository<WifiCurrent, Int>
 interface ReadCapabilityProfileRepository : JpaRepository<ReadCapabilityProfile, Long> {
     fun findByManufacturerAndModelAndFirmware(manufacturer: String, model: String, firmware: String): ReadCapabilityProfile?
@@ -91,7 +174,30 @@ interface IdentityConflictRepository : JpaRepository<IdentityConflict, Long> {
 interface HealthEventRepository : JpaRepository<HealthEvent, Long> {
     fun findBySubscriptionIdAndEventStatus(id: Int, status: String): List<HealthEvent>
     fun findByEventStatus(status: String): List<HealthEvent>
-    fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtDesc(id: Int, from: Instant, to: Instant, page: Pageable): Page<HealthEvent>
+
+    @Query(
+        value = """
+        select * from service_health_event
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        order by observed_at desc
+        """,
+        countQuery = """
+        select count(*) from service_health_event
+        where subscription_id = :id
+          and observed_at >= :fromText
+          and observed_at <= :toText
+        """,
+        nativeQuery = true
+    )
+    fun findHealthEventBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String,
+        page: Pageable
+    ): Page<HealthEvent>
+
 }
 interface HealthCurrentRepository : JpaRepository<HealthCurrent, Int>
 interface EvidenceLinkRepository : JpaRepository<EvidenceLink, Long> {
@@ -116,5 +222,21 @@ interface RemoteActionRepository : JpaRepository<RemoteAction, Long> {
     fun findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(key: String, actions: Collection<String>): RemoteAction?
     fun countByActionAndStatus(action: String, status: String): Long
     fun findByStatus(status: String): List<RemoteAction>
-    fun findBySubscriptionIdAndCreatedAtBetweenOrderByCreatedAtDesc(id: Int, from: Instant, to: Instant): List<RemoteAction>
+
+    @Query(
+        value = """
+        select * from service_remote_action
+        where subscription_id = :id
+          and created_at >= :fromText
+          and created_at <= :toText
+        order by created_at desc
+        """,
+        nativeQuery = true
+    )
+    fun findRemoteActionBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<RemoteAction>
+
 }

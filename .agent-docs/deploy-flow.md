@@ -4,9 +4,9 @@ Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en 
 
 Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
 
-Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `9586600` → release `1.0.3+9586600` (2026-08-14, WhatsApp investigation: montos + ADMIN quick replies). Detalle: [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md).
+Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `7f7f9af` → release `1.0.3+7f7f9af` (2026-08-31, Wi-Fi ACS por `observed_at` / V36). Detalle: [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md).
 
-Deploy anterior: `develop` @ `32a68e4` → `1.0.3+32a68e4` (2026-07-23). Detalle CORS: [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md). Deploy previo `633c7e1`: [deploy-prod-backend-2026-07-23.md](./deploy-prod-backend-2026-07-23.md).
+Deploy anterior: `develop` @ `8e46ea4` → `1.0.3+8e46ea4` (bandwidth intelligence). Ver [deploy-prod-bandwidth-query-perf-2026-08-31.md](./deploy-prod-bandwidth-query-perf-2026-08-31.md). Service-health `84faf53`: [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md). WhatsApp investigation `9586600`: [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md).
 
 Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platform-auth-2026-07-23.md](./fix-cors-401-platform-auth-2026-07-23.md) — **desplegado** en prod (`1.0.3+32a68e4`); GET 401 con Origin backoffice ya incluye `Access-Control-Allow-Origin`.
 

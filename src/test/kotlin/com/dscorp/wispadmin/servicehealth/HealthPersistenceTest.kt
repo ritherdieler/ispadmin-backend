@@ -36,7 +36,7 @@ class HealthPersistenceTest {
         optical.saveAndFlush(OpticalSample(subscriptionId=1,onuId=10,onuRxDbm=-20.0,observedAt=at.plusSeconds(300)))
         optical.saveAndFlush(OpticalSample(subscriptionId=1,onuId=10,onuRxDbm=null,observedAt=at.plusSeconds(600),qualityStatus=Quality.MISSING))
         em.clear()
-        assertEquals(3,optical.findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(1,at,at.plusSeconds(600)).size)
+        assertEquals(3,optical.listBySubscriptionInUtcWindow(1,at,at.plusSeconds(600)).size)
         assertNull(optical.findTopBySubscriptionIdOrderByObservedAtDesc(1)!!.onuRxDbm)
     }
     @Test fun `partial session can be completed without adding a second reading`() {
@@ -81,5 +81,20 @@ class HealthPersistenceTest {
         assertTrue(raw.startsWith("2026-08-30 15:00:00"),raw)
         em.clear()
         assertEquals(at,optical.findById(sample.id!!).get().observedAt)
+    }
+    @Test fun `series between returns UTC optical samples when session JDBC timezone is Lima`() {
+        val observed=Instant.parse("2026-08-31T17:15:22Z")
+        val now=Instant.parse("2026-08-31T17:23:08Z")
+        optical.saveAndFlush(OpticalSample(subscriptionId=2328,onuId=214,onuRxDbm=-20.96,observedAt=observed,collectedAt=observed))
+        em.clear()
+        val limaFrom=java.sql.Timestamp.valueOf(java.time.LocalDateTime.ofInstant(now.minusSeconds(86400), java.time.ZoneId.of("America/Lima")))
+        val limaTo=java.sql.Timestamp.valueOf(java.time.LocalDateTime.ofInstant(now, java.time.ZoneId.of("America/Lima")))
+        val limaBound=(em.createNativeQuery(
+            "select count(*) from olt_mgr_onu_optical_sample where subscription_id=2328 and observed_at between :f and :t"
+        ).setParameter("f",limaFrom).setParameter("t",limaTo).singleResult as Number).toLong()
+        assertEquals(0L,limaBound,"Lima-shifted Instant binding must miss UTC wall-clock rows")
+        val found=optical.listBySubscriptionInUtcWindow(2328,now.minusSeconds(86400),now)
+        assertEquals(1,found.size,"UTC text range must include sample at $observed inside window ending $now")
+        assertEquals(observed,found.single().observedAt)
     }
 }

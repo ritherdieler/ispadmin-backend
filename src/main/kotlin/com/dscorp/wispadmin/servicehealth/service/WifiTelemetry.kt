@@ -28,6 +28,19 @@ object WifiTelemetry {
             }
         }).joinToString(",")
 
+    fun gpvPaths(root: JsonNode, model: String): List<String> {
+        val paths = mutableListOf<String>()
+        for (radio in radios(model).keys) {
+            val base = "$ROOT.WLANConfiguration.$radio"
+            paths += "$base.TotalAssociations"
+            for (index in 1..MAX_STATIONS) for (field in stationFields) {
+                val path = "$base.AssociatedDevice.$index.$field"
+                if (!node(root, path).isMissingNode) paths += path
+            }
+        }
+        return paths
+    }
+
     fun node(root: JsonNode, path: String): JsonNode {
         var current=root
         for (part in path.split('.')) current=current.path(part)

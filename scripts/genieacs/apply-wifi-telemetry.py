@@ -4,17 +4,40 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import urllib.request
 
 NAME = "gigafiber-wifi-telemetry"
+SUPPORTED_MODELS = {"F6600R", "V2804AX15T"}
+DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9]+-([A-Za-z0-9]+)-([A-Za-z0-9._-]+)$")
+
+
+def precondition(device_ids):
+    """Build a GenieACS preset expression, never a MongoDB query.
+
+    GenieACS evaluates preset preconditions for every CWMP Inform. The
+    expression language supports DeviceID comparisons, not Mongo operators
+    such as $in. Keep the allowlist exact by pairing serial and product class.
+    """
+    clauses = []
+    for device_id in dict.fromkeys(device_ids):
+        match = DEVICE_ID_PATTERN.fullmatch(device_id)
+        if match is None:
+            raise ValueError(f"Invalid GenieACS device ID: {device_id!r}")
+        model, serial = match.groups()
+        if model.upper() not in SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported Wi-Fi telemetry model: {model}")
+        clauses.append(
+            f'(DeviceID.SerialNumber = "{serial}" AND DeviceID.ProductClass = "{model}")'
+        )
+    return " OR ".join(clauses)
 
 
 def preset(device_ids):
     if not device_ids:
         raise ValueError("At least one explicit pilot device ID is required")
     return {"weight": 20, "channel": NAME, "events": {"2 PERIODIC": True},
-            "precondition": json.dumps({"$and": [{"_id": {"$in": device_ids}},
-                {"_deviceId._ProductClass": {"$in": ["F6600R", "V2804AX15T"]}}]}),
+            "precondition": precondition(device_ids),
             "configurations": [{"type": "provision", "name": NAME, "args": []}]}
 
 

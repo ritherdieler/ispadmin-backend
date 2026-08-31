@@ -4,7 +4,7 @@ Estado: **piloto vivo en prod (verificado 2026-08-31)**. WAR con módulo opt-in;
 
 Spec origen: `02_Especificacion_Diagnostico_Tecnico_Convergente_GigaFiber.docx` (política) y [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) (v1.2 contrastada con código).  
 Productor de tráfico: [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md).  
-Deploy: [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md).
+Deploy Wi-Fi V36: [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md). Módulo inicial: [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md).
 
 Alcance: backend `servicehealth` + backoffice `src/features/service-health/`. Android y observability-web no se modificaron.
 
@@ -50,7 +50,7 @@ Backend: `src/main/kotlin/com/dscorp/wispadmin/servicehealth/`.
 
 - `HealthEvidenceReader`: solo repositorios/cache. Separa estado GPON, óptica, ACS y tráfico. Tráfico antiguo se interpreta en America/Lima; ACS e interfaces nuevas usan UTC. `UtcInstantType` aplica UTC a la persistencia de este dominio sin cambiar la zona JDBC de los módulos anteriores.
 - `OltHistoryService`: recibe observaciones sin cambiar los colectores existentes; valores ópticos constantes generan nuevas muestras. Ausencias permanecen null. `OltAlarmHistoryService` consume alarmas ya almacenadas en NetDiag.
-- `AcsTelemetryService` y `WifiTelemetry`: proyección de hojas permitidas, lotes acotados, timestamps por parámetro y seguimiento persistente. Relee una misma sesión para completar el cache. Muestras y cursor comparten transacción.
+- `AcsTelemetryService` y `WifiTelemetry`: proyección de hojas permitidas, lotes acotados, timestamps por parámetro y seguimiento persistente. Relee una misma sesión para completar el cache. Muestras y cursor comparten transacción. Si el inform es fresco pero WLAN no (`PARAMETERS_NOT_REFRESHED_FOR_INFORM`), encola GPV+CR con cooldown (`acs-gpv-cooldown-seconds`, default 900) fuera de la TX; ver [acs-wifi-gpv-auto-refresh-2026-08-31.md](./acs-wifi-gpv-auto-refresh-2026-08-31.md). Series UTC: [service-health-series-utc-window-2026-08-31.md](./service-health-series-utc-window-2026-08-31.md).
 - `IdentityService`: puente canónico ACS con fallback no contradictorio. El bloqueo de la suscripción serializa reconciliaciones. No elige la suscripción con menor ID.
 - `HealthEvaluationService`, `DiagnosisEngine`, `BlastRadiusService`: consumo incremental de tráfico, reglas explicables y relaciones con NOC. Las evidencias de conclusiones anteriores se conservan al cambiar identidad o evidencia.
 - `RemoteActionService`, `HealthAccess`, `LegacyTechnicalActionFilter`: reserva transaccional antes del I/O, permisos y seguimiento. Las confirmaciones verifican también la identidad física y ACS congelada al pedir la acción.
@@ -154,7 +154,7 @@ Resultados locales: 137 pruebas Kotlin/JUnit/MockK/H2 de las suites seleccionada
 
 ## Secuencia de despliegue y reversión
 
-1. Respaldar MySQL. En un piloto ya creado: aplicar **V36** (`src/main/resources/db/migration/V36__wifi_sample_key_observed_at.sql`) **antes** del WAR nuevo. Borra filas `MISSING`/`observed_at` null y cambia UNIQUE a `(device_id, subscription_id, observed_at)`. Instalación nueva: V35 y luego V36. No activar Flyway sobre el historial completo.
+1. Respaldar MySQL. En un piloto ya creado: aplicar **V36** (`src/main/resources/db/migration/V36__wifi_sample_key_observed_at.sql`) **antes** del WAR nuevo. Borra filas `MISSING`/`observed_at` null y cambia UNIQUE a `(device_id, subscription_id, observed_at)`. Instalación nueva: V35 y luego V36. No activar Flyway sobre el historial completo. **Hecho en prod 2026-08-31** con `1.0.3+7f7f9af`.
 2. Desplegar backend con banderas falsas y backoffice. Confirmar GET CPE con roles permitidos, 404 y datos parciales.
 3. Definir lista piloto y clave HMAC; habilitar colectores y aplicar preset a IDs explícitos. Confirmar frescura real de parámetros y ausencia de datos privados en persistencia/logs.
 4. Revisar identidad y 360 antes de habilitar correlación. Luego habilitar agrupación, sin nuevas notificaciones.
