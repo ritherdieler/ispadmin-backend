@@ -33,29 +33,142 @@ open class BandwidthIntelligenceService(
     @Transactional(readOnly = true)
     open fun overview(from: LocalDateTime, to: LocalDateTime, resolution: String, routerId: Int?, planId: Int?): BandwidthOverviewDto {
         val effective = effectiveResolution(from, to, resolution, network = true)
+        val series = networkSeries(from, to, effective, routerId, planId)
+        val points = series.points
         val subscriptions = eligibleSubscriptions(routerId, planId)
-        val rows = metricRows(from, to, effective, subscriptions.mapNotNull { it.id }.toSet())
-        val meta = meta(from, to, effective, rows.map { it.coverage })
         val planCapacity = subscriptions.sumOf { it.plan?.downloadSpeed ?: 0 }.takeIf { it > 0 }
-        val p95Down = percentile(rows.map { it.avgDown }, .95)
+        val p95Down = percentile(points.map { it.avgMbpsDown }, .95)
         return BandwidthOverviewDto(
-            meta = meta,
-            totalRxBytes = rows.sumOf { it.rx }, totalTxBytes = rows.sumOf { it.tx },
-            avgMbpsDown = rows.map { it.avgDown }.averageOrZero(), avgMbpsUp = rows.map { it.avgUp }.averageOrZero(),
-            p95MbpsDown = p95Down, p95MbpsUp = percentile(rows.map { it.avgUp }, .95),
-            peakMbpsDown = rows.maxOfOrNull { it.avgDown } ?: 0.0, peakMbpsUp = rows.maxOfOrNull { it.avgUp } ?: 0.0,
-            utilizationPct = planCapacity?.let { p95Down * 100.0 / it }, growthPct = growth(rows),
-            activeSubscriptions = rows.map { it.subscriptionId }.distinct().size,
-            openAnomalies = anomalyRepository.findByEventStatusOrderByStartedAtDesc(TrafficAnomalyStatus.OPEN).count { it.subscriptionId == null || subscriptions.any { s -> s.id == it.subscriptionId } }
+            meta = series.meta,
+            totalRxBytes = points.sumOf { it.rxBytes },
+            totalTxBytes = points.sumOf { it.txBytes },
+            avgMbpsDown = points.map { it.avgMbpsDown }.averageOrZero(),
+            avgMbpsUp = points.map { it.avgMbpsUp }.averageOrZero(),
+            p95MbpsDown = p95Down,
+            p95MbpsUp = percentile(points.map { it.avgMbpsUp }, .95),
+            peakMbpsDown = points.maxOfOrNull { it.avgMbpsDown } ?: 0.0,
+            peakMbpsUp = points.maxOfOrNull { it.avgMbpsUp } ?: 0.0,
+            utilizationPct = planCapacity?.let { p95Down * 100.0 / it },
+            growthPct = growthFromPoints(points),
+            activeSubscriptions = countActiveSubscriptions(from, to, effective, routerId, planId, subscriptions).toInt(),
+            openAnomalies = countOpenAnomalies(routerId, planId, subscriptions)
         )
+    }
+
+    private fun countOpenAnomalies(routerId: Int?, planId: Int?, subscriptions: List<Subscription>): Int {
+        if (routerId == null && planId == null) {
+            return anomalyRepository.countByEventStatus(TrafficAnomalyStatus.OPEN).toInt()
+        }
+        val ids = subscriptions.mapNotNull { it.id }.toSet()
+        return if (ids.isEmpty()) 0 else anomalyRepository.countOpenForSubscriptions(ids).toInt()
     }
 
     @Transactional(readOnly = true)
     open fun series(from: LocalDateTime, to: LocalDateTime, resolution: String, routerId: Int?, planId: Int?, subscriptionId: Int? = null): BandwidthSeriesDto {
-        val effective = effectiveResolution(from, to, resolution, network = subscriptionId == null)
-        val ids = if (subscriptionId != null) setOf(subscriptionId) else eligibleSubscriptions(routerId, planId).mapNotNull { it.id }.toSet()
-        val rows = metricRows(from, to, effective, ids)
-        return seriesFromRows(from, to, effective, rows)
+        if (subscriptionId != null) {
+            val effective = effectiveResolution(from, to, resolution, network = false)
+            val rows = metricRows(from, to, effective, setOf(subscriptionId))
+            return seriesFromRows(from, to, effective, rows)
+        }
+        val effective = effectiveResolution(from, to, resolution, network = true)
+        return networkSeries(from, to, effective, routerId, planId)
+    }
+
+    private fun networkSeries(from: LocalDateTime, to: LocalDateTime, effective: String, routerId: Int?, planId: Int?): BandwidthSeriesDto {
+        val points = when (effective) {
+            "5m" -> aggregateFiveMinute(from, to, routerId, planId)
+            "1d" -> aggregateDaily(from, to, routerId, planId)
+            else -> aggregateHourly(from, to, routerId, planId)
+        }
+        return BandwidthSeriesDto(meta(from, to, effective, points.map { it.coveragePct }), points)
+    }
+
+    private fun aggregateFiveMinute(from: LocalDateTime, to: LocalDateTime, routerId: Int?, planId: Int?): List<BandwidthPointDto> {
+        val rows = when {
+            planId != null -> {
+                val ids = eligibleSubscriptionIds(routerId, planId)
+                if (ids.isEmpty()) emptyList() else fiveMinuteRepository.aggregateNetworkBucketsBySubscriptions(from, to, ids)
+            }
+            routerId != null -> fiveMinuteRepository.aggregateNetworkBucketsByHost(from, to, routerId)
+            else -> fiveMinuteRepository.aggregateNetworkBuckets(from, to)
+        }
+        return rows.map { toPoint(it.getBucketStart(), it) }
+    }
+
+    private fun aggregateHourly(from: LocalDateTime, to: LocalDateTime, routerId: Int?, planId: Int?): List<BandwidthPointDto> {
+        val rows = if (routerId == null && planId == null) {
+            hourlyRepository.aggregateNetworkBuckets(from, to)
+        } else {
+            val ids = eligibleSubscriptionIds(routerId, planId)
+            if (ids.isEmpty()) emptyList() else hourlyRepository.aggregateNetworkBucketsBySubscriptions(from, to, ids)
+        }
+        return rows.map { toPoint(it.getBucketStart(), it) }
+    }
+
+    private fun aggregateDaily(from: LocalDateTime, to: LocalDateTime, routerId: Int?, planId: Int?): List<BandwidthPointDto> {
+        val dayFrom = from.toLocalDate()
+        val dayTo = to.toLocalDate().plusDays(1)
+        val rows = if (routerId == null && planId == null) {
+            dailyRepository.aggregateNetworkBuckets(dayFrom, dayTo)
+        } else {
+            val ids = eligibleSubscriptionIds(routerId, planId)
+            if (ids.isEmpty()) emptyList() else dailyRepository.aggregateNetworkBucketsBySubscriptions(dayFrom, dayTo, ids)
+        }
+        return rows.map { toPoint(it.getBucketStart().atStartOfDay(), it) }
+    }
+
+    private fun toPoint(bucket: LocalDateTime, row: BandwidthNetworkBucketProjection) = BandwidthPointDto(
+        bucket.toString(),
+        row.getRxBytes(),
+        row.getTxBytes(),
+        row.getAvgMbpsDown(),
+        row.getAvgMbpsUp(),
+        row.getP95MbpsDown(),
+        row.getP95MbpsUp(),
+        row.getCoveragePct()
+    )
+
+    private fun toPoint(bucket: LocalDateTime, row: BandwidthNetworkDayBucketProjection) = BandwidthPointDto(
+        bucket.toString(),
+        row.getRxBytes(),
+        row.getTxBytes(),
+        row.getAvgMbpsDown(),
+        row.getAvgMbpsUp(),
+        row.getP95MbpsDown(),
+        row.getP95MbpsUp(),
+        row.getCoveragePct()
+    )
+
+    private fun countActiveSubscriptions(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        effective: String,
+        routerId: Int?,
+        planId: Int?,
+        subscriptions: List<Subscription>
+    ): Long = when (effective) {
+        "5m" -> when {
+            planId != null -> {
+                val ids = subscriptions.mapNotNull { it.id }.toSet()
+                if (ids.isEmpty()) 0L else fiveMinuteRepository.countDistinctSubscriptionsByIds(from, to, ids)
+            }
+            routerId != null -> fiveMinuteRepository.countDistinctSubscriptionsByHost(from, to, routerId)
+            else -> fiveMinuteRepository.countDistinctSubscriptions(from, to)
+        }
+        "1d" -> {
+            val dayFrom = from.toLocalDate()
+            val dayTo = to.toLocalDate().plusDays(1)
+            if (routerId == null && planId == null) dailyRepository.countDistinctSubscriptions(dayFrom, dayTo)
+            else {
+                val ids = subscriptions.mapNotNull { it.id }.toSet()
+                if (ids.isEmpty()) 0L else dailyRepository.countDistinctSubscriptionsByIds(dayFrom, dayTo, ids)
+            }
+        }
+        else -> if (routerId == null && planId == null) hourlyRepository.countDistinctSubscriptions(from, to)
+        else {
+            val ids = subscriptions.mapNotNull { it.id }.toSet()
+            if (ids.isEmpty()) 0L else hourlyRepository.countDistinctSubscriptionsByIds(from, to, ids)
+        }
     }
 
     private fun seriesFromRows(from: LocalDateTime, to: LocalDateTime, effective: String, rows: List<MetricRow>): BandwidthSeriesDto {
@@ -117,7 +230,7 @@ open class BandwidthIntelligenceService(
 
     @Transactional(readOnly = true)
     open fun anomalyPage(type: TrafficAnomalyType?, status: TrafficAnomalyStatus?, subscriptionId: Int?, routerId: Int?, page: Int, size: Int): BandwidthAnomalyPageDto {
-        val filtered = anomalyRepository.findAll().asSequence().filter { type == null || it.anomalyType == type }.filter { status == null || it.eventStatus == status }.filter { subscriptionId == null || it.subscriptionId == subscriptionId }.filter { routerId == null || it.hostDeviceId == routerId }.sortedByDescending { it.startedAt }.toList()
+        val filtered = anomalyRepository.findFiltered(type, status, subscriptionId, routerId)
         val safeSize = size.coerceIn(10, 100); val safePage = page.coerceAtLeast(0)
         return BandwidthAnomalyPageDto(filtered.drop(safePage * safeSize).take(safeSize).map(::toAnomaly), safePage, safeSize, filtered.size.toLong(), ceil(filtered.size / safeSize.toDouble()).toInt())
     }
@@ -132,12 +245,12 @@ open class BandwidthIntelligenceService(
             "1m" -> (if (singleId != null) sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from, to) else sampleRepository.findAllInBucketRange(from, to))
                 .asSequence().filter { it.subscriptionId in ids && it.sampleStatus == TrafficSampleStatus.OK }
                 .map { MetricRow(it.subscriptionId, it.bucketStart, it.rxBytesDelta ?: 0, it.txBytesDelta ?: 0, it.avgMbpsDown ?: 0.0, it.avgMbpsUp ?: 0.0, it.avgMbpsDown ?: 0.0, it.avgMbpsUp ?: 0.0, 100.0) }.toList()
-            "5m" -> (if (singleId != null) fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from, to) else fiveMinuteRepository.findInBucketRange(from, to))
-                .filter { it.subscriptionId in ids }.map { MetricRow(it.subscriptionId, it.bucketStart, it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
-            "1d" -> (if (singleId != null) dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from.toLocalDate(), to.toLocalDate().plusDays(1)) else dailyRepository.findInBucketRange(from.toLocalDate(), to.toLocalDate().plusDays(1)))
-                .filter { it.subscriptionId in ids }.map { MetricRow(it.subscriptionId, it.bucketStart.atStartOfDay(), it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
-            else -> (if (singleId != null) hourlyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from, to) else hourlyRepository.findInBucketRange(from, to))
-                .filter { it.subscriptionId in ids }.map { MetricRow(it.subscriptionId, it.bucketStart, it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
+            "5m" -> (if (singleId != null) fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from, to) else fiveMinuteRepository.findInBucketRangeForSubscriptions(from, to, ids))
+                .map { MetricRow(it.subscriptionId, it.bucketStart, it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
+            "1d" -> (if (singleId != null) dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from.toLocalDate(), to.toLocalDate().plusDays(1)) else dailyRepository.findInBucketRangeForSubscriptions(from.toLocalDate(), to.toLocalDate().plusDays(1), ids))
+                .map { MetricRow(it.subscriptionId, it.bucketStart.atStartOfDay(), it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
+            else -> (if (singleId != null) hourlyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(singleId, from, to) else hourlyRepository.findInBucketRangeForSubscriptions(from, to, ids))
+                .map { MetricRow(it.subscriptionId, it.bucketStart, it.rxBytesTotal, it.txBytesTotal, it.avgMbpsDown, it.avgMbpsUp, it.p95MbpsDown, it.p95MbpsUp, it.coveragePct) }
         }
     }
 
@@ -148,6 +261,7 @@ open class BandwidthIntelligenceService(
     }
 
     private fun eligibleSubscriptions(routerId: Int?, planId: Int?) = subscriptionRepository.findForTrafficPolling().filter { (routerId == null || it.hostDevice?.id == routerId) && (planId == null || it.plan?.id == planId) }
+    private fun eligibleSubscriptionIds(routerId: Int?, planId: Int?) = eligibleSubscriptions(routerId, planId).mapNotNull { it.id }.toSet()
     private fun subscriptionName(s: Subscription) = s.businessName?.takeIf { it.isNotBlank() } ?: listOfNotNull(s.firstName, s.lastName).joinToString(" ").ifBlank { "Suscripción ${s.id}" }
     private fun toSubscriptionRow(s: Subscription, rows: List<MetricRow>): BandwidthSubscriptionRowDto {
         val coverage = rows.map { it.coverage }.averageOrZero(); val p95Down = percentile(rows.map { it.avgDown }, .95); val planDown = s.plan?.downloadSpeed
@@ -162,7 +276,13 @@ open class BandwidthIntelligenceService(
     private fun meta(from: LocalDateTime, to: LocalDateTime, resolution: String, coverages: List<Double>): BandwidthRangeDto { val coverage = coverages.averageOrZero(); return BandwidthRangeDto(from.toString(), to.toString(), resolution, coverage, toStringFreshness(to), quality(coverage)) }
     private fun toStringFreshness(to: LocalDateTime) = if (Duration.between(to, LocalDateTime.now()).toMinutes() <= 15) "FRESH" else "STALE"
     private fun quality(coverage: Double) = when { coverage >= 90 -> "GOOD"; coverage >= 80 -> "PARTIAL"; else -> "POOR" }
-    private fun growth(rows: List<MetricRow>): Double? { if (rows.size < 2) return null; val sorted = rows.sortedBy { it.bucket }; val half = sorted.size / 2; val a = sorted.take(half).sumOf { it.rx + it.tx }.toDouble(); val b = sorted.drop(half).sumOf { it.rx + it.tx }.toDouble(); return if (a == 0.0) null else (b - a) * 100.0 / a }
+    private fun growthFromPoints(points: List<BandwidthPointDto>): Double? {
+        if (points.size < 2) return null
+        val half = points.size / 2
+        val a = points.take(half).sumOf { it.rxBytes + it.txBytes }.toDouble()
+        val b = points.drop(half).sumOf { it.rxBytes + it.txBytes }.toDouble()
+        return if (a == 0.0) null else (b - a) * 100.0 / a
+    }
     private fun percentile(values: List<Double>, p: Double): Double { if (values.isEmpty()) return 0.0; val sorted = values.sorted(); return sorted[(ceil(p * sorted.size).toInt().coerceIn(1, sorted.size) - 1)] }
     private fun List<Double>.averageOrZero() = if (isEmpty()) 0.0 else average()
     private fun toAnomaly(e: TrafficAnomalyEvent) = BandwidthAnomalyDto(requireNotNull(e.id), e.anomalyType.name, e.eventStatus.name, e.subscriptionId, e.hostDeviceId, e.startedAt.toString(), e.endedAt?.toString(), e.baselineValue, e.observedValue, e.deviationValue, e.coveragePct, e.confidence, e.ruleVersion, e.evidenceJson)

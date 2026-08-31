@@ -98,11 +98,154 @@ interface SubscriptionTrafficRawSummaryProjection {
     fun getSampleCount(): Int
 }
 
+interface BandwidthNetworkBucketProjection {
+    fun getBucketStart(): LocalDateTime
+    fun getRxBytes(): Long
+    fun getTxBytes(): Long
+    fun getAvgMbpsDown(): Double
+    fun getAvgMbpsUp(): Double
+    fun getP95MbpsDown(): Double
+    fun getP95MbpsUp(): Double
+    fun getCoveragePct(): Double
+}
+
+interface BandwidthNetworkDayBucketProjection {
+    fun getBucketStart(): LocalDate
+    fun getRxBytes(): Long
+    fun getTxBytes(): Long
+    fun getAvgMbpsDown(): Double
+    fun getAvgMbpsUp(): Double
+    fun getP95MbpsDown(): Double
+    fun getP95MbpsUp(): Double
+    fun getCoveragePct(): Double
+}
+
 interface SubscriptionTrafficFiveMinuteRepository : JpaRepository<SubscriptionTrafficFiveMinute, Long> {
     fun findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(subscriptionId: Int, from: LocalDateTime, to: LocalDateTime): List<SubscriptionTrafficFiveMinute>
     fun findBySubscriptionIdAndBucketStart(subscriptionId: Int, bucketStart: LocalDateTime): SubscriptionTrafficFiveMinute?
     @Query("SELECT f FROM SubscriptionTrafficFiveMinute f WHERE f.bucketStart >= :from AND f.bucketStart < :to")
     fun findInBucketRange(@Param("from") from: LocalDateTime, @Param("to") to: LocalDateTime): List<SubscriptionTrafficFiveMinute>
+
+    @Query(
+        """
+        SELECT f FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+          AND f.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun findInBucketRangeForSubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<SubscriptionTrafficFiveMinute>
+
+    @Query(
+        """
+        SELECT f.bucketStart AS bucketStart,
+               SUM(f.rxBytesTotal) AS rxBytes,
+               SUM(f.txBytesTotal) AS txBytes,
+               SUM(f.avgMbpsDown) AS avgMbpsDown,
+               SUM(f.avgMbpsUp) AS avgMbpsUp,
+               SUM(f.p95MbpsDown) AS p95MbpsDown,
+               SUM(f.p95MbpsUp) AS p95MbpsUp,
+               AVG(f.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+        GROUP BY f.bucketStart
+        ORDER BY f.bucketStart
+        """
+    )
+    fun aggregateNetworkBuckets(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): List<BandwidthNetworkBucketProjection>
+
+    @Query(
+        """
+        SELECT f.bucketStart AS bucketStart,
+               SUM(f.rxBytesTotal) AS rxBytes,
+               SUM(f.txBytesTotal) AS txBytes,
+               SUM(f.avgMbpsDown) AS avgMbpsDown,
+               SUM(f.avgMbpsUp) AS avgMbpsUp,
+               SUM(f.p95MbpsDown) AS p95MbpsDown,
+               SUM(f.p95MbpsUp) AS p95MbpsUp,
+               AVG(f.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+          AND f.hostDeviceId = :hostDeviceId
+        GROUP BY f.bucketStart
+        ORDER BY f.bucketStart
+        """
+    )
+    fun aggregateNetworkBucketsByHost(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("hostDeviceId") hostDeviceId: Int
+    ): List<BandwidthNetworkBucketProjection>
+
+    @Query(
+        """
+        SELECT f.bucketStart AS bucketStart,
+               SUM(f.rxBytesTotal) AS rxBytes,
+               SUM(f.txBytesTotal) AS txBytes,
+               SUM(f.avgMbpsDown) AS avgMbpsDown,
+               SUM(f.avgMbpsUp) AS avgMbpsUp,
+               SUM(f.p95MbpsDown) AS p95MbpsDown,
+               SUM(f.p95MbpsUp) AS p95MbpsUp,
+               AVG(f.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+          AND f.subscriptionId IN :subscriptionIds
+        GROUP BY f.bucketStart
+        ORDER BY f.bucketStart
+        """
+    )
+    fun aggregateNetworkBucketsBySubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<BandwidthNetworkBucketProjection>
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT f.subscriptionId)
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+        """
+    )
+    fun countDistinctSubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT f.subscriptionId)
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+          AND f.hostDeviceId = :hostDeviceId
+        """
+    )
+    fun countDistinctSubscriptionsByHost(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("hostDeviceId") hostDeviceId: Int
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT f.subscriptionId)
+        FROM SubscriptionTrafficFiveMinute f
+        WHERE f.bucketStart >= :from AND f.bucketStart < :to
+          AND f.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun countDistinctSubscriptionsByIds(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): Long
+
     @Modifying @Query("DELETE FROM SubscriptionTrafficFiveMinute f WHERE f.bucketStart < :threshold")
     fun deleteOlderThan(@Param("threshold") threshold: LocalDateTime): Int
 
@@ -121,10 +264,37 @@ interface TrafficAnomalyEventRepository : JpaRepository<TrafficAnomalyEvent, Lon
 
     fun findByDedupeKey(dedupeKey: String): TrafficAnomalyEvent?
     fun findByEventStatusOrderByStartedAtDesc(status: TrafficAnomalyStatus): List<TrafficAnomalyEvent>
+    fun countByEventStatus(status: TrafficAnomalyStatus): Long
     fun findBySubscriptionIdAndStartedAtBetweenOrderByStartedAtDesc(subscriptionId: Int, from: LocalDateTime, to: LocalDateTime): List<TrafficAnomalyEvent>
     fun findByAnomalyTypeAndEventStatus(type: TrafficAnomalyType, status: TrafficAnomalyStatus): List<TrafficAnomalyEvent>
     fun findTopByAnomalyTypeAndSubscriptionIdAndEventStatusOrderByStartedAtDesc(type: TrafficAnomalyType, subscriptionId: Int, status: TrafficAnomalyStatus): TrafficAnomalyEvent?
     fun findTopByAnomalyTypeAndHostDeviceIdAndEventStatusOrderByStartedAtDesc(type: TrafficAnomalyType, hostDeviceId: Int, status: TrafficAnomalyStatus): TrafficAnomalyEvent?
+
+    @Query(
+        """
+        SELECT COUNT(e) FROM TrafficAnomalyEvent e
+        WHERE e.eventStatus = com.dscorp.wispadmin.traffic.entity.TrafficAnomalyStatus.OPEN
+          AND (e.subscriptionId IS NULL OR e.subscriptionId IN :subscriptionIds)
+        """
+    )
+    fun countOpenForSubscriptions(@Param("subscriptionIds") subscriptionIds: Collection<Int>): Long
+
+    @Query(
+        """
+        SELECT e FROM TrafficAnomalyEvent e
+        WHERE (:type IS NULL OR e.anomalyType = :type)
+          AND (:status IS NULL OR e.eventStatus = :status)
+          AND (:subscriptionId IS NULL OR e.subscriptionId = :subscriptionId)
+          AND (:routerId IS NULL OR e.hostDeviceId = :routerId)
+        ORDER BY e.startedAt DESC
+        """
+    )
+    fun findFiltered(
+        @Param("type") type: TrafficAnomalyType?,
+        @Param("status") status: TrafficAnomalyStatus?,
+        @Param("subscriptionId") subscriptionId: Int?,
+        @Param("routerId") routerId: Int?
+    ): List<TrafficAnomalyEvent>
 }
 
 interface SubscriptionTrafficHourlyRepository : JpaRepository<SubscriptionTrafficHourly, Long> {
@@ -150,6 +320,89 @@ interface SubscriptionTrafficHourlyRepository : JpaRepository<SubscriptionTraffi
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime
     ): List<SubscriptionTrafficHourly>
+
+    @Query(
+        """
+        SELECT h FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+          AND h.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun findInBucketRangeForSubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<SubscriptionTrafficHourly>
+
+    @Query(
+        """
+        SELECT h.bucketStart AS bucketStart,
+               SUM(h.rxBytesTotal) AS rxBytes,
+               SUM(h.txBytesTotal) AS txBytes,
+               SUM(h.avgMbpsDown) AS avgMbpsDown,
+               SUM(h.avgMbpsUp) AS avgMbpsUp,
+               SUM(h.p95MbpsDown) AS p95MbpsDown,
+               SUM(h.p95MbpsUp) AS p95MbpsUp,
+               AVG(h.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+        GROUP BY h.bucketStart
+        ORDER BY h.bucketStart
+        """
+    )
+    fun aggregateNetworkBuckets(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): List<BandwidthNetworkBucketProjection>
+
+    @Query(
+        """
+        SELECT h.bucketStart AS bucketStart,
+               SUM(h.rxBytesTotal) AS rxBytes,
+               SUM(h.txBytesTotal) AS txBytes,
+               SUM(h.avgMbpsDown) AS avgMbpsDown,
+               SUM(h.avgMbpsUp) AS avgMbpsUp,
+               SUM(h.p95MbpsDown) AS p95MbpsDown,
+               SUM(h.p95MbpsUp) AS p95MbpsUp,
+               AVG(h.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+          AND h.subscriptionId IN :subscriptionIds
+        GROUP BY h.bucketStart
+        ORDER BY h.bucketStart
+        """
+    )
+    fun aggregateNetworkBucketsBySubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<BandwidthNetworkBucketProjection>
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT h.subscriptionId)
+        FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+        """
+    )
+    fun countDistinctSubscriptions(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT h.subscriptionId)
+        FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+          AND h.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun countDistinctSubscriptionsByIds(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): Long
 
     @Query(
         """
@@ -191,6 +444,89 @@ interface SubscriptionTrafficDailyRepository : JpaRepository<SubscriptionTraffic
         @Param("from") from: LocalDate,
         @Param("to") to: LocalDate
     ): List<SubscriptionTrafficDaily>
+
+    @Query(
+        """
+        SELECT d FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+          AND d.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun findInBucketRangeForSubscriptions(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<SubscriptionTrafficDaily>
+
+    @Query(
+        """
+        SELECT d.bucketStart AS bucketStart,
+               SUM(d.rxBytesTotal) AS rxBytes,
+               SUM(d.txBytesTotal) AS txBytes,
+               SUM(d.avgMbpsDown) AS avgMbpsDown,
+               SUM(d.avgMbpsUp) AS avgMbpsUp,
+               SUM(d.p95MbpsDown) AS p95MbpsDown,
+               SUM(d.p95MbpsUp) AS p95MbpsUp,
+               AVG(d.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+        GROUP BY d.bucketStart
+        ORDER BY d.bucketStart
+        """
+    )
+    fun aggregateNetworkBuckets(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate
+    ): List<BandwidthNetworkDayBucketProjection>
+
+    @Query(
+        """
+        SELECT d.bucketStart AS bucketStart,
+               SUM(d.rxBytesTotal) AS rxBytes,
+               SUM(d.txBytesTotal) AS txBytes,
+               SUM(d.avgMbpsDown) AS avgMbpsDown,
+               SUM(d.avgMbpsUp) AS avgMbpsUp,
+               SUM(d.p95MbpsDown) AS p95MbpsDown,
+               SUM(d.p95MbpsUp) AS p95MbpsUp,
+               AVG(d.coveragePct) AS coveragePct
+        FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+          AND d.subscriptionId IN :subscriptionIds
+        GROUP BY d.bucketStart
+        ORDER BY d.bucketStart
+        """
+    )
+    fun aggregateNetworkBucketsBySubscriptions(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): List<BandwidthNetworkDayBucketProjection>
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT d.subscriptionId)
+        FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+        """
+    )
+    fun countDistinctSubscriptions(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT d.subscriptionId)
+        FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+          AND d.subscriptionId IN :subscriptionIds
+        """
+    )
+    fun countDistinctSubscriptionsByIds(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate,
+        @Param("subscriptionIds") subscriptionIds: Collection<Int>
+    ): Long
 
     @Query(
         """
