@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.service.WifiTelemetry
 import com.dscorp.wispadmin.servicehealth.domain.Quality
+import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.junit.jupiter.api.Assertions.*
@@ -32,8 +33,43 @@ class WifiTelemetryTest {
         val root=device(); counts(root,2,1,now.minusSeconds(3600))
         val reading=WifiTelemetry.parse(root,1,"F6600R",now,secret)!!
         assertFalse(reading.complete); assertNull(reading.count.associatedDeviceCount)
+        assertFalse(WifiTelemetry.shouldPersist(reading))
         counts(root,2,1)
-        assertEquals(3,WifiTelemetry.parse(root,1,"F6600R",now,secret)!!.count.associatedDeviceCount)
+        val fresh=WifiTelemetry.parse(root,1,"F6600R",now,secret)!!
+        assertEquals(3,fresh.count.associatedDeviceCount)
+        assertTrue(WifiTelemetry.shouldPersist(fresh))
+    }
+    @Test fun `incomplete Inform does not persist a sample or poison current quality`() {
+        val root=device(); counts(root,2,1,now.minusSeconds(3600))
+        val reading=WifiTelemetry.parse(root,1,"F6600R",now,secret)!!
+        val previous=now.minusSeconds(1800)
+        val current=WifiCurrent(subscriptionId=1,deviceId="test-device",model="F6600R",informAt=previous,
+            observedAt=previous,associatedDeviceCount=3,qualityStatus=Quality.FRESH)
+        assertFalse(WifiTelemetry.applyCurrent(current,reading,"test-device","F6600R",now))
+        assertEquals(Quality.FRESH,current.qualityStatus)
+        assertEquals(3,current.associatedDeviceCount)
+        assertEquals(previous,current.observedAt)
+        assertEquals(previous,current.informAt)
+    }
+    @Test fun `complete reading is keyed by wifi timestamp not a later Inform`() {
+        val wifiAt=now.minusSeconds(30)
+        val root=device(); counts(root,3,0,wifiAt)
+        val reading=WifiTelemetry.parse(root,1,"F6600R",now,secret)!!
+        assertTrue(reading.complete)
+        assertEquals(wifiAt,reading.count.observedAt)
+        assertEquals(now,reading.count.informAt)
+        assertTrue(WifiTelemetry.shouldPersist(reading))
+        val current=WifiCurrent(subscriptionId=1)
+        assertTrue(WifiTelemetry.applyCurrent(current,reading,"test-device","F6600R",now))
+        assertEquals(wifiAt,current.observedAt)
+        assertEquals(now,current.informAt)
+        assertEquals(3,current.associatedDeviceCount)
+        assertEquals(Quality.FRESH,current.qualityStatus)
+    }
+    @Test fun `unsupported model is not persisted as a wifi sample`() {
+        val reading=WifiTelemetry.parse(device(),1,"HG8145X6",now,secret)!!
+        assertEquals(Quality.UNSUPPORTED,reading.count.qualityStatus)
+        assertFalse(WifiTelemetry.shouldPersist(reading))
     }
     @Test fun `station identity is salted by subscription and names never leave parser`() {
         val root=device(); counts(root,1,0)

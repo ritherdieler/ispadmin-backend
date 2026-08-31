@@ -8,6 +8,8 @@ Versión **1.2** · 29 agosto 2026
 Sustituye a la v1.1 del mismo archivo y a `02_Especificacion_Diagnostico_Tecnico_Convergente_GigaFiber.docx` (v1.0).  
 Inventario contrastado con código de `ispadmin-backend`, `ispadmin-backoffice`, `IpsAdmin` y verificación live del ACS de producción (GenieACS NBI, 6 CPE).
 
+**As-built (qué hay en código/prod):** [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md). Documento 1: [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md).
+
 ---
 
 ## Contexto objetivo

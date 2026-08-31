@@ -1,8 +1,12 @@
-# Diagnóstico técnico convergente: entrega local y operación del piloto
+# Diagnóstico técnico convergente — as-built (Documento 2)
 
-Estado: implementación local, desactivada por defecto. No se han desplegado cambios ni enviado tareas a equipos reales. La aceptación operativa requiere el piloto de 72 horas descrito al final.
+Estado: **piloto vivo en prod (verificado 2026-08-31)**. WAR con módulo opt-in; `.env` tiene `SERVICE_HEALTH_ENABLED=true` y allowlist `2310,2328`. Preset ACS `gigafiber-wifi-telemetry` aplicado a dos F6600R (`ZTEGDC47BF8F`, `ZTEGDC47DAD1`). Notificaciones compartidas siguen en false.
 
-Base: `02-especificacion-diagnostico-tecnico-convergente.md` y `diagnostico-tecnico-convergente-complemento.md`. Alcance: backend Kotlin/Spring Boot/Maven/MySQL, GenieACS y backoffice React/Vite. Android y observability-web no se modificaron.
+Spec origen: `02_Especificacion_Diagnostico_Tecnico_Convergente_GigaFiber.docx` (política) y [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) (v1.2 contrastada con código).  
+Productor de tráfico: [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md).  
+Deploy: [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md).
+
+Alcance: backend `servicehealth` + backoffice `src/features/service-health/`. Android y observability-web no se modificaron.
 
 ## Entregas y activación por fase
 
@@ -17,7 +21,28 @@ Base: `02-especificacion-diagnostico-tecnico-convergente.md` y `diagnostico-tecn
 | 6 | Reutilización de padres NetDiag, agrupación de tres ONU, afectados y recuperación individual, mantenimiento y JSON en NOC | `shared-incidents-enabled=false` inicialmente. Sin nuevas notificaciones. Respeta ack/silence y no reabre por la misma caída un padre resuelto manualmente. |
 | 7 | Refresh manual Wi-Fi, configuración TR-069, seguimiento de confirmación, idempotencia y límites compartidos con aliases | `actions-enabled=false`, `config-enabled=false`. Reinicios sin una lectura posterior de boot no se consideran confirmados. |
 
-Los cambios se encuentran en el árbol de trabajo de ambos repositorios; no se crearon commits ni se desplegaron fases. Las banderas permiten activar las entregas por separado. El esquema V35 es aditivo y único para este dominio: no activar automáticamente el historial de migraciones anterior.
+Las fases 0–7 están en el WAR y en el backoffice de prod. Las banderas permiten activarlas por separado. El esquema V35+V36 es aditivo: aplicarlo a mano; no activar Flyway sobre el historial completo. Hibernate `ddl-auto=update` puede crear las tablas al arrancar. V36 hay que aplicarlo **antes o con** el WAR que rekeyea Wi-Fi por `observed_at` (si no, coexisten dos UNIQUE y el upsert queda ambiguo).
+
+### Contrato con Documento 1 (qué consume de verdad)
+
+El lector no llama a MikroTik. Toma el último `subscription_traffic_sample` (Mbps + `sample_status`) y `traffic_source_run`, más `traffic_anomaly_event` OPEN copiados a `service_traffic_evidence`.
+
+| Evento Documento 1 | Uso en `DiagnosisEngine` |
+|--------------------|--------------------------|
+| `PLAN_SATURATION` | Único `diagnosis_code` de tráfico: exige GPON online, óptica sana y CPU sana; enlace a `/bandwidth-intelligence/subscriptions/{id}` |
+| `TRAFFIC_DROP` / `NO_TRAFFIC` / `TRAFFIC_SPIKE` / `PATTERN_DEVIATION` | No generan código propio. Tráfico 0 con muestra OK → estado `internet=UNKNOWN`, nunca `GPON_DOWN` |
+| `TRAFFIC_MISSING` / collector stale | `TELEMETRY_GAP` si el collector de tráfico o ACS/OLT está STALE/ERROR |
+| Mbps fresco > 0 + ACS Inform stale | `ACS_STALE` (gestión, no corte de Internet) |
+
+Códigos propios del motor: `GPON_DOWN`, `OPTICAL_DEGRADATION`, `WIFI_QUALITY`, `ACS_STALE`, `PLAN_SATURATION`, `ROUTER_CAPACITY`, `TELEMETRY_GAP`. Confianza categórica `LOW`/`MEDIUM`/`HIGH` (no 0–1). El conteo Wi-Fi se llama `associated_device_count`; la UI no usa «personas».
+
+## Huecos vs Word / v1.2
+
+- Notificaciones de incidente compartido: flag aparte, default false; `BlastRadiusService` no dispara avisos nuevos.
+- `TRAFFIC_DROP` no abre un diagnóstico de corte por sí solo (cumple la prohibición del Word).
+- MAC count OLT no existe. Bytes por estación ACS: `UNSUPPORTED`. Huawei B/C Wi-Fi: `UNSUPPORTED` hasta GPV validado.
+- Preset `gigafiber-wifi-telemetry` **aplicado** en prod a los dos F6600R del piloto (2026-08-31).
+- Piloto de 72 h, carga NBI y precisión por firmware: en curso (allowlist `2310,2328`).
 
 ## Componentes principales
 
@@ -72,7 +97,9 @@ SERVICE_HEALTH_STATION_HMAC_KEY=
 
 La lista de suscripciones vacía recolecta cero abonados. `PILOT_ACS_DEVICE_IDS` permite observar también equipos piloto sin puente y contabilizarlos como `unmapped`; no les fabrica una suscripción. La clave HMAC debe ser un secreto estable de al menos 32 bytes: se exige al activar ACS/acciones. No guardarla en Git ni rotarla sin planificar la discontinuidad de `station_key`.
 
-Valores ajustables bajo `service.health`: ACS 120 s, evaluación/tráfico/alarma/agrupación 60 s; Inform esperado 3600 s; frescura óptica 600 s y estado 1200 s. Degradación: 3 dB/24 h, 12 muestras y dos flaps. Wi-Fi: RSSI < -75 dBm o SNR < 20 dB en dos lecturas recientes. Saturación reutiliza cobertura de `TrafficProperties`, óptica de `SignalCategoryCalculator` y CPU de `NetDiagProperties`.
+Valores ajustables bajo `service.health`: ACS 120 s (solo lectura de cache NBI; **no** persiste Wi-Fi si el Inform no trajo parámetros frescos), evaluación/tráfico/alarma/agrupación 60 s; Inform esperado 3600 s; frescura óptica 600 s y estado 1200 s. Degradación: 3 dB/24 h, 12 muestras y dos flaps. Wi-Fi: RSSI < -75 dBm o SNR < 20 dB en dos lecturas recientes. Saturación reutiliza cobertura de `TrafficProperties`, óptica de `SignalCategoryCalculator` y CPU de `NetDiagProperties`.
+
+La clave de `acs_wifi_count_sample` es `(device_id, subscription_id, observed_at)` del `TotalAssociations` (V36). `inform_at` guarda el Inform de esa sesión CWMP. Un Inform posterior sin GPV Wi-Fi no inserta `MISSING` ni pisa `acs_wifi_status_current`. `lastInform` de `subscription_acs` sí se actualiza cada ciclo.
 
 Retención: óptica/conteos 90 días, estaciones 14, corridas 30 y eventos terminados 180. Los vínculos históricos se conservan. Acciones y conflictos se conservan como auditoría. Los resúmenes de evidencia en eventos sobreviven a la purga de muestras técnicas.
 
@@ -112,7 +139,7 @@ python3 scripts/tests/service-health-mysql-smoke.py
 node scripts/tests/wifi-telemetry-provision.test.cjs
 ```
 
-La prueba MySQL crea y elimina su propio contenedor sin puertos ni red; aplica únicamente V35 dos veces, comprueba unicidad, completado parcial, null y actualización/cierre/reapertura de la misma evidencia. No usa credenciales ni base de producción.
+La prueba MySQL crea y elimina su propio contenedor sin puertos ni red; aplica V35 (y V36 si el smoke la incluye), comprueba unicidad, completado parcial, null y actualización/cierre/reapertura de la misma evidencia. No usa credenciales ni base de producción.
 
 Backoffice:
 
@@ -127,7 +154,7 @@ Resultados locales: 137 pruebas Kotlin/JUnit/MockK/H2 de las suites seleccionada
 
 ## Secuencia de despliegue y reversión
 
-1. Respaldar y aplicar **solo V35** manualmente al MySQL de destino. No activar Flyway ni ejecutar el historial completo. Verificar tablas/índices antes de arrancar backend.
+1. Respaldar MySQL. En un piloto ya creado: aplicar **V36** (`src/main/resources/db/migration/V36__wifi_sample_key_observed_at.sql`) **antes** del WAR nuevo. Borra filas `MISSING`/`observed_at` null y cambia UNIQUE a `(device_id, subscription_id, observed_at)`. Instalación nueva: V35 y luego V36. No activar Flyway sobre el historial completo.
 2. Desplegar backend con banderas falsas y backoffice. Confirmar GET CPE con roles permitidos, 404 y datos parciales.
 3. Definir lista piloto y clave HMAC; habilitar colectores y aplicar preset a IDs explícitos. Confirmar frescura real de parámetros y ausencia de datos privados en persistencia/logs.
 4. Revisar identidad y 360 antes de habilitar correlación. Luego habilitar agrupación, sin nuevas notificaciones.

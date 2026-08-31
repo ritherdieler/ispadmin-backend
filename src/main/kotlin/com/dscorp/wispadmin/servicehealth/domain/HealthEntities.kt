@@ -31,7 +31,7 @@ class OnuStateEvent(
 )
 
 @Entity
-@Table(name="acs_wifi_count_sample", uniqueConstraints=[UniqueConstraint(name="uk_sh_wifi_reading", columnNames=["device_id","subscription_id","inform_at"])], indexes=[Index(name="idx_sh_wifi_sub_time", columnList="subscription_id,observed_at")])
+@Table(name="acs_wifi_count_sample", uniqueConstraints=[UniqueConstraint(name="uk_sh_wifi_reading", columnNames=["device_id","subscription_id","observed_at"])], indexes=[Index(name="idx_sh_wifi_sub_time", columnList="subscription_id,observed_at")])
 class WifiCountSample(
     @Id @GeneratedValue(strategy=GenerationType.IDENTITY) @Column(name="id") var id: Long? = null,
     @Column(name="subscription_id") var subscriptionId: Int = 0, @Column(name="device_id", length=128) var deviceId: String = "", @Column(name="inform_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var informAt: Instant = Instant.now(),

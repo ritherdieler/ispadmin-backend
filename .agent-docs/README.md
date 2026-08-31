@@ -2,9 +2,12 @@
 
 | Tema | Archivo |
 |------|---------|
-| **Diagnóstico técnico convergente — especificación v1.2 (Documento 2)** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
+| **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
+| **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
+| **Diagnóstico técnico convergente — especificación v1.2** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
 | **Deploy prod service-health 2026-08-30 (opt-in off)** | [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
+| **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
 | **NetDiag Fase 1 (polls / alertas / WhatsApp / LLM)** | [netdiag-fase1.md](./netdiag-fase1.md) |
 | **NetDiag Fase 1.5 (ROS7 netwatch / optical / traps / syslog)** | [netdiag-fase1.5.md](./netdiag-fase1.5.md) |
 | **NetDiag Fase 2 (mantenimiento / webhook LLM / RADIUS)** | [netdiag-fase2.md](./netdiag-fase2.md) |
@@ -60,6 +63,7 @@
 | **Selector CLOUD_CORE_ROUTER Android (construcción)** | [selector-cloud-core-router-android-build.md](./selector-cloud-core-router-android-build.md) |
 | **GenieACS — despliegue VPS** | [genieacs-despliegue-gigafiber.md](./genieacs-despliegue-gigafiber.md) (incluye snapshot `subscription_acs` V26) |
 | **GenieACS — plan implementación VPS** | [genieacs-plan-implementacion-vps.md](./genieacs-plan-implementacion-vps.md) |
+| **GenieACS — credenciales ACS / Connection Request** | [genieacs-cr-credentials.md](./genieacs-cr-credentials.md) (ZTE F6600R `PeriodicInformTime` 9007) |
 | **GenieACS — parámetros writable VSOL V2804AX15T** | [genieacs-vsol-v2804-parametros.md](./genieacs-vsol-v2804-parametros.md) |
 | **E2E TR-069 — validación de modelo (incl. lab HG8145X6 WAN)** | [tr069-e2e-validacion-modelo.md](./tr069-e2e-validacion-modelo.md) |
 | **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |

@@ -3,8 +3,10 @@ package com.dscorp.wispadmin.servicehealth.repository
 import com.dscorp.wispadmin.servicehealth.domain.*
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.sql.Timestamp
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import java.time.Instant
@@ -21,7 +23,50 @@ interface OnuStateEventRepository : JpaRepository<OnuStateEvent, Long> {
     fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<OnuStateEvent>
 }
 interface WifiCountSampleRepository : JpaRepository<WifiCountSample, Long> {
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        INSERT INTO acs_wifi_count_sample
+          (device_id, subscription_id, inform_at, observed_at, collected_at,
+           associated_device_count, associated2g, associated5g, lan_device_count,
+           quality_status, source_run_id, error_reason)
+        VALUES (:deviceId, :subscriptionId, :informAt, :observedAt, :collectedAt,
+                :associatedDeviceCount, :associated2g, :associated5g, :lanDeviceCount,
+                :qualityStatus, :sourceRunId, :errorReason)
+        ON DUPLICATE KEY UPDATE
+          inform_at = VALUES(inform_at),
+          collected_at = VALUES(collected_at),
+          associated_device_count = VALUES(associated_device_count),
+          associated2g = VALUES(associated2g),
+          associated5g = VALUES(associated5g),
+          lan_device_count = VALUES(lan_device_count),
+          quality_status = VALUES(quality_status),
+          source_run_id = VALUES(source_run_id),
+          error_reason = VALUES(error_reason)
+        """, nativeQuery = true)
+    fun upsertAtomic(
+        @Param("deviceId") deviceId: String,
+        @Param("subscriptionId") subscriptionId: Int,
+        @Param("informAt") informAt: Timestamp,
+        @Param("observedAt") observedAt: Timestamp?,
+        @Param("collectedAt") collectedAt: Timestamp,
+        @Param("associatedDeviceCount") associatedDeviceCount: Int?,
+        @Param("associated2g") associated2g: Int?,
+        @Param("associated5g") associated5g: Int?,
+        @Param("lanDeviceCount") lanDeviceCount: Int?,
+        @Param("qualityStatus") qualityStatus: String,
+        @Param("sourceRunId") sourceRunId: Long?,
+        @Param("errorReason") errorReason: String?
+    ): Int
+
+    @Query(value = "select id from acs_wifi_count_sample where device_id = :deviceId and subscription_id = :subscriptionId and observed_at = :observedAt limit 1", nativeQuery = true)
+    fun findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(@Param("deviceId") deviceId: String, @Param("subscriptionId") subscriptionId: Int, @Param("observedAt") observedAt: Timestamp): Long?
+
     fun findByDeviceIdAndSubscriptionIdAndInformAt(deviceId: String, subscriptionId: Int, informAt: Instant): WifiCountSample?
+    fun findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId: String, subscriptionId: Int, observedAt: Instant): WifiCountSample?
+    fun findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc(deviceId: String, subscriptionId: Int): WifiCountSample?
+    /** Compare the persisted UTC text to avoid JDBC session-timezone conversion on legacy TIMESTAMP columns. */
+    @Query(value = "select id from acs_wifi_count_sample where device_id = :deviceId and subscription_id = :subscriptionId and date_format(inform_at, '%Y-%m-%d %H:%i:%s') = :informText limit 1", nativeQuery = true)
+    fun findIdByDeviceIdAndSubscriptionIdAndInformText(@Param("deviceId") deviceId: String, @Param("subscriptionId") subscriptionId: Int, @Param("informText") informText: String): Long?
     fun findBySubscriptionIdAndObservedAtBetweenOrderByObservedAtAsc(id: Int, from: Instant, to: Instant): List<WifiCountSample>
 }
 interface WifiStationSampleRepository : JpaRepository<WifiStationSample, Long> {

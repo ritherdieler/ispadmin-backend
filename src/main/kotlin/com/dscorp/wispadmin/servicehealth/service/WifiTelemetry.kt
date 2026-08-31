@@ -48,6 +48,19 @@ object WifiTelemetry {
     }
 
     data class Reading(val count: WifiCountSample, val stations: List<WifiStationSample>, val complete: Boolean)
+    fun shouldPersist(reading: Reading): Boolean =
+        reading.complete && reading.count.observedAt != null && reading.count.qualityStatus != Quality.UNSUPPORTED
+    fun applyCurrent(status: WifiCurrent, reading: Reading, deviceId: String, model: String, now: Instant): Boolean {
+        if (!shouldPersist(reading)) return false
+        status.deviceId = deviceId
+        status.model = model
+        status.informAt = reading.count.informAt
+        status.observedAt = reading.count.observedAt
+        status.associatedDeviceCount = reading.count.associatedDeviceCount
+        status.qualityStatus = reading.count.qualityStatus
+        status.updatedAt = now
+        return true
+    }
     fun parse(root: JsonNode, subscriptionId: Int, model: String, now: Instant, secret: String): Reading? {
         val inform=parseInstant(root.path("_lastInform")) ?: return null
         val radioMap=radios(model)

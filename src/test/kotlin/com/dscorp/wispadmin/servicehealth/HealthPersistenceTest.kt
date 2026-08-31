@@ -41,13 +41,25 @@ class HealthPersistenceTest {
     }
     @Test fun `partial session can be completed without adding a second reading`() {
         val at=Instant.parse("2026-08-30T15:00:00Z")
-        counts.saveAndFlush(WifiCountSample(subscriptionId=1,deviceId="device",informAt=at))
+        counts.saveAndFlush(WifiCountSample(subscriptionId=1,deviceId="device",informAt=at,observedAt=at))
         em.clear()
         val same=counts.findByDeviceIdAndSubscriptionIdAndInformAt("device",1,at)!!
-        same.associatedDeviceCount=0; same.observedAt=at; same.qualityStatus=Quality.FRESH
+        same.associatedDeviceCount=0; same.qualityStatus=Quality.FRESH
         counts.saveAndFlush(same); em.clear()
         assertEquals(1,counts.count())
         assertEquals(0,counts.findByDeviceIdAndSubscriptionIdAndInformAt("device",1,at)!!.associatedDeviceCount)
+    }
+    @Test fun `wifi samples are unique on parameter timestamp not Inform`() {
+        val wifiAt=Instant.parse("2026-08-30T15:00:00Z")
+        counts.saveAndFlush(WifiCountSample(subscriptionId=1,deviceId="device",informAt=wifiAt,observedAt=wifiAt,
+            associatedDeviceCount=3,associated2g=3,associated5g=0,qualityStatus=Quality.FRESH))
+        org.junit.jupiter.api.assertThrows<org.springframework.dao.DataIntegrityViolationException> {
+            counts.saveAndFlush(WifiCountSample(subscriptionId=1,deviceId="device",informAt=wifiAt.plusSeconds(300),observedAt=wifiAt,
+                associatedDeviceCount=4,associated2g=4,associated5g=0,qualityStatus=Quality.FRESH))
+        }
+        em.clear()
+        assertEquals(1,counts.count())
+        assertEquals(3,counts.findByDeviceIdAndSubscriptionIdAndObservedAt("device",1,wifiAt)!!.associatedDeviceCount)
     }
     @Test fun `identity history survives replacement`() {
         val at=Instant.parse("2026-08-30T15:00:00Z")

@@ -11,6 +11,10 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.Duration
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.time.format.DateTimeFormatter
+import java.sql.Timestamp
 
 @Service
 class AcsTelemetryService(
@@ -21,6 +25,9 @@ class AcsTelemetryService(
     private val cursors: HealthCursorRepository, private val runs: TelemetryRunRepository,
     private val profiles: ReadCapabilityProfileRepository, private val tx: TransactionTemplate
 ) {
+    /** MySQL DATETIME(6) stores microseconds; normalize every key/value timestamp before JDBC binding. */
+    private fun sqlTimestamp(value: Instant): Timestamp = Timestamp.from(value.truncatedTo(ChronoUnit.MICROS))
+
     @Scheduled(fixedDelayString="\${service.health.acs-interval-ms:120000}",initialDelayString="\${service.health.acs-initial-delay-ms:45000}")
     fun poll() {
         if(!properties.enabled || !properties.acsEnabled || properties.pilotSubscriptionIds.isEmpty()) return
@@ -61,36 +68,40 @@ class AcsTelemetryService(
                         val parsed=WifiTelemetry.parse(device,subId,if(profile.wifiCount) model else "",now,properties.stationHmacKey)
 
                         if(parsed==null) { run.missingCount++; continue }
-                        val sample=parsed.count
-                        val existing=counts.findByDeviceIdAndSubscriptionIdAndInformAt(deviceId,subId,inform)
-                        // Keep a completed reading intact if the next NBI response is incomplete.
-                        if(existing?.qualityStatus==Quality.FRESH && !parsed.complete) continue
-                        sample.id=existing?.id; sample.sourceRunId=run.id
-                        counts.saveAndFlush(sample)
+                        val key="acs:$deviceId"
+                        val cursor=cursors.findById(key).orElse(HealthCursor(cursorKey=key))
+                        cursor.observedAt=inform; cursor.updatedAt=now
+                        if(!WifiTelemetry.shouldPersist(parsed)) {
+                            if(parsed.count.qualityStatus==Quality.UNSUPPORTED) run.unsupportedCount++ else run.missingCount++
+                            cursors.save(cursor)
+                            run.lagSeconds=maxOf(run.lagSeconds,Duration.between(inform,now).seconds.coerceAtLeast(0))
+                            continue
+                        }
+                        val incoming=parsed.count
+                        val observedAt=incoming.observedAt!!
+                        counts.upsertAtomic(deviceId,subId,sqlTimestamp(incoming.informAt),sqlTimestamp(observedAt),
+                            sqlTimestamp(incoming.collectedAt),incoming.associatedDeviceCount,incoming.associated2g,incoming.associated5g,
+                            incoming.lanDeviceCount,incoming.qualityStatus.name,run.id,incoming.errorReason)
+                        val persistedId=counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(deviceId,subId,sqlTimestamp(observedAt))
+                            ?: counts.findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId,subId,observedAt)?.id
+                            ?: throw IllegalStateException("ACS_SAMPLE_ID_NOT_FOUND")
+                        val sample=counts.findById(persistedId).orElseThrow { IllegalStateException("ACS_SAMPLE_ID_NOT_FOUND") }
                         val oldStations=stations.findByCountSampleId(sample.id!!).associateBy { it.stationKey to it.band }
                         for(station in parsed.stations) {
                             station.countSampleId=sample.id!!
                             station.id=oldStations[station.stationKey to station.band]?.id
                             stations.save(station)
                         }
-                        if(parsed.complete) {
-                            val observedKeys=parsed.stations.map { it.stationKey to it.band }.toSet()
-                            stations.deleteAll(oldStations.filterKeys { it !in observedKeys }.values)
-                        }
+                        val observedKeys=parsed.stations.map { it.stationKey to it.band }.toSet()
+                        stations.deleteAll(oldStations.filterKeys { it !in observedKeys }.values)
                         val status=current.findById(subId).orElse(WifiCurrent(subscriptionId=subId))
-                        if(status.informAt==null || !inform.isBefore(status.informAt)) {
-                            status.deviceId=deviceId; status.model=model; status.informAt=inform; status.updatedAt=now
-                            status.qualityStatus=sample.qualityStatus
-                            if(parsed.complete) {
-                                status.countSampleId=sample.id; status.observedAt=sample.observedAt; status.associatedDeviceCount=sample.associatedDeviceCount
-                            }
+                        if(WifiTelemetry.applyCurrent(status,parsed,deviceId,model,now)) {
+                            status.countSampleId=sample.id
                             current.save(status)
                         }
-                        val key="acs:$deviceId"
-                        val cursor=cursors.findById(key).orElse(HealthCursor(cursorKey=key))
-                        // Always re-read the latest Inform: parameter updates can finish after _lastInform advances.
-                        cursor.observedAt=inform; cursor.referenceId=sample.id!!; cursor.updatedAt=now; cursors.save(cursor)
-                        when(sample.qualityStatus) { Quality.UNSUPPORTED -> run.unsupportedCount++; Quality.MISSING -> run.missingCount++; else -> run.writtenCount++ }
+                        cursor.referenceId=sample.id!!
+                        cursors.save(cursor)
+                        run.writtenCount++
                         run.lagSeconds=maxOf(run.lagSeconds,Duration.between(inform,now).seconds.coerceAtLeast(0))
                     }
                 }
@@ -100,11 +111,12 @@ class AcsTelemetryService(
                 run.qualityStatus=Quality.ERROR; run.errorCount++; run.errorReason="ACS_CACHE_READ_FAILED"; run.completedAt=Instant.now()
             }
             runs.save(run)
-        } } catch (_: Exception) {
+        } } catch (e: Exception) {
             // A persistence failure rolls samples and cursors back together. Record it outside that transaction.
             tx.executeWithoutResult {
                 runs.save(TelemetryRun(source="ACS",equipmentKey="genieacs",startedAt=Instant.now(),completedAt=Instant.now(),
-                    qualityStatus=Quality.ERROR,errorCount=1,errorReason="ACS_TRANSACTION_ROLLED_BACK"))
+                    qualityStatus=Quality.ERROR,errorCount=1,
+                    errorReason="ACS_TRANSACTION_ROLLED_BACK_${e.javaClass.simpleName}".take(120)))
             }
         }
     }
