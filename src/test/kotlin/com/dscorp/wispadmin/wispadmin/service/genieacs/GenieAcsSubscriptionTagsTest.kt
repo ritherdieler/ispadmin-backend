@@ -117,6 +117,15 @@ class GenieAcsSubscriptionTagsTest {
         assertTrue(GenieAcsSubscriptionTags.isManagedTag("t:TV"))
         assertTrue(GenieAcsSubscriptionTags.isManagedTag("c:JUAN"))
         assertFalse(GenieAcsSubscriptionTags.isManagedTag("lab"))
+        assertFalse(GenieAcsSubscriptionTags.isManagedTag(GenieAcsSubscriptionTags.LAB))
         assertFalse(GenieAcsSubscriptionTags.isManagedTag("provisioned"))
+    }
+
+    @Test
+    fun `isLab detects unmanaged lab tag`() {
+        assertEquals("lab", GenieAcsSubscriptionTags.LAB)
+        assertTrue(GenieAcsSubscriptionTags.isLab(listOf("sub-1", "lab", "t:INTERNET")))
+        assertFalse(GenieAcsSubscriptionTags.isLab(listOf("sub-1", "t:INTERNET")))
+        assertFalse(GenieAcsSubscriptionTags.isLab(emptyList()))
     }
 }

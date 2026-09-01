@@ -11,6 +11,7 @@ enum class GenieAcsServiceKind {
 
 object GenieAcsSubscriptionTags {
     const val WAN_NAME_MAX_LENGTH = 64
+    const val LAB = "lab"
 
     private val comboTokens = listOf(
         "combo",
@@ -68,6 +69,8 @@ object GenieAcsSubscriptionTags {
     fun isManagedTag(tag: String): Boolean {
         return tag.startsWith("sub-") || tag.startsWith("t:") || tag.startsWith("c:")
     }
+
+    fun isLab(tags: List<String>): Boolean = tags.any { it == LAB }
 
     fun tagsToRemove(existing: List<String>, desired: List<String>): List<String> {
         val desiredSet = desired.toSet()

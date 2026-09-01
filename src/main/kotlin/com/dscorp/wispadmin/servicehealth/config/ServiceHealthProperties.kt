@@ -20,7 +20,7 @@ class ServiceHealthProperties {
     var pilotSubscriptionIds: Set<Int> = emptySet()
     var stationHmacKey = ""
     var periodicInformSeconds = 3600L
-    var opticalFreshSeconds = 600L
+    var opticalFreshSeconds = 2400L
     var stateFreshSeconds = 1200L
     var opticalDegradationDb = 3.0
     var opticalMinSamples = 12
@@ -35,5 +35,13 @@ class ServiceHealthProperties {
     var actionCooldownSeconds = 600L
     var acsGpvCooldownSeconds = 900L
     var crConcurrency = 3
-    fun collects(id: Int?) = enabled && id != null && id in pilotSubscriptionIds
+    fun collects(id: Int?, lab: Boolean = false, environmentTag: String = ""): Boolean {
+        if (!enabled || id == null) return false
+        return if (environmentTag.isNotBlank()) lab else !lab && id in pilotSubscriptionIds
+    }
+    fun collectionSubscriptionIds(labSubscriptionIds: Collection<Int>, environmentTag: String): Set<Int> {
+        if (!enabled) return emptySet()
+        return if (environmentTag.isNotBlank()) labSubscriptionIds.toSet()
+        else pilotSubscriptionIds - labSubscriptionIds.toSet()
+    }
 }

@@ -1,10 +1,12 @@
 package com.dscorp.wispadmin.servicehealth.controller
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.service.RemoteActionService
 import com.dscorp.wispadmin.servicehealth.service.IdentityService
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
+import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Component
 import org.springframework.core.annotation.Order
 import org.springframework.core.Ordered
@@ -18,8 +20,8 @@ import javax.servlet.http.HttpServletResponse
 /** Covers existing aliases so the 360's limits cannot be bypassed by using another controller. */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 19)
-class LegacyTechnicalActionFilter(private val properties: ServiceHealthProperties,private val access: HealthAccess,
-    private val actions: RemoteActionService,private val identity: IdentityService,private val onus: OltMgrOnuRepository,
+class LegacyTechnicalActionFilter(private val properties: ServiceHealthProperties,private val scope: ServiceHealthScope,private val access: HealthAccess,
+    private val actions: RemoteActionService,private val identity: IdentityService,private val onuPort: ObjectProvider<HealthOnuPort>,
     private val json: ObjectMapper): OncePerRequestFilter() {
     override fun doFilterInternal(request: HttpServletRequest,response: HttpServletResponse,chain: FilterChain) {
         val path=request.servletPath.trimEnd('/')
@@ -35,12 +37,12 @@ class LegacyTechnicalActionFilter(private val properties: ServiceHealthPropertie
                 subscription!=null -> subscription.groupValues[1].toInt()
                 rebootSubscription -> request.getParameter("subscriptionId")?.toIntOrNull()
                 else -> (onu ?: compat)?.groupValues?.get(1)?.let { externalId ->
-                    onus.findByExternalIdAndDeletedAtIsNull(externalId).orElse(null)?.sn?.let(identity::resolveOnu)
+                    onuPort.ifAvailable?.findByExternalId(externalId)?.sn?.let(identity::resolveOnu)
                 }
             }
             // Unmapped aliases cannot safely be attributed to an operator/subscription.
             if(id==null) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad de ONU no resuelta")
-            if(!properties.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acción fuera del piloto habilitado")
+            if(!scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acción fuera del piloto habilitado")
             val retry=subscription?.groupValues?.get(2)=="retry-tr069"
             val actor=access.require(request,retry)
             if(retry && !properties.configEnabled) throw ResponseStatusException(HttpStatus.CONFLICT,"Configuración deshabilitada")

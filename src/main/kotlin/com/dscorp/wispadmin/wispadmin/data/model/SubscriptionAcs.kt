@@ -90,6 +90,9 @@ data class SubscriptionAcs(
 
     @Column(name = "last_task_at")
     var lastTaskAt: LocalDateTime? = null,
+
+    @Column(name = "lab", nullable = false)
+    var lab: Boolean = false,
 ) {
     fun toDto() = SubscriptionAcsDto(
         subscriptionId = subscriptionId,
@@ -115,5 +118,6 @@ data class SubscriptionAcs(
         lastTaskId = lastTaskId,
         lastTaskStatus = lastTaskStatus,
         lastTaskAt = lastTaskAt,
+        lab = lab,
     )
 }

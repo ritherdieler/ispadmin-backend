@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
@@ -17,7 +18,7 @@ import java.sql.Timestamp
 
 @Service
 class AcsTelemetryService(
-    private val properties: ServiceHealthProperties, private val client: GenieAcsClient,
+    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val client: GenieAcsClient,
     private val subscriptions: SubscriptionRepository, private val acs: SubscriptionAcsRepository,
     private val identity: IdentityService, private val counts: WifiCountSampleRepository,
     private val stations: WifiStationSampleRepository, private val current: WifiCurrentRepository,
@@ -25,32 +26,34 @@ class AcsTelemetryService(
     private val profiles: ReadCapabilityProfileRepository, private val actions: RemoteActionRepository,
     private val tx: TransactionTemplate
 ) {
-    private fun sqlTimestamp(value: Instant): Timestamp = Timestamp.from(value.truncatedTo(ChronoUnit.MICROS))
+    private fun sqlTimestamp(value: Instant): Timestamp = HealthSqlTime.timestamp(value)
 
-    private data class PendingGpv(val deviceId: String, val model: String, val root: JsonNode)
+    private data class PendingGpv(val deviceId: String, val paths: List<String>, val cursorKey: String)
 
     @Scheduled(fixedDelayString="\${service.health.acs-interval-ms:120000}",initialDelayString="\${service.health.acs-initial-delay-ms:45000}")
     fun poll() {
-        if(!properties.enabled || !properties.acsEnabled || properties.pilotSubscriptionIds.isEmpty()) return
+        if(!properties.enabled || !properties.acsEnabled) return
+        val collectIds=scope.collectionSubscriptionIds()
+        if(collectIds.isEmpty()) return
         val pending = mutableListOf<PendingGpv>()
         try { tx.executeWithoutResult {
             if(cursors.lock("acs-watcher") == null) return@executeWithoutResult
             val now=Instant.now()
             val run=runs.save(TelemetryRun(source="ACS",equipmentKey="genieacs",startedAt=now))
             try {
-                val ids=properties.pilotSubscriptionIds.flatMap { id ->
+                val ids=collectIds.flatMap { id ->
                     listOfNotNull(acs.findById(id).orElse(null)?.genieacsDeviceId,
                         subscriptions.findById(id).orElse(null)?.tr069DeviceId)
-                }.plus(properties.pilotAcsDeviceIds).distinct()
+                }.plus(if (scope.environmentTag().isBlank()) properties.pilotAcsDeviceIds else emptyList()).distinct()
                 for(batch in ids.chunked(50)) {
-                    val devices=client.readDeviceCache(batch,WifiTelemetry.projection())
+                    val devices=client.readDeviceCache(batch,WifiTelemetry.countProjection())
                     run.missingCount+=batch.size-devices.size
                     for(device in devices) {
                         run.readCount++
                         val deviceId=device.path("_id").asText()
                         val subId=identity.resolveAcsForCollection(deviceId)
                         if(subId==null) { run.unmappedCount++; continue }
-                        if(!properties.collects(subId)) continue
+                        if(!scope.collects(subId)) continue
                         val inform=WifiTelemetry.parseInstant(device.path("_lastInform"))
                         if(inform==null) { run.missingCount++; continue }
                         val snapshot=acs.findById(subId).orElse(null)
@@ -76,7 +79,7 @@ class AcsTelemetryService(
                             if(parsed.count.qualityStatus==Quality.UNSUPPORTED) run.unsupportedCount++ else run.missingCount++
                             val gpvCursor=cursors.findById(AcsWifiRefreshPlanner.cursorKey(deviceId)).orElse(null)
                             if(AcsWifiRefreshPlanner.shouldEnqueue(parsed.count.errorReason,gpvCursor?.observedAt,now,properties.acsGpvCooldownSeconds)) {
-                                pending += PendingGpv(deviceId, model, device)
+                                pending += PendingGpv(deviceId, WifiTelemetry.gpvPaths(device, model), AcsWifiRefreshPlanner.cursorKey(deviceId))
                             }
                             cursors.save(cursor)
                             run.lagSeconds=maxOf(run.lagSeconds,Duration.between(inform,now).seconds.coerceAtLeast(0))
@@ -87,18 +90,39 @@ class AcsTelemetryService(
                         counts.upsertAtomic(deviceId,subId,sqlTimestamp(incoming.informAt),sqlTimestamp(observedAt),
                             sqlTimestamp(incoming.collectedAt),incoming.associatedDeviceCount,incoming.associated2g,incoming.associated5g,
                             incoming.lanDeviceCount,incoming.qualityStatus.name,run.id,incoming.errorReason)
-                        val persistedId=counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(deviceId,subId,sqlTimestamp(observedAt))
-                            ?: counts.findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId,subId,observedAt)?.id
-                            ?: throw IllegalStateException("ACS_SAMPLE_ID_NOT_FOUND")
+                        val persistedId=AcsWifiSampleLookup.idAfterUpsert(
+                            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(deviceId,subId,sqlTimestamp(observedAt)),
+                            counts.findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId,subId,observedAt.truncatedTo(ChronoUnit.SECONDS))?.id,
+                            counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc(deviceId,subId)?.id
+                        )
                         val sample=counts.findById(persistedId).orElseThrow { IllegalStateException("ACS_SAMPLE_ID_NOT_FOUND") }
-                        val oldStations=stations.findByCountSampleId(sample.id!!).associateBy { it.stationKey to it.band }
-                        for(station in parsed.stations) {
-                            station.countSampleId=sample.id!!
-                            station.id=oldStations[station.stationKey to station.band]?.id
-                            stations.save(station)
+                        val expected=incoming.associatedDeviceCount ?: 0
+                        var stationReading=parsed
+                        if(expected>0 && parsed.stations.size<expected) {
+                            val n2=incoming.associated2g ?: 0
+                            val n5=incoming.associated5g ?: 0
+                            val detail=try {
+                                client.readDeviceCache(listOf(deviceId),WifiTelemetry.stationProjection(n2,n5)).singleOrNull()
+                            } catch (_: Exception) { null }
+                            if(detail!=null) stationReading=WifiTelemetry.parse(detail,subId,if(profile.wifiCount) model else "",now,properties.stationHmacKey) ?: parsed
                         }
-                        val observedKeys=parsed.stations.map { it.stationKey to it.band }.toSet()
-                        stations.deleteAll(oldStations.filterKeys { it !in observedKeys }.values)
+                        val oldStations=stations.findByCountSampleId(sample.id!!).associateBy { it.stationKey to it.band }
+                        if(expected==0) {
+                            stations.deleteAll(oldStations.values)
+                        } else if(stationReading.stations.isNotEmpty()) {
+                            for(station in stationReading.stations) {
+                                station.countSampleId=sample.id!!
+                                station.id=oldStations[station.stationKey to station.band]?.id
+                                stations.save(station)
+                            }
+                            val observedKeys=stationReading.stations.map { it.stationKey to it.band }.toSet()
+                            stations.deleteAll(oldStations.filterKeys { it !in observedKeys }.values)
+                        }
+                        val staCursor=cursors.findById(AcsWifiRefreshPlanner.stationCursorKey(deviceId)).orElse(null)
+                        if(AcsWifiRefreshPlanner.shouldEnqueueStations(expected,stationReading.stations.size,staCursor?.observedAt,now,properties.acsGpvCooldownSeconds)) {
+                            pending += PendingGpv(deviceId, WifiTelemetry.gpvStationPaths(model,incoming.associated2g,incoming.associated5g),
+                                AcsWifiRefreshPlanner.stationCursorKey(deviceId))
+                        }
                         val status=current.findById(subId).orElse(WifiCurrent(subscriptionId=subId))
                         if(WifiTelemetry.applyCurrent(status,parsed,deviceId,model,now)) {
                             status.countSampleId=sample.id
@@ -131,7 +155,7 @@ class AcsTelemetryService(
         var inFlight = actions.findByStatus("RUNNING").count { it.action in setOf("WIFI_REFRESH", "CONFIG", "REBOOT_ACS") }
         for (item in pending) {
             if (inFlight >= limit) break
-            val paths = WifiTelemetry.gpvPaths(item.root, item.model)
+            val paths = item.paths
             if (paths.isEmpty()) continue
             val accepted = try {
                 client.getParameterValues(item.deviceId, paths, connectionRequest = true).accepted
@@ -141,7 +165,7 @@ class AcsTelemetryService(
             if (!accepted) continue
             inFlight++
             tx.executeWithoutResult {
-                val key = AcsWifiRefreshPlanner.cursorKey(item.deviceId)
+                val key = item.cursorKey
                 val cursor = cursors.findById(key).orElse(HealthCursor(cursorKey = key))
                 val now = Instant.now()
                 cursor.observedAt = now

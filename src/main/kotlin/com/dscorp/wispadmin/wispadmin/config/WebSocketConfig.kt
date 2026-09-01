@@ -1,20 +1,22 @@
 package com.dscorp.wispadmin.wispadmin.config
 
-import com.dscorp.wispadmin.observability.config.ObservabilityStompChannelInterceptor
-import com.dscorp.wispadmin.observability.config.ObservabilityWebSocketHandshakeInterceptor
 import com.dscorp.wispadmin.wispadmin.security.PlatformWebSocketHandshakeInterceptor
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Configuration
+import org.springframework.messaging.support.ChannelInterceptor
 import org.springframework.messaging.simp.config.ChannelRegistration
 import org.springframework.messaging.simp.config.MessageBrokerRegistry
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer
+import org.springframework.web.socket.server.HandshakeInterceptor
+import java.util.stream.Collectors
 
 @Configuration
 @EnableWebSocketMessageBroker
 class WebSocketConfig(
-    private val observabilityHandshakeInterceptor: ObservabilityWebSocketHandshakeInterceptor,
-    private val observabilityChannelInterceptor: ObservabilityStompChannelInterceptor,
+    private val handshakeInterceptors: ObjectProvider<HandshakeInterceptor>,
+    private val channelInterceptors: ObjectProvider<ChannelInterceptor>,
     private val platformHandshakeInterceptor: PlatformWebSocketHandshakeInterceptor
 ) : WebSocketMessageBrokerConfigurer {
 
@@ -39,8 +41,12 @@ class WebSocketConfig(
             .withSockJS()
 
         // Endpoint dedicado de observabilidad: handshake protegido por API key (solo dashboard)
+        val extraHandshake = handshakeInterceptors.orderedStream()
+            .filter { it !is PlatformWebSocketHandshakeInterceptor }
+            .collect(Collectors.toList())
+            .toTypedArray()
         registry.addEndpoint("/ws/observability")
-            .addInterceptors(observabilityHandshakeInterceptor)
+            .addInterceptors(*extraHandshake)
             .setAllowedOriginPatterns(
                 "http://localhost:5175",
                 "https://observability.gigafiberperu.cloud",
@@ -50,6 +56,9 @@ class WebSocketConfig(
     }
 
     override fun configureClientInboundChannel(registration: ChannelRegistration) {
-        registration.interceptors(observabilityChannelInterceptor)
+        val extras = channelInterceptors.orderedStream().collect(Collectors.toList())
+        if (extras.isNotEmpty()) {
+            registration.interceptors(*extras.toTypedArray())
+        }
     }
 }

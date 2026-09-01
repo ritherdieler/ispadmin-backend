@@ -32,4 +32,5 @@ data class SubscriptionAcsDto(
     val lastTaskId: String? = null,
     val lastTaskStatus: String? = null,
     val lastTaskAt: LocalDateTime? = null,
+    val lab: Boolean = false,
 ) : Serializable

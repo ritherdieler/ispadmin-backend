@@ -3,13 +3,34 @@ package com.dscorp.wispadmin.servicehealth.service
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
+import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
+import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 
-/** Pure rules: no network client, command executor, mutation or LLM dependency. */
 @Component
-class DiagnosisEngine(private val properties: ServiceHealthProperties,
-    private val netdiag: com.dscorp.wispadmin.netdiag.config.NetDiagProperties? = null,
-    private val traffic: com.dscorp.wispadmin.traffic.config.TrafficProperties = com.dscorp.wispadmin.traffic.config.TrafficProperties()) {
+class DiagnosisEngine(
+    private val properties: ServiceHealthProperties,
+    private val cpuThreshold: Int = 85,
+    private val goodOpticalDbm: Double = -25.0,
+    private val minimumCoveragePct: Double = 80.0,
+    private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties()
+) {
+    @Autowired
+    constructor(
+        properties: ServiceHealthProperties,
+        netDiagPort: ObjectProvider<HealthNetDiagPort>,
+        trafficPort: ObjectProvider<HealthTrafficPort>,
+        environment: GigafiberEnvironmentProperties
+    ) : this(
+        properties,
+        netDiagPort.ifAvailable?.cpuThreshold() ?: 85,
+        -25.0,
+        trafficPort.ifAvailable?.minimumCoveragePct() ?: 80.0,
+        environment
+    )
     fun evaluate(input: HealthInputs): HealthSummary {
         val missing=input.sources.filter { it.qualityStatus!=Quality.FRESH }.map {
             MissingEvidence(it.source,it.metric,it.qualityStatus,"${it.source}/${it.metric}: ${it.qualityStatus}")
@@ -26,8 +47,8 @@ class DiagnosisEngine(private val properties: ServiceHealthProperties,
         val trafficPresent=fresh("mbps") && mbps?.values?.any { (it as? Number)?.toDouble()?.let { v -> v>0 }==true }==true
         if(offline && trafficPresent) missing+=MissingEvidence("CORRELATION","source_timing",Quality.INVALID,"GPON offline y tráfico positivo: revisar diferencias temporales antes de atribuir un corte")
         val cpu=(source("cpu_load")?.value as? Number)?.toDouble()
-        val routerHealthy=fresh("cpu_load") && cpu!=null && cpu<(netdiag?.alert?.cpuThreshold ?: 85) && input.routerReasons.isEmpty()
-        val opticalHealthy=fresh("onu_rx_dbm") && ((source("onu_rx_dbm")?.value as? Number)?.toDouble() ?: -999.0)>=com.dscorp.wispadmin.oltgateway.service.SignalCategoryCalculator.GOOD_THRESHOLD_DBM
+        val routerHealthy=fresh("cpu_load") && cpu!=null && cpu<cpuThreshold && input.routerReasons.isEmpty()
+        val opticalHealthy=fresh("onu_rx_dbm") && ((source("onu_rx_dbm")?.value as? Number)?.toDouble() ?: -999.0)>=goodOpticalDbm
         val diagnoses=mutableListOf<Diagnosis>()
         fun add(code: String, cause: String, evidence: List<Evidence>, next: String) {
             val freshSources=evidence.filter { it.qualityStatus==Quality.FRESH }.map { it.source }.distinct()
@@ -50,7 +71,7 @@ class DiagnosisEngine(private val properties: ServiceHealthProperties,
                     Evidence("OLT","flaps_24h",input.flaps.lastOrNull()?.observedAt,flaps,Quality.FRESH)),
                 "Comparar RX ONU/OLT y vecinos; inspeccionar conectores y planta externa")
         }
-        val saturation=input.trafficEvents.firstOrNull { it.anomalyType=="PLAN_SATURATION" && it.coveragePct>=traffic.anomaly.minimumCoveragePct && it.observedAt>=input.now.minusSeconds(900) }
+        val saturation=input.trafficEvents.firstOrNull { it.anomalyType=="PLAN_SATURATION" && it.coveragePct>=minimumCoveragePct && it.observedAt>=input.now.minusSeconds(900) }
         if(saturation!=null && online && opticalHealthy && routerHealthy) add("PLAN_SATURATION","Demanda sostenida cercana al plan contratado",
             listOfNotNull(Evidence("TRAFFIC","PLAN_SATURATION",saturation.observedAt,saturation.coveragePct,Quality.FRESH,saturation.eventId.toString(),"/bandwidth-intelligence/subscriptions/${input.subscriptionId}"),source("onu_rx_dbm"),source("cpu_load")),
             "Revisar persistencia, P95, plan y tendencia de dispositivos antes de recomendar cambios")
@@ -67,7 +88,7 @@ class DiagnosisEngine(private val properties: ServiceHealthProperties,
             add("ACS_STALE","Ruta de gestión TR-069 sin Inform reciente; Internet sigue activo",
                 listOfNotNull(source("run_state"),source("mbps"),source("last_inform")),"Revisar ruta de gestión y configuración ACS; no reiniciar por esta señal sola")
         }
-        if(fresh("cpu_load") && "CPU_HIGH" in input.routerReasons && cpu!=null && cpu>=(netdiag?.alert?.cpuThreshold ?: 85)) {
+        if(fresh("cpu_load") && "CPU_HIGH" in input.routerReasons && cpu!=null && cpu>=cpuThreshold) {
             add("ROUTER_CAPACITY","CPU elevada corroborada por incidente de router",listOfNotNull(source("cpu_load"),source("mbps")),
                 "Revisar carga sostenida, uplink, memoria y errores/drops de interfaz")
         }
@@ -76,7 +97,9 @@ class DiagnosisEngine(private val properties: ServiceHealthProperties,
             "Revisar última corrida, acceso al equipo y salud del collector antes de intervenir al cliente")
         return HealthSummary(input.subscriptionId,input.now,mapOf("gpon" to if(online) "ONLINE" else if(offline) "OFFLINE" else "UNKNOWN",
             "internet" to if(trafficPresent) "ACTIVE" else "UNKNOWN", "acs" to (source("last_inform")?.qualityStatus?.name ?: "MISSING")),
-            input.sources,if(properties.correlationEnabled && properties.collects(input.subscriptionId)) diagnoses else emptyList(),missing,input.identity+mapOf("plan" to input.planSnapshot,"service_status" to input.serviceStatus),
-            properties.collects(input.subscriptionId),properties.actionsEnabled && properties.collects(input.subscriptionId))
+            input.sources,if(properties.correlationEnabled && collects(input)) diagnoses else emptyList(),missing,input.identity+mapOf("plan" to input.planSnapshot,"service_status" to input.serviceStatus),
+            collects(input),properties.actionsEnabled && collects(input))
     }
+    private fun collects(input: HealthInputs) =
+        properties.collects(input.subscriptionId, input.identity["lab"] == "true", environment.normalizedTag())
 }

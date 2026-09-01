@@ -3,10 +3,11 @@ package com.dscorp.wispadmin.servicehealth.service
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
-import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
+import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
+import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -14,8 +15,8 @@ import java.time.Instant
 @Service
 class IdentityService(
     private val subscriptions: SubscriptionRepository, private val acs: SubscriptionAcsRepository,
-    private val onus: OltMgrOnuRepository, private val links: IdentityLinkRepository,
-    private val conflicts: IdentityConflictRepository, private val traffic: SubscriptionTrafficSampleRepository,
+    private val onuPort: ObjectProvider<HealthOnuPort>, private val links: IdentityLinkRepository,
+    private val conflicts: IdentityConflictRepository, private val trafficPort: ObjectProvider<HealthTrafficPort>,
     private val json: ObjectMapper
 ) {
     /** Read-only resolver: no fallback is permitted when either source is contradictory. */
@@ -86,7 +87,7 @@ class IdentityService(
     fun snapshot(s: Subscription): Map<String,String> {
         val id = s.id ?: return emptyMap()
         val sn = s.fiberOnu?.sn?.uppercase()
-        val onu = sn?.let { onus.findBySnIgnoreCaseAndDeletedAtIsNull(it).orElse(null) }
+        val onu = sn?.let { onuPort.ifAvailable?.findBySn(it) }
         val canonical = acs.findById(id).orElse(null)?.genieacsDeviceId ?: s.tr069DeviceId
         return buildMap {
             sn?.let { if (resolveOnu(it) == id) put("ONU", it) }
@@ -96,13 +97,13 @@ class IdentityService(
             s.plan?.id?.let { put("PLAN", it.toString()) }
             s.napBox?.id?.let { put("NAP", it.toString()) }
             if (onu != null && get("ONU") != null) {
-                put("OLT", onu.olt.id.toString())
-                put("PON", "${onu.olt.id}:${onu.board}:${onu.port}")
+                onu.oltId?.let { put("OLT", it.toString()) }
+                put("PON", "${onu.oltId}:${onu.board}:${onu.port}")
                 put("ONU_ID", onu.id.toString())
-                put("ONU_EXTERNAL_ID", onu.externalId)
-                onu.zone?.id?.let { put("ZONE", it.toString()) }
+                onu.externalId?.let { put("ONU_EXTERNAL_ID", it) }
+                onu.zoneId?.let { put("ZONE", it.toString()) }
             }
-            traffic.findTopBySubscriptionIdOrderByBucketStartDesc(id)?.queueId?.let { put("QUEUE", it) }
+            trafficPort.ifAvailable?.latestSample(id)?.queueId?.let { put("QUEUE", it) }
         }
     }
 

@@ -22,7 +22,7 @@ class AcsWifiRefreshPlannerTest {
     }
 
     @Test
-    fun `gpv paths cover total associations and known station leaves for F6600R`() {
+    fun `gpv paths request only total associations not ghost station leaves`() {
         val root = ObjectMapper().createObjectNode().put("_id", "dev")
         fun put(path: String) {
             var node: ObjectNode = root
@@ -31,17 +31,30 @@ class AcsWifiRefreshPlannerTest {
         }
         put("${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations")
         put("${WifiTelemetry.ROOT}.WLANConfiguration.5.TotalAssociations")
-        put("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.1.AssociatedDeviceMACAddress")
-        put("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.1.AssociatedDeviceRssi")
+        put("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.2.AssociatedDeviceMACAddress")
+        put("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.2.AssociatedDeviceRssi")
         val paths = WifiTelemetry.gpvPaths(root, "F6600R")
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations"))
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.5.TotalAssociations"))
-        assertTrue(paths.any { it.endsWith("AssociatedDeviceRssi") })
-        assertTrue(paths.size >= 3)
+        assertEquals(
+            listOf(
+                "${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations",
+                "${WifiTelemetry.ROOT}.WLANConfiguration.5.TotalAssociations",
+            ),
+            paths,
+        )
     }
 
     @Test
     fun `unsupported model yields no gpv paths`() {
         assertTrue(WifiTelemetry.gpvPaths(ObjectMapper().createObjectNode(), "HG8145X6").isEmpty())
+    }
+
+    @Test
+    fun `station gpv waits for missing rssi after counts persist`() {
+        assertTrue(AcsWifiRefreshPlanner.shouldEnqueueStations(4, 0, null, now, cooldown))
+        assertTrue(AcsWifiRefreshPlanner.shouldEnqueueStations(4, 2, now.minusSeconds(901), now, cooldown))
+        assertFalse(AcsWifiRefreshPlanner.shouldEnqueueStations(4, 4, null, now, cooldown))
+        assertFalse(AcsWifiRefreshPlanner.shouldEnqueueStations(0, 0, null, now, cooldown))
+        assertFalse(AcsWifiRefreshPlanner.shouldEnqueueStations(3, 1, now.minusSeconds(100), now, cooldown))
+        assertEquals("acs-gpv-sta:dev", AcsWifiRefreshPlanner.stationCursorKey("dev"))
     }
 }

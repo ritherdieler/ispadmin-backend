@@ -5,11 +5,12 @@ import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
-import com.dscorp.wispadmin.traffic.repository.*
-import com.dscorp.wispadmin.netdiag.domain.repository.*
-import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
+import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
+import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagTarget
+import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
+import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -20,20 +21,20 @@ import java.time.ZoneOffset
 data class HealthInputs(
     val subscriptionId: Int, val now: Instant, val identity: Map<String,String>, val sources: List<Evidence>,
     val optical: List<OpticalSample>, val flaps: List<OnuStateEvent>, val wifi: List<WifiStationSample>,
-    val trafficEvents: List<TrafficEvidence>, val routerReasons: Set<String>, val targets: List<NetDiagTarget>,
+    val trafficEvents: List<TrafficEvidence>, val routerReasons: Set<String>, val targets: List<HealthNetDiagTarget>,
     val serviceStatus: String, val planSnapshot: Map<String,Any?>
 )
 
 @Service
 class HealthEvidenceReader(
     private val subscriptions: SubscriptionRepository, private val identity: IdentityService,
-    private val acs: SubscriptionAcsRepository, private val onus: OltMgrOnuRepository,
+    private val acs: SubscriptionAcsRepository, private val onuPort: ObjectProvider<HealthOnuPort>,
     private val optical: OpticalSampleRepository, private val states: OnuStateEventRepository,
     private val cursors: HealthCursorRepository, private val wifi: WifiCurrentRepository,
-    private val stations: WifiStationSampleRepository, private val counts: WifiCountSampleRepository, private val traffic: SubscriptionTrafficSampleRepository,
-    private val trafficRuns: TrafficSourceRunRepository, private val trafficEvidence: TrafficEvidenceRepository,
-    private val runs: TelemetryRunRepository, private val targets: NetDiagTargetRepository,
-    private val probes: NetDiagProbeRunRepository, private val incidents: NetDiagIncidentRepository,
+    private val stations: WifiStationSampleRepository, private val counts: WifiCountSampleRepository,
+    private val trafficPort: ObjectProvider<HealthTrafficPort>,
+    private val trafficEvidence: TrafficEvidenceRepository,
+    private val runs: TelemetryRunRepository, private val netDiagPort: ObjectProvider<HealthNetDiagPort>,
     private val properties: ServiceHealthProperties, private val json: ObjectMapper
 ) {
     fun requireExists(id: Int) {
@@ -43,10 +44,11 @@ class HealthEvidenceReader(
     fun read(id: Int, now: Instant = Instant.now()): HealthInputs {
         val sub=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción $id no encontrada") }
         val ids=identity.snapshot(sub).toMutableMap()
+        ids["lab"] = if (acs.findById(id).orElse(null)?.lab == true) "true" else "false"
         val from=now.minusSeconds(86400)
         val trafficIdentitySince=identity.currentLinks(id).filter { it.kind in setOf("IP","ROUTER","QUEUE","PLAN","ONU") }.maxOfOrNull { it.validFrom }
         val sources=mutableListOf<Evidence>()
-        val onu=ids["ONU"]?.let { onus.findBySnIgnoreCaseAndDeletedAtIsNull(it).orElse(null) }
+        val onu=ids["ONU"]?.let { onuPort.ifAvailable?.findBySn(it) }
         val state=onu?.id?.let { states.findTopByOnuIdOrderByObservedAtDesc(it) }?.takeIf {
             it.subscriptionId==id && it.oltId.toString()==ids["OLT"] && "${it.oltId}:${it.board}:${it.port}"==ids["PON"]
         }
@@ -79,26 +81,26 @@ class HealthEvidenceReader(
         val acsRun=runs.findTopBySourceAndEquipmentKeyOrderByStartedAtDesc("ACS","genieacs")
         sources+=Evidence("ACS","collector",acsRun?.completedAt,acsRun?.qualityStatus?.name,
             if(acsRun?.qualityStatus==Quality.ERROR) Quality.ERROR else qualityAt(acsRun?.completedAt,now,300),acsRun?.id?.toString())
-        val t=traffic.findTopBySubscriptionIdOrderByBucketStartDesc(id)?.takeIf { it.hostDeviceId.toString()==ids["ROUTER"] }
+        val t=trafficPort.ifAvailable?.latestSample(id)?.takeIf { it.hostDeviceId.toString()==ids["ROUTER"] }
         val tAt=t?.collectedAt?.atZone(ZoneId.of("America/Lima"))?.toInstant()
-        val tq=when(t?.sampleStatus?.name) {
+        val tq=when(t?.sampleStatus) {
             "OK" -> if((trafficIdentitySince!=null && tAt!=null && tAt<trafficIdentitySince) || (t.avgMbpsDown==null && t.avgMbpsUp==null)) Quality.MISSING else qualityAt(tAt,now,180)
             "INVALID" -> Quality.INVALID
             "STALE" -> Quality.STALE
             else -> Quality.MISSING
         }
         sources+=Evidence("TRAFFIC","mbps",tAt,t?.let { mapOf("down" to it.avgMbpsDown,"up" to it.avgMbpsUp) },tq,t?.id?.toString(),"/bandwidth-intelligence/subscriptions/$id")
-        val tr=sub.hostDevice?.id?.let { trafficRuns.findTopByHostDeviceIdOrderByStartedAtDesc(it) }
+        val tr=sub.hostDevice?.id?.let { trafficPort.ifAvailable?.latestRun(it) }
         val trAt=tr?.completedAt?.atZone(ZoneId.of("America/Lima"))?.toInstant()
-        sources+=Evidence("TRAFFIC","collector",trAt,tr?.status?.name,
-            if(tr?.status?.name in setOf("FAILED","ERROR")) Quality.ERROR else qualityAt(trAt,now,180),tr?.id?.toString())
-        val enabledTargets=targets.findByEnabledTrue()
+        sources+=Evidence("TRAFFIC","collector",trAt,tr?.status,
+            if(tr?.status in setOf("FAILED","ERROR")) Quality.ERROR else qualityAt(trAt,now,180),tr?.id?.toString())
+        val enabledTargets=netDiagPort.ifAvailable?.enabledTargets().orEmpty()
         val matched=enabledTargets.filter { target ->
             val config=try { json.readTree(target.monitorConfig ?: "{}") } catch (_: Exception) { json.createObjectNode() }
             val kind=config.path("kind").asText().uppercase()
             when(kind) {
                 "OLT" -> target.deviceRefId.toString()==ids["OLT"]
-                "PON" -> target.name==onu?.let { "PON-${it.olt.name}-gpon-${it.board}/${it.port}" }
+                "PON" -> target.name==onu?.let { "PON-${it.oltName}-gpon-${it.board}/${it.port}" }
                 else -> target.deviceRefId.toString()==ids["ROUTER"]
             }
         }
@@ -106,7 +108,7 @@ class HealthEvidenceReader(
             val kind=try { json.readTree(target.monitorConfig ?: "{}").path("kind").asText().uppercase() } catch (_: Exception) { "" }
             kind !in setOf("OLT","PON") && target.deviceRefId.toString()==ids["ROUTER"]
         }
-        val probe=router?.id?.let { probes.findTopByTargetIdOrderByStartedAtDesc(it).orElse(null) }
+        val probe=router?.id?.let { netDiagPort.ifAvailable?.latestProbe(it) }
         val probeAt=probe?.finishedAt
         val payload=try { json.readTree(probe?.payload ?: "{}") } catch (_: Exception) { json.createObjectNode() }
         val routerQuality=if(probe!=null && probe.status!="SUCCESS") Quality.ERROR else qualityAt(probeAt,now,((router?.pollIntervalMs ?: 60000)*3)/1000)
@@ -118,7 +120,7 @@ class HealthEvidenceReader(
         sources+=Evidence("NETDIAG","memory_used_pct",probeAt,if(free!=null && total!=null && total>0) 100.0*(total-free)/total else null,
             if(free==null || total==null) Quality.UNSUPPORTED else if(total<=0 || free<0 || free>total) Quality.INVALID else routerQuality,probe?.id?.toString())
         val reasonSet=router?.id?.let { targetId ->
-            listOf("OPEN","ACKNOWLEDGED","SILENCED").flatMap { incidents.findByTarget_IdAndStatus(targetId,it) }.mapNotNull { it.reasonCode }.toSet()
+            listOf("OPEN","ACKNOWLEDGED","SILENCED").flatMap { netDiagPort.ifAvailable?.incidentsByTargetAndStatus(targetId,it).orEmpty() }.mapNotNull { it.reasonCode }.toSet()
         } ?: emptySet()
         val ancestors=matched.toMutableList()
         var frontier=matched

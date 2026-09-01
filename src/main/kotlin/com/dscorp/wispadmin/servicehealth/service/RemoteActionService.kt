@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
 import com.dscorp.wispadmin.servicehealth.repository.*
@@ -29,7 +30,7 @@ data class ActionResult(val actionId: Long,val subscriptionId: Int,val status: S
     val networkChannel: String?=null,val warnings: List<String> = emptyList())
 
 @Service
-class RemoteActionService(private val properties: ServiceHealthProperties,private val actions: RemoteActionRepository,
+class RemoteActionService(private val properties: ServiceHealthProperties,private val scope: ServiceHealthScope,private val actions: RemoteActionRepository,
     private val cursors: HealthCursorRepository,private val subscriptions: SubscriptionRepository,
     private val acs: SubscriptionAcsRepository,private val wifi: WifiCurrentRepository,private val identity: IdentityService,
     private val client: GenieAcsClient,private val genie: GenieAcsProperties,private val tx: TransactionTemplate,
@@ -41,7 +42,7 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         return mac.doFinal(value.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     fun reserve(id: Int,actor: HealthActor,key: String,action: String,payloadDigest: String,needsCr: Boolean): Pair<RemoteAction,Boolean> {
-        if(!properties.actionsEnabled || !properties.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones del piloto deshabilitadas")
+        if(!properties.actionsEnabled || !scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones del piloto deshabilitadas")
         return tx.execute {
             cursors.lock("actions") ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Coordinador no inicializado")
             val existing=actions.findByActorIdAndRequestKey(actor.id,key)
@@ -109,9 +110,9 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         if(!created) return result(action)
         if(action.acsDeviceId!=device.first) return result(finish(action.id!!,"FAILED",error="IDENTITY_CHANGED"))
         return try {
-            val root=client.readDeviceCache(listOf(device.first),WifiTelemetry.projection()).singleOrNull()
+            val root=client.readDeviceCache(listOf(device.first),WifiTelemetry.countProjection()).singleOrNull()
                 ?: throw IllegalStateException("CACHE_MISSING")
-            val paths=WifiTelemetry.gpvPaths(root,device.second)
+            val paths=WifiTelemetry.gpvRefreshPaths(root,device.second,id,now,properties.stationHmacKey)
             require(paths.isNotEmpty()) { "UNSUPPORTED" }
             val response=client.getParameterValues(device.first,paths,connectionRequest=true)
             result(finish(action.id!!,if(response.accepted) "PENDING" else "FAILED",response.taskId,if(response.accepted) null else "ACS_REJECTED"))
@@ -174,7 +175,7 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
     fun confirmPending() {
         if(!properties.enabled || !properties.actionsEnabled) return
         for(a in actions.findByStatus("PENDING")) {
-            if(!properties.collects(a.subscriptionId)) continue
+            if(!scope.collects(a.subscriptionId)) continue
             if(a.createdAt<Instant.now().minusSeconds(21600)) { finish(a.id!!,"UNVERIFIED",error="CONFIRMATION_TIMEOUT"); continue }
             val currentSub=subscriptions.findById(a.subscriptionId).orElse(null)
             if(currentSub?.fiberOnu?.sn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey ||

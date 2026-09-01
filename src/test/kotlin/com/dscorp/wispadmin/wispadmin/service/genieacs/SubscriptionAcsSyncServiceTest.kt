@@ -8,6 +8,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -18,14 +19,16 @@ import java.util.Optional
 class SubscriptionAcsSyncServiceTest {
 
     private val repository = mockk<SubscriptionAcsRepository>()
+    private val client = mockk<GenieAcsClient>()
     private lateinit var service: SubscriptionAcsSyncService
     private val saved = slot<SubscriptionAcs>()
 
     @BeforeEach
     fun setUp() {
-        service = SubscriptionAcsSyncService(repository)
+        service = SubscriptionAcsSyncService(repository, client)
         every { repository.findById(any()) } returns Optional.empty()
         every { repository.save(capture(saved)) } answers { firstArg() }
+        every { client.listTags(any()) } returns emptyList()
     }
 
     @Test
@@ -160,5 +163,49 @@ class SubscriptionAcsSyncServiceTest {
         assertEquals("keep-me", saved.captured.softwareVersion)
         assertEquals("hw-keep", saved.captured.hardwareVersion)
         assertEquals("http://old", saved.captured.connectionRequestUrl)
+    }
+
+    @Test
+    fun `upsert sets lab from ACS tags`() {
+        every { client.listTags("new-device") } returns listOf("sub-42", "lab")
+        service.upsertFromProvision(
+            subscriptionId = 42,
+            outcome = Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.COMPLETE,
+                deviceId = "new-device",
+                acsSnapshot = Tr069AcsSnapshot(serialSuffix = "31C0B6"),
+            ),
+            smartoltSerial = "VSOL0031C0B6",
+        )
+        assertTrue(saved.captured.lab)
+    }
+
+    @Test
+    fun `upsert keeps prior lab when tags cannot be listed`() {
+        val existing = SubscriptionAcs(subscriptionId = 42, lab = true)
+        every { repository.findById(42) } returns Optional.of(existing)
+        every { client.listTags("new-device") } throws RuntimeException("nbi down")
+        service.upsertFromProvision(
+            subscriptionId = 42,
+            outcome = Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.COMPLETE,
+                deviceId = "new-device",
+                acsSnapshot = Tr069AcsSnapshot(serialSuffix = "31C0B6"),
+            ),
+            smartoltSerial = null,
+        )
+        assertTrue(saved.captured.lab)
+    }
+
+    @Test
+    fun `syncLabFromDevice persists lab flag`() {
+        val existing = SubscriptionAcs(subscriptionId = 42, genieacsDeviceId = "dev", lab = false)
+        every { repository.findById(42) } returns Optional.of(existing)
+        every { client.listTags("dev") } returns listOf("lab")
+        service.syncLabFromDevice(42, "dev")
+        assertTrue(saved.captured.lab)
+        every { client.listTags("dev") } returns listOf("sub-1")
+        service.syncLabFromDevice(42, "dev")
+        assertFalse(saved.captured.lab)
     }
 }

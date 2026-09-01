@@ -2,23 +2,30 @@ package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.service.IdentityService
 import com.dscorp.wispadmin.servicehealth.repository.*
+import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
+import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAcs
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
-import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import java.util.Optional
 
 class IdentityServiceTest {
     private val subscriptions=mockk<SubscriptionRepository>()
     private val acs=mockk<SubscriptionAcsRepository>()
-    private val service=IdentityService(subscriptions,acs,mockk<OltMgrOnuRepository>(),mockk<IdentityLinkRepository>(),
-        mockk<IdentityConflictRepository>(relaxed=true),mockk<SubscriptionTrafficSampleRepository>(),ObjectMapper())
+    private val service=IdentityService(subscriptions,acs,emptyProvider<HealthOnuPort>(),mockk<IdentityLinkRepository>(),
+        mockk<IdentityConflictRepository>(relaxed=true),emptyProvider<HealthTrafficPort>(),ObjectMapper())
+
+    private fun <T : Any> emptyProvider(): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns null
+        return provider
+    }
     @Test fun `canonical device collision is rejected`() {
         every { acs.findByGenieacsDeviceId("d") } returns listOf(SubscriptionAcs(subscriptionId=1),SubscriptionAcs(subscriptionId=2))
         every { subscriptions.findByTr069DeviceId("d") } returns emptyList()

@@ -15,6 +15,7 @@ import java.time.LocalDateTime
 @Service
 class SubscriptionAcsSyncService(
     private val repository: SubscriptionAcsRepository,
+    private val client: GenieAcsClient,
 ) {
     private val log = LoggerFactory.getLogger(SubscriptionAcsSyncService::class.java)
 
@@ -60,6 +61,7 @@ class SubscriptionAcsSyncService(
             row.lastTaskId = snap?.lastTaskId ?: row.lastTaskId
             row.lastTaskStatus = snap?.lastTaskStatus ?: row.lastTaskStatus
             row.lastTaskAt = snap?.lastTaskAt ?: row.lastTaskAt
+            applyLabFromTags(row, outcome.deviceId)
 
             repository.save(row)
         } catch (ex: Exception) {
@@ -69,5 +71,22 @@ class SubscriptionAcsSyncService(
                 ex.message,
             )
         }
+    }
+
+    @Transactional
+    fun syncLabFromDevice(subscriptionId: Int, deviceId: String) {
+        val row = repository.findById(subscriptionId).orElse(null) ?: return
+        applyLabFromTags(row, deviceId)
+        repository.save(row)
+    }
+
+    private fun applyLabFromTags(row: SubscriptionAcs, deviceId: String?) {
+        if (deviceId.isNullOrBlank()) return
+        val tags = try {
+            client.listTags(deviceId)
+        } catch (_: Exception) {
+            return
+        }
+        row.lab = GenieAcsSubscriptionTags.isLab(tags)
     }
 }

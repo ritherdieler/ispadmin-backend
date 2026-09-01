@@ -27,18 +27,33 @@ object WifiTelemetry {
                 stationFields.map { "$p.AssociatedDevice.$index.$it" }
             }
         }).joinToString(",")
+    fun countProjection(): String = (listOf("_id","_lastInform","_lastBoot","_deviceId",
+        "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
+        listOf(1, 5).map { "$ROOT.WLANConfiguration.$it.TotalAssociations" }).joinToString(",")
+    fun stationProjection(associated2g: Int, associated5g: Int): String {
+        val counts = mapOf(1 to associated2g.coerceIn(0, MAX_STATIONS), 5 to associated5g.coerceIn(0, MAX_STATIONS))
+        return (listOf("_id", "_lastInform") + counts.flatMap { (radio, n) ->
+            val p = "$ROOT.WLANConfiguration.$radio"
+            listOf("$p.TotalAssociations") + (1..n).flatMap { index -> stationFields.map { "$p.AssociatedDevice.$index.$it" } }
+        }).joinToString(",")
+    }
 
     fun gpvPaths(root: JsonNode, model: String): List<String> {
-        val paths = mutableListOf<String>()
-        for (radio in radios(model).keys) {
+        return radios(model).keys.map { radio -> "$ROOT.WLANConfiguration.$radio.TotalAssociations" }
+    }
+    fun gpvStationPaths(model: String, associated2g: Int?, associated5g: Int?): List<String> {
+        val counts = mapOf("2.4" to (associated2g ?: 0), "5" to (associated5g ?: 0))
+        return radios(model).flatMap { (radio, band) ->
+            val n = counts.getValue(band).coerceIn(0, MAX_STATIONS)
             val base = "$ROOT.WLANConfiguration.$radio"
-            paths += "$base.TotalAssociations"
-            for (index in 1..MAX_STATIONS) for (field in stationFields) {
-                val path = "$base.AssociatedDevice.$index.$field"
-                if (!node(root, path).isMissingNode) paths += path
-            }
+            (1..n).flatMap { index -> stationFields.map { "$base.AssociatedDevice.$index.$it" } }
         }
-        return paths
+    }
+    fun gpvRefreshPaths(root: JsonNode, model: String, subscriptionId: Int, now: Instant, secret: String): List<String> {
+        val totals = gpvPaths(root, model)
+        val reading = parse(root, subscriptionId, model, now, secret) ?: return totals
+        if (!reading.complete) return totals
+        return totals + gpvStationPaths(model, reading.count.associated2g, reading.count.associated5g)
     }
 
     fun node(root: JsonNode, path: String): JsonNode {

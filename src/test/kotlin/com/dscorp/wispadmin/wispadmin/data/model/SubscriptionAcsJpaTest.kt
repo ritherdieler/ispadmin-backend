@@ -64,6 +64,7 @@ class SubscriptionAcsJpaTest {
                 lastTaskAt = now,
                 provisionedAt = now,
                 updatedAt = now,
+                lab = true,
             )
         )
 
@@ -73,7 +74,9 @@ class SubscriptionAcsJpaTest {
         assertEquals("31C0B6", loaded.serialSuffix)
         assertEquals(Tr069ProvisionStatus.COMPLETE, loaded.provisionStatus)
         assertEquals("acs2g", loaded.ssid24)
+        assertTrue(loaded.lab)
         assertTrue(loaded.toDto().tr069RequiresManualConfig.not())
         assertEquals("task-1", loaded.toDto().lastTaskId)
+        assertTrue(loaded.toDto().lab)
     }
 }

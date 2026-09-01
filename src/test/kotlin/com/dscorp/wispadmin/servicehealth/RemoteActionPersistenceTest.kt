@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
@@ -54,7 +56,8 @@ class RemoteActionPersistenceTest {
             every { identity.resolveAcs("device$id") } returns id
         }
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
-        remote=RemoteActionService(properties,actions,cursors,subscriptions,acs,wifi,identity,client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper())
+        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs)
+        remote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,identity,client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper())
     }
     @Test fun `parallel double click makes one durable reservation`() {
         val pool=Executors.newFixedThreadPool(4)

@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -73,8 +74,17 @@ class DiagnosisEngineTest {
         assertFalse(engine.evaluate(base.copy(sources=listOf(source("cpu_load",95,Quality.STALE,"NETDIAG")),routerReasons=setOf("CPU_HIGH"))).diagnoses.any { it.diagnosisCode=="ROUTER_CAPACITY" })
     }
     @Test fun `unresolved ancestor is explicitly incomplete topology`() {
-        val target=com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget(id=10,parentTargetId=999,name="PON")
+        val target=com.dscorp.wispadmin.servicehealth.port.HealthNetDiagTarget(
+            id=10,name="PON",deviceRefId=0,parentTargetId=999,pollIntervalMs=60000,monitorConfig=null
+        )
         val result=engine.evaluate(input(listOf(source("run_state","online"))).copy(targets=listOf(target)))
         assertTrue(result.missingEvidence.any { it.source=="IDENTITY" && it.metric=="PON" })
+    }
+    @Test fun `staging marks only lab identity as pilot`() {
+        val props=ServiceHealthProperties().apply { enabled=true; correlationEnabled=true; pilotSubscriptionIds=setOf(1) }
+        val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
+        val customer=input(listOf(source("run_state","online")))
+        assertFalse(staging.evaluate(customer).pilotEnabled)
+        assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
     }
 }

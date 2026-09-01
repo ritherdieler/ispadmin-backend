@@ -1,10 +1,12 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
-import com.dscorp.wispadmin.traffic.repository.TrafficAnomalyEventRepository
+import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import org.springframework.beans.factory.ObjectProvider
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
 import org.springframework.scheduling.annotation.Scheduled
@@ -16,16 +18,17 @@ import java.time.ZoneId
 
 @Service
 class HealthEvaluationService(
-    private val properties: ServiceHealthProperties, private val subscriptions: SubscriptionRepository,
+    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val subscriptions: SubscriptionRepository,
     private val identity: IdentityService, private val reader: HealthEvidenceReader, private val engine: DiagnosisEngine,
     private val events: HealthEventRepository, private val current: HealthCurrentRepository,
-    private val evidence: EvidenceLinkRepository, private val runs: TelemetryRunRepository, private val traffic: TrafficAnomalyEventRepository,
+    private val evidence: EvidenceLinkRepository, private val runs: TelemetryRunRepository, private val trafficPort: ObjectProvider<HealthTrafficPort>,
     private val trafficEvidence: TrafficEvidenceRepository, private val cursors: HealthCursorRepository,
     private val tx: TransactionTemplate, private val json: ObjectMapper
 ) {
     @Scheduled(fixedDelayString="\${service.health.evaluation-interval-ms:60000}",initialDelayString="\${service.health.evaluation-initial-delay-ms:60000}")
     fun evaluate() {
-        if(!properties.enabled || properties.pilotSubscriptionIds.isEmpty()) return
+        val collectIds=scope.collectionSubscriptionIds()
+        if(!properties.enabled || collectIds.isEmpty()) return
         tx.executeWithoutResult {
             val cursor=cursors.lock("traffic-consumer") ?: return@executeWithoutResult
             val now=Instant.now()
@@ -33,21 +36,22 @@ class HealthEvaluationService(
             var after=LocalDateTime.ofInstant((cursor.observedAt ?: now.minusSeconds(86400)).minusSeconds(120),zone)
             var id=0L
             while(true) {
-                val changes=traffic.findChanges(after,id,PageRequest.of(0,250))
+                val changes=trafficPort.ifAvailable?.findAnomalyChanges(after,id,PageRequest.of(0,250)).orEmpty()
                 for(e in changes) {
-                    trafficEvidence.save(TrafficEvidence(eventId=e.id!!,subscriptionId=e.subscriptionId,routerId=e.hostDeviceId,
-                        eventStatus=e.eventStatus.name,anomalyType=e.anomalyType.name,observedAt=e.lastEvaluatedAt.atZone(zone).toInstant(),
+                    val subscriptionId=e.subscriptionId ?: continue
+                    trafficEvidence.save(TrafficEvidence(eventId=e.id,subscriptionId=subscriptionId,routerId=e.hostDeviceId,
+                        eventStatus=e.eventStatus,anomalyType=e.anomalyType,observedAt=e.lastEvaluatedAt.atZone(zone).toInstant(),
                         coveragePct=e.coveragePct,confidence=e.confidence,evidenceJson=e.evidenceJson))
                 }
                 val last=changes.lastOrNull() ?: break
-                after=last.lastEvaluatedAt; id=last.id!!
+                after=last.lastEvaluatedAt; id=last.id
                 cursor.observedAt=after.atZone(zone).toInstant(); cursor.referenceId=id; cursor.updatedAt=now
                 if(changes.size<250) break
             }
             cursors.save(cursor)
         }
         // Transactions are bounded by subscription, not by the entire fleet.
-        for(id in properties.pilotSubscriptionIds) tx.executeWithoutResult {
+        for(id in collectIds) tx.executeWithoutResult {
             cursors.lock("evaluation") ?: return@executeWithoutResult
             val sub=subscriptions.findById(id).orElse(null) ?: return@executeWithoutResult
             val now=Instant.now()
