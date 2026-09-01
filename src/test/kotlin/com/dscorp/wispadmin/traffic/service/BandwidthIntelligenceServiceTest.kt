@@ -116,6 +116,30 @@ class BandwidthIntelligenceServiceTest {
     }
 
     @Test
+    fun `ranking de clientes en 24 horas usa datos consolidados de 5 minutos`() {
+        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, from, to) } returns emptyList()
+
+        service.subscriptions(from, to, null, null, null, "consumption", 0, 25)
+
+        verify(exactly = 1) { fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, from, to) }
+        verify(exactly = 0) { sampleRepository.summarizeInBucketRange(any(), any(), any()) }
+    }
+
+    @Test
+    fun `ranking de clientes en rangos mayores a 7 dias usa datos diarios`() {
+        val monthFrom = LocalDateTime.of(2026, 8, 1, 10, 0)
+        val monthTo = monthFrom.plusDays(30)
+        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, monthFrom.toLocalDate(), monthTo.toLocalDate().plusDays(1)) } returns emptyList()
+
+        service.subscriptions(monthFrom, monthTo, null, null, null, "consumption", 0, 25)
+
+        verify(exactly = 1) { dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, monthFrom.toLocalDate(), monthTo.toLocalDate().plusDays(1)) }
+        verify(exactly = 0) { hourlyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(any(), any(), any()) }
+    }
+
+    @Test
     fun `series de red con plan agrega solo ids elegibles`() {
         every { subscriptionRepository.findForTrafficPolling() } returns listOf(
             subscription(1, routerId = 1, planId = 9, download = 100),

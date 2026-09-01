@@ -195,16 +195,11 @@ open class BandwidthIntelligenceService(
 
     @Transactional(readOnly = true)
     open fun subscriptions(from: LocalDateTime, to: LocalDateTime, routerId: Int?, planId: Int?, search: String?, sort: String, page: Int, size: Int): BandwidthSubscriptionPageDto {
-        val effective = effectiveResolution(from, to, "auto", network = false)
+        val effective = effectiveRankingResolution(from, to)
         val candidates = eligibleSubscriptions(routerId, planId).filter { subscriptionName(it).contains(search.orEmpty(), true) || it.ip.orEmpty().contains(search.orEmpty(), true) || it.id.toString() == search }
         val candidateIds = candidates.mapNotNull { it.id }.toSet()
-        val items = if (effective == "1m" && candidateIds.isNotEmpty()) {
-            val summaries = sampleRepository.summarizeInBucketRange(candidateIds, from, to).associateBy { it.getSubscriptionId() }
-            candidates.map { subscription -> toSubscriptionRow(subscription, summaries[subscription.id]) }
-        } else {
-            val rowsBySubscription = metricRows(from, to, effective, candidateIds).groupBy { it.subscriptionId }
-            candidates.map { subscription -> toSubscriptionRow(subscription, rowsBySubscription[subscription.id].orEmpty()) }
-        }
+        val rowsBySubscription = metricRows(from, to, effective, candidateIds).groupBy { it.subscriptionId }
+        val items = candidates.map { subscription -> toSubscriptionRow(subscription, rowsBySubscription[subscription.id].orEmpty()) }
         val sorted = when (sort) {
             "p95" -> items.sortedByDescending { it.p95MbpsDown }
             "utilization" -> items.sortedByDescending { it.utilizationPct ?: -1.0 }
@@ -274,6 +269,15 @@ open class BandwidthIntelligenceService(
         val hours = Duration.between(from, to).toHours()
         if (!network) return when { hours <= 24 -> "1m"; hours <= 24 * 2 -> "5m"; hours <= 24 * 90 -> "1h"; else -> "1d" }
         return when { hours <= 24 * 7 -> "1h"; else -> "1d" }
+    }
+
+    private fun effectiveRankingResolution(from: LocalDateTime, to: LocalDateTime): String {
+        val hours = Duration.between(from, to).toHours()
+        return when {
+            hours <= 24 * 2 -> "5m"
+            hours <= 24 * 7 -> "1h"
+            else -> "1d"
+        }
     }
 
     private fun eligibleSubscriptions(routerId: Int?, planId: Int?) = subscriptionRepository.findForTrafficPolling().filter { (routerId == null || it.hostDevice?.id == routerId) && (planId == null || it.plan?.id == planId) }
