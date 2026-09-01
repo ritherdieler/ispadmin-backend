@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
+import com.dscorp.wispadmin.wispadmin.tracing.TracingInterceptorHolder
 import org.springframework.http.HttpMethod
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
@@ -14,12 +15,13 @@ import java.time.Instant
 
 @Service
 class WhatsAppMetaAnalyticsClient(
-    private val whatsAppProperties: WhatsAppProperties,
-    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
+    private val whatsAppProperties: WhatsAppProperties
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppMetaAnalyticsClient::class.java)
-    private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
+    private val restTemplate = RestTemplate().apply {
+        TracingInterceptorHolder.instance?.let { interceptors.add(it) }
+    }
     private val objectMapper = ObjectMapper()
 
     private val phoneNumberHealthTtl = Duration.ofMinutes(5)

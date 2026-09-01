@@ -2,11 +2,10 @@ package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
-import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
-import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliSession
-import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltCliPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptor
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import com.dscorp.wispadmin.netdiag.port.OltCliOutcome
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -18,41 +17,23 @@ import java.util.Optional
 
 class OltAlarmPollServiceTest {
 
-    private val cliBus = mockk<OltCliBus>()
-    private val cliBusProvider = mockk<ObjectProvider<OltCliBus>>()
+    private val cli = mockk<NetDiagOltCliPort>()
     private val ingestService = mockk<OltAlarmIngestService>()
     private val targetRepository = mockk<NetDiagTargetRepository>()
-    private val properties = OltGatewayProperties().apply {
-        oltId = "gigafiber-ma5608t"
-        host = "10.11.104.2"
-        sync.alarmEnabled = true
-    }
+    private val descriptor = mutableDescriptor(alarmPollEnabled = true)
     private val service = OltAlarmPollService(
-        cliBusProvider = cliBusProvider,
+        cliPortProvider = availableProvider(cli),
         ingestService = ingestService,
         targetRepository = targetRepository,
-        oltGatewayProperties = properties
+        descriptorProvider = availableProvider(descriptor)
     )
 
     @Test
     fun `pollActiveAlarms ejecuta display alarm active all e ingesta`() {
-        every { cliBusProvider.ifAvailable } returns cliBus
         every { targetRepository.findByName("OLT-gigafiber-ma5608t") } returns Optional.of(
             NetDiagTarget(id = 42L, name = "OLT-gigafiber-ma5608t", deviceRefId = 1L)
         )
-        every { cliBus.execute(CliJobType.ALARM_POLL, any<(HuaweiCliSession) -> String>()) } answers {
-            val block = secondArg<(HuaweiCliSession) -> String>()
-            val session = mockk<HuaweiCliSession>()
-            every { session.execute(any<String>()) } answers {
-                val cmd = firstArg<String>()
-                if (cmd.startsWith("display alarm")) "ALARM DUMP" else "ok"
-            }
-            every { session.execute(any<String>(), any<Long>()) } answers {
-                val cmd = firstArg<String>()
-                if (cmd.startsWith("display alarm")) "ALARM DUMP" else "ok"
-            }
-            CliBusResult.Ok(block(session))
-        }
+        every { cli.runAlarmPoll() } returns OltCliOutcome.Ok("ALARM DUMP")
         every {
             ingestService.ingestCliActiveAlarms("ALARM DUMP", "10.11.104.2", 42L, "cli_alarm_active")
         } returns OltAlarmIngestResult(
@@ -77,12 +58,47 @@ class OltAlarmPollServiceTest {
 
     @Test
     fun `poll se omite si alarm sync disabled`() {
-        properties.sync.alarmEnabled = false
-        every { cliBusProvider.ifAvailable } returns cliBus
+        descriptor.alarmPollEnabled = false
 
         val result = service.pollActiveAlarms()
 
         assertEquals("alarm_poll_disabled", result.skippedReason)
-        verify(exactly = 0) { cliBus.execute(any(), any<(HuaweiCliSession) -> String>()) }
+        verify(exactly = 0) { cli.runAlarmPoll() }
+    }
+
+    @Test
+    fun `poll se omite si no hay descriptor de oltgateway`() {
+        val isolated = OltAlarmPollService(
+            cliPortProvider = emptyProvider(),
+            ingestService = ingestService,
+            targetRepository = targetRepository,
+            descriptorProvider = emptyProvider()
+        )
+
+        val result = isolated.pollActiveAlarms()
+
+        assertEquals("olt_descriptor_unavailable", result.skippedReason)
+    }
+
+    private fun mutableDescriptor(alarmPollEnabled: Boolean) = object : NetDiagOltDescriptorPort {
+        var alarmPollEnabled = alarmPollEnabled
+        override fun descriptor() = NetDiagOltDescriptor(
+            oltId = "gigafiber-ma5608t",
+            host = "10.11.104.2",
+            alarmPollEnabled = this.alarmPollEnabled,
+            portsPerGponBoard = 16
+        )
+    }
+
+    private fun <T : Any> availableProvider(value: T): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns value
+        return provider
+    }
+
+    private fun <T : Any> emptyProvider(): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns null
+        return provider
     }
 }

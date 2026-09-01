@@ -20,6 +20,9 @@
         <djl.version>0.36.0</djl.version>
         <pytorch.version>2.7.1</pytorch.version>
         <pytorch.jni.version>2.7.1-0.36.0</pytorch.jni.version>
+        <warName>ispadmin</warName>
+        <subsystem.excludes>WEB-INF/classes/__no_subsystem_exclude__/**</subsystem.excludes>
+        <subsystem.with></subsystem.with>
     </properties>
     <repositories>
         <repository>
@@ -368,6 +371,81 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <id>prod-war</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-spring-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod"
+                                                       byline="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>staging-war</id>
+            <properties>
+                <warName>ispadmin-staging</warName>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**</subsystem.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-spring-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,staging"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^server\.servlet\.context-path=.*"
+                                                       replace="server.servlet.context-path=/ispadmin-staging"
+                                                       byline="true"/>
+                                        <mkdir dir="${project.build.directory}"/>
+                                        <exec executable="bash" failonerror="true">
+                                            <arg value="${project.basedir}/scripts/subsystems.sh"/>
+                                            <arg value="--with"/>
+                                            <arg value="${subsystem.with}"/>
+                                            <arg value="--write-dir"/>
+                                            <arg value="${project.build.directory}"/>
+                                        </exec>
+                                        <concat destfile="${project.build.outputDirectory}/application-staging.properties" append="true">
+                                            <fileset dir="${project.build.directory}" includes="subsystem-enabled.properties"/>
+                                        </concat>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
     <build>
@@ -422,7 +500,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
                 <configuration>
-                    <warName>ispadmin</warName>
+                    <warName>${warName}</warName>
                     <packagingExcludes>
                         WEB-INF/lib/api-${djl.version}.jar,
                         WEB-INF/lib/pytorch-engine-${djl.version}.jar,
@@ -430,7 +508,8 @@
                         WEB-INF/lib/pytorch-native-cpu-*.jar,
                         WEB-INF/lib/onnxruntime-engine-${djl.version}.jar,
                         WEB-INF/lib/onnxruntime-*.jar,
-                        WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class
+                        WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class,
+                        ${subsystem.excludes}
                     </packagingExcludes>
                 </configuration>
             </plugin>

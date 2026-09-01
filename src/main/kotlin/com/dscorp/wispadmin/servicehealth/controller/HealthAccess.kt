@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.servicehealth.controller
 
-import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import org.springframework.stereotype.Component
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException

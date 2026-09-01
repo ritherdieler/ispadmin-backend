@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
@@ -16,7 +17,8 @@ class QueueManagerService(
     private val subscriptionRepository: SubscriptionRepository,
     private val mikrotikService: IMikroTikService,
     private val errorLogRepository: ErrorLogRepository,
-    private val scheduledTaskLogService: ScheduledTaskLogService
+    private val scheduledTaskLogService: ScheduledTaskLogService,
+    private val environment: GigafiberEnvironmentProperties
 ) : IQueueManager {
 
     private val logger = LoggerFactory.getLogger(QueueManagerService::class.java)
@@ -28,7 +30,7 @@ class QueueManagerService(
     }
 
     override fun buildQueueName(subscription: Subscription): String {
-        return when (subscription.installationType) {
+        val base = when (subscription.installationType) {
             InstallationType.FIBER -> {
                 val napBoxCode = subscription.napBox?.code ?: ""
                 QUEUE_NAME_TEMPLATE_FIBER.format(
@@ -52,17 +54,15 @@ class QueueManagerService(
                 )
             }
         }
+        val tag = environment.normalizedTag()
+        return if (tag.isEmpty()) base else "[$tag] $base"
     }
 
     override fun recreateQueueForSubscription(session: MikrotikSession, subscription: Subscription): Boolean {
         val resultByIp = session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
-
-        val queueToRemove = if (resultByIp.isNotEmpty()) {
-            resultByIp.last()
-        } else {
-            val exactName = buildQueueName(subscription)
-            session.print(PATH_QUEUE_SIMPLE, mapOf("name" to exactName)).lastOrNull()
-        }
+        val envTag = environment.normalizedTag()
+        val queueToRemove = resultByIp.lastOrNull { SimpleQueueNameParser.belongsToEnvironment(it["name"], envTag) }
+            ?: session.print(PATH_QUEUE_SIMPLE, mapOf("name" to buildQueueName(subscription))).lastOrNull()
 
         queueToRemove?.get(".id")?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
 
@@ -81,7 +81,9 @@ class QueueManagerService(
 
     override fun updateMikroTikQueue(subscription: Subscription) {
         subscription.hostDevice?.executeCommand { session ->
+            val envTag = environment.normalizedTag()
             session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
+                .filter { SimpleQueueNameParser.belongsToEnvironment(it["name"], envTag) }
                 .forEach { queue ->
                     queue[".id"]?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
                 }
@@ -102,10 +104,23 @@ class QueueManagerService(
             "target" to subscription.ip.orEmpty(),
             "max-limit" to "${upload}M/${download}M"
         )
-        if (includeInstallationComment) {
-            args["comment"] = subscription.installationType?.name.orEmpty()
-        }
+        queueComment(subscription, includeInstallationComment)?.let { args["comment"] = it }
         session.add(PATH_QUEUE_SIMPLE, args)
+    }
+
+    private fun queueComment(subscription: Subscription, includeInstallationComment: Boolean): String? {
+        val parts = mutableListOf<String>()
+        val tag = environment.normalizedTag()
+        if (tag.isNotEmpty()) {
+            parts.add("env=$tag")
+        }
+        if (includeInstallationComment) {
+            val type = subscription.installationType?.name.orEmpty()
+            if (type.isNotEmpty()) {
+                parts.add(type)
+            }
+        }
+        return parts.joinToString(" ").takeIf { it.isNotEmpty() }
     }
 
     override fun createSubscriptionsSimpleQueue(): CompletableFuture<QueueCreationStats> {

@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.netdiag.config.NetDiagProperties
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -13,6 +14,7 @@ import javax.annotation.PreDestroy
 import kotlin.concurrent.thread
 
 @Component
+@Profile("!staging")
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class NetDiagSnmpTrapUdpListener(
     private val properties: NetDiagProperties,

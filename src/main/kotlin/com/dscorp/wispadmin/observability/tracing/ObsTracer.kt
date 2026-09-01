@@ -3,17 +3,20 @@ package com.dscorp.wispadmin.observability.tracing
 import com.dscorp.wispadmin.observability.config.ObservabilityProperties
 import com.dscorp.wispadmin.observability.entity.ObsSpan
 import com.dscorp.wispadmin.observability.service.ObsSpanCollector
+import com.dscorp.wispadmin.wispadmin.tracing.Tracer
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.context.annotation.Primary
 import org.springframework.stereotype.Component
 
 @Component
+@Primary
 class ObsTracer(
     private val collector: ObsSpanCollector,
     private val properties: ObservabilityProperties,
     private val objectMapper: ObjectMapper
-) {
+) : Tracer {
 
-    fun <T> span(name: String, kind: String = "INTERNAL", tags: Map<String, Any?>? = null, block: () -> T): T {
+    override fun <T> span(name: String, kind: String, tags: Map<String, Any?>?, block: () -> T): T {
         val scope = TraceContext.current()
         if (scope == null || !properties.tracing.enabled) return block()
 

@@ -1,10 +1,10 @@
 package com.dscorp.wispadmin.wispadmin.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.dscorp.wispadmin.observability.config.CorrelationIdFilter
-import com.dscorp.wispadmin.observability.config.TraceContextFilter
-import com.dscorp.wispadmin.observability.port.ObservabilityReporter
-import com.dscorp.wispadmin.observability.port.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.config.CorrelationIdFilter
+import com.dscorp.wispadmin.wispadmin.observability.ObservabilityReporter
+import com.dscorp.wispadmin.wispadmin.observability.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.tracing.TraceContext
 import com.dscorp.wispadmin.wispadmin.logging.GlobalExceptionHandler
 import com.dscorp.wispadmin.wispadmin.logging.StackTraceSummarizer
 import org.slf4j.LoggerFactory
@@ -133,8 +133,8 @@ class RequestLoggingInterceptor @Autowired constructor(
         try {
             val correlationId = request.getAttribute(CorrelationIdFilter.ATTRIBUTE) as? String
                 ?: request.getHeader(CorrelationIdFilter.HEADER)
-            val sessionId = request.getAttribute(TraceContextFilter.ATTRIBUTE_SESSION) as? String
-                ?: request.getHeader(TraceContextFilter.HEADER_SESSION)
+            val sessionId = request.getAttribute(TraceContext.ATTRIBUTE_SESSION) as? String
+                ?: request.getHeader(TraceContext.HEADER_SESSION)
             reporter.report(
                 ReportedEvent(
                     eventType = "http_error",

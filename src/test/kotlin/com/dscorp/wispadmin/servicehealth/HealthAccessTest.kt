@@ -1,7 +1,8 @@
 package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.controller.HealthAccess
-import com.dscorp.wispadmin.observability.security.*
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionClaims
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test

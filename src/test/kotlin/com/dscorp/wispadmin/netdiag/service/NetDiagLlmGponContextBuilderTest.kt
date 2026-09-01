@@ -5,13 +5,10 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagOltLogEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagOltLogEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltInventoryPort
 import com.dscorp.wispadmin.netdiag.port.NetDiagOntSubscriptionPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagPonOnu
 import com.dscorp.wispadmin.netdiag.port.OntSubscriptionInfo
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuStatusCurrent
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -21,7 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
+import org.springframework.beans.factory.ObjectProvider
 import java.time.Instant
 import java.util.Optional
 
@@ -29,39 +26,29 @@ class NetDiagLlmGponContextBuilderTest {
 
     private val targetRepository = mockk<NetDiagTargetRepository>()
     private val oltLogEventRepository = mockk<NetDiagOltLogEventRepository>()
-    private val oltRepository = mockk<OltMgrOltRepository>()
-    private val onuRepository = mockk<OltMgrOnuRepository>()
+    private val inventory = mockk<NetDiagOltInventoryPort>()
     private val ontSubscriptionPort = mockk<NetDiagOntSubscriptionPort>()
     private val builder = NetDiagLlmGponContextBuilder(
         targetRepository = targetRepository,
         oltLogEventRepository = oltLogEventRepository,
-        oltRepository = oltRepository,
-        onuRepository = onuRepository,
+        inventoryProvider = availableProvider(inventory),
         ontSubscriptionPort = ontSubscriptionPort,
         objectMapper = ObjectMapper()
     )
-
-    private val olt = OltMgrOlt(id = 1L, name = "gigafiber-ma5608t", ipAddress = "10.20.30.2")
 
     private fun onu(
         index: Int,
         sn: String,
         runState: String?,
         lastDownCause: String? = null,
-        rx: BigDecimal? = null
-    ): OltMgrOnu {
-        val onu = OltMgrOnu(id = index.toLong(), sn = sn, olt = olt, board = 0, port = 0, onuIndex = index)
-        if (runState != null) {
-            onu.status = OltMgrOnuStatusCurrent(
-                onuId = onu.id,
-                onu = onu,
-                runState = runState,
-                lastDownCause = lastDownCause,
-                onuRxDbm = rx
-            )
-        }
-        return onu
-    }
+        rx: Double? = null
+    ): NetDiagPonOnu = NetDiagPonOnu(
+        onuIndex = index,
+        sn = sn,
+        runState = runState,
+        lastDownCause = lastDownCause,
+        onuRxDbm = rx
+    )
 
     private fun ponTarget(): NetDiagTarget = NetDiagTarget(
         id = 4L,
@@ -115,16 +102,13 @@ class NetDiagLlmGponContextBuilderTest {
                 isClear = false
             )
         )
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         val onus = listOf(
             onu(15, "HWTC00000015", "online"),
-            onu(16, "HWTC00000016", "online", rx = BigDecimal("-18.42")),
-            onu(17, "HWTC00000017", "offline", lastDownCause = "dying-gasp", rx = BigDecimal("-21.10"))
+            onu(16, "HWTC00000016", "online", rx = -18.42),
+            onu(17, "HWTC00000017", "offline", lastDownCause = "dying-gasp", rx = -21.10)
         )
-        every { onuRepository.findByOlt_IdAndBoardAndPortWithStatus(1L, 0, 0) } returns onus
-        every {
-            onuRepository.findByOlt_IdAndBoardAndPortAndOnuIndexAndDeletedAtIsNull(1L, 0, 0, 16)
-        } returns Optional.of(onus[1])
+        every { inventory.listOnusOnPon("gigafiber-ma5608t", 0, 0) } returns onus
+        every { inventory.findOnu("gigafiber-ma5608t", 0, 0, 16) } returns onus[1]
         every { ontSubscriptionPort.findActiveByOnuSn("HWTC00000016") } returns OntSubscriptionInfo(
             subscriptionId = 555,
             customerName = "Juan Perez",
@@ -175,8 +159,7 @@ class NetDiagLlmGponContextBuilderTest {
     fun `target pon sin ont en dedup key omite abonado`() {
         every { targetRepository.findById(3L) } returns Optional.empty()
         every { oltLogEventRepository.findTop50ByTargetIdOrderByReceivedAtDesc(4L) } returns emptyList()
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
-        every { onuRepository.findByOlt_IdAndBoardAndPortWithStatus(1L, 0, 0) } returns emptyList()
+        every { inventory.listOnusOnPon("gigafiber-ma5608t", 0, 0) } returns emptyList()
 
         val incident = NetDiagIncident(
             id = 400L,
@@ -234,14 +217,42 @@ class NetDiagLlmGponContextBuilderTest {
             )
         }
         every { oltLogEventRepository.findTop50ByTargetIdOrderByReceivedAtDesc(4L) } returns logs
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
-        every { onuRepository.findByOlt_IdAndBoardAndPortWithStatus(1L, 0, 0) } returns emptyList()
-        every {
-            onuRepository.findByOlt_IdAndBoardAndPortAndOnuIndexAndDeletedAtIsNull(1L, 0, 0, 16)
-        } returns Optional.empty()
+        every { inventory.listOnusOnPon("gigafiber-ma5608t", 0, 0) } returns emptyList()
+        every { inventory.findOnu("gigafiber-ma5608t", 0, 0, 16) } returns null
 
         val context = builder.build(ponIncident())
 
         assertEquals(20, context!!.recentOltLogs.size)
+    }
+
+    @Test
+    fun `sin inventario de oltgateway el PON queda vacio`() {
+        every { targetRepository.findById(3L) } returns Optional.empty()
+        every { oltLogEventRepository.findTop50ByTargetIdOrderByReceivedAtDesc(4L) } returns emptyList()
+        val isolated = NetDiagLlmGponContextBuilder(
+            targetRepository = targetRepository,
+            oltLogEventRepository = oltLogEventRepository,
+            inventoryProvider = emptyProvider(),
+            ontSubscriptionPort = ontSubscriptionPort,
+            objectMapper = ObjectMapper()
+        )
+
+        val context = isolated.build(ponIncident())
+
+        assertNotNull(context)
+        assertEquals(0, context!!.ponInventory?.total)
+        assertNull(context.ontSubscription?.sn)
+    }
+
+    private fun <T : Any> availableProvider(value: T): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns value
+        return provider
+    }
+
+    private fun <T : Any> emptyProvider(): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns null
+        return provider
     }
 }

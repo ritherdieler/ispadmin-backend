@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.security
 
-import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order

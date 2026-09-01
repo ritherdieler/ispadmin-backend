@@ -13,6 +13,7 @@ import com.dscorp.wispadmin.wispadmin.requestbody.MigrationRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.UpdateSubscriptionDataBody
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
+import com.dscorp.wispadmin.wispadmin.service.onu.OnuOperationsPort
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IAddressListManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
@@ -41,7 +42,7 @@ class SubscriptionService(
     private val planRepository: PlanRepository,
     private val placeRepository: PlaceRepository,
     private val napBoxRepository: NapBoxRepository,
-    private val onuService: OnuService,
+    private val onuService: OnuOperationsPort,
     private val onuRepository: OnuRepository,
     private val installationOrderRepository: InstallationOrderRepository,
     private val notificationService: NotificationService,

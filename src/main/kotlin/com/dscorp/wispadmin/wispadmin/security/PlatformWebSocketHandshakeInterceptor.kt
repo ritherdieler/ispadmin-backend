@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.security
 
-import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
 import org.springframework.http.HttpStatus
 import org.springframework.http.server.ServerHttpRequest
 import org.springframework.http.server.ServerHttpResponse

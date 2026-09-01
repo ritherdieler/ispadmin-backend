@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import com.dscorp.wispadmin.wispadmin.data.model.User
 import com.dscorp.wispadmin.wispadmin.dto.UserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto

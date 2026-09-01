@@ -6,7 +6,9 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagOltLogEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptor
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import com.dscorp.wispadmin.oltgateway.adapter.NetDiagOltAlarmParserAdapter
 import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
 import io.mockk.every
 import io.mockk.mockk
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicLong
 
@@ -26,16 +29,23 @@ class OltAlarmIngestServiceTest {
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val signalExtractor = mockk<AlertSignalExtractor>()
     private val alertEvaluator = mockk<AlertEvaluator>()
-    private val parser = HuaweiOltAlarmParser()
-    private val oltProperties = OltGatewayProperties().apply { oltId = "gigafiber-ma5608t" }
+    private val parser = NetDiagOltAlarmParserAdapter(HuaweiOltAlarmParser())
+    private val descriptor = object : NetDiagOltDescriptorPort {
+        override fun descriptor() = NetDiagOltDescriptor(
+            oltId = "gigafiber-ma5608t",
+            host = "10.11.104.2",
+            alarmPollEnabled = true,
+            portsPerGponBoard = 16
+        )
+    }
     private val service = OltAlarmIngestService(
         logEventRepository = repository,
-        parser = parser,
+        parserProvider = availableProvider(parser),
         targetRepository = targetRepository,
         incidentRepository = incidentRepository,
         signalExtractor = signalExtractor,
         alertEvaluator = alertEvaluator,
-        oltGatewayProperties = oltProperties
+        descriptorProvider = availableProvider(descriptor)
     )
     private val idSeq = AtomicLong(1)
     private val saved = mutableListOf<NetDiagOltLogEvent>()
@@ -203,5 +213,35 @@ class OltAlarmIngestServiceTest {
 
         assertTrue(result.cleared >= 1)
         verify { alertEvaluator.resolveByDedupKey("ONT_OFFLINE:55:gpon-0/3:ont-9", any()) }
+    }
+
+    @Test
+    fun `sin parser no persiste alarmas`() {
+        val isolated = OltAlarmIngestService(
+            logEventRepository = repository,
+            parserProvider = emptyProvider(),
+            targetRepository = targetRepository,
+            incidentRepository = incidentRepository,
+            signalExtractor = signalExtractor,
+            alertEvaluator = alertEvaluator,
+            descriptorProvider = emptyProvider()
+        )
+
+        val result = isolated.ingestCliActiveAlarms("ALARM", "10.11.104.2", 42L)
+
+        assertEquals(0, result.persisted)
+        verify(exactly = 0) { repository.saveAll(any<List<NetDiagOltLogEvent>>()) }
+    }
+
+    private fun <T : Any> availableProvider(value: T): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns value
+        return provider
+    }
+
+    private fun <T : Any> emptyProvider(): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns null
+        return provider
     }
 }

@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagProbeRun
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.port.NetDiagDeviceDirectoryPort
+import com.dscorp.wispadmin.routeros.RouterOsUptimeParser
 import com.dscorp.wispadmin.routeros.port.MikrotikAuthException
 import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.routeros.port.MikrotikCommandException

@@ -2,7 +2,7 @@ package com.dscorp.wispadmin.observability.service
 
 import com.dscorp.wispadmin.observability.config.ObservabilityProperties
 import com.dscorp.wispadmin.observability.entity.ObsEvent
-import com.dscorp.wispadmin.observability.port.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.observability.ReportedEvent
 import com.dscorp.wispadmin.observability.repository.ObsEventRepository
 import com.dscorp.wispadmin.observability.repository.ObsIssueRepository
 import com.fasterxml.jackson.databind.ObjectMapper

@@ -1,7 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
-import com.dscorp.wispadmin.observability.tracing.ObsTracer
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
+import com.dscorp.wispadmin.wispadmin.tracing.Tracer
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 class MikroTikServiceRestTest {
 
     private val session = mockk<MikrotikSession>(relaxed = true)
-    private val obsTracer = mockk<ObsTracer>()
+    private val obsTracer = mockk<Tracer>()
     private lateinit var service: MikroTikService
 
     @BeforeEach

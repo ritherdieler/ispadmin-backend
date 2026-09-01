@@ -1,7 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-import com.dscorp.wispadmin.observability.port.ObservabilityReporter
-import com.dscorp.wispadmin.observability.port.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.observability.ObservabilityReporter
+import com.dscorp.wispadmin.wispadmin.observability.ReportedEvent
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.IpPool

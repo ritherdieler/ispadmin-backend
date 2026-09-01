@@ -25,7 +25,7 @@ class DeviceResourcesWebSocket(
     @Autowired private val messagingTemplate: SimpMessagingTemplate,
     @Autowired private val networkDeviceRepository: NetworkDeviceRepository,
     @Autowired private val mikrotikConnectionService: MikroTikConnectionService
-) {
+) : WebSocketSessionCleanup {
     private val logger = LoggerFactory.getLogger(DeviceResourcesWebSocket::class.java)
 
     // Tareas programadas por dispositivo
@@ -192,7 +192,7 @@ class DeviceResourcesWebSocket(
         logCurrentStats()
     }
 
-    fun handleUserDisconnect(sessionId: String) {
+    override fun handleUserDisconnect(sessionId: String) {
         logger.info("🔌 [RES][SESION-$sessionId] Usuario desconectado - Limpieza de recursos")
 
         val devicesToCheck = activeSessions.entries

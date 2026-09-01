@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
+import com.dscorp.wispadmin.wispadmin.tracing.TracingInterceptorHolder
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
@@ -15,12 +16,13 @@ import java.util.UUID
 
 @Service
 class WhatsAppMediaDownloadService(
-    private val whatsAppProperties: WhatsAppProperties,
-    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
+    private val whatsAppProperties: WhatsAppProperties
 ) {
 
     private val log = LoggerFactory.getLogger(WhatsAppMediaDownloadService::class.java)
-    private val restTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
+    private val restTemplate = RestTemplate().apply {
+        TracingInterceptorHolder.instance?.let { interceptors.add(it) }
+    }
 
     fun downloadAndStore(mediaId: String, mimeType: String?): String? {
         if (!whatsAppProperties.isConfigured()) return null

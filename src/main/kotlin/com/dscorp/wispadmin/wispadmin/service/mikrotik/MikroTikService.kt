@@ -1,14 +1,14 @@
 package com.dscorp.wispadmin.wispadmin.service.mikrotik
 
-import com.dscorp.wispadmin.observability.tracing.ObsTracer
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
+import com.dscorp.wispadmin.wispadmin.tracing.Tracer
 import org.springframework.stereotype.Service
 
 @Service
 class MikroTikService(
-    private val obsTracer: ObsTracer
+    private val obsTracer: Tracer
 ) : IMikroTikService {
 
     companion object {

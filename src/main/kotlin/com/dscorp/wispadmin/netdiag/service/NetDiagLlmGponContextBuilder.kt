@@ -3,13 +3,13 @@ package com.dscorp.wispadmin.netdiag.service
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagOltLogEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltInventoryPort
 import com.dscorp.wispadmin.netdiag.port.NetDiagOntSubscriptionPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagPonOnu
 import com.dscorp.wispadmin.netdiag.port.OntSubscriptionInfo
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -68,8 +68,7 @@ data class GponLlmContext(
 class NetDiagLlmGponContextBuilder(
     private val targetRepository: NetDiagTargetRepository,
     private val oltLogEventRepository: NetDiagOltLogEventRepository,
-    private val oltRepository: OltMgrOltRepository,
-    private val onuRepository: OltMgrOnuRepository,
+    private val inventoryProvider: ObjectProvider<NetDiagOltInventoryPort>,
     private val ontSubscriptionPort: NetDiagOntSubscriptionPort,
     private val objectMapper: ObjectMapper
 ) {
@@ -134,15 +133,11 @@ class NetDiagLlmGponContextBuilder(
         if (oltId.isNullOrBlank() || board == null || port == null) {
             return PonInventory(total = 0, online = 0, offline = 0, offlineSample = emptyList())
         }
-        val oltPk = oltRepository.findByName(oltId).orElse(null)?.id ?: return PonInventory(
-            total = 0,
-            online = 0,
-            offline = 0,
-            offlineSample = emptyList()
-        )
-        val onus = onuRepository.findByOlt_IdAndBoardAndPortWithStatus(oltPk, board, port)
-        val online = onus.count { it.status?.runState.equals("online", ignoreCase = true) }
-        val offlineOnus = onus.filter { !it.status?.runState.equals("online", ignoreCase = true) }
+        val inventory = inventoryProvider.ifAvailable
+            ?: return PonInventory(total = 0, online = 0, offline = 0, offlineSample = emptyList())
+        val onus = inventory.listOnusOnPon(oltId, board, port)
+        val online = onus.count { it.runState.equals("online", ignoreCase = true) }
+        val offlineOnus = onus.filter { !it.runState.equals("online", ignoreCase = true) }
         return PonInventory(
             total = onus.size,
             online = online,
@@ -170,25 +165,13 @@ class NetDiagLlmGponContextBuilder(
                 subscription = null
             )
         }
-        val oltPk = oltRepository.findByName(oltId).orElse(null)?.id ?: return OntSubscriptionContext(
-            onuIndex = onuIndex,
-            sn = null,
-            runState = null,
-            lastDownCause = null,
-            subscription = null
-        )
-        val onu = onuRepository.findByOlt_IdAndBoardAndPortAndOnuIndexAndDeletedAtIsNull(
-            oltPk,
-            board,
-            port,
-            onuIndex
-        ).orElse(null)
+        val onu = inventoryProvider.ifAvailable?.findOnu(oltId, board, port, onuIndex)
         val subscription = onu?.sn?.let { ontSubscriptionPort.findActiveByOnuSn(it) }
         return OntSubscriptionContext(
             onuIndex = onuIndex,
             sn = onu?.sn,
-            runState = onu?.status?.runState,
-            lastDownCause = onu?.status?.lastDownCause,
+            runState = onu?.runState,
+            lastDownCause = onu?.lastDownCause,
             subscription = subscription
         )
     }
@@ -199,12 +182,12 @@ class NetDiagLlmGponContextBuilder(
         return null
     }
 
-    private fun toSummary(onu: OltMgrOnu): PonOnuSummary = PonOnuSummary(
+    private fun toSummary(onu: NetDiagPonOnu): PonOnuSummary = PonOnuSummary(
         onuIndex = onu.onuIndex,
         sn = onu.sn,
-        runState = onu.status?.runState,
-        lastDownCause = onu.status?.lastDownCause,
-        onuRxDbm = onu.status?.onuRxDbm?.toDouble()
+        runState = onu.runState,
+        lastDownCause = onu.lastDownCause,
+        onuRxDbm = onu.onuRxDbm
     )
 
     private fun parseMonitorConfig(raw: String?): JsonNode? {

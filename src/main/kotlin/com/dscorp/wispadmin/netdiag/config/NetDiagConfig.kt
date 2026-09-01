@@ -1,7 +1,5 @@
 package com.dscorp.wispadmin.netdiag.config
 
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikClient
@@ -15,12 +13,9 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.client.RestTemplate
 
 @Configuration
-@EnableConfigurationProperties(NetDiagProperties::class, OltGatewayProperties::class)
+@EnableConfigurationProperties(NetDiagProperties::class)
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class NetDiagConfig {
-
-    @Bean
-    fun huaweiOltAlarmParser(): HuaweiOltAlarmParser = HuaweiOltAlarmParser()
 
     @Bean
     fun netDiagApiKeyFilterRegistration(

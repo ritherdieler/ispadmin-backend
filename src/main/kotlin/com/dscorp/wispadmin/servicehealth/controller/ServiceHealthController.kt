@@ -7,8 +7,9 @@ import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ModelProfiles
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
+import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.web.bind.annotation.*
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpStatus
@@ -26,7 +27,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     private val events: HealthEventRepository,private val actions: RemoteActionRepository,
     private val remote: RemoteActionService,private val identity: IdentityService,
     private val conflicts: IdentityConflictRepository,private val affected: IncidentSubscriptionRepository,
-    private val onus: OltMgrOnuRepository,private val json: ObjectMapper) {
+    private val onuPort: ObjectProvider<HealthOnuPort>,private val json: ObjectMapper) {
 
     @GetMapping("/subscription/{id}/cpe-status")
     fun cpe(@PathVariable id: Int,request: HttpServletRequest): CpeStatus {
@@ -94,10 +95,10 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     @Transactional(readOnly=true)
     fun onuSeries(@PathVariable externalId: String,@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?,request: HttpServletRequest): Map<String,Any> {
         access.require(request)
-        val onu=onus.findByExternalIdAndDeletedAtIsNull(externalId).orElseThrow { NoSuchElementException("ONU inexistente") }
+        val onu=onuPort.ifAvailable?.findByExternalId(externalId) ?: throw NoSuchElementException("ONU inexistente")
         val id=identity.resolveOnu(onu.sn)
         val w=window(from,to)
-        val data=optical.listByOnuInUtcWindow(onu.id!!,w.first,w.second).map { sample ->
+        val data=optical.listByOnuInUtcWindow(onu.id,w.first,w.second).map { sample ->
             mapOf("id" to sample.id,"observed_at" to sample.observedAt,"onu_id" to sample.onuId,"onu_sn" to sample.onuSn,
                 "subscription_id" to sample.subscriptionId,"onu_rx_dbm" to sample.onuRxDbm,"onu_tx_dbm" to sample.onuTxDbm,
                 "olt_rx_dbm" to sample.oltRxDbm,"quality_status" to sample.qualityStatus)

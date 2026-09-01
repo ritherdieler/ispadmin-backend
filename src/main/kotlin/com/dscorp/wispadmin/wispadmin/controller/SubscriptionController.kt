@@ -34,6 +34,7 @@ import com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import com.dscorp.wispadmin.wispadmin.service.subscription.RegistrationProgressMapper
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import org.springframework.web.multipart.MultipartFile
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -57,6 +58,7 @@ class SubscriptionController(
     private val tr069AsyncApplicator: Tr069AsyncApplicator,
     private val subscriptionAcsOpsService: SubscriptionAcsOpsService,
     private val subscriptionProvisionService: SubscriptionProvisionService,
+    private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -214,6 +216,13 @@ class SubscriptionController(
 
     @PostMapping("/generate-simple-queues")
     fun generateSimpleQueue(): BaseResponse {
+        val tag = environment.normalizedTag()
+        if (tag.isNotEmpty()) {
+            return BaseResponse(
+                status = 409,
+                error = "generate-simple-queues está deshabilitado en el ambiente $tag"
+            )
+        }
         val stats = subscriptionService.createSubscriptionsSimpleQueue().get()
 
         return BaseResponse(

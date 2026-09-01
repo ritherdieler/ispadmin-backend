@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.traffic.service
 
-import com.dscorp.wispadmin.netdiag.service.RouterOsUptimeParser
+import com.dscorp.wispadmin.routeros.RouterOsUptimeParser
 import com.dscorp.wispadmin.routeros.RouterOsTrafficCounterParser
 import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
 import com.dscorp.wispadmin.routeros.port.MikrotikClient

@@ -2,11 +2,12 @@ package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltInventoryPort
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -26,8 +27,8 @@ data class OltNetDiagTargetSyncResult(
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class OltNetDiagTargetSyncService(
     private val targetRepository: NetDiagTargetRepository,
-    private val oltRepository: OltMgrOltRepository,
-    private val oltGatewayProperties: OltGatewayProperties,
+    private val inventoryProvider: ObjectProvider<NetDiagOltInventoryPort>,
+    private val descriptorProvider: ObjectProvider<NetDiagOltDescriptorPort>,
     private val objectMapper: ObjectMapper
 ) : ApplicationRunner {
 
@@ -47,14 +48,17 @@ class OltNetDiagTargetSyncService(
 
     @Transactional
     fun sync(): OltNetDiagTargetSyncResult {
-        val oltId = oltGatewayProperties.oltId
-        val olt = oltRepository.findByName(oltId).orElse(null)
+        val descriptor = descriptorProvider.ifAvailable?.descriptor()
             ?: return OltNetDiagTargetSyncResult(0, 0, 0)
-        val oltPk = olt.id ?: return OltNetDiagTargetSyncResult(0, 0, 0)
+        val inventory = inventoryProvider.ifAvailable
+            ?: return OltNetDiagTargetSyncResult(0, 0, 0)
+        val oltId = descriptor.oltId
+        val oltPk = inventory.findOltId(oltId)
+            ?: return OltNetDiagTargetSyncResult(0, 0, 0)
         val now = Instant.now()
-        val oltTarget = upsertOltTarget(oltPk, oltId, oltGatewayProperties.host, now)
+        val oltTarget = upsertOltTarget(oltPk, oltId, descriptor.host, now)
         val oltTargetId = oltTarget.id ?: return OltNetDiagTargetSyncResult(0, 0, 0)
-        val portsPerBoard = oltGatewayProperties.inventory.defaultPortsPerGponBoard.coerceAtLeast(1)
+        val portsPerBoard = descriptor.portsPerGponBoard.coerceAtLeast(1)
         var ponCount = 0
         for (board in GPON_BOARDS) {
             for (port in 0 until portsPerBoard) {

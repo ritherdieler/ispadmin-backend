@@ -1,23 +1,50 @@
 package com.dscorp.wispadmin.wispadmin
 
+import com.dscorp.wispadmin.wispadmin.config.SubsystemEntityScan
+import com.dscorp.wispadmin.wispadmin.config.SubsystemScanFilter
 import com.dscorp.wispadmin.wispadmin.util.AppTimeZone
 import com.dscorp.wispadmin.wispadmin.util.DjlNativeBootstrap
 import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.runApplication
 import org.springframework.boot.web.servlet.support.SpringBootServletInitializer
+import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.EnableAspectJAutoProxy
+import org.springframework.context.annotation.FilterType
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.scheduling.annotation.EnableAsync
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.transaction.annotation.EnableTransactionManagement
 
-@SpringBootApplication(scanBasePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.routeros", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
-@EntityScan(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
-@EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.wispadmin", "com.dscorp.wispadmin.observability", "com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.netdiag", "com.dscorp.wispadmin.traffic", "com.dscorp.wispadmin.servicehealth"])
+@SpringBootApplication
+@ComponentScan(
+    basePackages = [
+        "com.dscorp.wispadmin.wispadmin",
+        "com.dscorp.wispadmin.observability",
+        "com.dscorp.wispadmin.oltgateway",
+        "com.dscorp.wispadmin.routeros",
+        "com.dscorp.wispadmin.netdiag",
+        "com.dscorp.wispadmin.traffic",
+        "com.dscorp.wispadmin.servicehealth"
+    ],
+    excludeFilters = [
+        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [SubsystemScanFilter::class])
+    ]
+)
+@SubsystemEntityScan
+@EnableJpaRepositories(
+    basePackages = [
+        "com.dscorp.wispadmin.wispadmin",
+        "com.dscorp.wispadmin.observability",
+        "com.dscorp.wispadmin.oltgateway",
+        "com.dscorp.wispadmin.netdiag",
+        "com.dscorp.wispadmin.traffic",
+        "com.dscorp.wispadmin.servicehealth"
+    ],
+    excludeFilters = [
+        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [SubsystemScanFilter::class])
+    ]
+)
 
-@EnableScheduling
 @EnableAsync
 @EnableAspectJAutoProxy
 @EnableTransactionManagement

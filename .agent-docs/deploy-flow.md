@@ -18,8 +18,9 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 |-----------|---------|
 | **Setup único** (DJL en imagen Docker) | `./scripts/deploy.sh --setup` |
 | **Setup + primer WAR** | `./scripts/deploy.sh --full` |
-| **Release habitual** | `./scripts/deploy.sh` |
-| **Solo subir WAR ya compilado** | `./scripts/deploy.sh --war-only` |
+| **Release habitual (prod)** | `./scripts/deploy.sh --env prod` |
+| **Pre-prod (mismo Tomcat, otro WAR)** | `./scripts/deploy.sh --env staging` |
+| **Solo subir WAR ya compilado** | `./scripts/deploy.sh --war-only --env prod\|staging` |
 
 En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
 
@@ -35,8 +36,8 @@ En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
 | Imagen | `gigafiber/tomcat:9.0.27-custom` |
 | Base Docker | `tomcat:9.0-jdk11-temurin-jammy` |
 | JARs DJL (host) | `/opt/gigafiber/tomcat/lib/*.jar` |
-| WAR en contenedor | `/usr/local/tomcat/webapps/ispadmin.war` |
-| Context path | `/ispadmin` |
+| WAR prod | `/usr/local/tomcat/webapps/ispadmin.war` → `/ispadmin` → MySQL `ispadmin` |
+| WAR staging | `/usr/local/tomcat/webapps/ispadmin-staging.war` → `/ispadmin-staging` → `ispadmin_staging` |
 | Tomcat Manager | `http://212.85.13.47:8080/manager` |
 
 Los JARs de PyTorch/DJL **no van dentro del WAR**. Se embeben en la imagen Docker vía `COPY lib/*.jar` en el Dockerfile.

@@ -1,10 +1,9 @@
 package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
-import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
-import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltCliPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import com.dscorp.wispadmin.netdiag.port.OltCliOutcome
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -27,10 +26,10 @@ data class OltAlarmPollResult(
 @Service
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class OltAlarmPollService(
-    private val cliBusProvider: ObjectProvider<OltCliBus>,
+    private val cliPortProvider: ObjectProvider<NetDiagOltCliPort>,
     private val ingestService: OltAlarmIngestService,
     private val targetRepository: NetDiagTargetRepository,
-    private val oltGatewayProperties: OltGatewayProperties
+    private val descriptorProvider: ObjectProvider<NetDiagOltDescriptorPort>
 ) {
 
     private val logger = LoggerFactory.getLogger(OltAlarmPollService::class.java)
@@ -51,29 +50,27 @@ class OltAlarmPollService(
         val startedAt = Instant.now()
         lastStartedAtRef.set(startedAt)
         try {
-            if (!oltGatewayProperties.sync.alarmEnabled) {
+            val descriptor = descriptorProvider.ifAvailable?.descriptor()
+                ?: return finish(OltAlarmPollResult(skippedReason = "olt_descriptor_unavailable"), startedAt)
+            if (!descriptor.alarmPollEnabled) {
                 return finish(OltAlarmPollResult(skippedReason = "alarm_poll_disabled"), startedAt)
             }
-            val bus = cliBusProvider.ifAvailable
+            val cli = cliPortProvider.ifAvailable
                 ?: return finish(OltAlarmPollResult(skippedReason = "cli_bus_unavailable"), startedAt)
-            val oltTargetName = OltNetDiagTargetSyncService.oltTargetName(oltGatewayProperties.oltId)
+            val oltTargetName = OltNetDiagTargetSyncService.oltTargetName(descriptor.oltId)
             val oltTargetId = targetRepository.findByName(oltTargetName).orElse(null)?.id
 
-            val raw = when (val busResult = bus.execute(CliJobType.ALARM_POLL) { session ->
-                session.execute("screen-length 0 temporary")
-                session.execute("scroll 512")
-                session.execute("display alarm active all", ALARM_COMMAND_TIMEOUT_MS)
-            }) {
-                is CliBusResult.Ok -> busResult.value
-                is CliBusResult.Skipped -> return finish(
-                    OltAlarmPollResult(skippedReason = busResult.reason),
+            val raw = when (val outcome = cli.runAlarmPoll()) {
+                is OltCliOutcome.Ok -> outcome.raw
+                is OltCliOutcome.Skipped -> return finish(
+                    OltAlarmPollResult(skippedReason = outcome.reason),
                     startedAt
                 )
             }
 
             val ingest = ingestService.ingestCliActiveAlarms(
                 raw = raw,
-                sourceIp = oltGatewayProperties.host,
+                sourceIp = descriptor.host,
                 oltTargetId = oltTargetId,
                 channel = "cli_alarm_active"
             )
@@ -98,10 +95,6 @@ class OltAlarmPollService(
         val withDuration = result.copy(durationMs = Duration.between(startedAt, Instant.now()).toMillis())
         lastResultRef.set(withDuration)
         return withDuration
-    }
-
-    companion object {
-        const val ALARM_COMMAND_TIMEOUT_MS: Long = 300_000
     }
 }
 

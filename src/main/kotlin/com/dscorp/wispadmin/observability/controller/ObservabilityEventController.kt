@@ -5,7 +5,7 @@ import com.dscorp.wispadmin.observability.config.ObservabilityProperties
 import com.dscorp.wispadmin.observability.dto.EventIngestBatchRequest
 import com.dscorp.wispadmin.observability.dto.EventIngestRequest
 import com.dscorp.wispadmin.observability.dto.EventIngestResponse
-import com.dscorp.wispadmin.observability.port.ReportedEvent
+import com.dscorp.wispadmin.wispadmin.observability.ReportedEvent
 import com.dscorp.wispadmin.observability.service.ObsIngestionService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity

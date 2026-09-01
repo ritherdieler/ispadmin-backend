@@ -4,9 +4,10 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagOltLogEvent
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagOltLogEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
-import com.dscorp.wispadmin.oltgateway.parser.ParsedOltAlarm
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltAlarm
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltAlarmParserPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -26,16 +27,16 @@ data class OltAlarmIngestResult(
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class OltAlarmIngestService(
     private val logEventRepository: NetDiagOltLogEventRepository,
-    private val parser: HuaweiOltAlarmParser,
+    private val parserProvider: ObjectProvider<NetDiagOltAlarmParserPort>,
     private val targetRepository: NetDiagTargetRepository,
     private val incidentRepository: NetDiagIncidentRepository,
     private val signalExtractor: AlertSignalExtractor,
     private val alertEvaluator: AlertEvaluator,
-    private val oltGatewayProperties: OltGatewayProperties
+    private val descriptorProvider: ObjectProvider<NetDiagOltDescriptorPort>
 ) {
 
     private val oltId: String
-        get() = oltGatewayProperties.oltId
+        get() = descriptorProvider.ifAvailable?.descriptor()?.oltId.orEmpty()
 
     @Transactional
     fun ingestCliActiveAlarms(
@@ -47,6 +48,7 @@ class OltAlarmIngestService(
         if (raw.isBlank()) {
             return OltAlarmIngestResult(0, 0, 0)
         }
+        val parser = parserProvider.ifAvailable ?: return OltAlarmIngestResult(0, 0, 0)
         val alarms = parser.parseActiveAlarms(raw)
         val now = Instant.now()
         val activeDedupKeys = mutableSetOf<String>()
@@ -116,7 +118,7 @@ class OltAlarmIngestService(
         return cleared
     }
 
-    private fun resolveTargetId(alarm: ParsedOltAlarm, oltTargetId: Long?): Long? {
+    private fun resolveTargetId(alarm: NetDiagOltAlarm, oltTargetId: Long?): Long? {
         val slot = alarm.slotId
         val port = alarm.portId
         if (slot != null && port != null) {
@@ -127,11 +129,11 @@ class OltAlarmIngestService(
         return oltTargetId
     }
 
-    private fun shouldEmitAlert(alarm: ParsedOltAlarm): Boolean {
+    private fun shouldEmitAlert(alarm: NetDiagOltAlarm): Boolean {
         return alarm.reasonCode in ALERTABLE_REASON_CODES
     }
 
-    private fun alertComponent(alarm: ParsedOltAlarm): String {
+    private fun alertComponent(alarm: NetDiagOltAlarm): String {
         val base = alarm.component
         return if (alarm.ontId != null && alarm.reasonCode.startsWith("ONT_")) {
             "$base:ont-${alarm.ontId}"
@@ -145,20 +147,20 @@ class OltAlarmIngestService(
         return "$reasonCode:$keyTarget:$component"
     }
 
-    private fun alertTitle(alarm: ParsedOltAlarm): String {
+    private fun alertTitle(alarm: NetDiagOltAlarm): String {
         val where = alarm.component
         val ont = alarm.ontId?.let { " ont=$it" }.orEmpty()
         return "${alarm.reasonCode} $where$ont".trim()
     }
 
     private fun toEvent(
-        alarm: ParsedOltAlarm,
+        alarm: NetDiagOltAlarm,
         sourceIp: String?,
         targetId: Long?,
         channel: String,
         receivedAt: Instant
     ): NetDiagOltLogEvent {
-        val unparsed = alarm.reasonCode == HuaweiOltAlarmParser.REASON_UNPARSED
+        val unparsed = alarm.unparsed
         return NetDiagOltLogEvent(
             receivedAt = receivedAt,
             sourceIp = sourceIp,

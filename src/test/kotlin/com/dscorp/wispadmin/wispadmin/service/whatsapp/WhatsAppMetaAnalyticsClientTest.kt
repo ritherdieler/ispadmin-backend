@@ -1,9 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.whatsapp
 
-import com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.fasterxml.jackson.databind.ObjectMapper
-import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -12,14 +10,13 @@ import java.time.Instant
 
 class WhatsAppMetaAnalyticsClientTest {
 
-    private val tracingInterceptor = mockk<TracingClientHttpRequestInterceptor>(relaxed = true)
     private val whatsAppProperties = WhatsAppProperties().apply {
         apiVersion = "v21.0"
         accessToken = "token"
         phoneNumberId = "123"
         businessAccountId = "456"
     }
-    private val client = WhatsAppMetaAnalyticsClient(whatsAppProperties, tracingInterceptor)
+    private val client = WhatsAppMetaAnalyticsClient(whatsAppProperties)
     private val objectMapper = ObjectMapper()
 
     @Test

@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.config
 
-import com.dscorp.wispadmin.observability.security.ObservabilitySessionTokenService
+import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every

@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
 import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
@@ -12,6 +13,7 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.SimpleQueueNameParser
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 
 data class QueueEnsureResult(
@@ -22,8 +24,21 @@ data class QueueEnsureResult(
 @Component
 class SimpleQueueProvisioner(
     private val queueManager: IQueueManager,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val environmentTag: String
 ) {
+    @Autowired
+    constructor(
+        queueManager: IQueueManager,
+        subscriptionRepository: SubscriptionRepository,
+        environment: GigafiberEnvironmentProperties
+    ) : this(queueManager, subscriptionRepository, environment.normalizedTag())
+
+    constructor(
+        queueManager: IQueueManager,
+        subscriptionRepository: SubscriptionRepository
+    ) : this(queueManager, subscriptionRepository, "")
+
     private val logger = LoggerFactory.getLogger(SimpleQueueProvisioner::class.java)
 
     fun ensureQueue(subscription: Subscription, device: NetworkDevice, plan: Plan): QueueEnsureResult {
@@ -50,13 +65,20 @@ class SimpleQueueProvisioner(
                 }
 
                 val queueName = existing.last()["name"]
-                val ownerId = SimpleQueueNameParser.subscriptionId(queueName)
+                val owner = SimpleQueueNameParser.owner(queueName)
                 result = when {
-                    ownerId != null && ownerId == subscription.id -> QueueEnsureResult(added = true)
-                    ownerId != null -> QueueEnsureResult(
-                        added = false,
-                        error = "La IP $target ya tiene queue de la suscripción $ownerId ($queueName)"
-                    )
+                    owner != null && owner.envTag == environmentTag && owner.subscriptionId == subscription.id ->
+                        QueueEnsureResult(added = true)
+                    owner != null && owner.envTag != environmentTag ->
+                        QueueEnsureResult(
+                            added = false,
+                            error = "La IP $target ya tiene queue del ambiente ${owner.envTag.ifEmpty { "prod" }} ($queueName)"
+                        )
+                    owner != null ->
+                        QueueEnsureResult(
+                            added = false,
+                            error = "La IP $target ya tiene queue de la suscripción ${owner.subscriptionId} ($queueName)"
+                        )
                     else -> reclaimOrphan(subscription, target, session)
                 }
             }

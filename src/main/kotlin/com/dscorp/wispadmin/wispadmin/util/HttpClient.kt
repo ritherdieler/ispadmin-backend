@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.util
 
-import com.dscorp.wispadmin.observability.tracing.TracingInterceptorHolder
+import com.dscorp.wispadmin.wispadmin.tracing.TracingInterceptorHolder
 import com.dscorp.wispadmin.wispadmin.config.OLT_SERVICE_API_KEY
 import com.dscorp.wispadmin.wispadmin.config.OLT_SERVICE_BASE_URL
 import org.springframework.http.HttpEntity

@@ -44,6 +44,7 @@ import org.springframework.core.io.ByteArrayResource
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import com.dscorp.wispadmin.wispadmin.tracing.TracingInterceptorHolder
 import org.springframework.stereotype.Service
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.HttpStatusCodeException
@@ -52,11 +53,12 @@ import org.springframework.web.client.RestTemplate
 @Service
 class WhatsAppService(
     private val whatsAppProperties: WhatsAppProperties,
-    tracingInterceptor: com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor,
 ) {
 
     private val log = LoggerFactory.getLogger(this::class.java)
-    private var restTemplate: RestTemplate = RestTemplate().apply { interceptors.add(tracingInterceptor) }
+    private var restTemplate: RestTemplate = RestTemplate().apply {
+        TracingInterceptorHolder.instance?.let { interceptors.add(it) }
+    }
     private val objectMapper = ObjectMapper()
 
     /** Replaces the HTTP client for unit tests backed by MockRestServiceServer. */

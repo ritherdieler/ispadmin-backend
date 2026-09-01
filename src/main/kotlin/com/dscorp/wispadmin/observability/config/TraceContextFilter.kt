@@ -6,6 +6,8 @@ import com.dscorp.wispadmin.observability.tracing.TraceContext
 import com.dscorp.wispadmin.observability.tracing.TraceIds
 import com.dscorp.wispadmin.observability.tracing.TraceParent
 import com.dscorp.wispadmin.observability.tracing.TraceScope
+import com.dscorp.wispadmin.wispadmin.config.CorrelationIdFilter
+import com.dscorp.wispadmin.wispadmin.tracing.TraceContext as HttpTraceContext
 import org.slf4j.MDC
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
@@ -24,11 +26,11 @@ class TraceContextFilter(
 ) : OncePerRequestFilter() {
 
     companion object {
-        const val HEADER_TRACEPARENT = "traceparent"
-        const val HEADER_SESSION = "X-Obs-Session-Id"
-        const val ATTRIBUTE_SESSION = "obsSessionId"
-        const val ATTRIBUTE_TRACE_ID = "obsTraceId"
-        const val MDC_KEY = "traceId"
+        const val HEADER_TRACEPARENT = HttpTraceContext.HEADER_TRACEPARENT
+        const val HEADER_SESSION = HttpTraceContext.HEADER_SESSION
+        const val ATTRIBUTE_SESSION = HttpTraceContext.ATTRIBUTE_SESSION
+        const val ATTRIBUTE_TRACE_ID = HttpTraceContext.ATTRIBUTE_TRACE_ID
+        const val MDC_KEY = HttpTraceContext.MDC_KEY
     }
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {

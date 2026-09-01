@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-import com.dscorp.wispadmin.observability.port.ObservabilityReporter
+import com.dscorp.wispadmin.wispadmin.observability.ObservabilityReporter
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType

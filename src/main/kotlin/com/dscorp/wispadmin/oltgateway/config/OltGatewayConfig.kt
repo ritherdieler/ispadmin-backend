@@ -10,6 +10,7 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.parser.AutofindParser
+import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
 import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
 import com.dscorp.wispadmin.oltgateway.parser.OnuSummaryParser
@@ -43,6 +44,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Profile
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
@@ -50,6 +52,9 @@ import org.springframework.transaction.support.TransactionTemplate
 @EnableConfigurationProperties(OltGatewayProperties::class)
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltGatewayConfig {
+
+    @Bean
+    fun huaweiOltAlarmParser(): HuaweiOltAlarmParser = HuaweiOltAlarmParser()
 
     @Bean
     fun oltGatewayApiKeyFilterRegistration(
@@ -230,6 +235,7 @@ class OltGatewayConfig {
     }
 
     @Bean(destroyMethod = "close")
+    @Profile("!staging")
     @ConditionalOnProperty(prefix = "olt.gateway.snmp.trap", name = ["enabled"], havingValue = "true")
     fun oltSnmpTrapReceiver(
         properties: OltGatewayProperties,

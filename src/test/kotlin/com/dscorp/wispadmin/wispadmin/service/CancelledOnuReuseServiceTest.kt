@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
+import com.dscorp.wispadmin.wispadmin.service.onu.OnuOperationsPort
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
@@ -22,7 +23,7 @@ import java.time.LocalDateTime
 
 class CancelledOnuReuseServiceTest {
 
-    private lateinit var onuService: OnuService
+    private lateinit var onuService: OnuOperationsPort
     private lateinit var subscriptionRepository: SubscriptionRepository
     private lateinit var eventPublisher: org.springframework.context.ApplicationEventPublisher
     private lateinit var service: CancelledOnuReuseService
@@ -50,7 +51,7 @@ class CancelledOnuReuseServiceTest {
 
     @BeforeEach
     fun setUp() {
-        onuService = mock(OnuService::class.java)
+        onuService = mock(OnuOperationsPort::class.java)
         subscriptionRepository = mock(SubscriptionRepository::class.java)
         eventPublisher = mock(org.springframework.context.ApplicationEventPublisher::class.java)
         service = CancelledOnuReuseService(onuService, subscriptionRepository, eventPublisher)

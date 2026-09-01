@@ -61,7 +61,7 @@ class InterfaceTrafficWebSocket(
     @Autowired private val messagingTemplate: SimpMessagingTemplate,
     @Autowired private val networkDeviceRepository: NetworkDeviceRepository,
     @Autowired private val mikrotikConnectionService: MikroTikConnectionService
-) {
+) : WebSocketSessionCleanup {
     private val logger = LoggerFactory.getLogger(InterfaceTrafficWebSocket::class.java)
     
     // Mapa para controlar las tareas programadas por dispositivo
@@ -257,7 +257,7 @@ class InterfaceTrafficWebSocket(
     /**
      * Maneja la desconexión de un usuario
      */
-    fun handleUserDisconnect(sessionId: String) {
+    override fun handleUserDisconnect(sessionId: String) {
         logger.info("🔌 [SESION-$sessionId] Usuario desconectado - Iniciando limpieza")
         
         // Encontrar todos los dispositivos que estaba monitoreando esta sesión

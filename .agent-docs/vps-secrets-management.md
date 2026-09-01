@@ -37,15 +37,15 @@ En `docker-compose.yml`, el servicio `tomcat`:
 env_file:
   - /opt/gigafiber/.env
 environment:
-  SPRING_PROFILES_ACTIVE: prod
-  SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ispadmin?...
   SPRING_DATASOURCE_USERNAME: root
   SPRING_DATASOURCE_PASSWORD: "..."
   APP_RELEASE: ${APP_RELEASE:-}
   CATALINA_OPTS: "..."
 ```
 
-Spring Boot enlaza variables de entorno a propiedades (`NET_DIAG_API_KEY` → `net.diag.api-key`, etc.) según `application-prod.properties`.
+**No** exportar `SPRING_PROFILES_ACTIVE` ni `SPRING_DATASOURCE_URL` a nivel de contenedor: hay dos WAR (`ispadmin.war` perfil `prod` → schema `ispadmin`; `ispadmin-staging.war` perfil `staging` → `ispadmin_staging`). Esas variables ganarían a ambos artefactos. JDBC de prod/staging va **dentro del WAR**. Usuario/clave pueden seguir en `environment`.
+
+Spring Boot enlaza el resto de variables de `.env` a propiedades (`NET_DIAG_API_KEY` → `net.diag.api-key`, etc.). No definir `GIGAFIBER_SCHEDULING_ENABLED` en `.env` (staging lo apaga en `application-staging.properties`). No definir `GIGAFIBER_ENVIRONMENT_TAG` ni `GIGAFIBER_SUBSYSTEMS_*` en `.env` compartido: el tag y los toggles van horneados en el WAR (`application-staging.properties` / `scripts/subsystems.sh`).
 
 **Importante:** si cambias `.env` a mano, hay que **recrear Tomcat** para que el contenedor recargue el `env_file`:
 
@@ -78,6 +78,7 @@ Agrupadas por función; valores **nunca** en este documento.
 | OLT Gateway (SSH) | `OLT_GATEWAY_ENABLED`, `OLT_GATEWAY_API_KEY`, `OLT_GATEWAY_PASSWORD`, `OLT_GATEWAY_HOST`, `OLT_GATEWAY_USERNAME`, … |
 | OLT Gateway SNMP RO | `OLT_GATEWAY_SNMP_ENABLED`, `OLT_GATEWAY_SNMP_RO_COMMUNITY` (secreto), `OLT_GATEWAY_SNMP_PORT`, `OLT_GATEWAY_SNMP_TIMEOUT_MS`, `OLT_GATEWAY_SNMP_RETRIES`, `OLT_GATEWAY_SNMP_MAX_REPETITIONS`, `OLT_GATEWAY_SNMP_ALLOW_SSH_FALLBACK` (inventario SSH deprecado; default false), `OLT_GATEWAY_SNMP_ALLOW_SSH_SIGNAL_FALLBACK` (óptica SSH deprecada; default false), `OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_COLUMNS` (default true; threads de columnas; la red se serializa por OLT según modelo), `OLT_GATEWAY_SNMP_OPTICAL_PER_PORT` (default false; walk por puerto más lento), `OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS` (default 3; solo si PER_PORT), `OLT_GATEWAY_SNMP_OPTICAL_ONLINE_ONLY` (default true; solo si PER_PORT), `OLT_GATEWAY_SNMP_ACQUIRE_TIMEOUT_MS` (default 300000; espera de permit del bus de esa OLT), `OLT_GATEWAY_SNMP_TRAP_ENABLED` (default false; receptor ASN.1 Huawei), `OLT_GATEWAY_SNMP_TRAP_LISTEN_PORT` (default 1162; ≠ NetDiag 1620), `OLT_GATEWAY_SNMP_TRAP_BIND_ADDRESS`, `OLT_GATEWAY_SNMP_TRAP_COMMUNITY` (opcional; secreto si se usa), `OLT_GATEWAY_SNMP_TRAP_BUFFER_SIZE`, `OLT_GATEWAY_SNMP_TRAP_DISPATCHER_THREADS`, `OLT_GATEWAY_SYNC_SIGNAL_INTERVAL_MS` (default 300000 = 5 min) → `olt.gateway.snmp.*` / `olt.gateway.sync.signal-interval-ms`. Capacidad SNMP GET: `OltSnmpModelLimits` / `max_concurrent_snmp_walks` (MA5608T=1). |
 | GenieACS NBI (TR-069 alta fibra) | `GENIEACS_ENABLED`, `GENIEACS_NBI_BASE_URL` (prod típico `http://127.0.0.1:7557`), `GENIEACS_WAIT_TIMEOUT_MS`, `GENIEACS_OFFLINE_WAIT_TIMEOUT_MS`, `GENIEACS_POLL_INTERVAL_MS`, `GENIEACS_TASK_TIMEOUT_MS`, `GENIEACS_CONNECT_TIMEOUT_MS`, `GENIEACS_DEFAULT_DNS`, `GENIEACS_WAN_VLAN_ID`, `GENIEACS_STAGING_WAN_INDEX` (default `1`, WCD TR-069 intocable), `GENIEACS_CLIENT_WAN_INDEX` (default `2`, Internet abonado), `GENIEACS_CLIENT_WAN_NAME_PATTERN` (default `2_INTERNET_R_VID_{vlan}`) → `genieacs.*` en `application-*.properties`. Credenciales ACS/CPE (`ACS_CPE_*`) viven en `/opt/gigafiber/genieacs/.env`, no en Tomcat. |
+| Ambiente / subsistemas WAR | `GIGAFIBER_ENVIRONMENT_TAG` → `gigafiber.environment.tag` (staging `stg`; vacío en prod). `GIGAFIBER_SUBSYSTEMS_OBSERVABILITY_ENABLED`, `GIGAFIBER_SUBSYSTEMS_OLTGATEWAY_ENABLED`, `GIGAFIBER_SUBSYSTEMS_NETDIAG_ENABLED`, `GIGAFIBER_SUBSYSTEMS_TRAFFIC_ENABLED`, `GIGAFIBER_SUBSYSTEMS_SERVICEHEALTH_ENABLED` → `gigafiber.subsystems.<key>.enabled`. No ponerlas en `/opt/gigafiber/.env`: el WAR de staging las hornea. |
 | Diagnóstico 360 / service-health | `SERVICE_HEALTH_ENABLED`, `SERVICE_HEALTH_OPTICAL_ENABLED`, `SERVICE_HEALTH_ACS_ENABLED`, `SERVICE_HEALTH_CORRELATION_ENABLED`, `SERVICE_HEALTH_SHARED_INCIDENTS_ENABLED`, `SERVICE_HEALTH_SHARED_INCIDENT_NOTIFICATIONS_ENABLED`, `SERVICE_HEALTH_ACTIONS_ENABLED`, `SERVICE_HEALTH_CONFIG_ENABLED`, `SERVICE_HEALTH_PILOT_SUBSCRIPTION_IDS`, `SERVICE_HEALTH_PILOT_ACS_DEVICE_IDS`, `SERVICE_HEALTH_STATION_HMAC_KEY` (secreto ≥32 bytes; exigido al activar ACS/acciones; no rotar sin plan de `station_key`), `SERVICE_HEALTH_ACS_GPV_COOLDOWN_SECONDS` (default `900`; cooldown entre GPV WLAN automáticos del watcher) → `service.health.*`. Default todo `false`; allowlist vacía = cero recolección. As-built: `01-implementacion-analitica-consumo-ancho-banda.md` (tráfico) y `03-implementacion-diagnostico-tecnico-convergente.md`. |
 
 Contrato completo de propiedades: `src/main/resources/application-prod.properties`.
@@ -144,8 +145,8 @@ Rotación MySQL: actualizar **compose + `.env` si aplica + `application-prod` le
 
 ## WAR y `application-prod.properties`
 
-- Perfil activo: **`prod`** (`SPRING_PROFILES_ACTIVE`).
-- Pagos Micuentaweb, SmartOLT API key y password MySQL **históricos** pueden seguir en el JAR; el contenedor **sobrescribe JDBC** con variables `SPRING_DATASOURCE_*`.
+- Perfil activo de prod: **`prod`** (horneado en el WAR con `-Pprod-war`). Staging: **`staging`** (`-Pstaging-war`).
+- Pagos Micuentaweb, SmartOLT API key y password MySQL **históricos** pueden seguir en el JAR; el contenedor **no** debe fijar `SPRING_DATASOURCE_URL`.
 - Patrón deseado para features nuevas: **`propiedad=${NOMBRE_ENV:}`** en `application-prod.properties` + valor solo en `/opt/gigafiber/.env`.
 - Firebase prod: `classpath:firebase_service_account_prod.json` (credencial de servicio en el WAR, no en `.env`).
 
@@ -164,12 +165,18 @@ Copiar plantilla: `scripts/deploy.config.example`. **Nunca commitear** `deploy.c
 
 ## Frontends (backoffice, asistencias, observability-web)
 
-- Producción: `.env.production` / variables CI con prefijo **`VITE_`**.
+| Nombre | Entorno | Dónde vive el valor | Enlaza | Rotación / pareja |
+|--------|---------|---------------------|--------|-------------------|
+| `VITE_API_BASE_URL` | prod / build | `.env.production` (local/CI, no secretos) | Axios del backoffice | Prod: `https://api.gigafiberperu.cloud/ispadmin` |
+| `VITE_API_BASE_URL` | staging / build | `.env.staging` | Axios del backoffice | Staging: `https://api.gigafiberperu.cloud/ispadmin-staging` (`npm run build:staging`) |
+| `VITE_MAPBOX_ACCESS_TOKEN` | build | `.env` / `.env.production` | Mapbox GL | Token `pk.` público |
+| `VITE_OBS_API_KEY` | build | `.env.production` | ingest observabilidad | Par con `OBS_API_KEY_BACKOFFICE` |
+| `VITE_NETDIAG_API_KEY` | build | `.env.production` | header NOC | Par con `NET_DIAG_API_KEY` |
+
 - Tras `npm run build`, las claves van **dentro del bundle JS** servido por Nginx (`/var/www/gigafiber/backoffice/`, etc.).
 - `VITE_NETDIAG_API_KEY` debe coincidir con `NET_DIAG_API_KEY` del backend, pero asumir que **cualquier usuario autenticado en NOC puede verla** en DevTools.
-- Claves observabilidad backoffice: `VITE_OBS_API_KEY` → par con `OBS_API_KEY_BACKOFFICE` en el VPS.
 
-Deploy backoffice típico: build local + `rsync` al VPS (ver `.agent-docs/deploy-prod-mapa-gigafiber-2026-07-23.md` en repo backoffice).
+Deploy backoffice típico: build local + `rsync` al VPS. Staging: `npm run build:staging` (no apunta el bundle de prod a `/ispadmin-staging`). Observability-web y asistencias: misma idea en una fase posterior. Runbook: [ambientes-local-staging-prod.md](./ambientes-local-staging-prod.md).
 
 ---
 
@@ -188,7 +195,7 @@ Deploy backoffice típico: build local + `rsync` al VPS (ver `.agent-docs/deploy
 
 1. Añadir o rotar secreto → editar `/opt/gigafiber/.env` (backup `.bak` automático si usas `sed -i.bak`).
 2. `cd /opt/gigafiber && docker compose up -d tomcat`
-3. `./scripts/deploy.sh --war-only` desde Mac (restaura `ispadmin.war`).
+3. `./scripts/deploy.sh --war-only --env prod` desde Mac (restaura `ispadmin.war`; si también hay staging, el script reinyecta ambos WAR tras recrear Tomcat).
 4. Verificar: `curl -s https://api.gigafiberperu.cloud/ispadmin/` → 200; endpoints que usen la clave (NetDiag health, WhatsApp webhook, etc.).
 5. Frontends: si cambió una `VITE_*`, **rebuild + rsync**.
 
@@ -212,4 +219,4 @@ Deploy backoffice típico: build local + `rsync` al VPS (ver `.agent-docs/deploy
 - [netdiag-fase1.md](./netdiag-fase1.md) — `NET_DIAG_*`
 - [vps-mysql-access.md](./vps-mysql-access.md) — acceso BD
 
-Última revisión operativa: 2026-08-01 (NetDiag + OLT gateway en `.env`, Tomcat `env_file`).
+Última revisión operativa: 2026-08-31 (dos WAR en el mismo Tomcat; JDBC/perfil por artefacto, no por compose).

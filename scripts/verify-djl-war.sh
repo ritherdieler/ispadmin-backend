@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAR="$PROJECT_DIR/target/ispadmin.war"
+WAR="${VERIFY_WAR:-$PROJECT_DIR/target/ispadmin.war}"
 TOMCAT_LIB="$PROJECT_DIR/target/tomcat-lib"
 
 fail() {

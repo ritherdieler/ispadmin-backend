@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-import com.dscorp.wispadmin.observability.tracing.TracingClientHttpRequestInterceptor
 import com.dscorp.wispadmin.wispadmin.config.WhatsAppProperties
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppOutboundMediaKind
 import io.mockk.mockk
@@ -38,7 +37,6 @@ class WhatsAppServiceSendMediaTest {
         server = MockRestServiceServer.createServer(restTemplate)
         service = WhatsAppService(
             whatsAppProperties = properties,
-            tracingInterceptor = mockk(relaxed = true),
         )
         service.useRestTemplate(restTemplate)
     }

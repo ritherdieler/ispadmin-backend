@@ -8,15 +8,21 @@ CONFIG_EXAMPLE="$SCRIPT_DIR/deploy.config.example"
 
 MODE="deploy"
 SKIP_BUILD=0
+DEPLOY_ENV=""
+WITH_SUBSYSTEMS=""
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy]
+Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|staging] [--with key,key]
 
   --setup     Upload DJL libs, patch Docker image/compose, rebuild Tomcat (once)
   --full      --setup then deploy WAR
-  --war-only  Deploy existing target/ispadmin.war only
+  --war-only  Deploy existing target WAR only
   --deploy    Build, verify, deploy WAR (default)
+  --env       prod (default): ispadmin.war → /ispadmin
+              staging: ispadmin-staging.war → /ispadmin-staging (does not touch ispadmin.war)
+  --with      Optional subsystems to keep in the staging WAR (observability,oltgateway,netdiag,traffic,servicehealth).
+              Default staging: none.
 
 Environment:
   DEPLOY_SSH_PASSWORD   Optional; if omitted and no SSH key works, password is prompted once
@@ -32,6 +38,19 @@ while [[ $# -gt 0 ]]; do
     --full) MODE="full"; shift ;;
     --war-only) MODE="war-only"; SKIP_BUILD=1; shift ;;
     --deploy) MODE="deploy"; shift ;;
+    --env)
+      DEPLOY_ENV="${2:-}"
+      if [[ "$DEPLOY_ENV" != "prod" && "$DEPLOY_ENV" != "staging" ]]; then
+        echo "Invalid --env (use prod or staging)" >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
+    --with)
+      WITH_SUBSYSTEMS="${2:-}"
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -67,6 +86,16 @@ DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-}"
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/opt/gigafiber/.env}"
 OBS_BASE_URL="${OBS_BASE_URL:-}"
 OBS_API_KEY="${OBS_API_KEY:-}"
+
+DEPLOY_ENV="${DEPLOY_ENV:-prod}"
+if [[ "$DEPLOY_ENV" == "staging" ]]; then
+  WAR_NAME="ispadmin-staging.war"
+  APP_CONTEXT_PATH="/ispadmin-staging"
+  MAVEN_WAR_PROFILE="staging-war"
+else
+  APP_CONTEXT_PATH="/ispadmin"
+  MAVEN_WAR_PROFILE="prod-war"
+fi
 
 if [[ -z "$VPS_HOST" ]]; then
   echo "VPS_HOST is required in deploy.config.local" >&2
@@ -158,7 +187,7 @@ run_scp() {
 }
 
 # WAR (~250 MB, already compressed): rsync -W skips delta, no -z (recompressing a zip is slower).
-# Destination is DOCKER_COMPOSE_DIR — /tmp/ispadmin.war is not writable and scp cannot resume.
+# Destination is DOCKER_COMPOSE_DIR — /tmp is not writable and scp cannot resume.
 run_rsync() {
   if ! command -v rsync >/dev/null 2>&1; then
     echo "rsync is required to upload the WAR (brew install rsync)" >&2
@@ -179,9 +208,21 @@ build_war() {
       exit 1
     fi
   done
-  echo "Building WAR for Linux x86_64..."
-  (cd "$PROJECT_DIR" && sh mvnw clean package -DskipTests -Ddjl.linux)
-  bash "$SCRIPT_DIR/verify-djl-war.sh"
+  echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
+  local maven_args=(clean package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    mkdir -p "$PROJECT_DIR/target"
+    bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
+    local excludes
+    excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
+    maven_args+=("-Dsubsystem.excludes=$excludes")
+    maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
+  fi
+  (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
+  VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
+  fi
 }
 
 upload_tomcat_lib() {
@@ -308,11 +349,154 @@ wait_for_tomcat() {
   return 1
 }
 
+restore_host_wars() {
+  echo "Restoring WARs from $DOCKER_COMPOSE_DIR into Tomcat webapps..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+CONTAINER='$DOCKER_TOMCAT_CONTAINER'
+CATALINA='$CATALINA_HOME'
+HOST_DIR='$DOCKER_COMPOSE_DIR'
+for war in ispadmin.war ispadmin-staging.war; do
+  if [[ -f "\$HOST_DIR/\$war" ]]; then
+    docker cp "\$HOST_DIR/\$war" "\$CONTAINER:\$CATALINA/webapps/\$war"
+    echo "Restored \$war"
+  fi
+done
+EOF
+}
+
+ensure_war_profile_isolation() {
+  echo "Removing shared SPRING_PROFILES_ACTIVE / SPRING_DATASOURCE_URL so each WAR uses its baked profile..."
+  local changed
+  changed="$(run_ssh "bash -s" <<EOF
+set -euo pipefail
+COMPOSE='$DOCKER_COMPOSE_FILE'
+ENV_FILE='$BACKEND_ENV_FILE'
+python3 - <<'PY'
+from pathlib import Path
+
+drop = {"SPRING_PROFILES_ACTIVE", "SPRING_DATASOURCE_URL"}
+changed = False
+
+compose_path = Path("$DOCKER_COMPOSE_FILE")
+lines = compose_path.read_text().splitlines()
+out = []
+in_tomcat = False
+in_environment = False
+for line in lines:
+    if line.rstrip() == "  tomcat:":
+        in_tomcat = True
+        in_environment = False
+        out.append(line)
+        continue
+    if in_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
+        in_tomcat = False
+        in_environment = False
+    if in_tomcat and line.strip() == "environment:":
+        in_environment = True
+        out.append(line)
+        continue
+    if in_tomcat and in_environment:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            key = stripped.split(":", 1)[0].split("=", 1)[0].strip()
+            if key in drop:
+                changed = True
+                continue
+    out.append(line)
+if changed:
+    compose_path.write_text("\\n".join(out) + "\\n")
+
+env_path = Path("$BACKEND_ENV_FILE")
+if env_path.exists():
+    env_lines = env_path.read_text().splitlines()
+    kept = []
+    env_changed = False
+    for line in env_lines:
+        key = line.split("=", 1)[0].strip()
+        if key in drop:
+            env_changed = True
+            continue
+        kept.append(line)
+    if env_changed:
+        env_path.write_text("\\n".join(kept) + ("\\n" if kept else ""))
+        changed = True
+
+print("1" if changed else "0")
+PY
+EOF
+)"
+  changed="$(printf '%s' "$changed" | tail -n 1)"
+  if [[ "$changed" == "1" ]]; then
+    echo "Tomcat Spring overrides removed; recreating container..."
+    run_ssh "cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat"
+    wait_for_tomcat
+    restore_host_wars
+  else
+    echo "Tomcat already isolates JDBC/profile per WAR"
+  fi
+}
+
+prepare_prod_war_on_host_if_splitting() {
+  if [[ "$DEPLOY_ENV" != "staging" ]]; then
+    return 0
+  fi
+  local pinned
+  pinned="$(run_ssh "grep -c 'SPRING_PROFILES_ACTIVE' '$DOCKER_COMPOSE_FILE' || true")"
+  pinned="$(printf '%s' "$pinned" | tail -n 1)"
+  if [[ "$pinned" == "0" || -z "$pinned" ]]; then
+    return 0
+  fi
+  echo "Compose still pins SPRING_PROFILES_ACTIVE; baking ispadmin.war (prod) onto the host before the split..."
+  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -Pprod-war)
+  VERIFY_WAR="$PROJECT_DIR/target/ispadmin.war" bash "$SCRIPT_DIR/verify-djl-war.sh"
+  run_rsync "$PROJECT_DIR/target/ispadmin.war" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/ispadmin.war"
+}
+
+sync_war_to_host() {
+  if [[ -f "$WAR_PATH" ]]; then
+    echo "Staging $WAR_NAME on VPS host before any Tomcat recreate..."
+    run_rsync "$WAR_PATH" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/$WAR_NAME"
+  fi
+}
+
+ensure_nginx_staging() {
+  echo "Ensuring nginx location /ispadmin-staging/ ..."
+  local snippet
+  snippet="$(cat "$SCRIPT_DIR/nginx-ispadmin-staging.location.conf")"
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+CONF='/etc/nginx/sites-enabled/api.gigafiberperu.cloud.conf'
+if grep -q 'location /ispadmin-staging/' "\$CONF"; then
+  echo "nginx already has /ispadmin-staging/"
+  exit 0
+fi
+python3 - <<'PY'
+from pathlib import Path
+conf = Path("/etc/nginx/sites-enabled/api.gigafiberperu.cloud.conf")
+text = conf.read_text()
+snippet = """$snippet"""
+marker = "    location /ispadmin/ws {"
+idx = text.find(marker)
+if idx == -1:
+    raise SystemExit("Could not find location /ispadmin/ws in nginx conf")
+end = text.find("    location / {", idx)
+if end == -1:
+    raise SystemExit("Could not find location / after websocket block")
+conf.write_text(text[:end] + snippet.rstrip() + "\\n\\n" + text[end:])
+print("Inserted /ispadmin-staging/ nginx locations")
+PY
+nginx -t
+nginx -s reload
+echo "nginx reloaded"
+EOF
+}
+
 wait_for_app() {
-  echo "Waiting for $WAR_NAME to deploy at /ispadmin/ ..."
+  echo "Waiting for $WAR_NAME to deploy at $APP_CONTEXT_PATH/ ..."
   local i code
-  for i in $(seq 1 60); do
-    code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ispadmin/ 2>/dev/null || true")"
+  for i in $(seq 1 90); do
+    code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080${APP_CONTEXT_PATH}/ 2>/dev/null || true")"
     if [[ "$code" == "200" || "$code" == "302" ]]; then
       echo "Application is responding (HTTP $code)"
       return 0
@@ -341,6 +525,7 @@ CATALINA='$CATALINA_HOME'
 WAR='$WAR_NAME'
 REMOTE_WAR='$remote_war'
 EXPECTED_BYTES='$war_bytes'
+CONTEXT_DIR='${WAR_NAME%.war}'
 
 remote_bytes="\$(wc -c < "\$REMOTE_WAR" | tr -d ' ')"
 if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
@@ -348,7 +533,7 @@ if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
   exit 1
 fi
 
-docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/ispadmin \$CATALINA/webapps/\$WAR"
+docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/\$CONTEXT_DIR \$CATALINA/webapps/\$WAR"
 docker cp "\$REMOTE_WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
 
 container_bytes="\$(docker exec "\$CONTAINER" sh -c "wc -c < \$CATALINA/webapps/\$WAR" | tr -d ' ')"
@@ -376,8 +561,8 @@ verify_djl_logs() {
 
 verify_http() {
   local code
-  code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ispadmin/ || true")"
-  echo "GET /ispadmin/ -> HTTP $code"
+  code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080${APP_CONTEXT_PATH}/ || true")"
+  echo "GET ${APP_CONTEXT_PATH}/ -> HTTP $code"
   [[ "$code" == "200" || "$code" == "302" ]]
 }
 
@@ -397,7 +582,7 @@ load_release_version() {
   # shellcheck source=/dev/null
   source "$SCRIPT_DIR/version.sh"
   echo "Release version: $RELEASE_VERSION"
-  if [[ "${RELEASE_DIRTY:-0}" == "1" ]]; then
+  if [[ "${DEPLOY_ENV}" == "prod" && "${RELEASE_DIRTY:-0}" == "1" ]]; then
     echo "ERROR: hay cambios sin commitear; el SHA ($RELEASE_SHA) no representa el código a desplegar." >&2
     echo "Haz commit (y crea un tag nuevo si corresponde) antes de desplegar para no repetir versión." >&2
     exit 1
@@ -405,6 +590,10 @@ load_release_version() {
 }
 
 check_version_not_registered() {
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    echo "Staging: skip observability release duplicate check"
+    return 0
+  fi
   if [[ -z "$OBS_BASE_URL" || -z "$OBS_API_KEY" ]]; then
     echo "WARNING: OBS_BASE_URL/OBS_API_KEY sin definir; no se puede verificar duplicado de versión" >&2
     return 0
@@ -426,10 +615,15 @@ check_version_not_registered() {
 }
 
 update_release_env() {
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    echo "Staging: skip APP_RELEASE (shared Tomcat env_file belongs to prod)"
+    return 0
+  fi
   echo "Ensuring APP_RELEASE=$RELEASE_VERSION in $BACKEND_ENV_FILE ..."
   local mapbox_token="${MAPBOX_ACCESS_TOKEN:-}"
   local genieacs_log_curl="${DEPLOY_GENIEACS_LOG_CURL:-}"
-  run_ssh "bash -s" <<EOF
+  local release_out
+  release_out="$(run_ssh "bash -s" <<EOF
 set -euo pipefail
 ENV_FILE='$BACKEND_ENV_FILE'
 VALUE='$RELEASE_VERSION'
@@ -496,13 +690,24 @@ fi
 if [[ "\$changed" -eq 1 ]]; then
   echo "Recreando Tomcat para cargar variables de entorno..."
   cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat
+  echo "RESTORE_WARS"
 else
   echo "Variables de entorno sin cambios"
 fi
 EOF
+)"
+  printf '%s\n' "$release_out"
+  if printf '%s' "$release_out" | grep -q RESTORE_WARS; then
+    wait_for_tomcat
+    restore_host_wars
+  fi
 }
 
 register_deploy() {
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    echo "Staging: skip observability deploy event"
+    return 0
+  fi
   if [[ -z "$OBS_BASE_URL" || -z "$OBS_API_KEY" ]]; then
     echo "WARNING: OBS_BASE_URL/OBS_API_KEY sin definir; se omite el registro del deploy" >&2
     return 0
@@ -530,6 +735,10 @@ case "$MODE" in
     load_release_version
     check_version_not_registered
     setup_djl
+    prepare_prod_war_on_host_if_splitting
+    sync_war_to_host
+    ensure_war_profile_isolation
+    ensure_nginx_staging
     update_release_env
     deploy_war
     wait_for_app
@@ -541,6 +750,10 @@ case "$MODE" in
     load_release_version
     check_version_not_registered
     init_ssh
+    prepare_prod_war_on_host_if_splitting
+    sync_war_to_host
+    ensure_war_profile_isolation
+    ensure_nginx_staging
     update_release_env
     deploy_war
     wait_for_app
@@ -552,6 +765,10 @@ case "$MODE" in
     check_version_not_registered
     build_war
     init_ssh
+    prepare_prod_war_on_host_if_splitting
+    sync_war_to_host
+    ensure_war_profile_isolation
+    ensure_nginx_staging
     update_release_env
     deploy_war
     wait_for_app

@@ -141,6 +141,34 @@ class SimpleQueueProvisionerTest {
     }
 
     @Test
+    fun `does not reclaim a queue that belongs to another environment`() {
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.213/32")) } returns listOf(
+            mapOf("name" to "[stg] id:2291, usuario:Sergio Carrillo", "target" to "192.168.30.213/32")
+        )
+
+        val result = provisioner.ensureQueue(subscription, device, plan)
+
+        assertFalse(result.added)
+        assertTrue(result.error!!.contains("stg"))
+        verify(exactly = 0) { session.add(any(), any()) }
+        verify(exactly = 0) { queueManager.recreateQueueForSubscription(any(), any()) }
+    }
+
+    @Test
+    fun `treats own tagged queue as idempotent success`() {
+        provisioner = SimpleQueueProvisioner(queueManager, subscriptionRepository, "stg")
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.213/32")) } returns listOf(
+            mapOf("name" to "[stg] id:2291, usuario:Sergio Carrillo", "target" to "192.168.30.213/32")
+        )
+
+        val result = provisioner.ensureQueue(subscription, device, plan)
+
+        assertTrue(result.added)
+        verify(exactly = 0) { session.add(any(), any()) }
+        verify(exactly = 0) { queueManager.recreateQueueForSubscription(any(), any()) }
+    }
+
+    @Test
     fun `does not throw when MikroTik handshake fails`() {
         every { any<NetworkDevice>().executeCommand(any()) } throws MikrotikCommandException(
             "rest PUT /rest/queue/simple: Remote host terminated the handshake"

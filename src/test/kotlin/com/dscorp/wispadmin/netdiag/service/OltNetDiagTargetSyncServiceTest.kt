@@ -2,9 +2,10 @@ package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
-import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptor
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltInventoryPort
+import com.dscorp.wispadmin.netdiag.port.NetDiagPonOnu
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -13,23 +14,32 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicLong
 
 class OltNetDiagTargetSyncServiceTest {
 
     private val targetRepository = mockk<NetDiagTargetRepository>()
-    private val oltRepository = mockk<OltMgrOltRepository>()
     private val objectMapper = ObjectMapper()
-    private val properties = OltGatewayProperties().apply {
-        oltId = "gigafiber-ma5608t"
-        host = "10.11.104.2"
-        inventory.defaultPortsPerGponBoard = 16
+    private val inventory = object : NetDiagOltInventoryPort {
+        var oltPk: Long? = 9L
+        override fun findOltId(name: String): Long? = if (name == "gigafiber-ma5608t") oltPk else null
+        override fun listOnusOnPon(oltName: String, board: Int, port: Int): List<NetDiagPonOnu> = emptyList()
+        override fun findOnu(oltName: String, board: Int, port: Int, onuIndex: Int): NetDiagPonOnu? = null
+    }
+    private val descriptor = object : NetDiagOltDescriptorPort {
+        override fun descriptor() = NetDiagOltDescriptor(
+            oltId = "gigafiber-ma5608t",
+            host = "10.11.104.2",
+            alarmPollEnabled = true,
+            portsPerGponBoard = 16
+        )
     }
     private val service = OltNetDiagTargetSyncService(
         targetRepository = targetRepository,
-        oltRepository = oltRepository,
-        oltGatewayProperties = properties,
+        inventoryProvider = availableProvider(inventory),
+        descriptorProvider = availableProvider(descriptor),
         objectMapper = objectMapper
     )
     private val idSeq = AtomicLong(1)
@@ -38,6 +48,7 @@ class OltNetDiagTargetSyncServiceTest {
     @BeforeEach
     fun setup() {
         saved.clear()
+        inventory.oltPk = 9L
         every { targetRepository.findByName(any()) } returns Optional.empty()
         every { targetRepository.save(any()) } answers {
             firstArg<NetDiagTarget>().also {
@@ -49,9 +60,6 @@ class OltNetDiagTargetSyncServiceTest {
 
     @Test
     fun `crea target OLT y 32 targets PON con parent y monitor_config`() {
-        val olt = OltMgrOlt(id = 9L, name = "gigafiber-ma5608t", ipAddress = "10.11.104.2")
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
-
         val result = service.sync()
 
         assertEquals(33, result.upserted)
@@ -78,8 +86,6 @@ class OltNetDiagTargetSyncServiceTest {
 
     @Test
     fun `actualiza target OLT existente sin duplicar`() {
-        val olt = OltMgrOlt(id = 9L, name = "gigafiber-ma5608t", ipAddress = "10.11.104.2")
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         val existing = NetDiagTarget(
             id = 42L,
             name = "OLT-gigafiber-ma5608t",
@@ -102,11 +108,38 @@ class OltNetDiagTargetSyncServiceTest {
 
     @Test
     fun `no hace nada si la OLT no esta seed`() {
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.empty()
+        inventory.oltPk = null
 
         val result = service.sync()
 
         assertEquals(0, result.upserted)
         verify(exactly = 0) { targetRepository.save(any()) }
+    }
+
+    @Test
+    fun `no hace nada si oltgateway no esta presente`() {
+        val isolated = OltNetDiagTargetSyncService(
+            targetRepository = targetRepository,
+            inventoryProvider = emptyProvider(),
+            descriptorProvider = emptyProvider(),
+            objectMapper = objectMapper
+        )
+
+        val result = isolated.sync()
+
+        assertEquals(0, result.upserted)
+        verify(exactly = 0) { targetRepository.save(any()) }
+    }
+
+    private fun <T : Any> availableProvider(value: T): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns value
+        return provider
+    }
+
+    private fun <T : Any> emptyProvider(): ObjectProvider<T> {
+        val provider = mockk<ObjectProvider<T>>()
+        every { provider.ifAvailable } returns null
+        return provider
     }
 }

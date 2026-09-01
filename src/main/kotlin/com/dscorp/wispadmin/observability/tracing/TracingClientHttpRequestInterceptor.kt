@@ -8,6 +8,7 @@ import org.springframework.http.HttpRequest
 import org.springframework.http.client.ClientHttpRequestExecution
 import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.http.client.ClientHttpResponse
+import com.dscorp.wispadmin.wispadmin.tracing.TracingInterceptorHolder
 import org.springframework.stereotype.Component
 
 @Component
@@ -69,10 +70,6 @@ class TracingClientHttpRequestInterceptor(
     }
 }
 
-object TracingInterceptorHolder {
-    @Volatile
-    var instance: ClientHttpRequestInterceptor? = null
-}
 
 @Component
 class TracingInterceptorRegistrar(
