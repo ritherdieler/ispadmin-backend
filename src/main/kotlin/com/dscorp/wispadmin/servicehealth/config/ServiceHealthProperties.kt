@@ -30,10 +30,14 @@ class ServiceHealthProperties {
     var opticalRetentionDays = 90L
     var countRetentionDays = 90L
     var stationRetentionDays = 14L
+    var stationHourlyRetentionDays = 90L
+    var stationSeriesRawMaxDays = 7L
     var runRetentionDays = 30L
     var eventRetentionDays = 180L
     var actionCooldownSeconds = 600L
-    var acsGpvCooldownSeconds = 900L
+    var acsGpvCooldownSeconds = 1800L
+    var acsWifiSampleTargetSeconds = 1800L
+    fun wifiSampleFreshSeconds() = acsWifiSampleTargetSeconds.coerceAtLeast(1) * 2
     var crConcurrency = 3
     fun collects(id: Int?, lab: Boolean = false, environmentTag: String = ""): Boolean {
         if (!enabled || id == null) return false

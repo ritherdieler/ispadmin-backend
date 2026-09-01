@@ -5,7 +5,9 @@ import com.dscorp.wispadmin.wispadmin.config.SubsystemScanFilter
 import com.dscorp.wispadmin.wispadmin.util.AppTimeZone
 import com.dscorp.wispadmin.wispadmin.util.DjlNativeBootstrap
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.autoconfigure.AutoConfigurationExcludeFilter
 import org.springframework.boot.builder.SpringApplicationBuilder
+import org.springframework.boot.context.TypeExcludeFilter
 import org.springframework.boot.runApplication
 import org.springframework.boot.web.servlet.support.SpringBootServletInitializer
 import org.springframework.context.annotation.ComponentScan
@@ -27,6 +29,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
         "com.dscorp.wispadmin.servicehealth"
     ],
     excludeFilters = [
+        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [TypeExcludeFilter::class]),
+        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [AutoConfigurationExcludeFilter::class]),
         ComponentScan.Filter(type = FilterType.CUSTOM, classes = [SubsystemScanFilter::class])
     ]
 )

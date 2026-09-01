@@ -48,6 +48,7 @@ class WifiStationSample(
     @Id @GeneratedValue(strategy=GenerationType.IDENTITY) @Column(name="id") var id: Long? = null,
     @Column(name="count_sample_id") var countSampleId: Long = 0, @Column(name="subscription_id") var subscriptionId: Int = 0,
     @Column(name="station_key", length=64) var stationKey: String = "", @Column(name="band", length=8) var band: String = "",
+    @Column(name="display_name", length=64) var displayName: String? = null,
     @Column(name="observed_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var observedAt: Instant = Instant.now(), @Column(name="collected_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var collectedAt: Instant = Instant.now(),
     @Column(name="rssi") var rssi: Double? = null, @Column(name="snr") var snr: Double? = null, @Column(name="noise") var noise: Double? = null,
     @Column(name="rx_rate") var rxRate: Double? = null, @Column(name="tx_rate") var txRate: Double? = null, @Column(name="packets_tx") var packetsTx: Long? = null, @Column(name="packets_rx") var packetsRx: Long? = null,
@@ -168,4 +169,29 @@ class RemoteAction(
     // Store only HMAC of requested values, never credentials or payloads.
     @Column(name="request_digest", length=64) var requestDigest: String = "",
     @Column(name="confirmation_json", columnDefinition="TEXT") var confirmationJson: String? = null
+)
+
+@Entity
+@Table(name="acs_wifi_station_hourly", uniqueConstraints=[UniqueConstraint(name="uk_sh_station_hourly",columnNames=["subscription_id","station_key","band","bucket_start"])], indexes=[Index(name="idx_sh_station_hourly_sub_time",columnList="subscription_id,bucket_start")])
+class WifiStationHourly(
+    @Id @GeneratedValue(strategy=GenerationType.IDENTITY) @Column(name="id") var id: Long? = null,
+    @Column(name="subscription_id") var subscriptionId: Int = 0,
+    @Column(name="station_key", length=64) var stationKey: String = "",
+    @Column(name="band", length=8) var band: String = "",
+    @Column(name="bucket_start") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var bucketStart: Instant = Instant.now(),
+    @Column(name="rssi_min") var rssiMin: Double? = null,
+    @Column(name="rssi_avg") var rssiAvg: Double? = null,
+    @Column(name="rssi_max") var rssiMax: Double? = null,
+    @Column(name="snr_min") var snrMin: Double? = null,
+    @Column(name="snr_avg") var snrAvg: Double? = null,
+    @Column(name="sample_count") var sampleCount: Int = 0,
+    @Column(name="display_name", length=64) var displayName: String? = null
+)
+
+@Entity
+@Table(name="acs_wifi_aggregation_watermark")
+class WifiAggregationWatermark(
+    @Id @Column(name="layer", length=32) var layer: String = "",
+    @Column(name="consolidated_through") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var consolidatedThrough: Instant? = null,
+    @Column(name="updated_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var updatedAt: Instant = Instant.now()
 )

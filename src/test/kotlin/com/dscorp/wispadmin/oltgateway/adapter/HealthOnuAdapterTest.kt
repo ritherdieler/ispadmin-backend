@@ -34,6 +34,29 @@ class HealthOnuAdapterTest {
     }
 
     @Test
+    fun `findBySn resolves Genie serial to VSOL inventory via hex suffix`() {
+        val vsol = OltMgrOnu(id = 7627L, sn = "VSOL0031C0B6", externalId = "ext-vsol", olt = olt, board = 1, port = 6, onuIndex = 10)
+        every { onus.findBySnIgnoreCaseAndDeletedAtIsNull("12345B4641531C0B6") } returns Optional.empty()
+        every { onus.findBySnIgnoreCaseAndDeletedAtIsNull("12345B4641531C0B6".uppercase()) } returns Optional.empty()
+        every { onus.findBySnSuffixIgnoreCaseAndDeletedAtIsNull("31C0B6") } returns listOf(vsol)
+
+        val ref = adapter.findBySn("12345B4641531C0B6")
+
+        assertEquals(7627L, ref?.id)
+        assertEquals("VSOL0031C0B6", ref?.sn)
+        assertEquals(1, ref?.board)
+        assertEquals(6, ref?.port)
+    }
+
+    @Test
+    fun `findBySn suffix ambiguity degrades to null`() {
+        every { onus.findBySnIgnoreCaseAndDeletedAtIsNull("12345B4641531C0B6") } returns Optional.empty()
+        every { onus.findBySnSuffixIgnoreCaseAndDeletedAtIsNull("31C0B6") } returns listOf(onu, onu)
+
+        assertNull(adapter.findBySn("12345B4641531C0B6"))
+    }
+
+    @Test
     fun `missing onu degrades to null`() {
         every { onus.findByExternalIdAndDeletedAtIsNull("missing") } returns Optional.empty()
         assertNull(adapter.findByExternalId("missing"))

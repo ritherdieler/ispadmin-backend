@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.servicehealth.controller
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.domain.Quality
+import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository
@@ -24,8 +25,10 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     private val engine: DiagnosisEngine,private val properties: ServiceHealthProperties,
     private val acs: SubscriptionAcsRepository,private val optical: OpticalSampleRepository,
     private val counts: WifiCountSampleRepository,private val stations: WifiStationSampleRepository,
+    private val hourlies: WifiStationHourlyRepository,
     private val events: HealthEventRepository,private val actions: RemoteActionRepository,
     private val remote: RemoteActionService,private val identity: IdentityService,
+    private val subscriptionContext: ServiceHealthSubscriptionContextReader,
     private val conflicts: IdentityConflictRepository,private val affected: IncidentSubscriptionRepository,
     private val onuPort: ObjectProvider<HealthOnuPort>,private val json: ObjectMapper) {
 
@@ -52,10 +55,34 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     fun summary(@PathVariable id: Int,request: HttpServletRequest): HealthSummary {
         access.require(request)
         val summary=engine.evaluate(reader.read(id))
+        val context=subscriptionContext.read(id)
         val open=events.findBySubscriptionIdAndEventStatus(id,"OPEN")
-        return summary.copy(diagnoses=summary.diagnoses.map { d ->
+        return summary.copy(actionPolicy=actionPolicy(summary), subscriber=context.subscriber,
+            serviceContext=context.serviceContext, diagnoses=summary.diagnoses.map { d ->
             d.copy(suppressingIncidentId=open.firstOrNull { it.diagnosisCode==d.diagnosisCode }?.suppressingIncidentId)
         })
+    }
+
+    private fun actionPolicy(summary: HealthSummary): Map<String, ActionPolicy> {
+        val now = Instant.now()
+        val sn = summary.identity["ONU"] as? String
+        val deviceKey = sn?.let { "ONU:${it.uppercase()}" }
+        fun policy(enabled: Boolean, reason: String?, aliases: Collection<String>): ActionPolicy {
+            val previous = deviceKey?.let { actions.findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(it, aliases) }
+            val until = previous?.createdAt?.plusSeconds(properties.actionCooldownSeconds)
+            val blocked = until?.isAfter(now) == true
+            return ActionPolicy(enabled && !blocked, when {
+                !enabled -> reason
+                blocked -> "Espere hasta ${until} para solicitar otra lectura"
+                else -> null
+            }, previous?.createdAt, until)
+        }
+        return mapOf(
+            "wifi" to policy(summary.actionsEnabled && summary.identity["ACS"] != null,
+                "Acción Wi-Fi no disponible: falta habilitación o vínculo ACS", listOf("WIFI_REFRESH", "CONFIG", "REBOOT_ACS")),
+            "optical" to policy(summary.actionsEnabled && properties.opticalEnabled && sn != null,
+                "Acción óptica no disponible: falta habilitación o vínculo ONU", listOf("OPTICAL_REFRESH"))
+        )
     }
 
     @GetMapping("/subscription/{id}/service-health/series")
@@ -66,15 +93,18 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     }
     private fun seriesData(id: Int,from: Instant,to: Instant): Map<String,Any> = mapOf(
         "optical" to optical.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
-            "id" to s.id,"observed_at" to s.observedAt,"collected_at" to s.collectedAt,"onu_id" to s.onuId,
+            "id" to s.id,"observed_at" to UtcInstantText.formatApi(s.observedAt),"collected_at" to UtcInstantText.formatApi(s.collectedAt),"onu_id" to s.onuId,
             "onu_sn" to s.onuSn,"olt_id" to s.oltId,"board" to s.board,"port" to s.port,
             "onu_rx_dbm" to s.onuRxDbm,"onu_tx_dbm" to s.onuTxDbm,"olt_rx_dbm" to s.oltRxDbm,
             "temperature_c" to s.temperatureC,"distance_m" to s.distanceM,"bias_ma" to s.biasMa,"voltage_v" to s.voltageV,"quality_status" to s.qualityStatus) },
         "wifi_counts" to counts.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
-            "id" to s.id,"observed_at" to s.observedAt,"associated_device_count" to s.associatedDeviceCount,
+            "id" to s.id,"observed_at" to s.observedAt?.let(UtcInstantText::formatApi),"associated_device_count" to s.associatedDeviceCount,
             "associated_2g" to s.associated2g,"associated_5g" to s.associated5g,"lan_device_count" to s.lanDeviceCount,"quality_status" to s.qualityStatus) },
-        "wifi_signal" to stations.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
-            "reading_id" to s.countSampleId,"observed_at" to s.observedAt,"band" to s.band,"rssi" to s.rssi,"snr" to s.snr,"quality_status" to s.qualityStatus) }
+        "wifi_signal" to if (WifiSignalSeries.useHourly(from,to,properties.stationSeriesRawMaxDays))
+            hourlies.listBySubscriptionInUtcWindow(id,from,to).map(WifiSignalSeries::mapHourly)
+        else
+            stations.listBySubscriptionInUtcWindow(id,from,to).map(WifiSignalSeries::mapRaw),
+        "wifi_signal_resolution" to if (WifiSignalSeries.useHourly(from,to,properties.stationSeriesRawMaxDays)) "hourly" else "raw"
     )
 
     @GetMapping("/subscription/{id}/service-health/timeline")
@@ -116,6 +146,12 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     fun refresh(@PathVariable id: Int,request: HttpServletRequest): ResponseEntity<ActionResult> {
         val actor=access.require(request); val result=remote.refresh(id,actor,access.confirmation(request))
         return ResponseEntity.status(if(result.status in setOf("PENDING","RUNNING")) 202 else 200).body(result)
+    }
+    @PostMapping("/subscription/{id}/service-health/optical-refresh")
+    fun refreshOptical(@PathVariable id: Int, request: HttpServletRequest): ResponseEntity<ActionResult> {
+        val actor = access.require(request)
+        val result = remote.refreshOptical(id, actor, access.confirmation(request))
+        return ResponseEntity.status(if (result.status in setOf("PENDING", "RUNNING")) 202 else 200).body(result)
     }
     @PutMapping("/subscription/{id}/cpe-config")
     fun configure(@PathVariable id: Int,@RequestBody config: CpeConfiguration,request: HttpServletRequest): ResponseEntity<ActionResult> {

@@ -24,7 +24,6 @@ import org.springframework.context.annotation.*
 @MockBean(classes=[SubscriptionRepository::class,SubscriptionAcsRepository::class,
     GenieAcsClient::class,ObservabilitySessionTokenService::class])
 class HealthWiringTest {
-    @Configuration
     @Import(HealthPersistenceTest.Config::class)
     @ComponentScan(basePackages=["com.dscorp.wispadmin.servicehealth"],excludeFilters=[ComponentScan.Filter(type=FilterType.REGEX,pattern=[".*Test.*"])])
     class Config {

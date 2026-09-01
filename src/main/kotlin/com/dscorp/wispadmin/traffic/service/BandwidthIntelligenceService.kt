@@ -31,9 +31,24 @@ open class BandwidthIntelligenceService(
     private data class MetricRow(val subscriptionId: Int, val bucket: LocalDateTime, val rx: Long, val tx: Long, val avgDown: Double, val avgUp: Double, val p95Down: Double, val p95Up: Double, val coverage: Double)
 
     @Transactional(readOnly = true)
-    open fun overview(from: LocalDateTime, to: LocalDateTime, resolution: String, routerId: Int?, planId: Int?): BandwidthOverviewDto {
+    open fun network(from: LocalDateTime, to: LocalDateTime, resolution: String, routerId: Int?, planId: Int?): BandwidthNetworkDto {
         val effective = effectiveResolution(from, to, resolution, network = true)
         val series = networkSeries(from, to, effective, routerId, planId)
+        return BandwidthNetworkDto(series = series, overview = overviewFromSeries(from, to, effective, series, routerId, planId))
+    }
+
+    @Transactional(readOnly = true)
+    open fun overview(from: LocalDateTime, to: LocalDateTime, resolution: String, routerId: Int?, planId: Int?): BandwidthOverviewDto =
+        network(from, to, resolution, routerId, planId).overview
+
+    private fun overviewFromSeries(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        effective: String,
+        series: BandwidthSeriesDto,
+        routerId: Int?,
+        planId: Int?
+    ): BandwidthOverviewDto {
         val points = series.points
         val subscriptions = eligibleSubscriptions(routerId, planId)
         val planCapacity = subscriptions.sumOf { it.plan?.downloadSpeed ?: 0 }.takeIf { it > 0 }
@@ -257,7 +272,8 @@ open class BandwidthIntelligenceService(
     private fun effectiveResolution(from: LocalDateTime, to: LocalDateTime, requested: String, network: Boolean): String {
         if (requested in setOf("1m", "5m", "1h", "1d")) return requested
         val hours = Duration.between(from, to).toHours()
-        return when { hours <= 24 && !network -> "1m"; hours <= 24 * 2 -> "5m"; hours <= 24 * 90 -> "1h"; else -> "1d" }
+        if (!network) return when { hours <= 24 -> "1m"; hours <= 24 * 2 -> "5m"; hours <= 24 * 90 -> "1h"; else -> "1d" }
+        return when { hours <= 24 * 7 -> "1h"; else -> "1d" }
     }
 
     private fun eligibleSubscriptions(routerId: Int?, planId: Int?) = subscriptionRepository.findForTrafficPolling().filter { (routerId == null || it.hostDevice?.id == routerId) && (planId == null || it.plan?.id == planId) }

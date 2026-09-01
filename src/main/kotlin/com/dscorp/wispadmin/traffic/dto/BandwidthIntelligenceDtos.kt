@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.traffic.dto
 data class BandwidthRangeDto(val from: String, val to: String, val resolution: String, val coveragePct: Double, val freshness: String, val quality: String)
 data class BandwidthPointDto(val bucketStart: String, val rxBytes: Long, val txBytes: Long, val avgMbpsDown: Double, val avgMbpsUp: Double, val p95MbpsDown: Double, val p95MbpsUp: Double, val coveragePct: Double)
 data class BandwidthSeriesDto(val meta: BandwidthRangeDto, val points: List<BandwidthPointDto>)
+data class BandwidthNetworkDto(val overview: BandwidthOverviewDto, val series: BandwidthSeriesDto)
 data class BandwidthOverviewDto(
     val meta: BandwidthRangeDto,
     val totalRxBytes: Long,

@@ -4,12 +4,12 @@ import com.dscorp.wispadmin.wispadmin.repository.CrmConversationRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 @DataJpaTest
+@ContextConfiguration(classes = [CrmConversationClaimJpaTest.TestApp::class])
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @TestPropertySource(
     properties = [
@@ -35,7 +36,6 @@ import java.util.concurrent.atomic.AtomicInteger
 )
 class CrmConversationClaimJpaTest {
 
-    @SpringBootConfiguration
     @EnableAutoConfiguration
     @EntityScan(basePackageClasses = [CrmConversation::class])
     @EnableJpaRepositories(basePackageClasses = [CrmConversationRepository::class])

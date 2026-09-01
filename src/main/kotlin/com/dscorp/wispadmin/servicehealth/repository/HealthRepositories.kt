@@ -6,7 +6,6 @@ import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
-import java.sql.Timestamp
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import java.time.Instant
@@ -96,9 +95,9 @@ interface WifiCountSampleRepository : JpaRepository<WifiCountSample, Long> {
     fun upsertAtomic(
         @Param("deviceId") deviceId: String,
         @Param("subscriptionId") subscriptionId: Int,
-        @Param("informAt") informAt: Timestamp,
-        @Param("observedAt") observedAt: Timestamp?,
-        @Param("collectedAt") collectedAt: Timestamp,
+        @Param("informAt") informAt: String,
+        @Param("observedAt") observedAt: String?,
+        @Param("collectedAt") collectedAt: String,
         @Param("associatedDeviceCount") associatedDeviceCount: Int?,
         @Param("associated2g") associated2g: Int?,
         @Param("associated5g") associated5g: Int?,
@@ -109,7 +108,7 @@ interface WifiCountSampleRepository : JpaRepository<WifiCountSample, Long> {
     ): Int
 
     @Query(value = "select id from acs_wifi_count_sample where device_id = :deviceId and subscription_id = :subscriptionId and observed_at = :observedAt limit 1", nativeQuery = true)
-    fun findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(@Param("deviceId") deviceId: String, @Param("subscriptionId") subscriptionId: Int, @Param("observedAt") observedAt: Timestamp): Long?
+    fun findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(@Param("deviceId") deviceId: String, @Param("subscriptionId") subscriptionId: Int, @Param("observedAt") observedAt: String): Long?
 
     fun findByDeviceIdAndSubscriptionIdAndInformAt(deviceId: String, subscriptionId: Int, informAt: Instant): WifiCountSample?
     fun findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId: String, subscriptionId: Int, observedAt: Instant): WifiCountSample?
@@ -154,7 +153,35 @@ interface WifiStationSampleRepository : JpaRepository<WifiStationSample, Long> {
         @Param("toText") toText: String
     ): List<WifiStationSample>
 
+    fun findTopByOrderByObservedAtAsc(): WifiStationSample?
+
+    @Query("select s from WifiStationSample s where s.observedAt >= :from and s.observedAt < :to")
+    fun findByObservedAtRange(@Param("from") from: Instant, @Param("to") to: Instant): List<WifiStationSample>
 }
+
+interface WifiStationHourlyRepository : JpaRepository<WifiStationHourly, Long> {
+    @Modifying(clearAutomatically = true)
+    @Query("delete from WifiStationHourly h where h.bucketStart >= :from and h.bucketStart < :to")
+    fun deleteByBucketStartRange(@Param("from") from: Instant, @Param("to") to: Instant): Int
+
+    @Query(
+        value = """
+        select * from acs_wifi_station_hourly
+        where subscription_id = :id
+          and bucket_start >= :fromText
+          and bucket_start <= :toText
+        order by bucket_start asc
+        """,
+        nativeQuery = true
+    )
+    fun findHourlyBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<WifiStationHourly>
+}
+
+interface WifiAggregationWatermarkRepository : JpaRepository<WifiAggregationWatermark, String>
 
 interface WifiCurrentRepository : JpaRepository<WifiCurrent, Int>
 interface ReadCapabilityProfileRepository : JpaRepository<ReadCapabilityProfile, Long> {

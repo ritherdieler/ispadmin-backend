@@ -57,7 +57,11 @@ class HealthEvidenceReader(
         sources+=Evidence("OLT","run_state",seen,state?.state,qualityAt(seen,now,properties.stateFreshSeconds),
             onu?.id?.toString(),onu?.externalId?.let { "/onus/configured/$it" })
         val optics=optical.listBySubscriptionInUtcWindow(id,from,now)
-            .filter { it.onuSn.equals(ids["ONU"],ignoreCase=true) && it.oltId.toString()==ids["OLT"] && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] }
+            .filter { sample ->
+                val onuIdMatch = ids["ONU_ID"]?.let { sample.onuId.toString() == it } == true
+                val snMatch = sample.onuSn.equals(ids["ONU"], ignoreCase = true)
+                (onuIdMatch || snMatch) && sample.oltId.toString()==ids["OLT"] && "${sample.oltId}:${sample.board}:${sample.port}"==ids["PON"]
+            }
         val lastOptical=optics.lastOrNull()
         sources+=Evidence("OLT","onu_rx_dbm",lastOptical?.observedAt,lastOptical?.onuRxDbm,
             if(lastOptical?.onuRxDbm==null) Quality.MISSING else qualityAt(lastOptical.observedAt,now,properties.opticalFreshSeconds),lastOptical?.id?.toString())
@@ -75,7 +79,7 @@ class HealthEvidenceReader(
             !wifiSupported -> Quality.UNSUPPORTED
             w==null -> Quality.MISSING
             w.qualityStatus!=Quality.FRESH -> w.qualityStatus
-            else -> qualityAt(w.observedAt,now,properties.periodicInformSeconds*2)
+            else -> qualityAt(w.observedAt,now,properties.wifiSampleFreshSeconds())
         }
         sources+=Evidence("ACS","associated_device_count",w?.observedAt,w?.associatedDeviceCount,wifiQuality,w?.countSampleId?.toString())
         val acsRun=runs.findTopBySourceAndEquipmentKeyOrderByStartedAtDesc("ACS","genieacs")
@@ -135,7 +139,7 @@ class HealthEvidenceReader(
             .filter { it.countSampleId in allowedReadings } else emptyList()
         val signalAt=wifiStations.maxOfOrNull { it.observedAt }
         sources+=Evidence("ACS","wifi_signal",signalAt,mapOf("rssi_min" to wifiStations.mapNotNull { it.rssi }.minOrNull(),"snr_min" to wifiStations.mapNotNull { it.snr }.minOrNull()),
-            if(!wifiSupported) Quality.UNSUPPORTED else qualityAt(signalAt,now,properties.periodicInformSeconds*2))
+            if(!wifiSupported) Quality.UNSUPPORTED else qualityAt(signalAt,now,properties.wifiSampleFreshSeconds()))
         return HealthInputs(id,now,ids,sources,optics,
             states.listBySubscriptionInUtcWindow(id,from,now).filter { it.onuSn.equals(ids["ONU"],true) && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] },
             wifiStations,

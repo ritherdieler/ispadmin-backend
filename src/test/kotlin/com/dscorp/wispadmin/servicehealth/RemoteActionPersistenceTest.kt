@@ -6,8 +6,11 @@ import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
+import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
+import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalRefresh
 import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.wispadmin.repository.*
+import org.springframework.beans.factory.ObjectProvider
 import com.dscorp.wispadmin.wispadmin.data.model.*
 import com.dscorp.wispadmin.wispadmin.service.genieacs.*
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -42,11 +45,12 @@ class RemoteActionPersistenceTest {
     private lateinit var remote: RemoteActionService
     private lateinit var client: GenieAcsClient
     private lateinit var acs: SubscriptionAcsRepository
+    private lateinit var subscriptions: SubscriptionRepository
     private val actor=HealthActor(1,"TECHNICIAN")
     @BeforeEach fun setup() {
         actions.deleteAll(); cursors.deleteAll(); wifi.deleteAll()
         cursors.saveAndFlush(HealthCursor(cursorKey="actions"))
-        val subscriptions=mockk<SubscriptionRepository>()
+        subscriptions=mockk<SubscriptionRepository>()
         val identity=mockk<IdentityService>()
         acs=mockk(); client=mockk()
         for(id in 1..6) {
@@ -100,5 +104,21 @@ class RemoteActionPersistenceTest {
         }.rawStatusCode)
         verify { client wasNot Called }; verify(exactly=0) { acs.findById(any()) }
         assertEquals(0,actions.count())
+    }
+    @Test fun `optical refresh confirms when ssh collects`() {
+        val port=mockk<HealthLabOpticalPort>()
+        every { port.refreshSubscription(1) } returns HealthLabOpticalRefresh(true)
+        val provider=mockk<ObjectProvider<HealthLabOpticalPort>>()
+        every { provider.ifAvailable } returns port
+        val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
+        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs)
+        val opticalRemote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,mockk<IdentityService>().also { identity ->
+            every { identity.resolveOnu("sn1") } returns 1
+            every { identity.resolveAcs("device1") } returns 1
+        },client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper(),null,provider)
+        val result=opticalRemote.refreshOptical(1,actor,"optical-1")
+        assertEquals("CONFIRMED",result.status)
+        assertEquals(1,actions.count())
+        assertEquals("CONFIRMED",actions.findAll().single().status)
     }
 }

@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
@@ -14,7 +15,8 @@ import org.springframework.stereotype.Component
 @Component
 class FiberInstallationStrategy(
     private val cancelledOnuReuseService: CancelledOnuReuseService,
-    private val simpleQueueProvisioner: SimpleQueueProvisioner
+    private val simpleQueueProvisioner: SimpleQueueProvisioner,
+    private val environment: GigafiberEnvironmentProperties,
 ) : IInstallationStrategy {
 
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -111,7 +113,11 @@ class FiberInstallationStrategy(
         }
 
         val vlan = SubscriptionVlanRules.requireAppVlan(subscription.vlan)
-        SubscriptionVlanRules.assertPoolAligned(vlan, subscription.ipPool?.ipSegment)
+        SubscriptionVlanRules.assertPoolAligned(
+            vlan = vlan,
+            ipSegment = subscription.ipPool?.ipSegment,
+            environmentTag = environment.normalizedTag(),
+        )
         return vlan
     }
 }

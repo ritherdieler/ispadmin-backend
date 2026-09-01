@@ -43,4 +43,15 @@ class ServiceHealthPropertiesTest {
         assertEquals(setOf(2310, 2328), p.collectionSubscriptionIds(emptyList(), ""))
         assertEquals(setOf(2310), p.collectionSubscriptionIds(listOf(2328), ""))
     }
+
+    @Test
+    fun `wifi sample cadence defaults to 30 minutes and freshness to an hour`() {
+        val p = ServiceHealthProperties()
+        assertEquals(1800L, p.acsWifiSampleTargetSeconds)
+        assertEquals(1800L, p.acsGpvCooldownSeconds)
+        assertEquals(3600L, p.wifiSampleFreshSeconds())
+        assertEquals(7L, p.stationSeriesRawMaxDays)
+        assertEquals(90L, p.stationHourlyRetentionDays)
+        assertEquals(14L, p.stationRetentionDays)
+    }
 }

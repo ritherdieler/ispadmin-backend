@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.servicehealth.domain.OnuStateEvent
 import com.dscorp.wispadmin.servicehealth.domain.OpticalSample
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
 import com.dscorp.wispadmin.servicehealth.domain.WifiCountSample
+import com.dscorp.wispadmin.servicehealth.domain.WifiStationHourly
 import com.dscorp.wispadmin.servicehealth.domain.WifiStationSample
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -25,6 +26,9 @@ fun WifiCountSampleRepository.listBySubscriptionInUtcWindow(id: Int, from: Insta
 
 fun WifiStationSampleRepository.listBySubscriptionInUtcWindow(id: Int, from: Instant, to: Instant): List<WifiStationSample> =
     findWifiStationBySubscriptionUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))
+
+fun WifiStationHourlyRepository.listBySubscriptionInUtcWindow(id: Int, from: Instant, to: Instant): List<WifiStationHourly> =
+    findHourlyBySubscriptionUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))
 
 fun HealthEventRepository.pageBySubscriptionInUtcWindow(id: Int, from: Instant, to: Instant, page: Pageable): Page<HealthEvent> =
     findHealthEventBySubscriptionUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to), page)

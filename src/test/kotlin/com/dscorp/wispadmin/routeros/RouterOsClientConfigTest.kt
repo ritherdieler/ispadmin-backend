@@ -45,10 +45,13 @@ class RouterOsClientConfigTest {
     }
 
     @Test
-    fun `wires rest adapter as primary MikrotikClient`() {
+    fun `wires rest adapter as primary and a dedicated real traffic client`() {
         contextRunner.run { context ->
-            assertThat(context).hasSingleBean(MikrotikClient::class.java)
+            assertThat(context).hasBean("routerOs7RestAdapter")
+            assertThat(context).hasBean("trafficPollMikrotikClient")
             assertThat(context.getBean(MikrotikClient::class.java))
+                .isInstanceOf(RouterOs7RestAdapter::class.java)
+            assertThat(context.getBean("trafficPollMikrotikClient"))
                 .isInstanceOf(RouterOs7RestAdapter::class.java)
         }
     }

@@ -36,6 +36,7 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("service.health.optical-enabled=false"), staging)
         assertTrue(staging.contains("service.health.acs-enabled=false"), staging)
         assertTrue(staging.contains("olt.gateway.enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.writes.enabled=false"), staging)
         assertTrue(staging.contains("olt.gateway.snmp.trap.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.snmp.trap.udp-enabled=false"), staging)

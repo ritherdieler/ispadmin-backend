@@ -46,4 +46,12 @@ class IdentityServiceTest {
         assertNull(service.resolveAcs("sub-1-device"))
         verify(exactly=0) { subscriptions.findById(any()) }
     }
+
+    @Test fun `resolveOnu maps VSOL inventory SN to Genie fiber serial via hex suffix`() {
+        every { subscriptions.findByExactOnuSerial("VSOL0031C0B6") } returns emptyList()
+        every { subscriptions.findByOnuSerialOrSuffix("VSOL0031C0B6", "31C0B6") } returns listOf(
+            Subscription(id = 2329, equipmentCondition = EquipmentCondition.values().first())
+        )
+        assertEquals(2329, service.resolveOnu("VSOL0031C0B6"))
+    }
 }

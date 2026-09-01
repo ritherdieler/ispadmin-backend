@@ -66,6 +66,38 @@ class WarSubsystemPackagingTest {
     }
 
     @Test
+    fun subsystemsScriptBakesOltOpticalNetdiagWhenThoseKept() {
+        val root = Path.of(System.getProperty("user.dir"))
+        val writeDir = Files.createTempDirectory("subsystem-olt")
+        val script = root.resolve("scripts/subsystems.sh").toFile()
+        val process = ProcessBuilder(
+            "bash",
+            script.absolutePath,
+            "--with",
+            "servicehealth,oltgateway,netdiag,traffic",
+            "--write-dir",
+            writeDir.toString(),
+        )
+            .directory(root.toFile())
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        assertTrue(process.waitFor() == 0, output)
+        val baked = Files.readString(writeDir.resolve("subsystem-enabled.properties"))
+        assertTrue(baked.contains("gigafiber.subsystems.oltgateway.enabled=true"), baked)
+        assertTrue(baked.contains("gigafiber.subsystems.netdiag.enabled=true"), baked)
+        assertTrue(baked.contains("gigafiber.subsystems.traffic.enabled=true"), baked)
+        assertTrue(baked.contains("service.health.optical-enabled=true"), baked)
+        assertTrue(baked.contains("olt.gateway.enabled=false"), baked)
+        assertTrue(!baked.contains("olt.gateway.writes.enabled=true"), baked)
+        assertTrue(!baked.contains("olt.gateway.sync.inventory-enabled=true"), baked)
+        assertTrue(!baked.contains("olt.gateway.sync.lab-optical-ssh-enabled=true"), baked)
+        assertTrue(baked.contains("net.diag.enabled=true"), baked)
+        assertTrue(baked.contains("net.diag.snmp.trap.udp-enabled=false"), baked)
+        assertTrue(baked.contains("net.diag.syslog.udp-enabled=false"), baked)
+    }
+
+    @Test
     fun verifyWarScriptGuardsEmptyWith() {
         val root = Path.of(System.getProperty("user.dir"))
         val script = Files.readString(root.resolve("scripts/verify-war.sh"))

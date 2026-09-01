@@ -36,6 +36,9 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `/ping 192.168.30.202 count=5` | Ping L3 abonado piloto | Diagnóstico / verify script | |
 | `/tool traceroute 8.8.8.8 src-address=192.168.30.1 count=1` | Ruta WAN desde gateway piloto | Diagnóstico | NAT masquerade OK |
 | `/ip address add address=192.168.255.1/24 interface=sfp-sfpplus2 …` | Gateway staging TR-069 **VLAN 100** | `scripts/genieacs/mk2-provisioning-network-255.rsc` | Coexiste con `192.168.30.1/24` en la misma iface; DHCP `.100–.250`; DNS 8.8.8.8/8.8.4.4; migrado desde `LAN_MK1` 2026-08-20 |
+| `/ip address add address=192.168.250.1/24 interface=sfp-sfpplus2 …` | Gateway pool staging e2e VLAN 100 | `scripts/genieacs/mk2-staging-pool-250.rsc` | Aplicado 2026-09-01; coexiste con `.30.1` y `.255.1`; sin DHCP |
+| `/ip firewall nat add … src-address=192.168.250.0/24 masquerade comment="NAT staging e2e 250"` | NAT WAN cliente staging | `mk2-staging-pool-250.rsc` | Backup previo `staging-e2e-250-pre` |
+| `/ip firewall filter add … src-address-list=staging-e2e-250 dst-address=192.168.22.0/24 action=drop` | Aísla `.250` de LAN_MK1 legacy | `mk2-staging-pool-250.rsc` | |
 | `/ip pool add name=provisioning-255 ranges=192.168.255.100-192.168.255.250` | Pool DHCP staging | `mk2-provisioning-network-255.rsc` | Idempotente |
 | `/ip dhcp-server add name=dhcp-provisioning-255 … interface=sfp-sfpplus2` | DHCP server staging VLAN100 | `mk2-provisioning-network-255.rsc` | Lease 1h; script limpia residual en `LAN_MK1` |
 | `/ip firewall filter … dst-port=7547 dst-address=192.168.255.0/24` | CR GenieACS staging | `mk2-provisioning-network-255.rsc` | Desde `10.255.255.2` |
@@ -72,6 +75,7 @@ Comandos aplicados o usados en diagnóstico del MikroTik **38.224.231.4** (CCR21
 | `scripts/mikrotik-mk2-problematic-routing.rsc` | Routing table + IPs secundarias + mangle + ruta + SNAT |
 | `scripts/mikrotik-mk1-problematic-disable.rsc` | Deshabilitar policy/IPs en MK1 tras cutover |
 | `scripts/genieacs/mk2-provisioning-network-255.rsc` | Staging TR-069 `192.168.255.0/24` en `sfp-sfpplus2` (VLAN 100) + limpieza `LAN_MK1` |
+| `scripts/genieacs/mk2-staging-pool-250.rsc` | Gateway + NAT pool staging e2e `192.168.250.0/24` en `sfp-sfpplus2` |
 
 ## Relacionado
 

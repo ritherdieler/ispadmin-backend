@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.config.subsystemscan
 
+import com.dscorp.testsupport.subsystemscan.SubsystemScanHarness
 import com.dscorp.wispadmin.servicehealth.controller.ServiceHealthController
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069SerialMatcher
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
@@ -43,12 +44,25 @@ class IdentityService(
         return null
     }
 
-    fun resolveOnu(sn: String): Int? = subscriptions.findByExactOnuSerial(sn).singleOrNull()?.id
+    fun resolveOnu(sn: String): Int? {
+        val exact = subscriptions.findByExactOnuSerial(sn)
+        if (exact.size == 1) return exact.single().id
+        if (exact.size > 1) return null
+        val suffix = Tr069SerialMatcher.normalizeSuffix(sn) ?: return null
+        return subscriptions.findByOnuSerialOrSuffix(sn, suffix).singleOrNull()?.id
+    }
 
     @Transactional
     fun resolveOnuForCollection(sn: String): Int? {
-        val candidates=subscriptions.findByExactOnuSerial(sn)
-        if(candidates.size>1) conflict("ONU",sn,candidates.mapNotNull { it.id })
+        val exact = subscriptions.findByExactOnuSerial(sn)
+        if (exact.size > 1) {
+            conflict("ONU", sn, exact.mapNotNull { it.id })
+            return null
+        }
+        if (exact.size == 1) return exact.single().id
+        val suffix = Tr069SerialMatcher.normalizeSuffix(sn) ?: return null
+        val candidates = subscriptions.findByOnuSerialOrSuffix(sn, suffix)
+        if (candidates.size > 1) conflict("ONU", sn, candidates.mapNotNull { it.id })
         return candidates.singleOrNull()?.id
     }
 

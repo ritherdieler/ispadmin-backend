@@ -15,17 +15,18 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
 import java.time.Instant
 import javax.persistence.EntityManager
 
 @DataJpaTest
+@ContextConfiguration(classes = [OltMgrAssociationJpaTest.TestApp::class])
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @TestPropertySource(
     properties = [
@@ -40,7 +41,6 @@ import javax.persistence.EntityManager
 )
 class OltMgrAssociationJpaTest {
 
-    @SpringBootConfiguration
     @EnableAutoConfiguration
     @EntityScan(basePackages = ["com.dscorp.wispadmin.oltgateway.domain.entity"])
     @EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.oltgateway.domain.repository"])

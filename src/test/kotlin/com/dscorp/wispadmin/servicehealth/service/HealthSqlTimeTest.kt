@@ -17,6 +17,12 @@ class HealthSqlTimeTest {
     }
 
     @Test
+    fun `utcSqlText formats UTC wall clock for native upsert`() {
+        val observed = Instant.parse("2026-09-01T03:50:29.733Z")
+        assertEquals("2026-09-01 03:50:29.000000", HealthSqlTime.utcSqlText(observed))
+    }
+
+    @Test
     fun `count sample id prefers observed lookup and falls back to the row just upserted`() {
         assertEquals(1183L, AcsWifiSampleLookup.idAfterUpsert(1183L, 9L, 7L))
         assertEquals(9L, AcsWifiSampleLookup.idAfterUpsert(null, 9L, 7L))

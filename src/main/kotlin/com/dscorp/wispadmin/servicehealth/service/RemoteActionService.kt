@@ -4,11 +4,13 @@ import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
+import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.service.genieacs.*
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -35,7 +37,8 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
     private val acs: SubscriptionAcsRepository,private val wifi: WifiCurrentRepository,private val identity: IdentityService,
     private val client: GenieAcsClient,private val genie: GenieAcsProperties,private val tx: TransactionTemplate,
     private val json: ObjectMapper,
-    private val subscriptionService: SubscriptionService? = null) {
+    private val subscriptionService: SubscriptionService? = null,
+    private val labOptical: ObjectProvider<HealthLabOpticalPort>? = null) {
     fun digest(value: String): String {
         require(properties.stationHmacKey.toByteArray().size>=32) { "HMAC_KEY_NOT_CONFIGURED" }
         val mac=Mac.getInstance("HmacSHA256"); mac.init(SecretKeySpec(properties.stationHmacKey.toByteArray(),"HmacSHA256"))
@@ -58,7 +61,9 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
             if(needsCr && acsDevice==null) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ACS no resuelta")
             val now=Instant.now()
             val previous=actions.findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(deviceKey,
-                if(action=="WIFI_REFRESH") listOf("WIFI_REFRESH","CONFIG","REBOOT_ACS") else listOf("CONFIG","REBOOT_ONU","REBOOT_ACS","WIFI_REFRESH"))
+                if(action=="WIFI_REFRESH") listOf("WIFI_REFRESH","CONFIG","REBOOT_ACS")
+                else if(action=="OPTICAL_REFRESH") listOf("OPTICAL_REFRESH")
+                else listOf("CONFIG","REBOOT_ONU","REBOOT_ACS","WIFI_REFRESH"))
             if(previous!=null && previous.createdAt>now.minusSeconds(properties.actionCooldownSeconds)) throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Espere diez minutos entre acciones sobre el equipo")
             if(needsCr && actions.findByStatus("RUNNING").count { it.action in setOf("WIFI_REFRESH","CONFIG","REBOOT_ACS") }>=properties.crConcurrency.coerceIn(1,3))
                 throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Límite de conexiones ACS concurrentes")
@@ -96,6 +101,24 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
             result(finish(action.id!!, "PENDING"))
         } catch (_: Exception) {
             result(finish(action.id!!, "UNVERIFIED", error = "OLT_REQUEST_UNCONFIRMED"))
+        }
+    }
+
+    fun refreshOptical(id: Int, actor: HealthActor, key: String): ActionResult {
+        if (!properties.opticalEnabled) throw ResponseStatusException(HttpStatus.CONFLICT, "Óptica deshabilitada")
+        replay(id, actor, key, "OPTICAL_REFRESH", digest("OPTICAL_REFRESH:$id"))?.let { return it }
+        val port = labOptical?.ifAvailable ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Óptica SSH no disponible")
+        val (action, created) = reserve(id, actor, key, "OPTICAL_REFRESH", digest("OPTICAL_REFRESH:$id"), false)
+        if (!created) return result(action)
+        return try {
+            val refresh = port.refreshSubscription(id)
+            when {
+                refresh.collected -> result(finish(action.id!!, "CONFIRMED"))
+                refresh.unmapped -> result(finish(action.id!!, "FAILED", error = "ONU_UNMAPPED"))
+                else -> result(finish(action.id!!, "FAILED", error = refresh.error ?: "OPTICAL_SSH_FAILED"))
+            }
+        } catch (_: Exception) {
+            result(finish(action.id!!, "UNVERIFIED", error = "OLT_SSH_UNCONFIRMED"))
         }
     }
 

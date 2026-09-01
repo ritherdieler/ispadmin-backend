@@ -110,6 +110,9 @@ class OltGatewayProperties {
         var alarmIntervalMs: Long = 120000
         var alarmInitialDelayMs: Long = 45000
         var skipWhenWriteRunning: Boolean = true
+        var labOpticalSshEnabled: Boolean = false
+        var labOpticalSshIntervalMs: Long = 900000
+        var labOpticalSshInitialDelayMs: Long = 120000
     }
 
     class SshProperties {

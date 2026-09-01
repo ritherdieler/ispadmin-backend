@@ -131,9 +131,7 @@ class SubscriptionTrafficPollServiceTest {
 
     @AfterEach
     fun tearDown() {
-        val passthrough = mockk<NetworkDeviceConnectionHelper>()
-        every { passthrough.getConnectionData(any()) } answers { firstArg() }
-        NetworkDeviceConnectionManager.setHelper(passthrough)
+        NetworkDeviceConnectionManager.clearHelper()
     }
 
     @Test

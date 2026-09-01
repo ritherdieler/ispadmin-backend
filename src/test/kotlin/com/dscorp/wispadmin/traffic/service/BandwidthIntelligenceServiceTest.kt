@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.traffic.service
 
 import com.dscorp.wispadmin.traffic.entity.TrafficAnomalyStatus
+import com.dscorp.wispadmin.traffic.dto.BandwidthNetworkDto
 import com.dscorp.wispadmin.traffic.repository.BandwidthNetworkBucketProjection
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficDailyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficFiveMinuteRepository
@@ -52,7 +53,7 @@ class BandwidthIntelligenceServiceTest {
             bucket(from, rx = 1000, tx = 200, down = 40.0, up = 5.0, coverage = 90.0)
         )
 
-        val series = service.series(from, to, "auto", null, null)
+        val series = service.series(from, to, "5m", null, null)
 
         assertEquals(1, series.points.size)
         assertEquals(1000, series.points.first().rxBytes)
@@ -71,6 +72,47 @@ class BandwidthIntelligenceServiceTest {
         verify(exactly = 1) { fiveMinuteRepository.aggregateNetworkBucketsByHost(from, to, 7) }
         verify(exactly = 0) { fiveMinuteRepository.findInBucketRange(any(), any()) }
         verify(exactly = 0) { subscriptionRepository.findForTrafficPolling() }
+    }
+
+    @Test
+    fun `series de red en 24 horas usa agregacion horaria`() {
+        every { hourlyRepository.aggregateNetworkBuckets(from, to) } returns emptyList()
+
+        val series = service.series(from, to, "auto", routerId = null, planId = null)
+
+        assertEquals("1h", series.meta.resolution)
+        verify(exactly = 1) { hourlyRepository.aggregateNetworkBuckets(from, to) }
+        verify(exactly = 0) { fiveMinuteRepository.aggregateNetworkBuckets(any(), any()) }
+    }
+
+    @Test
+    fun `series de red en 30 dias usa agregacion diaria`() {
+        val monthFrom = LocalDateTime.of(2026, 8, 1, 10, 0)
+        val monthTo = monthFrom.plusDays(30)
+        every { dailyRepository.aggregateNetworkBuckets(monthFrom.toLocalDate(), monthTo.toLocalDate().plusDays(1)) } returns emptyList()
+
+        val series = service.series(monthFrom, monthTo, "auto", routerId = null, planId = null)
+
+        assertEquals("1d", series.meta.resolution)
+        verify(exactly = 1) { dailyRepository.aggregateNetworkBuckets(monthFrom.toLocalDate(), monthTo.toLocalDate().plusDays(1)) }
+        verify(exactly = 0) { hourlyRepository.aggregateNetworkBuckets(any(), any()) }
+    }
+
+    @Test
+    fun `network devuelve overview y serie con una sola agregacion`() {
+        every { hourlyRepository.aggregateNetworkBuckets(from, to) } returns listOf(
+            bucket(from, rx = 1000, tx = 100, down = 20.0, up = 3.0, coverage = 100.0)
+        )
+        every { hourlyRepository.countDistinctSubscriptions(from, to) } returns 1
+        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { anomalyRepository.countByEventStatus(TrafficAnomalyStatus.OPEN) } returns 0
+
+        val snapshot: BandwidthNetworkDto = service.network(from, to, "auto", null, null)
+
+        assertEquals(1, snapshot.series.points.size)
+        assertEquals(1000, snapshot.overview.totalRxBytes)
+        assertEquals(1, snapshot.overview.activeSubscriptions)
+        verify(exactly = 1) { hourlyRepository.aggregateNetworkBuckets(from, to) }
     }
 
     @Test
@@ -104,7 +146,7 @@ class BandwidthIntelligenceServiceTest {
         )
         every { anomalyRepository.countByEventStatus(TrafficAnomalyStatus.OPEN) } returns 3
 
-        val overview = service.overview(from, to, "auto", null, null)
+        val overview = service.overview(from, to, "5m", null, null)
 
         assertEquals(3000, overview.totalRxBytes)
         assertEquals(80.0, overview.peakMbpsDown)

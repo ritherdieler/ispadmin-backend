@@ -94,9 +94,9 @@ Prefijo de contexto `/ispadmin`.
 
 **Inteligencia de red** (`/traffic/bandwidth/v1`):
 
-- `GET /overview|series|subscriptions|subscriptions/{id}|sources|anomalies`
+- `GET /network|overview|series|subscriptions|subscriptions/{id}|sources|anomalies`
 - Filtros: `from`, `to`, `resolution`, `routerId`, `planId`, `search`, `sort`
-- Performance (2026-08-31): overview/series de red agregan en SQL (`GROUP BY bucket`); ver [bandwidth-intelligence-query-perf-2026-08-31.md](./bandwidth-intelligence-query-perf-2026-08-31.md)
+- Performance: el endpoint combinado `/network` evita recalcular la serie para `overview` y la resolución automática usa tablas horaria/diaria para rangos amplios; ver [bandwidth-intelligence-query-perf-2026-08-31.md](./bandwidth-intelligence-query-perf-2026-08-31.md)
 
 **Cliente**:
 

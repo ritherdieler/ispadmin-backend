@@ -84,6 +84,10 @@ object NetworkDeviceConnectionManager {
     fun setHelper(helper: NetworkDeviceConnectionHelper) {
         this.helper = helper
     }
+
+    fun clearHelper() {
+        helper = null
+    }
     
     fun getConnectionData(device: NetworkDeviceConnection): NetworkDeviceConnection {
         return helper?.getConnectionData(device) ?: device

@@ -14,7 +14,6 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.Duration
 import java.time.temporal.ChronoUnit
-import java.sql.Timestamp
 
 @Service
 class AcsTelemetryService(
@@ -26,7 +25,7 @@ class AcsTelemetryService(
     private val profiles: ReadCapabilityProfileRepository, private val actions: RemoteActionRepository,
     private val tx: TransactionTemplate
 ) {
-    private fun sqlTimestamp(value: Instant): Timestamp = HealthSqlTime.timestamp(value)
+    private fun sqlUtcText(value: Instant): String = HealthSqlTime.utcSqlText(value)
 
     private data class PendingGpv(val deviceId: String, val paths: List<String>, val cursorKey: String)
 
@@ -87,11 +86,11 @@ class AcsTelemetryService(
                         }
                         val incoming=parsed.count
                         val observedAt=incoming.observedAt!!
-                        counts.upsertAtomic(deviceId,subId,sqlTimestamp(incoming.informAt),sqlTimestamp(observedAt),
-                            sqlTimestamp(incoming.collectedAt),incoming.associatedDeviceCount,incoming.associated2g,incoming.associated5g,
+                        counts.upsertAtomic(deviceId,subId,sqlUtcText(incoming.informAt),sqlUtcText(observedAt),
+                            sqlUtcText(incoming.collectedAt),incoming.associatedDeviceCount,incoming.associated2g,incoming.associated5g,
                             incoming.lanDeviceCount,incoming.qualityStatus.name,run.id,incoming.errorReason)
                         val persistedId=AcsWifiSampleLookup.idAfterUpsert(
-                            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(deviceId,subId,sqlTimestamp(observedAt)),
+                            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(deviceId,subId,sqlUtcText(observedAt)),
                             counts.findByDeviceIdAndSubscriptionIdAndObservedAt(deviceId,subId,observedAt.truncatedTo(ChronoUnit.SECONDS))?.id,
                             counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc(deviceId,subId)?.id
                         )
@@ -101,8 +100,9 @@ class AcsTelemetryService(
                         if(expected>0 && parsed.stations.size<expected) {
                             val n2=incoming.associated2g ?: 0
                             val n5=incoming.associated5g ?: 0
+                            val hosts=incoming.lanDeviceCount ?: 0
                             val detail=try {
-                                client.readDeviceCache(listOf(deviceId),WifiTelemetry.stationProjection(n2,n5)).singleOrNull()
+                                client.readDeviceCache(listOf(deviceId),WifiTelemetry.stationProjection(model,n2,n5,hosts)).singleOrNull()
                             } catch (_: Exception) { null }
                             if(detail!=null) stationReading=WifiTelemetry.parse(detail,subId,if(profile.wifiCount) model else "",now,properties.stationHmacKey) ?: parsed
                         }
@@ -120,8 +120,17 @@ class AcsTelemetryService(
                         }
                         val staCursor=cursors.findById(AcsWifiRefreshPlanner.stationCursorKey(deviceId)).orElse(null)
                         if(AcsWifiRefreshPlanner.shouldEnqueueStations(expected,stationReading.stations.size,staCursor?.observedAt,now,properties.acsGpvCooldownSeconds)) {
-                            pending += PendingGpv(deviceId, WifiTelemetry.gpvStationPaths(model,incoming.associated2g,incoming.associated5g),
+                            pending += PendingGpv(deviceId, WifiTelemetry.gpvStationPaths(model,incoming.associated2g,incoming.associated5g,incoming.lanDeviceCount),
                                 AcsWifiRefreshPlanner.stationCursorKey(deviceId))
+                        } else {
+                            val sampleAt=stationReading.stations.maxOfOrNull { it.observedAt } ?: incoming.observedAt
+                            val targetCursor=cursors.findById(AcsWifiRefreshPlanner.sampleCursorKey(deviceId)).orElse(null)
+                            if(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(sampleAt,targetCursor?.observedAt,now,properties.acsWifiSampleTargetSeconds,properties.acsGpvCooldownSeconds)) {
+                                val paths=WifiTelemetry.gpvPaths(device,model)+if(expected>0)
+                                    WifiTelemetry.gpvStationPaths(model,incoming.associated2g,incoming.associated5g,incoming.lanDeviceCount)
+                                else emptyList()
+                                pending += PendingGpv(deviceId,paths,AcsWifiRefreshPlanner.sampleCursorKey(deviceId))
+                            }
                         }
                         val status=current.findById(subId).orElse(WifiCurrent(subscriptionId=subId))
                         if(WifiTelemetry.applyCurrent(status,parsed,deviceId,model,now)) {

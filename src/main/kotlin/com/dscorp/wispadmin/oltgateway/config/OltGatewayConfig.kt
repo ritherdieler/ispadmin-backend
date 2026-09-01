@@ -20,6 +20,8 @@ import com.dscorp.wispadmin.oltgateway.service.MockOltGatewayQueryService
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayCommandService
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryService
+import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshPollService
+import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
@@ -328,6 +330,16 @@ class OltGatewayConfig {
     )
     fun oltSignalPollScheduler(signalPollService: OltSignalPollService): OltSignalPollScheduler {
         return OltSignalPollScheduler(signalPollService)
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+        prefix = "olt.gateway.sync",
+        name = ["lab-optical-ssh-enabled"],
+        havingValue = "true",
+    )
+    fun labOpticalSshScheduler(pollService: LabOpticalSshPollService): LabOpticalSshScheduler {
+        return LabOpticalSshScheduler(pollService)
     }
 
     @Bean

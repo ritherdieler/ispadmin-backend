@@ -38,6 +38,17 @@ class SubscriptionVlanRulesTest {
     }
 
     @Test
+    fun `assertPoolAligned VLAN 100 acepta pool staging 250 solo con tag stg`() {
+        SubscriptionVlanRules.assertPoolAligned("100", "192.168.250.1/24", environmentTag = "stg")
+        assertThrows(IllegalArgumentException::class.java) {
+            SubscriptionVlanRules.assertPoolAligned("100", "192.168.250.1/24")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SubscriptionVlanRules.assertPoolAligned("100", "192.168.250.1/24", environmentTag = "prod")
+        }
+    }
+
+    @Test
     fun `assertPoolAligned VLAN 1 rechaza pool 30`() {
         SubscriptionVlanRules.assertPoolAligned("1", "192.168.255.0/24")
         SubscriptionVlanRules.assertPoolAligned("1", "192.168.123.0/24")

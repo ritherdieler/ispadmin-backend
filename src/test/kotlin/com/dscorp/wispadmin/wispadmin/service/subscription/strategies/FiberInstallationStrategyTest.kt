@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
+import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
+import com.dscorp.wispadmin.wispadmin.data.model.IpPool
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
@@ -25,11 +27,15 @@ class FiberInstallationStrategyTest {
 
     private lateinit var strategy: FiberInstallationStrategy
 
+    private lateinit var environment: GigafiberEnvironmentProperties
+
     @BeforeEach
     fun setUp() {
+        environment = GigafiberEnvironmentProperties()
         strategy = FiberInstallationStrategy(
             mock(CancelledOnuReuseService::class.java),
-            mockk(relaxed = true)
+            mockk(relaxed = true),
+            environment,
         )
     }
 
@@ -86,6 +92,29 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
+    fun `resolveVlan acepta VLAN 100 con pool staging 250 cuando tag es stg`() {
+        environment.tag = "stg"
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = 100)).apply {
+            vlan = "100"
+            ipPool = IpPool(id = 250, ipSegment = "192.168.250.1/24")
+        }
+
+        assertEquals("100", strategy.resolveVlan(subscription))
+    }
+
+    @Test
+    fun `resolveVlan rechaza VLAN 100 con pool staging 250 sin tag stg`() {
+        val subscription = subscriptionWithHostDevice(cloudCoreRouter(id = 8, vlanId = 100)).apply {
+            vlan = "100"
+            ipPool = IpPool(id = 250, ipSegment = "192.168.250.1/24")
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            strategy.resolveVlan(subscription)
+        }
+    }
+
+    @Test
     fun `resolveVlan falla cuando hostDevice esta deshabilitado`() {
         val subscription = subscriptionWithHostDevice(
             cloudCoreRouter(id = 8, vlanId = 100, disabled = true)
@@ -100,7 +129,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation does not throw when MikroTik TLS handshake fails`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -132,7 +161,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation uses offline client ip as simple queue target`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"

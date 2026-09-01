@@ -11,7 +11,28 @@ import org.springframework.data.repository.query.Param
 import java.util.*
 import java.time.LocalDateTime
 
+interface ServiceHealthSubscriptionView {
+    fun getFirstName(): String?
+    fun getLastName(): String?
+    fun getBusinessName(): String?
+    fun getClientType(): Subscription.ClientType
+    fun getServiceStatus(): ServiceStatus
+    fun getPlanName(): String?
+    fun getIp(): String?
+}
+
 interface SubscriptionRepository : JpaRepository<Subscription, Int> {
+    @Query(
+        """
+        SELECT s.firstName AS firstName, s.lastName AS lastName, s.businessName AS businessName,
+               s.clientType AS clientType, s.serviceStatus AS serviceStatus, p.name AS planName, s.ip AS ip
+        FROM Subscription s
+        LEFT JOIN s.plan p
+        WHERE s.id = :id
+        """
+    )
+    fun findServiceHealthContextById(@Param("id") id: Int): ServiceHealthSubscriptionView?
+
     @org.springframework.data.jpa.repository.Lock(javax.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Subscription s where s.id = :id")
     fun lockIdentityOwner(@Param("id") id: Int): Subscription?
@@ -21,6 +42,18 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("select s from Subscription s left join fetch s.fiberOnu where upper(s.fiberOnu.sn) = upper(:sn)")
     fun findByExactOnuSerial(@Param("sn") sn: String): List<Subscription>
 
+    @Query(
+        """
+        SELECT s FROM Subscription s
+        LEFT JOIN FETCH s.fiberOnu
+        WHERE s.fiberOnu IS NOT NULL
+        AND (
+            UPPER(s.fiberOnu.sn) = UPPER(:sn)
+            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+        )
+        """
+    )
+    fun findByOnuSerialOrSuffix(@Param("sn") sn: String, @Param("suffix") suffix: String): List<Subscription>
 
     fun findByClientRequestId(clientRequestId: String): Optional<Subscription>
 

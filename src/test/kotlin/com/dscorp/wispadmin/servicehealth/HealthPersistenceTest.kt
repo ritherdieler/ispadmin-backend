@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.servicehealth.repository.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.context.annotation.Configuration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
@@ -21,7 +20,7 @@ import java.time.Instant
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect","spring.datasource.url=jdbc:h2:mem:servicehealth;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
     "spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver"])
 class HealthPersistenceTest {
-    @Configuration @EnableAutoConfiguration
+    @EnableAutoConfiguration
     @EntityScan(basePackageClasses=[OpticalSample::class])
     @EnableJpaRepositories(basePackageClasses=[OpticalSampleRepository::class])
     class Config

@@ -39,6 +39,10 @@ Tras persistir conteos frescos:
 - `AcsTelemetryService.enqueueStaleParameterRefresh`
 - `RemoteActionService.refresh`
 
+## Regla operativa — CR cuando haga falta
+
+Si hace falta **refrescar parámetros en el CPE** (params stale, Hosts/HostName, RSSI `1..N`, validar deploy), **siempre** encolar GPV con `connection_request` (o `WIFI_REFRESH` en producto). El GPV automático del watcher tiene cooldown; en lab/ops no asumir que el próximo poll bastará sin CR. Ver [acs-wifi-station-display-name-2026-08-31.md](./acs-wifi-station-display-name-2026-08-31.md#connection-request-cr--obligatorio-cuando-haga-falta).
+
 ## Persistencia post-GPV (staging lab, 2026-09-01)
 
 Tras un GPV alineado el upsert nativo escribía la fila, pero `findId…ObservedAt` no la veía: `datetime` sin fsp redondea millis y el catch del watcher marcaba `ACS_CACHE_READ_FAILED` con `written=0`. `HealthSqlTime.timestamp` trunca a segundos; `AcsWifiSampleLookup` cae al último sample del device. Validación: [acs-wifi-lab-staging-2026-08-31.md](./acs-wifi-lab-staging-2026-08-31.md).

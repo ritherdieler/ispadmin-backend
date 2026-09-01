@@ -334,6 +334,9 @@ class OltCliBus(
         copy.sync.alarmIntervalMs = properties.sync.alarmIntervalMs
         copy.sync.alarmInitialDelayMs = properties.sync.alarmInitialDelayMs
         copy.sync.skipWhenWriteRunning = properties.sync.skipWhenWriteRunning
+        copy.sync.labOpticalSshEnabled = properties.sync.labOpticalSshEnabled
+        copy.sync.labOpticalSshIntervalMs = properties.sync.labOpticalSshIntervalMs
+        copy.sync.labOpticalSshInitialDelayMs = properties.sync.labOpticalSshInitialDelayMs
         copy.reachability.failureThreshold = properties.reachability.failureThreshold
         copy.reachability.backoffMs = properties.reachability.backoffMs
         return copy

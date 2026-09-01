@@ -16,10 +16,22 @@ data class Diagnosis(val diagnosisCode: String, val probableCause: String, val c
                      val confidenceBreakdown: List<String>, val recommendedNextCheck: String,
                      val affectedScope: Map<String, Any?>, val suppressingIncidentId: Long? = null)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
+data class SubscriberContext(val displayName: String, val clientType: String)
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
+data class ServiceContext(val serviceStatus: String, val planName: String?, val ip: String?)
+data class SubscriptionContext(val subscriber: SubscriberContext, val serviceContext: ServiceContext)
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
 data class HealthSummary(val subscriptionId: Int, val evaluatedAt: Instant, val states: Map<String,String>,
                          val sources: List<Evidence>, val diagnoses: List<Diagnosis>, val missingEvidence: List<MissingEvidence>,
                          val identity: Map<String,Any?>, val pilotEnabled: Boolean, val actionsEnabled: Boolean,
-                         val ruleVersion: String = "service-health-v1")
+                         val ruleVersion: String = "service-health-v1",
+                         val actionPolicy: Map<String,ActionPolicy> = emptyMap(),
+                         val subscriber: SubscriberContext? = null,
+                         val serviceContext: ServiceContext? = null)
+
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
+data class ActionPolicy(val enabled: Boolean, val reason: String? = null, val lastActionAt: Instant? = null,
+                        val cooldownUntil: Instant? = null)
 
 data class CpeGponStatus(val state: String, val rxDbm: String?, val txDbm: String?, val qualityStatus: Quality)
 data class CpeAcsStatus(val state: String, val lastInform: Instant?, val reachable: Boolean, val qualityStatus: Quality)

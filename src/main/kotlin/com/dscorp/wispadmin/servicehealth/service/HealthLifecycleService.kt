@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.servicehealth.service
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.HealthCursor
 import com.dscorp.wispadmin.servicehealth.repository.HealthCursorRepository
+import com.dscorp.wispadmin.servicehealth.repository.WifiAggregationWatermarkRepository
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Service
@@ -15,12 +16,13 @@ import java.time.Duration
 
 @Service
 class HealthLifecycleService(private val properties: ServiceHealthProperties, private val cursors: HealthCursorRepository,
-                             private val em: EntityManager): ApplicationRunner {
+                             private val em: EntityManager, private val watermarks: WifiAggregationWatermarkRepository,
+                             private val rollup: WifiStationRollupService): ApplicationRunner {
     override fun run(args: ApplicationArguments) {
         if(properties.enabled && (properties.acsEnabled || properties.actionsEnabled)) {
             require(properties.stationHmacKey.toByteArray().size>=32) { "SERVICE_HEALTH_STATION_HMAC_KEY (32+ bytes) requerido para telemetría/acciones" }
         }
-        for(key in listOf("acs-watcher","traffic-consumer","evaluation","actions","blast-radius","olt-events")) {
+        for(key in listOf("acs-watcher","traffic-consumer","evaluation","actions","blast-radius","olt-events","wifi-hourly-rollup")) {
             if(!cursors.existsById(key)) try { cursors.saveAndFlush(HealthCursor(cursorKey=key,observedAt=if(key=="olt-events") Instant.now() else null)) }
             catch (_: DataIntegrityViolationException) { /* Another instance seeded the same lock. */ }
         }
@@ -30,10 +32,14 @@ class HealthLifecycleService(private val properties: ServiceHealthProperties, pr
     fun purge() {
         if(!properties.enabled) return
         val now=Instant.now()
+        rollup.catchUp(now)
         fun purge(entity: String, field: String, days: Long) {
             em.createQuery("delete from $entity e where e.$field < :cutoff").setParameter("cutoff",now.minus(Duration.ofDays(days.coerceAtLeast(1)))).executeUpdate()
         }
-        purge("WifiStationSample","observedAt",properties.stationRetentionDays)
+        WifiStationRetention.rawCutoff(now,properties.stationRetentionDays,watermarks.findById("HOURLY").orElse(null)?.consolidatedThrough)?.let { cutoff ->
+            em.createQuery("delete from WifiStationSample e where e.observedAt < :cutoff").setParameter("cutoff",cutoff).executeUpdate()
+        }
+        purge("WifiStationHourly","bucketStart",properties.stationHourlyRetentionDays)
         purge("WifiCountSample","informAt",properties.countRetentionDays)
         purge("OpticalSample","observedAt",properties.opticalRetentionDays)
         purge("OnuStateEvent","observedAt",properties.opticalRetentionDays)

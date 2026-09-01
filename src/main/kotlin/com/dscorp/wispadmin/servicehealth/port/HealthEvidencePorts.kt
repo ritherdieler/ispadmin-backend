@@ -147,3 +147,18 @@ interface HealthOltIngestPort {
     fun onOptical(observation: HealthOpticalObservation)
     fun onState(sn: String, state: String?, cause: String?, observedAt: Instant)
 }
+
+data class HealthLabOpticalRefresh(
+    val collected: Boolean,
+    val unmapped: Boolean = false,
+    val error: String? = null
+)
+
+interface HealthLabOpticalPort {
+    fun refreshSubscription(subscriptionId: Int): HealthLabOpticalRefresh
+}
+
+interface HealthLabScopePort {
+    fun collects(subscriptionId: Int?): Boolean
+    fun collectionSubscriptionIds(): Set<Int>
+}

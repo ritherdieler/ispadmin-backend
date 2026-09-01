@@ -4,21 +4,20 @@ import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.wispadmin.service.OltService
-import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredItemDto
-import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.CatalogItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
-import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
 import com.dscorp.wispadmin.oltgateway.service.SignalPollResult
 import com.dscorp.wispadmin.oltgateway.service.SyncResult
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.response.Response
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -33,13 +32,11 @@ class OnuServiceTest {
 
     private val oltService = mockk<OltService>()
     private val inventoryProvider = mockk<ObjectProvider<OltInventorySyncService>>()
-    private val facadeProvider = mockk<ObjectProvider<OltManagerFacade>>()
     private val signalProvider = mockk<ObjectProvider<OltSignalPollService>>()
     private val importProvider = mockk<ObjectProvider<com.dscorp.wispadmin.oltgateway.service.SmartOltImportService>>()
     private val subscriptionRepository = mockk<SubscriptionRepository>()
     private val inventorySync = mockk<OltInventorySyncService>()
     private val signalPoll = mockk<OltSignalPollService>()
-    private val facade = mockk<OltManagerFacade>()
     private lateinit var service: OnuService
 
     @BeforeEach
@@ -47,7 +44,6 @@ class OnuServiceTest {
         service = OnuService(
             oltService,
             inventoryProvider,
-            facadeProvider,
             signalProvider,
             importProvider,
             subscriptionRepository
@@ -224,20 +220,9 @@ class OnuServiceTest {
     }
 
     @Test
-    fun `unconfigured usa facade SNMP cuando gateway esta activo`() {
-        every { facadeProvider.getIfAvailable() } returns facade
-        every { facade.unconfiguredOnus() } returns SmartOltUnconfiguredOnusResponseDto(
-            status = true,
-            response = listOf(
-                SmartOltUnconfiguredItemDto(
-                    board = "1",
-                    olt_id = "gigafiber-ma5608t",
-                    port = "0",
-                    sn = "HWTC0086CD49",
-                    pon_type = "gpon",
-                    onu_type_name = "EG8145V5"
-                )
-            )
+    fun `unconfigured delega a SmartOLT`() {
+        every { oltService.getUnConfiguredOnus() } returns listOf(
+            Response("1", "gigafiber-ma5608t", "", "", "EG8145V5", "gpon", "0", "HWTC0086CD49")
         )
 
         val list = service.getUnConfiguredOnus()
@@ -245,29 +230,11 @@ class OnuServiceTest {
         assertEquals(1, list.size)
         assertEquals("HWTC0086CD49", list[0].sn)
         assertEquals("1", list[0].board)
-        verify(exactly = 0) { oltService.getUnConfiguredOnus() }
     }
 
     @Test
-    fun `unconfigured cae a SmartOLT si gateway no esta activo`() {
-        every { facadeProvider.getIfAvailable() } returns null
-        every { oltService.getUnConfiguredOnus() } returns listOf(
-            Response("0", "olt1", "", "", "", "gpon", "1", "AAAA1111")
-        )
-
-        val list = service.getUnConfiguredOnus()
-
-        assertEquals(1, list.size)
-        assertEquals("AAAA1111", list[0].sn)
-    }
-
-    @Test
-    fun `authorizeOnu usa facade cuando gateway esta activo`() {
-        every { facadeProvider.getIfAvailable() } returns facade
-        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
-            status = true,
-            unique_external_id = "gigafiber-ma5608t_1_0_5"
-        )
+    fun `authorizeOnu delega a SmartOLT`() {
+        every { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) } just Runs
 
         val result = service.authorizeOnu(
             AuthorizeOnuFormDto(
@@ -282,14 +249,12 @@ class OnuServiceTest {
         )
 
         assertTrue(result.status)
-        assertEquals("gigafiber-ma5608t_1_0_5", result.unique_external_id)
-        verify(exactly = 1) { facade.authorizeOnu(any()) }
+        verify(exactly = 1) { oltService.authorizeOnuInSmartOltWidthPostMethod(match { it.sn == "HWTC0086CD49" }) }
     }
 
     @Test
-    fun `authorizeOnuInSmartOltWidthPostMethod usa facade cuando gateway esta activo`() {
-        every { facadeProvider.getIfAvailable() } returns facade
-        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true)
+    fun `authorizeOnuInSmartOltWidthPostMethod delega a SmartOLT`() {
+        every { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) } just Runs
 
         service.authorizeOnuInSmartOltWidthPostMethod(
             OnuAuthorizationRequest(
@@ -307,8 +272,9 @@ class OnuServiceTest {
             )
         )
 
-        verify(exactly = 1) { facade.authorizeOnu(match { it.sn == "HWTC0086CD49" && it.zone == "Zone 1" }) }
-        verify(exactly = 0) { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) }
+        verify(exactly = 1) {
+            oltService.authorizeOnuInSmartOltWidthPostMethod(match { it.sn == "HWTC0086CD49" && it.zone == "Zone 1" })
+        }
     }
 
     @Test
@@ -397,14 +363,23 @@ class OnuServiceTest {
     }
 
     @Test
-    fun `rebootConfiguredOnu usa facade`() {
-        every { facadeProvider.getIfAvailable() } returns facade
-        every { facade.rebootOnu("ext-1") } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
+    fun `rebootConfiguredOnu delega a SmartOLT`() {
+        every { oltService.rebootOnu("ext-1") } just Runs
 
         val result = service.rebootConfiguredOnu("ext-1")
 
         assertTrue(result.status)
-        verify(exactly = 1) { facade.rebootOnu("ext-1") }
+        verify(exactly = 1) { oltService.rebootOnu("ext-1") }
+    }
+
+    @Test
+    fun `deleteConfiguredOnu delega a SmartOLT`() {
+        every { oltService.deleteOnu("ext-1") } just Runs
+
+        val result = service.deleteConfiguredOnu("ext-1")
+
+        assertTrue(result.status)
+        verify(exactly = 1) { oltService.deleteOnu("ext-1") }
     }
 
     @Test

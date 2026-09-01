@@ -1,0 +1,100 @@
+# WispAdmin backend — instrucciones para agentes
+
+**Plataforma:** aplican también las reglas de `gigafiber/AGENTS.md` (TDD, secretos, español).
+
+Este repo es Spring Boot/Kotlin (WAR), no Android.
+
+Workflows opcionales: `.cursor/skills/` (feature, TDD, endpoint, review) y `Skills/kotlin-backend/SKILL.md` (notas HTTPS/mapas, acotado).
+
+No apliques skills de Jetpack Compose / R8 / Navigation 3 al backend. Esos docs en `Skills/` y `.skills/mobile-best-practices` son referencia para la app **IpsAdmin**, no para este código.
+
+## Documentación obligatoria de comandos OLT
+
+Cada vez que **ejecutes, implementes, pruebes o depures** un comando **nuevo** hacia la OLT (SSH CLI) o un endpoint del OLT Gateway (HTTP), documéntalo **en el mismo turno**, antes de cerrar la tarea.
+
+### Dónde
+
+`.agent-docs/olt-gateway-comandos-catalogo.md`
+
+### Qué registrar (mínimo)
+
+| Campo | Contenido |
+|-------|-----------|
+| **Comando** | Literal exacto (placeholders `{slot}`, `{port}`, `{sn}`, `{ontId}` si aplica) |
+| **Descripción** | Una frase: qué hace y qué devuelve |
+| **Usado en** | Clase, servicio o endpoint que lo invoca |
+| **Notas** | Opcional: timeout, fallback, errores conocidos, tiempos medidos |
+
+Ejemplo:
+
+```markdown
+| `display ont optical-info {port} all` | Tabla Rx/Tx/OLT Rx de todas las ONUs de un puerto GPON | `OltSignalPollService` | Solo dentro de `interface gpon 0/{slot}`; ~3–15 s/puerto |
+```
+
+### Cuándo documentar
+
+- Comando **nuevo** en código o en prueba live (funciona, falla o requiere variante).
+- Cambio de estrategia (p. ej. slot-all → port-all).
+- Comando usado en diagnóstico que aún no esté en el catálogo.
+
+### Si ya existe
+
+No duplicar: actualizar la fila si cambió comportamiento, tiempos o notas. Detalle largo → enlace a `.agent-docs/olt-ma5608t-gpon-guide.md`.
+
+### Criterio de terminado
+
+Tarea con comandos CLI/API nuevos o modificados **no cerrada** si el catálogo no los refleja.
+
+## Catálogo obligatorio de keys y secretos
+
+**Ámbito:** al tocar `application*.properties`, `.env*`, `deploy.config*` o `.agent-docs/vps-secrets-management.md`.
+
+Cada vez que **introduzcas o cambies** una variable de entorno, API key, token o secreto (backend, deploy, frontends `VITE_*`, VPS), actualiza el catálogo **en el mismo turno**, antes de cerrar la tarea.
+
+### Qué documentar
+
+| Campo | Contenido |
+|-------|-----------|
+| **Nombre** | Variable exacta (`CRM_SECRETS_MASTER_KEY`, `VITE_OBS_API_KEY`, …) |
+| **Entorno** | `prod` (VPS), `dev` (local), `build` (embebido en bundle), o varios |
+| **Dónde vive el valor** | p. ej. `/opt/gigafiber/.env`, `application-local.properties`, `.env.production` |
+| **Enlaza propiedad** | Clave en `application-*.properties` si aplica |
+| **Rotación / pareja** | p. ej. debe coincidir con `NET_DIAG_API_KEY` ↔ `VITE_NETDIAG_API_KEY` |
+
+### Qué NO documentar en git
+
+- **Valores reales** de secretos (tokens, passwords, master keys).
+- Copias de `.env` de prod ni dumps de `grep` con `=valor`.
+
+Placeholders permitidos: vacío, `openssl rand …`, `dev-*-key`, comentario “mismo que backend”.
+
+### Dónde registrar (fuente de verdad)
+
+1. **Backend / VPS / parejas cross-app:** `.agent-docs/vps-secrets-management.md` — tabla por grupo; añadir fila o variable nueva.
+2. **Plantillas locales sin valor:** `scripts/deploy.config.example` (deploy Mac), comentarios en `application-dev.properties` solo si es el binding `${ENV}`.
+3. **Frontends:** `.env.example` del repo + la sección **Frontends** en `vps-secrets-management.md`.
+4. **Feature con muchas claves:** enlace desde el doc de feature (p. ej. CRM fase 4) al catálogo; no duplicar tablas largas.
+
+### Cuándo actualizar
+
+- Nueva `${VAR}` en `application-prod.properties` o `application-dev.properties`.
+- Nuevo `VITE_*` consumido en código.
+- Secreto nuevo en VPS o en `deploy.config.local` (solo documentar el **nombre** en example).
+- Rotación: actualizar notas de rotación en el catálogo, no el valor.
+
+### Criterio de terminado
+
+Tarea con secretos nuevos o renombrados **no cerrada** si el nombre no aparece en el catálogo y en la plantilla `.example` correspondiente.
+
+## E2E TR-069 — entregar WiFi al cerrar
+
+Si un e2e de alta FIBER/TR-069 termina en **`tr069ProvisionStatus=COMPLETE`** (GPV ACS de IP de pool + SSIDs), en el **mismo mensaje de cierre** y **antes** de la limpieza dura, entregar al usuario las credenciales WiFi del `POST /subscription`:
+
+| Banda | Campo | Qué mostrar |
+|-------|--------|-------------|
+| 2.4 GHz | `wifiSsid24` / `wifiPassword24` | SSID **y** contraseña |
+| 5 GHz | `wifiSsid5` / `wifiPassword5` | SSID **y** contraseña |
+
+No dar la prueba por cerrada si solo se mencionan los SSID. Usar los valores reales del alta, no un placeholder.
+
+Runbook: `.agent-docs/tr069-e2e-validacion-modelo.md` (sección «Entregar WiFi al usuario»).

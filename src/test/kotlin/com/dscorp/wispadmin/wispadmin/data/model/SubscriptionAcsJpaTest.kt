@@ -5,16 +5,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
 import java.time.LocalDateTime
 
 @DataJpaTest
+@ContextConfiguration(classes = [SubscriptionAcsJpaTest.TestApp::class])
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @TestPropertySource(
     properties = [
@@ -29,7 +30,6 @@ import java.time.LocalDateTime
 )
 class SubscriptionAcsJpaTest {
 
-    @SpringBootConfiguration
     @EnableAutoConfiguration
     @EntityScan(basePackageClasses = [SubscriptionAcs::class])
     @EnableJpaRepositories(basePackageClasses = [SubscriptionAcsRepository::class])

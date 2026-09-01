@@ -24,6 +24,9 @@ Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|stag
   --with      Optional subsystems to keep in the staging WAR (observability,oltgateway,netdiag,traffic,servicehealth).
               Default staging: none.
 
+All deploy modes run the complete Maven test suite before building or connecting to the VPS.
+Any failing test aborts the deployment.
+
 Environment:
   DEPLOY_SSH_PASSWORD   Optional; if omitted and no SSH key works, password is prompted once
 
@@ -198,6 +201,12 @@ run_rsync() {
     rsh+=" -i $SSH_IDENTITY_FILE"
   fi
   rsync -hW --partial --progress -e "$rsh" "$@"
+}
+
+run_tests() {
+  echo "Running complete backend test suite before deployment..."
+  (cd "$PROJECT_DIR" && sh mvnw clean test)
+  echo "All backend tests passed. Deployment may continue."
 }
 
 build_war() {
@@ -734,6 +743,7 @@ case "$MODE" in
   full)
     load_release_version
     check_version_not_registered
+    run_tests
     setup_djl
     prepare_prod_war_on_host_if_splitting
     sync_war_to_host
@@ -749,6 +759,7 @@ case "$MODE" in
   war-only)
     load_release_version
     check_version_not_registered
+    run_tests
     init_ssh
     prepare_prod_war_on_host_if_splitting
     sync_war_to_host
@@ -763,6 +774,7 @@ case "$MODE" in
   deploy)
     load_release_version
     check_version_not_registered
+    run_tests
     build_war
     init_ssh
     prepare_prod_war_on_host_if_splitting

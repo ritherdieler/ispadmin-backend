@@ -12,6 +12,8 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 
 ---
 
+Último deploy staging: `./scripts/deploy.sh --env staging --with servicehealth,oltgateway,netdiag,traffic` → `1.0.3+49c036a` (hora local en series Wi‑Fi `formatApi` + fixes telemetría). Detalle backoffice: `ispadmin-backoffice/.agent-docs/service-health-hora-local-2026-08-31.md`. Deploy óptica SSH lab previo: [deploy-staging-lab-optical-ssh-2026-08-31.md](./deploy-staging-lab-optical-ssh-2026-08-31.md).
+
 ## Resumen
 
 | Escenario | Comando |
@@ -23,6 +25,8 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 | **Solo subir WAR ya compilado** | `./scripts/deploy.sh --war-only --env prod\|staging` |
 
 En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
+
+Todos los modos que despliegan un WAR (`--deploy`, `--full` y `--war-only`) ejecutan primero `mvnw clean test`. Con `set -e`, cualquier test fallido cancela el proceso antes de compilar el WAR, abrir SSH o modificar el VPS. `--war-only` reutiliza el artefacto, pero no omite esta compuerta.
 
 ---
 
@@ -152,12 +156,13 @@ Si el setup DJL ya está hecho y solo quieres subir el WAR tras rebuild:
 
 Equivale a `--deploy` (modo por defecto):
 
-1. `mvnw clean package -DskipTests -Ddjl.linux`
-2. `verify-djl-war.sh`
-3. SCP del WAR al VPS
-4. `docker cp` a `tomcat9027:/usr/local/tomcat/webapps/ispadmin.war`
-5. Espera despliegue de Spring Boot (~30–60 s)
-6. Comprueba `GET /ispadmin/` → HTTP 200
+1. `mvnw clean test` y cancelación inmediata ante cualquier fallo
+2. `mvnw clean package -DskipTests -Ddjl.linux`
+3. `verify-djl-war.sh`
+4. SCP del WAR al VPS
+5. `docker cp` a `tomcat9027:/usr/local/tomcat/webapps/ispadmin.war`
+6. Espera despliegue de Spring Boot (~30–60 s)
+7. Comprueba `GET /ispadmin/` → HTTP 200
 
 Si **ya compilaste** y no quieres rebuild:
 

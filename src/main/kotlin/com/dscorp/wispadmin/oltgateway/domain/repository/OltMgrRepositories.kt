@@ -60,6 +60,11 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
     fun findBySnIgnoreCaseAndDeletedAtIsNull(@Param("sn") sn: String): Optional<OltMgrOnu>
 
     @Query(
+        "SELECT o FROM OltMgrOnu o WHERE o.deletedAt IS NULL AND UPPER(o.sn) LIKE CONCAT('%', UPPER(:suffix))"
+    )
+    fun findBySnSuffixIgnoreCaseAndDeletedAtIsNull(@Param("suffix") suffix: String): List<OltMgrOnu>
+
+    @Query(
         "SELECT o FROM OltMgrOnu o WHERE o.olt.id = :oltId AND o.board = :board " +
             "AND o.port = :port AND o.onuIndex = :onuIndex AND o.deletedAt IS NULL"
     )

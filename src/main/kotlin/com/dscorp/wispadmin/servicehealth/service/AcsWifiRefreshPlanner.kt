@@ -19,4 +19,19 @@ object AcsWifiRefreshPlanner {
         if (lastRequestAt == null) return true
         return !lastRequestAt.isAfter(now.minusSeconds(cooldownSeconds.coerceAtLeast(0)))
     }
+
+    fun sampleCursorKey(deviceId: String) = "acs-gpv-target:$deviceId"
+
+    fun shouldEnqueueTargetSample(
+        lastSampleAt: Instant?,
+        lastRequestAt: Instant?,
+        now: Instant,
+        targetSeconds: Long,
+        cooldownSeconds: Long,
+    ): Boolean {
+        val stale = lastSampleAt == null || lastSampleAt.isBefore(now.minusSeconds(targetSeconds.coerceAtLeast(1)))
+        if (!stale) return false
+        if (lastRequestAt == null) return true
+        return !lastRequestAt.isAfter(now.minusSeconds(cooldownSeconds.coerceAtLeast(0)))
+    }
 }

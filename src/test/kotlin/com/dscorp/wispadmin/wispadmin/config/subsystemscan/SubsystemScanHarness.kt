@@ -1,4 +1,4 @@
-package com.dscorp.wispadmin.wispadmin.config.subsystemscan
+package com.dscorp.testsupport.subsystemscan
 
 import com.dscorp.wispadmin.wispadmin.config.SubsystemScanFilter
 import org.springframework.boot.autoconfigure.SpringBootApplication

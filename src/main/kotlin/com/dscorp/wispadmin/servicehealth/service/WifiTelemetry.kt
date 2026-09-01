@@ -7,20 +7,30 @@ import java.time.Instant
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/** Strict projection: never download the WLAN/Hosts subtree or station names. */
+/** WLAN totals + station RF + Hosts display names. Never projects SSID/password or raw MAC in API. */
 object WifiTelemetry {
     const val ROOT = "InternetGatewayDevice.LANDevice.1"
     const val MAX_STATIONS = 32
+    const val MAX_HOSTS = 64
+    const val INFORM_PARAM_MAX_LAG_SECONDS = 300L
     val stationFields = listOf("AssociatedDeviceMACAddress", "AssociatedDeviceRssi", "AssociatedDeviceRate",
+        "AssociatedDeviceName", "X_ZTE-COM_AssociatedDeviceName",
         "X_ZTE-COM_WLAN_SNR", "X_ZTE-COM_WLAN_Noise", "X_ZTE-COM_WLAN_PacketSend", "X_ZTE-COM_WLAN_PacketReceived",
         "X_HW_RSSI", "X_HW_SNR", "X_HW_Noise", "X_HW_RxRate", "X_HW_TxRate")
     fun radios(model: String): Map<Int,String> = when(model.uppercase()) {
         "F6600R" -> mapOf(1 to "2.4", 5 to "5")
-        "V2804AX15T" -> mapOf(1 to "2.4")
+        "V2804AX15T" -> mapOf(1 to "5", 5 to "2.4")
         else -> emptyMap()
+    }
+    fun hostLeaves(hostCount: Int): List<String> {
+        val n = hostCount.coerceIn(0, MAX_HOSTS)
+        return (1..n).flatMap { index ->
+            listOf("$ROOT.Hosts.Host.$index.MACAddress", "$ROOT.Hosts.Host.$index.HostName")
+        }
     }
     fun projection(): String = (listOf("_id","_lastInform","_lastBoot","_deviceId",
         "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
+        hostLeaves(MAX_HOSTS) +
         listOf(1,5).flatMap { radio ->
             val p="$ROOT.WLANConfiguration.$radio"
             listOf("$p.TotalAssociations") + (1..MAX_STATIONS).flatMap { index ->
@@ -30,9 +40,12 @@ object WifiTelemetry {
     fun countProjection(): String = (listOf("_id","_lastInform","_lastBoot","_deviceId",
         "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
         listOf(1, 5).map { "$ROOT.WLANConfiguration.$it.TotalAssociations" }).joinToString(",")
-    fun stationProjection(associated2g: Int, associated5g: Int): String {
-        val counts = mapOf(1 to associated2g.coerceIn(0, MAX_STATIONS), 5 to associated5g.coerceIn(0, MAX_STATIONS))
-        return (listOf("_id", "_lastInform") + counts.flatMap { (radio, n) ->
+    fun stationProjection(model: String, associated2g: Int, associated5g: Int, hostCount: Int = 0): String {
+        val radioMap = radios(model)
+        if (radioMap.isEmpty()) return (listOf("_id", "_lastInform", "$ROOT.Hosts.HostNumberOfEntries") + hostLeaves(hostCount)).joinToString(",")
+        val byBand = mapOf("2.4" to associated2g.coerceIn(0, MAX_STATIONS), "5" to associated5g.coerceIn(0, MAX_STATIONS))
+        return (listOf("_id", "_lastInform", "$ROOT.Hosts.HostNumberOfEntries") + hostLeaves(hostCount) + radioMap.flatMap { (radio, band) ->
+            val n = byBand.getValue(band)
             val p = "$ROOT.WLANConfiguration.$radio"
             listOf("$p.TotalAssociations") + (1..n).flatMap { index -> stationFields.map { "$p.AssociatedDevice.$index.$it" } }
         }).joinToString(",")
@@ -41,19 +54,22 @@ object WifiTelemetry {
     fun gpvPaths(root: JsonNode, model: String): List<String> {
         return radios(model).keys.map { radio -> "$ROOT.WLANConfiguration.$radio.TotalAssociations" }
     }
-    fun gpvStationPaths(model: String, associated2g: Int?, associated5g: Int?): List<String> {
+    fun gpvStationPaths(model: String, associated2g: Int?, associated5g: Int?, hostCount: Int? = null): List<String> {
+        val radioMap = radios(model)
+        if (radioMap.isEmpty()) return emptyList()
         val counts = mapOf("2.4" to (associated2g ?: 0), "5" to (associated5g ?: 0))
-        return radios(model).flatMap { (radio, band) ->
+        val stationPaths = radioMap.flatMap { (radio, band) ->
             val n = counts.getValue(band).coerceIn(0, MAX_STATIONS)
             val base = "$ROOT.WLANConfiguration.$radio"
             (1..n).flatMap { index -> stationFields.map { "$base.AssociatedDevice.$index.$it" } }
         }
+        return stationPaths + hostLeaves(hostCount ?: 0)
     }
     fun gpvRefreshPaths(root: JsonNode, model: String, subscriptionId: Int, now: Instant, secret: String): List<String> {
         val totals = gpvPaths(root, model)
         val reading = parse(root, subscriptionId, model, now, secret) ?: return totals
         if (!reading.complete) return totals
-        return totals + gpvStationPaths(model, reading.count.associated2g, reading.count.associated5g)
+        return totals + gpvStationPaths(model, reading.count.associated2g, reading.count.associated5g, reading.count.lanDeviceCount)
     }
 
     fun node(root: JsonNode, path: String): JsonNode {
@@ -66,13 +82,32 @@ object WifiTelemetry {
         if(n.isNumber) Instant.ofEpochMilli(n.asLong()) else Instant.parse(n.asText())
     } catch (_: Exception) { null }
     fun value(root: JsonNode, path: String): String? = node(root,path).path("_value").takeUnless { it.isMissingNode || it.isNull }?.asText()
+    fun normalizeMac(address: String): String? {
+        val normalized=address.replace(Regex("[^a-fA-F0-9]"), "").uppercase()
+        return normalized.takeIf { it.length == 12 }
+    }
+    fun sanitizeDisplayName(raw: String?): String? {
+        val cleaned=raw?.trim()?.replace(Regex("[\\p{Cntrl}]"), "")?.take(64)?.trim().orEmpty()
+        if(cleaned.isEmpty()) return null
+        if(normalizeMac(cleaned)!=null) return null
+        return cleaned
+    }
     fun stationKey(secret: String, subscriptionId: Int, address: String): String {
         require(secret.toByteArray().size >= 32) { "station-hmac-key debe tener al menos 32 bytes" }
-        val normalized=address.replace(Regex("[^a-fA-F0-9]"), "").uppercase()
-        require(normalized.length == 12) { "INVALID_STATION_ADDRESS" }
+        val normalized=normalizeMac(address) ?: throw IllegalArgumentException("INVALID_STATION_ADDRESS")
         val mac=Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(secret.toByteArray(),"HmacSHA256"))
         return mac.doFinal("$subscriptionId:$normalized".toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+    fun hostDisplayNames(root: JsonNode): Map<String,String> {
+        val names=mutableMapOf<String,String>()
+        for(index in 1..MAX_HOSTS) {
+            val base="$ROOT.Hosts.Host.$index"
+            val mac=normalizeMac(value(root,"$base.MACAddress") ?: continue) ?: continue
+            val name=sanitizeDisplayName(value(root,"$base.HostName")) ?: continue
+            names.putIfAbsent(mac,name)
+        }
+        return names
     }
 
     data class Reading(val count: WifiCountSample, val stations: List<WifiStationSample>, val complete: Boolean)
@@ -93,7 +128,10 @@ object WifiTelemetry {
         val inform=parseInstant(root.path("_lastInform")) ?: return null
         val radioMap=radios(model)
         val count=WifiCountSample(subscriptionId=subscriptionId, deviceId=root.path("_id").asText(),informAt=inform,collectedAt=now)
+        val hostEntries=node(root,"$ROOT.Hosts.HostNumberOfEntries").path("_value").asText().toIntOrNull()
+        if(hostEntries!=null && hostEntries>=0) count.lanDeviceCount=hostEntries.coerceAtMost(MAX_HOSTS)
         if(radioMap.isEmpty()) { count.qualityStatus=Quality.UNSUPPORTED; return Reading(count,emptyList(),true) }
+        val hostNames=hostDisplayNames(root)
         val times=mutableListOf<Instant>()
         val stations=mutableListOf<WifiStationSample>()
         var total=0; var complete=true
@@ -102,8 +140,7 @@ object WifiTelemetry {
             val n=node(root,"$p.TotalAssociations")
             val observed=timestamp(n)
             val number=n.path("_value").asText().toIntOrNull()
-            // Inform timestamps and parameter timestamps describe different events.
-            if(observed == null || observed.isBefore(inform.minusSeconds(60)) || observed.isAfter(now.plusSeconds(60)) || number == null || number < 0) {
+            if(observed == null || observed.isBefore(inform.minusSeconds(INFORM_PARAM_MAX_LAG_SECONDS)) || observed.isAfter(now.plusSeconds(60)) || number == null || number < 0) {
                 complete=false; continue
             }
             times+=observed; total+=number
@@ -115,12 +152,12 @@ object WifiTelemetry {
                 val addr=node(root,"$base.AssociatedDeviceMACAddress")
                 val address=addr.path("_value").asText("")
                 val addrAt=timestamp(addr)
-                if(address.isBlank() || addrAt==null || addrAt.isBefore(inform.minusSeconds(60))) continue
+                if(address.isBlank() || addrAt==null || addrAt.isBefore(inform.minusSeconds(INFORM_PARAM_MAX_LAG_SECONDS))) continue
                 val metricTimes=mutableListOf<Instant>()
                 fun metric(vararg fields: String): Double? {
                     for(field in fields) {
                         val v=node(root,"$base.$field"); val t=timestamp(v) ?: continue
-                        if(t.isBefore(inform.minusSeconds(60)) || t.isAfter(now.plusSeconds(60))) continue
+                        if(t.isBefore(inform.minusSeconds(INFORM_PARAM_MAX_LAG_SECONDS)) || t.isAfter(now.plusSeconds(60))) continue
                         val numberValue=v.path("_value").asText().toDoubleOrNull()?.takeIf { it.isFinite() } ?: continue
                         metricTimes+=t; return numberValue
                     }
@@ -135,8 +172,12 @@ object WifiTelemetry {
                 val prx=metric("X_ZTE-COM_WLAN_PacketReceived")?.toLong()
                 if(rssi==null && snr==null) continue
                 val key=try { stationKey(secret,subscriptionId,address) } catch (_: IllegalArgumentException) { continue }
+                val mac=normalizeMac(address)
+                val vendorName=sanitizeDisplayName(value(root,"$base.AssociatedDeviceName"))
+                    ?: sanitizeDisplayName(value(root,"$base.X_ZTE-COM_AssociatedDeviceName"))
+                val display=mac?.let { hostNames[it] } ?: vendorName
                 val t=(metricTimes+addrAt).minOrNull() ?: continue
-                stations+=WifiStationSample(subscriptionId=subscriptionId,stationKey=key,band=band,observedAt=t,collectedAt=now,
+                stations+=WifiStationSample(subscriptionId=subscriptionId,stationKey=key,band=band,displayName=display,observedAt=t,collectedAt=now,
                     rssi=rssi,snr=snr,noise=noise,rxRate=rx,txRate=tx,packetsTx=ptx,packetsRx=prx)
             }
         }

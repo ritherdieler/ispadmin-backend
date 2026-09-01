@@ -57,4 +57,16 @@ class AcsWifiRefreshPlannerTest {
         assertFalse(AcsWifiRefreshPlanner.shouldEnqueueStations(3, 1, now.minusSeconds(100), now, cooldown))
         assertEquals("acs-gpv-sta:dev", AcsWifiRefreshPlanner.stationCursorKey("dev"))
     }
+
+    @Test
+    fun `target sample requests gpv when last station reading is older than 30 minutes`() {
+        val target = 1800L
+        val cooldown = 1800L
+        assertTrue(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(now.minusSeconds(1801), null, now, target, cooldown))
+        assertTrue(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(null, null, now, target, cooldown))
+        assertTrue(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(now.minusSeconds(1801), now.minusSeconds(1800), now, target, cooldown))
+        assertFalse(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(now.minusSeconds(100), null, now, target, cooldown))
+        assertFalse(AcsWifiRefreshPlanner.shouldEnqueueTargetSample(now.minusSeconds(1801), now.minusSeconds(100), now, target, cooldown))
+        assertEquals("acs-gpv-target:dev", AcsWifiRefreshPlanner.sampleCursorKey("dev"))
+    }
 }

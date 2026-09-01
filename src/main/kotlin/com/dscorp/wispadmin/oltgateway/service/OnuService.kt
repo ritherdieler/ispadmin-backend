@@ -34,7 +34,6 @@ import org.springframework.web.server.ResponseStatusException
 class OnuService @Autowired constructor(
     private val oltService: OltService,
     private val inventorySyncService: ObjectProvider<OltInventorySyncService>,
-    private val oltManagerFacade: ObjectProvider<OltManagerFacade>,
     private val signalPollService: ObjectProvider<OltSignalPollService>,
     private val smartOltImportService: ObjectProvider<SmartOltImportService>,
     private val subscriptionRepository: SubscriptionRepository
@@ -98,29 +97,10 @@ class OnuService @Autowired constructor(
     }
 
     fun getUnConfiguredOnus(): List<Response> {
-        val facade = oltManagerFacade.getIfAvailable()
-        if (facade != null) {
-            return facade.unconfiguredOnus().response.map { item ->
-                Response(
-                    board = item.board,
-                    olt_id = item.olt_id,
-                    onu = item.onu,
-                    onu_type_id = item.onu_type_id,
-                    onu_type_name = item.onu_type_name,
-                    pon_type = item.pon_type,
-                    port = item.port,
-                    sn = item.sn
-                )
-            }
-        }
         return oltService.getUnConfiguredOnus() ?: emptyList()
     }
 
     fun authorizeOnu(request: AuthorizeOnuFormDto): SmartOltActionResponseDto {
-        val facade = oltManagerFacade.getIfAvailable()
-        if (facade != null) {
-            return facade.authorizeOnu(request)
-        }
         authorizeOnuInSmartOltWidthPostMethod(
             OnuAuthorizationRequest(
                 olt_id = request.olt_id,
@@ -140,19 +120,11 @@ class OnuService @Autowired constructor(
     }
 
     fun deleteConfiguredOnu(externalId: String): SmartOltActionResponseDto {
-        val facade = oltManagerFacade.getIfAvailable()
-        if (facade != null) {
-            return facade.deleteOnu(externalId)
-        }
         oltService.deleteOnu(externalId)
         return SmartOltActionResponseDto(status = true, unique_external_id = externalId)
     }
 
     fun rebootConfiguredOnu(externalId: String): SmartOltActionResponseDto {
-        val facade = oltManagerFacade.getIfAvailable()
-        if (facade != null) {
-            return facade.rebootOnu(externalId)
-        }
         oltService.rebootOnu(externalId)
         return SmartOltActionResponseDto(status = true, unique_external_id = externalId)
     }
@@ -195,11 +167,6 @@ class OnuService @Autowired constructor(
     }
 
     override fun authorizeOnuInSmartOltWidthPostMethod(authorizationRequest: OnuAuthorizationRequest) {
-        val facade = oltManagerFacade.getIfAvailable()
-        if (facade != null) {
-            facade.authorizeOnu(authorizationRequest.toAuthorizeForm())
-            return
-        }
         oltService.authorizeOnuInSmartOltWidthPostMethod(authorizationRequest)
     }
 
@@ -208,21 +175,6 @@ class OnuService @Autowired constructor(
             ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OLT gateway no está habilitado")
         return importService.importFromSmartOlt(pageSize, maxPages)
     }
-
-    private fun OnuAuthorizationRequest.toAuthorizeForm(): AuthorizeOnuFormDto =
-        AuthorizeOnuFormDto(
-            olt_id = olt_id,
-            pon_type = pon_type,
-            board = board,
-            port = port,
-            sn = sn,
-            vlan = vlan,
-            onu_type = onu_type,
-            zone = zone,
-            name = name,
-            onu_mode = onu_mode,
-            custom_profile = custom_profile
-        )
 
     override fun deleteOnu(onuExternalId: String) {
         deleteConfiguredOnu(onuExternalId)
