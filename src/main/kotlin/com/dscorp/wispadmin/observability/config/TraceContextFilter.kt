@@ -13,6 +13,7 @@ import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.HandlerMapping
+import java.util.concurrent.ThreadLocalRandom
 import javax.servlet.FilterChain
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
@@ -33,11 +34,16 @@ class TraceContextFilter(
         const val MDC_KEY = HttpTraceContext.MDC_KEY
     }
 
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
+    internal var randomSupplier: () -> Double = { ThreadLocalRandom.current().nextDouble() }
+
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         if (!properties.enabled || !properties.tracing.enabled) return true
         if ("OPTIONS".equals(request.method, ignoreCase = true)) return true
-        val path = request.servletPath ?: request.requestURI ?: ""
-        return path.contains("/observability")
+        val servletPath = request.servletPath.orEmpty()
+        val requestUri = request.requestURI.orEmpty()
+        return servletPath.contains("/observability") || requestUri.contains("/observability")
     }
 
     override fun doFilterInternal(
@@ -50,6 +56,7 @@ class TraceContextFilter(
         val parentSpanId = parsed?.parentSpanId
         val serverSpanId = TraceIds.spanId()
         val sessionId = request.getHeader(HEADER_SESSION)?.takeIf { it.isNotBlank() }
+        val sampled = decideSampled(parsed?.sampled)
 
         val scope = TraceScope(
             traceId = traceId,
@@ -57,7 +64,8 @@ class TraceContextFilter(
             sessionId = sessionId,
             platform = "backend",
             environment = null,
-            release = properties.release.takeIf { it.isNotBlank() }
+            release = properties.release.takeIf { it.isNotBlank() },
+            sampled = sampled
         )
         TraceContext.set(scope)
 
@@ -65,11 +73,11 @@ class TraceContextFilter(
         request.setAttribute(ATTRIBUTE_TRACE_ID, traceId)
         sessionId?.let { request.setAttribute(ATTRIBUTE_SESSION, it) }
         response.setHeader(CorrelationIdFilter.HEADER, traceId)
-        response.setHeader(HEADER_TRACEPARENT, TraceParent.format(traceId, serverSpanId, parsed?.sampled ?: true))
+        response.setHeader(HEADER_TRACEPARENT, TraceParent.format(traceId, serverSpanId, sampled))
         MDC.put(CorrelationIdFilter.MDC_KEY, traceId)
         MDC.put(MDC_KEY, traceId)
 
-        val start = System.currentTimeMillis()
+        val start = clock()
         var thrown: Exception? = null
         try {
             filterChain.doFilter(request, response)
@@ -77,13 +85,30 @@ class TraceContextFilter(
             thrown = e
             throw e
         } finally {
-            val duration = System.currentTimeMillis() - start
+            val duration = clock() - start
             val status = if (thrown != null && response.status < 400) 500 else response.status
-            enqueueServerSpan(request, traceId, serverSpanId, parentSpanId, sessionId, start, duration, status)
+            if (shouldRetainServerSpan(sampled, status, duration)) {
+                enqueueServerSpan(request, traceId, serverSpanId, parentSpanId, sessionId, start, duration, status)
+            }
             TraceContext.clear()
             MDC.remove(MDC_KEY)
             MDC.remove(CorrelationIdFilter.MDC_KEY)
         }
+    }
+
+    private fun decideSampled(upstreamSampled: Boolean?): Boolean {
+        if (upstreamSampled == false) return false
+        val rate = properties.tracing.sampleRate
+        if (rate >= 1.0) return true
+        if (rate <= 0.0) return false
+        return randomSupplier() < rate
+    }
+
+    private fun shouldRetainServerSpan(sampled: Boolean, status: Int, duration: Long): Boolean {
+        if (sampled) return true
+        if (status >= 400) return true
+        val threshold = properties.tracing.alwaysSampleAboveMs
+        return threshold > 0 && duration >= threshold
     }
 
     private fun enqueueServerSpan(

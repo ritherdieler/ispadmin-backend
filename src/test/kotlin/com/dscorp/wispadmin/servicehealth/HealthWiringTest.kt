@@ -20,8 +20,10 @@ import org.springframework.context.annotation.*
     "spring.jpa.hibernate.ddl-auto=create-drop","spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect","spring.datasource.url=jdbc:h2:mem:wiring;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
     "spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver",
-    "service.health.enabled=false","net.diag.enabled=false"])
+    "service.health.enabled=false","net.diag.enabled=false","spring.flyway.enabled=false"])
 @MockBean(classes=[SubscriptionRepository::class,SubscriptionAcsRepository::class,
+    com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort::class,
+    com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort::class,
     GenieAcsClient::class,ObservabilitySessionTokenService::class])
 class HealthWiringTest {
     @Import(HealthPersistenceTest.Config::class)

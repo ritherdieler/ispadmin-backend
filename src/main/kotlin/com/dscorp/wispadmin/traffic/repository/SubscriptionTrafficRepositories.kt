@@ -47,55 +47,12 @@ interface SubscriptionTrafficSampleRepository : JpaRepository<SubscriptionTraffi
         @Param("to") to: LocalDateTime
     ): List<SubscriptionTrafficSample>
 
-    @Query(
-        value = """
-        WITH ranked AS (
-            SELECT subscription_id,
-                   rx_bytes_delta,
-                   tx_bytes_delta,
-                   avg_mbps_down,
-                   avg_mbps_up,
-                   ROW_NUMBER() OVER (PARTITION BY subscription_id ORDER BY avg_mbps_down) AS rn_down,
-                   ROW_NUMBER() OVER (PARTITION BY subscription_id ORDER BY avg_mbps_up) AS rn_up,
-                   COUNT(*) OVER (PARTITION BY subscription_id) AS sample_count
-            FROM subscription_traffic_sample
-            WHERE subscription_id IN (:subscriptionIds)
-              AND bucket_start >= :from
-              AND bucket_start < :to
-              AND sample_status = 'OK'
-        )
-        SELECT subscription_id AS subscriptionId,
-               CAST(SUM(rx_bytes_delta) AS SIGNED) AS rxBytes,
-               CAST(SUM(tx_bytes_delta) AS SIGNED) AS txBytes,
-               MAX(CASE WHEN rn_down = CEIL(0.95 * sample_count) THEN avg_mbps_down END) AS p95MbpsDown,
-               MAX(CASE WHEN rn_up = CEIL(0.95 * sample_count) THEN avg_mbps_up END) AS p95MbpsUp,
-               MAX(sample_count) AS sampleCount
-        FROM ranked
-        GROUP BY subscription_id
-        """,
-        nativeQuery = true
-    )
-    fun summarizeInBucketRange(
-        @Param("subscriptionIds") subscriptionIds: Collection<Int>,
-        @Param("from") from: LocalDateTime,
-        @Param("to") to: LocalDateTime
-    ): List<SubscriptionTrafficRawSummaryProjection>
-
     @Modifying
     @Query("DELETE FROM SubscriptionTrafficSample s WHERE s.bucketStart < :threshold")
     fun deleteOlderThan(@Param("threshold") threshold: LocalDateTime): Int
 
     @Query("SELECT MIN(s.bucketStart) FROM SubscriptionTrafficSample s")
     fun findMinBucketStart(): LocalDateTime?
-}
-
-interface SubscriptionTrafficRawSummaryProjection {
-    fun getSubscriptionId(): Int
-    fun getRxBytes(): Long
-    fun getTxBytes(): Long
-    fun getP95MbpsDown(): Double
-    fun getP95MbpsUp(): Double
-    fun getSampleCount(): Int
 }
 
 interface BandwidthNetworkBucketProjection {
@@ -323,6 +280,19 @@ interface SubscriptionTrafficHourlyRepository : JpaRepository<SubscriptionTraffi
 
     @Query(
         """
+        SELECT DISTINCT h.subscriptionId
+        FROM SubscriptionTrafficHourly h
+        WHERE h.bucketStart >= :from AND h.bucketStart < :to
+        ORDER BY h.subscriptionId
+        """
+    )
+    fun findDistinctSubscriptionIdsInBucketRange(
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime
+    ): List<Int>
+
+    @Query(
+        """
         SELECT h FROM SubscriptionTrafficHourly h
         WHERE h.bucketStart >= :from AND h.bucketStart < :to
           AND h.subscriptionId IN :subscriptionIds
@@ -444,6 +414,19 @@ interface SubscriptionTrafficDailyRepository : JpaRepository<SubscriptionTraffic
         @Param("from") from: LocalDate,
         @Param("to") to: LocalDate
     ): List<SubscriptionTrafficDaily>
+
+    @Query(
+        """
+        SELECT DISTINCT d.subscriptionId
+        FROM SubscriptionTrafficDaily d
+        WHERE d.bucketStart >= :from AND d.bucketStart < :to
+        ORDER BY d.subscriptionId
+        """
+    )
+    fun findDistinctSubscriptionIdsInBucketRange(
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate
+    ): List<Int>
 
     @Query(
         """

@@ -38,4 +38,5 @@ class NetDiagPollScheduler(
             logger.warn("NetDiag retention job failed: {}", ex.message)
         }
     }
+
 }

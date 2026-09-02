@@ -26,7 +26,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
         "com.dscorp.wispadmin.routeros",
         "com.dscorp.wispadmin.netdiag",
         "com.dscorp.wispadmin.traffic",
-        "com.dscorp.wispadmin.servicehealth"
+        "com.dscorp.wispadmin.servicehealth",
+        "com.dscorp.wispadmin.shared"
     ],
     excludeFilters = [
         ComponentScan.Filter(type = FilterType.CUSTOM, classes = [TypeExcludeFilter::class]),

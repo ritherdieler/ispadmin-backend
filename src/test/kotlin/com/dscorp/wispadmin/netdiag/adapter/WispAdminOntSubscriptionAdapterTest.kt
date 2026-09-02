@@ -25,7 +25,7 @@ class WispAdminOntSubscriptionAdapterTest {
             lastName = "Perez",
             serviceStatus = ServiceStatus.ACTIVE,
             equipmentCondition = EquipmentCondition.LOAN,
-            fiberOnu = onu
+            fiberOnuSn = onu.sn
         )
         every { subscriptionRepository.findByExactOnuSerial("HWTC00000016") } returns listOf(subscription)
 
@@ -52,7 +52,7 @@ class WispAdminOntSubscriptionAdapterTest {
             businessName = "Acme ISP SAC",
             serviceStatus = ServiceStatus.ACTIVE,
             equipmentCondition = EquipmentCondition.LOAN,
-            fiberOnu = onu
+            fiberOnuSn = onu.sn
         )
         every { subscriptionRepository.findByExactOnuSerial("HWTC00000001") } returns listOf(subscription)
 

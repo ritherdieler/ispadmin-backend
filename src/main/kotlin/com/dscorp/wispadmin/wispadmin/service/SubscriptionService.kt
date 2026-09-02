@@ -43,7 +43,6 @@ class SubscriptionService(
     private val placeRepository: PlaceRepository,
     private val napBoxRepository: NapBoxRepository,
     private val onuService: OnuOperationsPort,
-    private val onuRepository: OnuRepository,
     private val installationOrderRepository: InstallationOrderRepository,
     private val notificationService: NotificationService,
     private val subscriptionLogRepository: SubscriptionLogRepository,
@@ -96,15 +95,12 @@ class SubscriptionService(
 
     fun changeNapBox(request: MoveOnuRequest): Subscription {
         val subscription = repository.findById(request.subscriptionId).get()
-        val currentSubscriptionOnu = subscription.fiberOnu
+        val sn = subscription.fiberOnuSn?.takeIf { it.isNotBlank() }
+            ?: throw Exception("No se puede mover la ONU, no existe la ONU en la suscripción")
         val newNapBox = napBoxRepository.findById(request.newNapBoxId).get()
         subscription.napBox = newNapBox
-        
-        if (currentSubscriptionOnu == null) throw Exception("No se puede mover la ONU, no existe la ONU en la suscripción")
-        onuService.moveOnu(request, currentSubscriptionOnu, newNapBox)
-
+        onuService.moveOnu(request, Onu(sn = sn), newNapBox)
         subscription.napBox = newNapBox
-
         return repository.save(subscription)
     }
 
@@ -117,9 +113,9 @@ class SubscriptionService(
         if (installationType != InstallationType.FIBER && installationType != InstallationType.ONLY_TV_FIBER) {
             throw IllegalArgumentException("Solo suscripciones de internet por fibra o TV cable por fibra pueden reiniciar la ONU")
         }
-        val onu = subscription.fiberOnu
+        val sn = subscription.fiberOnuSn?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("La suscripción no tiene ONU registrada")
-        onuService.rebootOnuBySn(onu.sn)
+        onuService.rebootOnuBySn(sn)
         return subscription
     }
 
@@ -136,7 +132,7 @@ class SubscriptionService(
                 this.plan = plan
                 isMigration = true
                 installationType = InstallationType.FIBER
-                fiberOnu = request.onu.toModel()
+                fiberOnuSn = request.onu.sn.takeIf { it.isNotBlank() }
                 migrationDate = Date()
                 migrationNote = request.notes
                 migrationPrice = request.price
@@ -292,18 +288,7 @@ class SubscriptionService(
     }
 
     private fun processOnuForFiber(subscriptionToSave: Subscription, newSubscription: SubscriptionRequest) {
-        val existingOnu = onuRepository.findById(newSubscription.onu!!.sn)
-        if (existingOnu.isPresent) {
-            val updatedOnu = existingOnu.get().apply {
-                this.board = newSubscription.onu!!.board
-                this.pon_type = newSubscription.onu!!.pon_type
-                this.port = newSubscription.onu!!.port
-                this.olt_id = newSubscription.onu!!.olt_id
-                this.onu_type_id = newSubscription.onu!!.onu_type_id
-                this.onu_type_name = newSubscription.onu!!.onu_type_name
-            }
-            subscriptionToSave.fiberOnu = updatedOnu
-        }
+        subscriptionToSave.fiberOnuSn = newSubscription.onu?.sn?.takeIf { it.isNotBlank() }
     }
 
     private fun handleRegistrationError(

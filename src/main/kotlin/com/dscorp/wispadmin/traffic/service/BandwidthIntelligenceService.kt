@@ -287,12 +287,6 @@ open class BandwidthIntelligenceService(
         val coverage = rows.map { it.coverage }.averageOrZero(); val p95Down = percentile(rows.map { it.avgDown }, .95); val planDown = s.plan?.downloadSpeed
         return BandwidthSubscriptionRowDto(requireNotNull(s.id), subscriptionName(s), s.ip, s.hostDevice?.id, s.hostDevice?.name, s.plan?.id, s.plan?.name, planDown, s.plan?.uploadSpeed, rows.sumOf { it.rx }, rows.sumOf { it.tx }, p95Down, percentile(rows.map { it.avgUp }, .95), planDown?.takeIf { it > 0 }?.let { p95Down * 100.0 / it }, coverage, quality(coverage))
     }
-    private fun toSubscriptionRow(s: Subscription, summary: SubscriptionTrafficRawSummaryProjection?): BandwidthSubscriptionRowDto {
-        val coverage = if (summary == null || summary.getSampleCount() == 0) 0.0 else 100.0
-        val p95Down = summary?.getP95MbpsDown() ?: 0.0
-        val planDown = s.plan?.downloadSpeed
-        return BandwidthSubscriptionRowDto(requireNotNull(s.id), subscriptionName(s), s.ip, s.hostDevice?.id, s.hostDevice?.name, s.plan?.id, s.plan?.name, planDown, s.plan?.uploadSpeed, summary?.getRxBytes() ?: 0, summary?.getTxBytes() ?: 0, p95Down, summary?.getP95MbpsUp() ?: 0.0, planDown?.takeIf { it > 0 }?.let { p95Down * 100.0 / it }, coverage, quality(coverage))
-    }
     private fun meta(from: LocalDateTime, to: LocalDateTime, resolution: String, coverages: List<Double>): BandwidthRangeDto { val coverage = coverages.averageOrZero(); return BandwidthRangeDto(from.toString(), to.toString(), resolution, coverage, toStringFreshness(to), quality(coverage)) }
     private fun toStringFreshness(to: LocalDateTime) = if (Duration.between(to, LocalDateTime.now()).toMinutes() <= 15) "FRESH" else "STALE"
     private fun quality(coverage: Double) = when { coverage >= 90 -> "GOOD"; coverage >= 80 -> "PARTIAL"; else -> "POOR" }

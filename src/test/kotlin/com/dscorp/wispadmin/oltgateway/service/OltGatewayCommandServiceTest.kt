@@ -96,6 +96,46 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `planAuthorize devuelve la misma secuencia que ejecutaria authorize`() {
+        val request = AuthorizeCliRequest(
+            board = 0,
+            port = 2,
+            ontId = 5,
+            sn = "4857544311E70E9A",
+            lineProfileId = 10,
+            serviceProfileId = 10,
+            description = "cliente_demo",
+            vlan = 100
+        )
+
+        val planned = service.planAuthorize(request)
+        val executed = service.authorize(request).commands
+
+        assertEquals(executed, planned)
+    }
+
+    @Test
+    fun `planAuthorize no toca la OLT ni exige escrituras habilitadas`() {
+        properties.writes.enabled = false
+
+        val planned = service.planAuthorize(
+            AuthorizeCliRequest(
+                board = 0,
+                port = 2,
+                ontId = 7,
+                sn = "4857544311E70E9A",
+                lineProfileId = 10,
+                serviceProfileId = 10,
+                description = "cliente_demo",
+                vlan = 100
+            )
+        )
+
+        assertTrue(commands.isEmpty())
+        assertTrue(planned.any { it.contains("ont add 2 7 sn-auth 4857544311E70E9A") })
+    }
+
+    @Test
     fun `writes disabled lanza excepcion`() {
         properties.writes.enabled = false
 

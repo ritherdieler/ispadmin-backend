@@ -54,7 +54,7 @@ class SubscriptionProvisionService(
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
-                val hasOnu = subscription.fiberOnu != null
+                val hasOnu = !subscription.fiberOnuSn.isNullOrBlank()
                 subscription.oltProvisionStatus =
                     if (hasOnu) OltProvisionStatus.PENDING else OltProvisionStatus.NA
                 subscription.tr069ProvisionStatus = when {
@@ -87,7 +87,7 @@ class SubscriptionProvisionService(
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
-                val hasOnu = subscription.fiberOnu != null || result.onuSn != null
+                val hasOnu = !subscription.fiberOnuSn.isNullOrBlank() || result.onuSn != null
                 if (hasOnu) {
                     subscription.oltProvisionStatus =
                         if (result.onuAuthorized) OltProvisionStatus.COMPLETE
@@ -235,17 +235,8 @@ class SubscriptionProvisionService(
     }
 
     fun buildRequestFromSubscription(subscription: Subscription): SubscriptionRequest {
-        val onu = subscription.fiberOnu?.let {
-            OnuDto(
-                sn = it.sn,
-                olt_id = it.olt_id,
-                pon_type = it.pon_type,
-                board = it.board,
-                port = it.port,
-                onu = it.onu,
-                onu_type_id = it.onu_type_id,
-                onu_type_name = it.onu_type_name
-            )
+        val onu = subscription.fiberOnuSn?.takeIf { it.isNotBlank() }?.let { sn ->
+            OnuDto(sn = sn)
         }
         return SubscriptionRequest(
             firstName = subscription.firstName.orEmpty(),
@@ -307,7 +298,7 @@ class SubscriptionProvisionService(
     private fun isTr069Eligible(subscription: Subscription): Boolean {
         return when (subscription.installationType) {
             InstallationType.FIBER -> true
-            InstallationType.ONLY_TV_FIBER -> subscription.fiberOnu != null
+            InstallationType.ONLY_TV_FIBER -> !subscription.fiberOnuSn.isNullOrBlank()
             else -> false
         }
     }

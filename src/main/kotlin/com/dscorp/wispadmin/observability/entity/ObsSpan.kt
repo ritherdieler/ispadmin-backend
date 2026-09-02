@@ -14,8 +14,8 @@ import javax.persistence.Table
 @Table(
     name = "obs_span",
     indexes = [
-        Index(name = "idx_obs_span_trace", columnList = "trace_id"),
-        Index(name = "idx_obs_span_parent", columnList = "parent_span_id"),
+        Index(name = "idx_obs_span_trace_parent", columnList = "trace_id,parent_span_id"),
+        Index(name = "idx_obs_span_root_start", columnList = "parent_span_id,start_epoch_ms"),
         Index(name = "idx_obs_span_start", columnList = "start_epoch_ms"),
         Index(name = "idx_obs_span_session", columnList = "session_id")
     ]

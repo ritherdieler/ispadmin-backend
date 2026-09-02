@@ -39,6 +39,8 @@ class ObservabilityProperties {
 
     val tracing: TracingProperties = TracingProperties()
 
+    val ingest: IngestProperties = IngestProperties()
+
     val alerts: AlertsProperties = AlertsProperties()
 
     val session: SessionProperties = SessionProperties()
@@ -81,8 +83,17 @@ class ObservabilityProperties {
     class TracingProperties {
         var enabled: Boolean = true
         var sampleRate: Double = 1.0
+        var alwaysSampleAboveMs: Long = 1_000
         var maxSpansPerTrace: Int = 300
         var maxBufferedSpans: Int = 20000
+    }
+
+    class IngestProperties {
+        var maxBreadcrumbs: Int = 20
+        var maxBreadcrumbsChars: Int = 8_000
+        var maxContextChars: Int = 8_000
+        var maxMessageChars: Int = 4_000
+        var maxStacktraceChars: Int = 20_000
     }
 
     class JiraProperties {

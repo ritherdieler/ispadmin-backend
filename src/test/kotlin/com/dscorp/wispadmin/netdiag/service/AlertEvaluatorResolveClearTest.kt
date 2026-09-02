@@ -1,11 +1,10 @@
 package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.config.NetDiagProperties
-import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertDecision
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
-import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertDecisionRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertSuppressionWindowRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
@@ -24,20 +23,23 @@ class AlertEvaluatorResolveClearTest {
 
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
-    private val alertDecisionRepository = mockk<NetDiagAlertDecisionRepository>()
+    private val suppressionWindowRepository = mockk<NetDiagAlertSuppressionWindowRepository>(relaxed = true)
     private val targetRepository = mockk<NetDiagTargetRepository>()
     private val notifier = mockk<WhatsAppOpsNotifier>(relaxed = true)
     private val llmWebhookService = mockk<NetDiagLlmWebhookService>(relaxed = true)
     private val properties = NetDiagProperties()
+    private val summaryCache = NetDiagIncidentSummaryCache(properties)
     private val correlationEngine = CorrelationEngine(incidentRepository, targetRepository, properties)
     private val evaluator = AlertEvaluator(
         incidentRepository = incidentRepository,
         incidentEventRepository = incidentEventRepository,
-        alertDecisionRepository = alertDecisionRepository,
+        suppressionWindowRepository = suppressionWindowRepository,
         targetRepository = targetRepository,
         correlationEngine = correlationEngine,
         notifier = notifier,
-        llmWebhookService = llmWebhookService
+        llmWebhookService = llmWebhookService,
+        summaryCache = summaryCache,
+        properties = properties
     )
     private val idSeq = AtomicLong(1)
     private val target = NetDiagTarget(id = 5L, name = "PON", deviceRefId = 1L)
@@ -48,9 +50,6 @@ class AlertEvaluatorResolveClearTest {
             firstArg<NetDiagIncidentEvent>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
         }
         every { incidentRepository.save(any()) } answers { firstArg() }
-        every { alertDecisionRepository.save(any()) } answers {
-            firstArg<NetDiagAlertDecision>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
-        }
     }
 
     @Test

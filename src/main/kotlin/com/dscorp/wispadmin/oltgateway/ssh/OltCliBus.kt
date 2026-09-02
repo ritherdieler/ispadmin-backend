@@ -13,22 +13,35 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+enum class CliLane {
+    INTERACTIVE,
+    BACKGROUND
+}
+
 enum class CliJobType {
     WRITE,
     ADHOC,
     KEEPALIVE,
     INVENTORY,
     SIGNAL_POLL,
-    ALARM_POLL;
+    ALARM_POLL,
+    AUTOFIND_POLL;
 
     fun priority(): Int = when (this) {
         WRITE -> 0
         ADHOC -> 1
         KEEPALIVE -> 2
-        INVENTORY, SIGNAL_POLL, ALARM_POLL -> 3
+        AUTOFIND_POLL -> 3
+        INVENTORY, SIGNAL_POLL, ALARM_POLL -> 4
     }
 
-    fun isSync(): Boolean = this == INVENTORY || this == SIGNAL_POLL || this == ALARM_POLL
+    fun isSync(): Boolean =
+        this == INVENTORY || this == SIGNAL_POLL || this == ALARM_POLL || this == AUTOFIND_POLL
+
+    fun lane(): CliLane = when (this) {
+        WRITE, ADHOC -> CliLane.INTERACTIVE
+        KEEPALIVE, INVENTORY, SIGNAL_POLL, ALARM_POLL, AUTOFIND_POLL -> CliLane.BACKGROUND
+    }
 }
 
 sealed class CliBusResult<out T> {
@@ -55,75 +68,39 @@ class OltCliBus(
 
     companion object {
         private val logger = LoggerFactory.getLogger(OltCliBus::class.java)
-        private val workerThreadLocal = ThreadLocal<Boolean>()
+        private const val MAX_LANES = 2
+        private val workerSession = ThreadLocal<HuaweiCliSession?>()
     }
 
     private val closed = AtomicBoolean(false)
     private val sequence = AtomicLong(0)
-    private val queueLock = ReentrantLock()
-    private val queueNotEmpty = queueLock.newCondition()
-    private val queue = PriorityBlockingQueue<QueuedJob<*>>()
-
-    @Volatile
-    private var session: HuaweiCliSession? = null
-
-    @Volatile
-    private var busyType: CliJobType? = null
-
-    @Volatile
-    private var workerThread: Thread? = null
+    private val lanes = LinkedHashMap<CliLane, Lane>()
 
     private var keepaliveScheduler: ScheduledExecutorService? = null
 
     fun start() {
         check(!closed.get()) { "CLI bus is closed" }
-        val sessionProps = cloneSessionPropsWithoutKeepalive()
-        val created = sessionFactory(sshClient, sessionProps)
-        created.start()
-        session = created
-        val worker = Thread({ drainLoop() }, "olt-cli-bus-worker").apply {
-            isDaemon = true
-            start()
-        }
-        workerThread = worker
+        val laneCount = properties.session.poolSize.coerceIn(1, MAX_LANES)
+        val laneNames = if (laneCount == 1) listOf(CliLane.INTERACTIVE) else CliLane.values().toList()
+        laneNames.forEach { name -> lanes[name] = startLane(name) }
         if (properties.session.keepaliveEnabled) {
             startKeepalive()
         }
-        logger.info("CLI bus ready sessionCount=1")
+        logger.info("CLI bus ready sessionCount={} lanes={}", lanes.size, laneNames)
     }
 
-    fun sessionCount(): Int = 1
+    fun sessionCount(): Int = lanes.size
 
-    fun queueDepth(): Int = queue.size
+    fun queueDepth(): Int = lanes.values.sumOf { it.queue.size }
 
-    fun busyJobType(): CliJobType? = busyType
+    fun queueDepth(lane: CliLane): Int = laneOrFallback(lane).queue.size
 
-    fun <T> submit(type: CliJobType, block: (HuaweiCliSession) -> T): CompletableFuture<CliBusResult<T>> {
-        check(!closed.get()) { "CLI bus is closed" }
-        if (reachability.shouldSkip(type)) {
-            return CompletableFuture.completedFuture(CliBusResult.Skipped(reachability.skipReason()))
-        }
-        if (workerThreadLocal.get() == true) {
-            return CompletableFuture.completedFuture(runOnCurrentSession(block))
-        }
-        queueLock.withLock {
-            val skipReason = syncSkipReasonLocked(type)
-            if (skipReason != null) {
-                return CompletableFuture.completedFuture(CliBusResult.Skipped(skipReason))
-            }
-            val future = CompletableFuture<CliBusResult<T>>()
-            queue.offer(
-                QueuedJob(
-                    type = type,
-                    seq = sequence.incrementAndGet(),
-                    block = block,
-                    future = future
-                )
-            )
-            queueNotEmpty.signal()
-            return future
-        }
-    }
+    fun busyJobType(): CliJobType? = lanes.values.firstNotNullOfOrNull { it.busyType }
+
+    fun busyJobType(lane: CliLane): CliJobType? = laneOrFallback(lane).busyType
+
+    fun <T> submit(type: CliJobType, block: (HuaweiCliSession) -> T): CompletableFuture<CliBusResult<T>> =
+        submitToLane(type.lane(), type, block)
 
     fun <T> execute(type: CliJobType, block: (HuaweiCliSession) -> T): CliBusResult<T> {
         return try {
@@ -156,31 +133,83 @@ class OltCliBus(
             return
         }
         stopKeepalive()
-        queueLock.withLock {
-            queueNotEmpty.signalAll()
+        lanes.values.forEach { lane ->
+            lane.lock.withLock { lane.notEmpty.signalAll() }
         }
-        workerThread?.join(properties.commandTimeoutMs)
-        workerThread = null
-        while (true) {
-            val job = queue.poll() ?: break
-            job.failClosed()
+        lanes.values.forEach { lane ->
+            lane.worker?.join(properties.commandTimeoutMs)
+            lane.worker = null
+            while (true) {
+                val job = lane.queue.poll() ?: break
+                job.failClosed()
+            }
+            try {
+                lane.session?.close()
+            } catch (ex: Exception) {
+                logger.warn("Error closing CLI lane {} session: {}", lane.name, ex.message)
+            }
+            lane.session = null
         }
-        try {
-            session?.close()
-        } catch (ex: Exception) {
-            logger.warn("Error closing CLI bus session: {}", ex.message)
-        }
-        session = null
+        lanes.clear()
     }
 
-    private fun drainLoop() {
-        workerThreadLocal.set(true)
+    internal fun runKeepaliveTickForTest() = runKeepaliveTick()
+
+    private fun startLane(name: CliLane): Lane {
+        val created = sessionFactory(sshClient, cloneSessionPropsWithoutKeepalive())
+        created.start()
+        val lane = Lane(name, created)
+        val worker = Thread({ drainLoop(lane) }, "olt-cli-bus-${name.name.lowercase()}").apply {
+            isDaemon = true
+            start()
+        }
+        lane.worker = worker
+        return lane
+    }
+
+    private fun laneOrFallback(lane: CliLane): Lane =
+        lanes[lane] ?: lanes.getValue(CliLane.INTERACTIVE)
+
+    private fun <T> submitToLane(
+        lane: CliLane,
+        type: CliJobType,
+        block: (HuaweiCliSession) -> T
+    ): CompletableFuture<CliBusResult<T>> {
+        check(!closed.get()) { "CLI bus is closed" }
+        if (reachability.shouldSkip(type)) {
+            return CompletableFuture.completedFuture(CliBusResult.Skipped(reachability.skipReason()))
+        }
+        workerSession.get()?.let { inherited ->
+            return CompletableFuture.completedFuture(runOnSession(inherited, block))
+        }
+        val target = laneOrFallback(lane)
+        target.lock.withLock {
+            val skipReason = syncSkipReasonLocked(target, type)
+            if (skipReason != null) {
+                return CompletableFuture.completedFuture(CliBusResult.Skipped(skipReason))
+            }
+            val future = CompletableFuture<CliBusResult<T>>()
+            target.queue.offer(
+                QueuedJob(
+                    type = type,
+                    seq = sequence.incrementAndGet(),
+                    block = block,
+                    future = future
+                )
+            )
+            target.notEmpty.signal()
+            return future
+        }
+    }
+
+    private fun drainLoop(lane: Lane) {
+        workerSession.set(lane.session)
         try {
             while (!closed.get()) {
-                val job = takeNextJob() ?: continue
-                val currentSession = session
+                val job = takeNextJob(lane) ?: continue
+                val currentSession = lane.session
                 if (currentSession == null) {
-                    clearBusy()
+                    clearBusy(lane)
                     job.failClosed()
                     continue
                 }
@@ -196,51 +225,50 @@ class OltCliBus(
                     }
                     job.future.completeExceptionally(ex)
                 } finally {
-                    clearBusy()
+                    clearBusy(lane)
                 }
             }
         } finally {
-            workerThreadLocal.remove()
+            workerSession.remove()
         }
     }
 
-    private fun takeNextJob(): QueuedJob<*>? {
-        queueLock.withLock {
-            while (!closed.get() && queue.isEmpty()) {
-                queueNotEmpty.await(200, TimeUnit.MILLISECONDS)
+    private fun takeNextJob(lane: Lane): QueuedJob<*>? {
+        lane.lock.withLock {
+            while (!closed.get() && lane.queue.isEmpty()) {
+                lane.notEmpty.await(200, TimeUnit.MILLISECONDS)
             }
-            if (closed.get() && queue.isEmpty()) {
+            if (closed.get() && lane.queue.isEmpty()) {
                 return null
             }
-            val job = queue.poll() ?: return null
-            busyType = job.type
+            val job = lane.queue.poll() ?: return null
+            lane.busyType = job.type
             return job
         }
     }
 
-    private fun clearBusy() {
-        queueLock.withLock {
-            busyType = null
+    private fun clearBusy(lane: Lane) {
+        lane.lock.withLock {
+            lane.busyType = null
         }
     }
 
-    private fun syncSkipReasonLocked(type: CliJobType): String? {
+    private fun syncSkipReasonLocked(lane: Lane, type: CliJobType): String? {
         if (!type.isSync()) {
             return null
         }
-        if (busyType == type) {
+        if (lane.busyType == type) {
             return "already_running"
         }
-        if (queue.any { it.type == type }) {
+        if (lane.queue.any { it.type == type }) {
             return "already_queued"
         }
         return null
     }
 
-    private fun <T> runOnCurrentSession(block: (HuaweiCliSession) -> T): CliBusResult<T> {
-        val currentSession = session ?: return CliBusResult.Skipped("bus_not_started")
+    private fun <T> runOnSession(session: HuaweiCliSession, block: (HuaweiCliSession) -> T): CliBusResult<T> {
         return try {
-            CliBusResult.Ok(block(currentSession))
+            CliBusResult.Ok(block(session))
         } catch (ex: Exception) {
             if (isUnreachable(ex)) {
                 reachability.recordFailure()
@@ -286,15 +314,15 @@ class OltCliBus(
         if (closed.get()) {
             return
         }
-        if (busyType != null || queueDepth() > 0) {
-            return
-        }
-        try {
-            submit(CliJobType.KEEPALIVE) { session ->
-                session.ping()
+        lanes.forEach { (name, lane) ->
+            if (lane.busyType != null || lane.queue.isNotEmpty()) {
+                return@forEach
             }
-        } catch (ex: Exception) {
-            logger.warn("CLI bus keepalive submit failed: {}", ex.message)
+            try {
+                submitToLane(name, CliJobType.KEEPALIVE) { session -> session.ping() }
+            } catch (ex: Exception) {
+                logger.warn("CLI bus keepalive submit failed on lane {}: {}", name, ex.message)
+            }
         }
     }
 
@@ -311,7 +339,7 @@ class OltCliBus(
         copy.commandTimeoutMs = properties.commandTimeoutMs
         copy.mock.enabled = properties.mock.enabled
         copy.ssh.legacyAlgorithms = properties.ssh.legacyAlgorithms
-        copy.session.poolSize = 1
+        copy.session.poolSize = properties.session.poolSize
         copy.session.keepaliveEnabled = false
         copy.session.keepaliveIntervalMs = properties.session.keepaliveIntervalMs
         copy.session.keepaliveCommand = properties.session.keepaliveCommand
@@ -340,6 +368,21 @@ class OltCliBus(
         copy.reachability.failureThreshold = properties.reachability.failureThreshold
         copy.reachability.backoffMs = properties.reachability.backoffMs
         return copy
+    }
+
+    private class Lane(
+        val name: CliLane,
+        @Volatile var session: HuaweiCliSession?
+    ) {
+        val queue = PriorityBlockingQueue<QueuedJob<*>>()
+        val lock = ReentrantLock()
+        val notEmpty: java.util.concurrent.locks.Condition = lock.newCondition()
+
+        @Volatile
+        var busyType: CliJobType? = null
+
+        @Volatile
+        var worker: Thread? = null
     }
 
     private class QueuedJob<T>(

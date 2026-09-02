@@ -7,8 +7,6 @@ import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionUserDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import org.hibernate.Hibernate
-import org.hibernate.annotations.NotFound
-import org.hibernate.annotations.NotFoundAction
 import java.time.LocalDate
 import java.util.*
 import javax.persistence.*
@@ -48,7 +46,7 @@ data class Subscription(
     @Enumerated(EnumType.STRING)
     var clientType: ClientType = ClientType.PERSON,
 
-    @OneToOne(fetch = FetchType.EAGER)
+    @OneToOne(fetch = FetchType.LAZY)
     var ipPool: IpPool? = null,
 
     @Column(unique = true)
@@ -86,7 +84,7 @@ data class Subscription(
     @JoinColumn(name = "place_id")
     var place: Place? = null,
 
-    @ManyToMany(targetEntity = NetworkDevice::class, fetch = FetchType.EAGER)
+    @ManyToMany(targetEntity = NetworkDevice::class, fetch = FetchType.LAZY)
     @JoinTable(
         name = "installed_devices",
         joinColumns = [JoinColumn(name = "subscription_id")],
@@ -105,11 +103,10 @@ data class Subscription(
     @JoinColumn(name = "napbox_id")
     var napBox: NapBox? = null,
 
-    @OneToOne(fetch = FetchType.EAGER, cascade = [CascadeType.ALL])
-    @NotFound(action = NotFoundAction.IGNORE)
-    var fiberOnu: Onu? = null,
+    @Column(name = "fiber_onu_sn", length = 32)
+    var fiberOnuSn: String? = null,
 
-    @OneToOne(fetch = FetchType.EAGER)
+    @OneToOne(fetch = FetchType.LAZY)
     var cpe: NetworkDevice? = null,
 
     @OneToOne(fetch = FetchType.LAZY)
@@ -127,7 +124,7 @@ data class Subscription(
 
     var price: Double? = null,
 
-    @OneToOne(fetch = FetchType.EAGER)
+    @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "coupon_id")
     var coupon: Coupon? = null,
 
@@ -222,7 +219,7 @@ data class Subscription(
         plan = plan?.toDto(),
         place = place?.toDto(),
         isServiceCutOff = isServiceCutOff,
-        additionalDevices = additionalDevices?.toDto(),
+        additionalDevices = initializedAdditionalDevices()?.toDto(),
         location = location?.toDto(),
         napBox = napBox?.toDto(),
         technician = technician?.toDto(),
@@ -259,7 +256,7 @@ data class Subscription(
         borneNumber = borneNumber,
         equipmentCondition = equipmentCondition,
         autoCut = autoCut,
-        hasFiberOnu = fiberOnu != null,
+        hasFiberOnu = !fiberOnuSn.isNullOrBlank(),
         mikrotikProvisionStatus = mikrotikProvisionStatus,
         oltProvisionStatus = oltProvisionStatus,
         provisioningPending = isProvisioningPending(),
@@ -304,6 +301,9 @@ data class Subscription(
 
     private fun initializedPayments(): Set<Payment> =
         if (Hibernate.isInitialized(payments)) payments else emptySet()
+
+    private fun initializedAdditionalDevices(): List<NetworkDevice>? =
+        additionalDevices?.takeIf { Hibernate.isInitialized(it) }
 
     private fun unpaidPayments(): List<Payment> =
         initializedPayments().filter { !it.paid }
@@ -380,7 +380,7 @@ data class Subscription(
             hostDevice,
             technician,
             napBox,
-            fiberOnu,
+            fiberOnuSn,
             cpe,
             installationType,
             serviceStatus,

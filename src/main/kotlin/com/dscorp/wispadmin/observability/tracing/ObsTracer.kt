@@ -18,7 +18,7 @@ class ObsTracer(
 
     override fun <T> span(name: String, kind: String, tags: Map<String, Any?>?, block: () -> T): T {
         val scope = TraceContext.current()
-        if (scope == null || !properties.tracing.enabled) return block()
+        if (scope == null || !properties.tracing.enabled || !scope.sampled) return block()
 
         val spanId = TraceIds.spanId()
         val parentSpanId = scope.currentSpanId
@@ -55,7 +55,7 @@ class ObsTracer(
 
     fun recordDbSpan(statement: String, elapsedMs: Long, success: Boolean) {
         val scope = TraceContext.current() ?: return
-        if (!properties.tracing.enabled) return
+        if (!properties.tracing.enabled || !scope.sampled) return
         val start = System.currentTimeMillis() - elapsedMs
         collector.enqueue(
             ObsSpan(

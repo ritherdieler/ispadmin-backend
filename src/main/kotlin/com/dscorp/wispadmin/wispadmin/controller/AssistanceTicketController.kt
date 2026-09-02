@@ -4,8 +4,10 @@ import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicket
 import com.dscorp.wispadmin.wispadmin.data.model.AssistanceTicketStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.applyReschedule
+import com.dscorp.wispadmin.wispadmin.dto.AssistanceTicketCountsDto
 import com.dscorp.wispadmin.wispadmin.dto.AssistanceTicketDto
 import com.dscorp.wispadmin.wispadmin.repository.*
+import com.dscorp.wispadmin.wispadmin.service.AssistanceTicketCountService
 import com.dscorp.wispadmin.wispadmin.requestbody.AssistanceTicketRequest
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.TicketNotificationService
@@ -35,7 +37,8 @@ class AssistanceTicketController(
     private val ticketNotificationService: TicketNotificationService,
     private val customerNotifyService: CrmTicketCustomerNotifyService,
     private val crmTicketLinkService: CrmTicketLinkService,
-    private val csatSurveyService: CsatSurveyService
+    private val csatSurveyService: CsatSurveyService,
+    private val countService: AssistanceTicketCountService
 ) {
 
     @GetMapping("/byDateRange")
@@ -272,6 +275,10 @@ class AssistanceTicketController(
 
         return ResponseEntity.ok(mTicketDto)
     }
+
+    @GetMapping("/counts")
+    fun countsByStatus(): ResponseEntity<AssistanceTicketCountsDto> =
+        ResponseEntity.ok(countService.countByStatus())
 
     @GetMapping("/findAll")
     fun findBy(@RequestParam("status") status: AssistanceTicketStatus): ResponseEntity<List<AssistanceTicketDto>> {

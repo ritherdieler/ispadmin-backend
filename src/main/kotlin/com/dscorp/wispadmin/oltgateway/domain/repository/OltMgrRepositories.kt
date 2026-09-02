@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOltModel
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOltPonPort
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOltVlan
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
+import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuAutofind
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuExtraVlan
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuExtraVlanId
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuServicePort
@@ -20,6 +21,7 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -59,6 +61,9 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
     @Query("SELECT o FROM OltMgrOnu o WHERE UPPER(o.sn) = UPPER(:sn) AND o.deletedAt IS NULL")
     fun findBySnIgnoreCaseAndDeletedAtIsNull(@Param("sn") sn: String): Optional<OltMgrOnu>
 
+    @Query("SELECT UPPER(o.sn) FROM OltMgrOnu o WHERE o.deletedAt IS NULL AND UPPER(o.sn) IN :sns")
+    fun findExistingSnsUpper(@Param("sns") sns: Collection<String>): List<String>
+
     @Query(
         "SELECT o FROM OltMgrOnu o WHERE o.deletedAt IS NULL AND UPPER(o.sn) LIKE CONCAT('%', UPPER(:suffix))"
     )
@@ -92,6 +97,8 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
 
     @EntityGraph(attributePaths = ["status"])
     fun findByDeletedAtIsNull(pageable: Pageable): Page<OltMgrOnu>
+
+    fun countByDeletedAtIsNull(): Long
 
     @EntityGraph(attributePaths = ["status", "olt", "zone", "onuType"])
     @Query(
@@ -200,6 +207,18 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
 
 @Repository
 interface OltMgrOnuStatusCurrentRepository : JpaRepository<OltMgrOnuStatusCurrent, Long>
+
+@Repository
+interface OltMgrOnuAutofindRepository : JpaRepository<OltMgrOnuAutofind, Long> {
+    fun findAllByOrderByLastSeenAtDesc(): List<OltMgrOnuAutofind>
+
+    @Query("SELECT a FROM OltMgrOnuAutofind a WHERE UPPER(a.sn) = UPPER(:sn)")
+    fun findBySnIgnoreCase(@Param("sn") sn: String): Optional<OltMgrOnuAutofind>
+
+    @Modifying(clearAutomatically = true)
+    @Query("DELETE FROM OltMgrOnuAutofind a WHERE UPPER(a.sn) NOT IN :sns")
+    fun deleteBySnUpperNotIn(@Param("sns") sns: Collection<String>): Int
+}
 
 @Repository
 interface OltMgrTaskRepository : JpaRepository<OltMgrTask, Long> {

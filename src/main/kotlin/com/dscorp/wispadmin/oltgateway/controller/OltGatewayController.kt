@@ -16,11 +16,15 @@ import com.dscorp.wispadmin.oltgateway.dto.OnuSummaryListDto
 import com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SmartOltImportResultDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
+import com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
+import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillResult
+import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService
 import com.dscorp.wispadmin.oltgateway.service.SmartOltImportService
 import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
 import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
@@ -52,9 +56,11 @@ class OltGatewayController(
     private val queryFacade: OltGatewayQueryFacade,
     private val inventorySyncService: OltInventorySyncService,
     private val signalPollService: OltSignalPollService,
+    private val syncJobRunner: OltGatewaySyncJobRunner,
     private val smartOltImportService: SmartOltImportService,
     private val properties: OltGatewayProperties,
-    private val recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer
+    private val recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer,
+    private val externalIdBackfillService: OnuExternalIdBackfillService
 ) {
 
     @GetMapping("/health")
@@ -236,16 +242,17 @@ class OltGatewayController(
     @PostMapping("/admin/sync/inventory")
     @Operation(
         summary = "Sync inventario (SNMP)",
-        description = "Inventario SN+estado vía SNMP→DB. SSH inventory está deprecado; " +
-            "solo si olt.gateway.snmp.allow-ssh-inventory-fallback=true."
+        description = "Arranca el sync en segundo plano y responde de inmediato. " +
+            "El resultado se consulta en GET /admin/sync/status. " +
+            "Inventario SN+estado vía SNMP→DB; SSH inventory está deprecado."
     )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Resultado del sync",
-                content = [Content(schema = Schema(implementation = SyncResultDto::class))]
+                description = "Estado del trabajo de sync",
+                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -254,31 +261,21 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncInventory(): SyncResultDto {
-        val result = inventorySyncService.syncInventory()
-        return SyncResultDto(
-            inserted = result.inserted,
-            updated = result.updated,
-            softDeleted = result.softDeleted,
-            unchanged = result.unchanged,
-            durationMs = result.durationMs,
-            skippedReason = result.skippedReason,
-            error = result.error
-        )
-    }
+    fun syncInventory(): SyncJobStatusDto = syncJobRunner.startInventory()
 
     @PostMapping("/admin/sync/snmp-inventory")
     @Operation(
         summary = "Sync inventario vía SNMP",
-        description = "GETBULK SN+runState → DB (sin SSH). Requiere olt.gateway.snmp.enabled + community RO."
+        description = "Arranca el sync en segundo plano y responde de inmediato. " +
+            "GETBULK SN+runState → DB (sin SSH). Requiere olt.gateway.snmp.enabled + community RO."
     )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Resultado del sync SNMP",
-                content = [Content(schema = Schema(implementation = SyncResultDto::class))]
+                description = "Estado del trabajo de sync SNMP",
+                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -287,32 +284,21 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncSnmpInventory(): SyncResultDto {
-        val result = inventorySyncService.syncInventoryFromSnmp()
-        return SyncResultDto(
-            inserted = result.inserted,
-            updated = result.updated,
-            softDeleted = result.softDeleted,
-            unchanged = result.unchanged,
-            durationMs = result.durationMs,
-            skippedReason = result.skippedReason,
-            error = result.error
-        )
-    }
+    fun syncSnmpInventory(): SyncJobStatusDto = syncJobRunner.startSnmpInventory()
 
     @PostMapping("/admin/sync/signal")
     @Operation(
         summary = "Sync señal óptica (SNMP)",
-        description = "GETBULK óptica SNMP→DB (~5 min scheduler). SSH display ont optical-info está deprecado; " +
-            "solo si olt.gateway.snmp.allow-ssh-signal-fallback=true."
+        description = "Arranca el poll en segundo plano y responde de inmediato. " +
+            "GETBULK óptica SNMP→DB (~5 min scheduler); SSH display ont optical-info está deprecado."
     )
     @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Resultado del signal poll",
-                content = [Content(schema = Schema(implementation = SignalPollResultDto::class))]
+                description = "Estado del trabajo de signal poll",
+                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -321,17 +307,7 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncSignal(): SignalPollResultDto {
-        val result = signalPollService.pollSignals()
-        return SignalPollResultDto(
-            slotsPolled = result.slotsPolled,
-            portsPolled = result.portsPolled,
-            onusUpdated = result.onusUpdated,
-            durationMs = result.durationMs,
-            skippedReason = result.skippedReason,
-            error = result.error
-        )
-    }
+    fun syncSignal(): SyncJobStatusDto = syncJobRunner.startSignal()
 
     @PostMapping("/admin/import/smartolt")
     @Operation(
@@ -358,6 +334,24 @@ class OltGatewayController(
         @RequestParam(defaultValue = "100") @Min(1) @Max(500) pageSize: Int,
         @RequestParam(required = false) maxPages: Int?
     ): SmartOltImportResultDto = smartOltImportService.importFromSmartOlt(pageSize, maxPages)
+
+    @PostMapping("/admin/onus/external-id-backfill")
+    @Operation(
+        summary = "Backfill de identificadores externos",
+        description = "Reescribe los external_id heredados de SmartOLT al formato propio " +
+            "{oltId}_{board}_{port}_{onuIndex}. Idempotente: no toca los que ya son propios."
+    )
+    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Resultado del backfill",
+                content = [Content(schema = Schema(implementation = OnuExternalIdBackfillResult::class))]
+            )
+        ]
+    )
+    fun backfillExternalIds(): OnuExternalIdBackfillResult = externalIdBackfillService.backfill()
 
     @GetMapping("/admin/snmp/traps/recent")
     @Operation(

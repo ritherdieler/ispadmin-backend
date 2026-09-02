@@ -124,11 +124,11 @@ class Tr069PostInstallProvisioner(
             fullName = fullName,
         )
         val previousDeviceId = subscription.tr069DeviceId
-        val smartoltSerial = request.onu?.sn ?: subscription.fiberOnu?.sn
+        val smartoltSerial = request.onu?.sn ?: subscription.fiberOnuSn
         val outcome = provisioningService.provision(
             Tr069ProvisionRequest(
                 onuSerial = smartoltSerial,
-                onuTypeName = request.onu?.onu_type_name ?: subscription.fiberOnu?.onu_type_name,
+                onuTypeName = request.onu?.onu_type_name,
                 ip = subscription.ip ?: request.clientIpAddress,
                 ipSegment = subscription.ipPool?.ipSegment,
                 wifiSsid24 = request.wifiSsid24 ?: subscription.wifiSsid24,
@@ -179,7 +179,7 @@ class Tr069PostInstallProvisioner(
         return when (request.installationType) {
             InstallationType.FIBER -> true
             InstallationType.ONLY_TV_FIBER ->
-                request.onu != null || subscription?.fiberOnu != null
+                request.onu != null || !subscription?.fiberOnuSn.isNullOrBlank()
             InstallationType.WIRELESS -> false
         }
     }

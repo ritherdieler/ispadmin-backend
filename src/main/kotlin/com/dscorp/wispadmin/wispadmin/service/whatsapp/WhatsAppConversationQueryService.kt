@@ -145,7 +145,7 @@ class WhatsAppConversationQueryService(
         val phones = inboundMessageRepository.findRecentActivePhones(RECENT_PHONE_RANK_LIMIT)
             .map { PeruvianWhatsAppPhone.canonicalConversationKey(it) }
             .distinct()
-        val summaries = if (phones.isEmpty()) emptyList() else buildSummariesForPhones(phones)
+        val summaries = if (phones.isEmpty()) emptyList() else buildViewCountSignals(phones)
         fun count(view: WhatsAppInboxView) =
             summaries.count {
                 WhatsAppInboxViewPolicy.matchesView(
@@ -341,6 +341,49 @@ class WhatsAppConversationQueryService(
         if (phones.isEmpty()) return emptyList()
         val summaries = buildSummariesFromLoadedMessages(phones, inbound, outbound)
         return applyListFilters(summaries, filter, pageSize)
+    }
+
+    private fun buildViewCountSignals(canonicalPhones: List<String>): List<InboxCountSignals> {
+        val variants = canonicalPhones.flatMap { PeruvianWhatsAppPhone.queryVariants(it) }.distinct()
+        if (variants.isEmpty()) return emptyList()
+
+        val aggregated = LinkedHashMap<String, MutableList<LocalDateTime?>>()
+        inboundMessageRepository.aggregateInboxSignalsByPhoneIn(variants).forEach { row ->
+            val phone = PeruvianWhatsAppPhone.canonicalConversationKey(row[0].toString())
+            val current = aggregated.getOrPut(phone) { mutableListOf(null, null, null, null) }
+            (0 until SIGNAL_COLUMNS).forEach { index ->
+                val value = toLocalDateTime(row[index + 1])
+                if (value != null && current[index]?.isAfter(value) != true) {
+                    current[index] = value
+                }
+            }
+        }
+        if (aggregated.isEmpty()) return emptyList()
+
+        val crmByPhone = loadCrmByPhones(variants)
+        return aggregated.mapNotNull { (phone, values) ->
+            val lastInboundAt = values[0]
+            val lastOutboundAt = values[1]
+            if (lastInboundAt == null && lastOutboundAt == null) return@mapNotNull null
+            val crm = pickBestCrm(phone, crmByPhone)
+            val status = crm?.status?.name
+            InboxCountSignals(
+                lastInboundAt = lastInboundAt,
+                lastOutboundAt = lastOutboundAt,
+                crmStatus = status,
+                assignedAgentId = crm?.assignedAgentId,
+                hasPendingReceipt = WhatsAppInboxViewPolicy.hasPendingReceipt(
+                    status = status,
+                    resolvedAt = crm?.resolvedAt,
+                    latestMediaAt = values[2]
+                ),
+                hasPendingAdvisorRequest = WhatsAppInboxViewPolicy.hasPendingAdvisorRequest(
+                    status = status,
+                    resolvedAt = crm?.resolvedAt,
+                    latestAdvisorRequestAt = values[3]
+                )
+            )
+        }
     }
 
     private fun buildSummariesForPhones(canonicalPhones: List<String>): List<WhatsAppConversationSummaryDto> {
@@ -720,10 +763,20 @@ class WhatsAppConversationQueryService(
         }
     }
 
+    private data class InboxCountSignals(
+        val lastInboundAt: LocalDateTime?,
+        val lastOutboundAt: LocalDateTime?,
+        val crmStatus: String?,
+        val assignedAgentId: Int?,
+        val hasPendingReceipt: Boolean,
+        val hasPendingAdvisorRequest: Boolean
+    )
+
     companion object {
         private const val RECENT_PHONE_RANK_LIMIT = 500
         private const val PHONE_SCAN_BATCH = 100
         private const val MAX_VIEW_SCAN_ROUNDS = 20
+        private const val SIGNAL_COLUMNS = 4
 
         fun inboundHasMedia(inbound: WhatsAppInboundMessage): Boolean =
             WhatsAppThreadMessageMapper.inboundHasMedia(inbound)

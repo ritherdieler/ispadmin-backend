@@ -39,17 +39,16 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     fun findByTr069DeviceId(deviceId: String): List<Subscription>
 
-    @Query("select s from Subscription s left join fetch s.fiberOnu where upper(s.fiberOnu.sn) = upper(:sn)")
+    @Query("select s from Subscription s where upper(s.fiberOnuSn) = upper(:sn)")
     fun findByExactOnuSerial(@Param("sn") sn: String): List<Subscription>
 
     @Query(
         """
         SELECT s FROM Subscription s
-        LEFT JOIN FETCH s.fiberOnu
-        WHERE s.fiberOnu IS NOT NULL
+                WHERE s.fiberOnuSn IS NOT NULL
         AND (
-            UPPER(s.fiberOnu.sn) = UPPER(:sn)
-            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+            UPPER(s.fiberOnuSn) = UPPER(:sn)
+            OR UPPER(s.fiberOnuSn) LIKE CONCAT('%', UPPER(:suffix))
         )
         """
     )
@@ -89,8 +88,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH s.napBox
         LEFT JOIN FETCH s.hostDevice
         LEFT JOIN FETCH s.technician
-        LEFT JOIN FETCH s.fiberOnu
-        LEFT JOIN FETCH s.ipPool
+                LEFT JOIN FETCH s.ipPool
         WHERE s.id IN :ids
         """
     )
@@ -105,11 +103,7 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH nb.mufa
         LEFT JOIN FETCH s.hostDevice
         LEFT JOIN FETCH s.technician
-        LEFT JOIN FETCH s.fiberOnu
-        LEFT JOIN FETCH s.ipPool
-        LEFT JOIN FETCH s.cpe
-        LEFT JOIN FETCH s.coupon
-        LEFT JOIN FETCH s.additionalDevices
+                LEFT JOIN FETCH s.additionalDevices
         ORDER BY s.id
         """
     )
@@ -418,10 +412,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         """
         SELECT s FROM Subscription s
         WHERE s.serviceStatus = 'CANCELLED'
-        AND s.fiberOnu IS NOT NULL
+        AND s.fiberOnuSn IS NOT NULL
         AND (
-            UPPER(s.fiberOnu.sn) = UPPER(:sn)
-            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+            UPPER(s.fiberOnuSn) = UPPER(:sn)
+            OR UPPER(s.fiberOnuSn) LIKE CONCAT('%', UPPER(:suffix))
         )
         """
     )
@@ -431,10 +425,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         """
         SELECT s FROM Subscription s
         WHERE s.serviceStatus = 'ACTIVE'
-        AND s.fiberOnu IS NOT NULL
+        AND s.fiberOnuSn IS NOT NULL
         AND (
-            UPPER(s.fiberOnu.sn) = UPPER(:sn)
-            OR UPPER(s.fiberOnu.sn) LIKE CONCAT('%', UPPER(:suffix))
+            UPPER(s.fiberOnuSn) = UPPER(:sn)
+            OR UPPER(s.fiberOnuSn) LIKE CONCAT('%', UPPER(:suffix))
         )
         """
     )
@@ -442,12 +436,12 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     @Query(
         """
-        SELECT UPPER(o.sn), s.ip
+        SELECT UPPER(s.fiberOnuSn), s.ip
         FROM Subscription s
-        JOIN s.fiberOnu o
         WHERE s.serviceStatus = 'ACTIVE'
+        AND s.fiberOnuSn IS NOT NULL
         AND s.ip IS NOT NULL AND s.ip <> ''
-        AND UPPER(o.sn) IN :sns
+        AND UPPER(s.fiberOnuSn) IN :sns
         """
     )
     fun findActiveIpSnPairsByFiberOnuSnIn(@Param("sns") sns: Collection<String>): List<Array<Any>>

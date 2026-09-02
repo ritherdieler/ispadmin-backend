@@ -4,7 +4,9 @@ import com.dscorp.wispadmin.wispadmin.data.model.*
 import com.dscorp.wispadmin.wispadmin.data.model.toDto
 import com.dscorp.wispadmin.wispadmin.dto.*
 import com.dscorp.wispadmin.wispadmin.repository.*
+import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
 import com.dscorp.wispadmin.wispadmin.util.PerformanceMonitor
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 
 import java.time.LocalDateTime
@@ -33,7 +35,7 @@ class DashBoardService(
     private val userRepository: UserRepository,
     private val networkDeviceRepository: NetworkDeviceRepository,
     private val napBoxRepository: NapBoxRepository,
-    private val onuRepository: OnuRepository,
+    private val oltInventory: ObjectProvider<OltInventoryPort>,
     private val performanceMonitor: PerformanceMonitor,
     private val paymentStatisticsService: PaymentStatisticsService
 ) {
@@ -888,15 +890,12 @@ class DashBoardService(
     fun getNetworkHealthData(): NetworkHealthResumeDto {
         val devices = networkDeviceRepository.findAll()
         val napBoxes = napBoxRepository.findAll()
-        val onus = onuRepository.findAll()
+        val configuredOnus = oltInventory.ifAvailable?.countConfigured() ?: 0L
 
-        // Dispositivos por tipo
         val devicesByType = devices
             .groupBy { it.networkDeviceType.name }
             .mapValues { it.value.size }
 
-        // Dispositivos por estado (simulado)
-        // En un sistema real, esto vendría de un servicio de monitoreo de red
         val devicesByStatus = mapOf(
             "Activo" to devices.size * 80 / 100,
             "Inactivo" to devices.size * 5 / 100,
@@ -904,13 +903,10 @@ class DashBoardService(
             "Mantenimiento" to devices.size * 5 / 100
         )
 
-        // Carga por nodo (simulado)
         val nodesLoad = napBoxes.associate { napBox ->
-            // Simular carga basada en número de ONUs conectadas (entre 0-100%)
             val napBoxId = napBox.id
-            val onusCount = if (napBoxId != null) {
-                // Esto es un stub ya que Onu no tiene referencia a napBox directamente en el modelo
-                onus.count { true } / napBoxes.size
+            val onusCount = if (napBoxId != null && napBoxes.isNotEmpty()) {
+                (configuredOnus / napBoxes.size).toInt()
             } else {
                 0
             }

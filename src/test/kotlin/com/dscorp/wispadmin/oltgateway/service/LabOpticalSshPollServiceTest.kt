@@ -103,7 +103,7 @@ class LabOpticalSshPollServiceTest {
 
     private fun sub(id: Int, sn: String) = Subscription(
         id = id,
-        fiberOnu = Onu(sn = sn),
+        fiberOnuSn = sn,
         equipmentCondition = EquipmentCondition.values().first(),
     )
 

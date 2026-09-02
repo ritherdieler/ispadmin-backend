@@ -1,15 +1,17 @@
 package com.dscorp.wispadmin.netdiag.service
 
-import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertDecision
+import com.dscorp.wispadmin.netdiag.config.NetDiagProperties
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertSuppressionWindow
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
-import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertDecisionRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertSuppressionWindowRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,11 +20,13 @@ import java.util.concurrent.ConcurrentHashMap
 class AlertEvaluator(
     private val incidentRepository: NetDiagIncidentRepository,
     private val incidentEventRepository: NetDiagIncidentEventRepository,
-    private val alertDecisionRepository: NetDiagAlertDecisionRepository,
+    private val suppressionWindowRepository: NetDiagAlertSuppressionWindowRepository,
     private val targetRepository: NetDiagTargetRepository,
     private val correlationEngine: CorrelationEngine,
     private val notifier: WhatsAppOpsNotifier,
-    private val llmWebhookService: NetDiagLlmWebhookService
+    private val llmWebhookService: NetDiagLlmWebhookService,
+    private val summaryCache: NetDiagIncidentSummaryCache,
+    private val properties: NetDiagProperties
 ) {
 
     private val locks = ConcurrentHashMap<Long, Any>()
@@ -73,24 +77,8 @@ class AlertEvaluator(
         incident.status = "RESOLVED"
         incident.resolvedAt = Instant.now()
         incidentRepository.save(incident)
-        incidentEventRepository.save(
-            NetDiagIncidentEvent(
-                incident = incident,
-                type = "CLEARED",
-                payload = details,
-                createdAt = Instant.now()
-            )
-        )
-        alertDecisionRepository.save(
-            NetDiagAlertDecision(
-                target = incident.target,
-                incident = incident,
-                decision = "CLEARED",
-                reasonCode = incident.reasonCode.orEmpty(),
-                details = details,
-                createdAt = Instant.now()
-            )
-        )
+        recordEvent(incident, "CLEARED", details, incident.reasonCode, incident.target?.id)
+        summaryCache.invalidate()
         return true
     }
 
@@ -104,24 +92,7 @@ class AlertEvaluator(
             if (targetId != null) {
                 val ancestor = correlationEngine.findSuppressingAncestorIncident(targetId, signal.reasonCode)
                 if (ancestor != null) {
-                    incidentEventRepository.save(
-                        NetDiagIncidentEvent(
-                            incident = ancestor,
-                            type = "SUPPRESSED_CHILD",
-                            payload = """{"targetId":$targetId,"dedupKey":"${signal.dedupKey}","reasonCode":"${signal.reasonCode}"}""",
-                            createdAt = Instant.now()
-                        )
-                    )
-                    alertDecisionRepository.save(
-                        NetDiagAlertDecision(
-                            target = target,
-                            incident = ancestor,
-                            decision = "SUPPRESSED",
-                            reasonCode = signal.reasonCode,
-                            details = signal.details,
-                            createdAt = Instant.now()
-                        )
-                    )
+                    ancestor.id?.let { recordSuppression(it, targetId, signal.reasonCode) }
                     decisions += "SUPPRESSED"
                     suppressed = true
                     return@forEach
@@ -131,24 +102,7 @@ class AlertEvaluator(
             val existing = incidentRepository.findByDedupKeyAndStatus(signal.dedupKey, "OPEN")
             if (existing.isPresent) {
                 val incident = existing.get()
-                incidentEventRepository.save(
-                    NetDiagIncidentEvent(
-                        incident = incident,
-                        type = "ALERT_SEEN",
-                        payload = signal.details,
-                        createdAt = Instant.now()
-                    )
-                )
-                alertDecisionRepository.save(
-                    NetDiagAlertDecision(
-                        target = target,
-                        incident = incident,
-                        decision = "CONTINUE",
-                        reasonCode = signal.reasonCode,
-                        details = signal.details,
-                        createdAt = Instant.now()
-                    )
-                )
+                recordEvent(incident, "ALERT_SEEN", signal.details, signal.reasonCode, targetId)
                 decisions += "CONTINUE"
                 notifier.notifyIfNeeded(incident)
                 return@forEach
@@ -165,49 +119,16 @@ class AlertEvaluator(
                     openedAt = Instant.now()
                 )
                 val saved = incidentRepository.save(incident)
-                incidentEventRepository.save(
-                    NetDiagIncidentEvent(
-                        incident = saved,
-                        type = "OPENED",
-                        payload = signal.details,
-                        createdAt = Instant.now()
-                    )
-                )
-                alertDecisionRepository.save(
-                    NetDiagAlertDecision(
-                        target = target,
-                        incident = saved,
-                        decision = "OPEN",
-                        reasonCode = signal.reasonCode,
-                        details = signal.details,
-                        createdAt = Instant.now()
-                    )
-                )
+                recordEvent(saved, "OPENED", signal.details, signal.reasonCode, targetId)
                 decisions += "OPEN"
                 saved.id?.let { opened += it }
+                summaryCache.invalidate()
                 notifier.notifyIfNeeded(saved)
                 llmWebhookService.notifyIncidentOpened(saved)
             } catch (_: DataIntegrityViolationException) {
                 val raced = incidentRepository.findByDedupKeyAndStatus(signal.dedupKey, "OPEN").orElse(null)
                 if (raced != null) {
-                    incidentEventRepository.save(
-                        NetDiagIncidentEvent(
-                            incident = raced,
-                            type = "ALERT_SEEN",
-                            payload = signal.details,
-                            createdAt = Instant.now()
-                        )
-                    )
-                    alertDecisionRepository.save(
-                        NetDiagAlertDecision(
-                            target = target,
-                            incident = raced,
-                            decision = "CONTINUE",
-                            reasonCode = signal.reasonCode,
-                            details = signal.details,
-                            createdAt = Instant.now()
-                        )
-                    )
+                    recordEvent(raced, "ALERT_SEEN", signal.details, signal.reasonCode, targetId)
                     decisions += "CONTINUE"
                     notifier.notifyIfNeeded(raced)
                 }
@@ -219,6 +140,55 @@ class AlertEvaluator(
             openedIncidentIds = opened,
             suppressed = suppressed
         )
+    }
+
+    private fun recordEvent(
+        incident: NetDiagIncident,
+        type: String,
+        payload: String?,
+        reasonCode: String?,
+        targetId: Long?
+    ) {
+        incidentEventRepository.save(
+            NetDiagIncidentEvent(
+                incident = incident,
+                type = type,
+                payload = payload,
+                reasonCode = reasonCode,
+                targetId = targetId,
+                createdAt = Instant.now()
+            )
+        )
+    }
+
+    private fun recordSuppression(incidentId: Long, targetId: Long, reasonCode: String) {
+        val now = Instant.now()
+        val windowStart = alignToWindow(now)
+        if (suppressionWindowRepository.incrementWindow(incidentId, targetId, reasonCode, windowStart, now) > 0) {
+            return
+        }
+        try {
+            suppressionWindowRepository.save(
+                NetDiagAlertSuppressionWindow(
+                    incidentId = incidentId,
+                    targetId = targetId,
+                    reasonCode = reasonCode,
+                    windowStart = windowStart,
+                    eventCount = 1,
+                    firstSeenAt = now,
+                    lastSeenAt = now
+                )
+            )
+        } catch (_: DataIntegrityViolationException) {
+            suppressionWindowRepository.incrementWindow(incidentId, targetId, reasonCode, windowStart, now)
+        }
+    }
+
+    private fun alignToWindow(at: Instant): Instant {
+        val windowSeconds = Duration.ofMinutes(
+            properties.alert.suppressionWindowMinutes.coerceAtLeast(1).toLong()
+        ).seconds
+        return Instant.ofEpochSecond(at.epochSecond / windowSeconds * windowSeconds)
     }
 
     companion object {

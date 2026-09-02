@@ -28,7 +28,7 @@ class OltMgrSeedRunnerTest {
     }
 
     @Test
-    fun `seed crea modelo MA5608T con max CLI 4 y SNMP 1 y asocia olt`() {
+    fun `seed crea modelo MA5608T con max CLI 2 y SNMP 1 y asocia olt`() {
         every { modelRepository.findByCode("MA5608T") } returns Optional.empty()
         val modelSlot = slot<OltMgrOltModel>()
         every { modelRepository.save(capture(modelSlot)) } answers {
@@ -41,7 +41,7 @@ class OltMgrSeedRunnerTest {
         OltMgrSeedRunner(oltRepository, modelRepository, properties).run(null)
 
         assertEquals("MA5608T", modelSlot.captured.code)
-        assertEquals(4, modelSlot.captured.maxConcurrentCliSessions)
+        assertEquals(2, modelSlot.captured.maxConcurrentCliSessions)
         assertEquals(1, modelSlot.captured.maxConcurrentSnmpWalks)
         assertEquals(modelSlot.captured, oltSlot.captured.model)
     }

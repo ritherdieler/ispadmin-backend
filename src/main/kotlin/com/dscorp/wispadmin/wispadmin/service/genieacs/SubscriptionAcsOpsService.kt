@@ -39,13 +39,11 @@ class SubscriptionAcsOpsService(
                 "No se encontró el CPE en GenieACS para la suscripción $subscriptionId"
             )
 
-        val status = existing?.provisionStatus
-            ?: subscription.tr069ProvisionStatus
-            ?: Tr069ProvisionStatus.PENDING
+        val status = existing?.provisionStatus ?: Tr069ProvisionStatus.PENDING
 
         val snapshot = Tr069AcsSnapshot(
             serialSuffix = existing?.serialSuffix
-                ?: Tr069SerialMatcher.normalizeSuffix(subscription.fiberOnu?.sn)
+                ?: Tr069SerialMatcher.normalizeSuffix(subscription.fiberOnuSn)
                 ?: Tr069SerialMatcher.normalizeSuffix(device.serialNumber),
             lastInformAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastInform),
             productClass = device.productClass,
@@ -56,8 +54,8 @@ class SubscriptionAcsOpsService(
             hardwareVersion = device.hardwareVersion,
             lastBootAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastBoot),
             wanIpCache = subscription.ip ?: existing?.wanIpCache,
-            ssid24 = existing?.ssid24 ?: subscription.wifiSsid24,
-            ssid5 = existing?.ssid5 ?: subscription.wifiSsid5,
+            ssid24 = existing?.ssid24,
+            ssid5 = existing?.ssid5,
             lastTaskId = existing?.lastTaskId,
             lastTaskStatus = existing?.lastTaskStatus,
             lastTaskAt = existing?.lastTaskAt,
@@ -69,11 +67,11 @@ class SubscriptionAcsOpsService(
                 status = status,
                 deviceId = device.id,
                 error = if (status == Tr069ProvisionStatus.MANUAL_REQUIRED) {
-                    existing?.lastError ?: subscription.tr069LastError
+                    existing?.lastError
                 } else null,
                 acsSnapshot = snapshot,
             ),
-            smartoltSerial = subscription.fiberOnu?.sn ?: existing?.smartoltSerial,
+            smartoltSerial = subscription.fiberOnuSn ?: existing?.smartoltSerial,
         )
 
         return getAcs(subscriptionId)
@@ -85,7 +83,6 @@ class SubscriptionAcsOpsService(
             .orElseThrow { NoSuchElementException("Suscripción $subscriptionId no encontrada") }
         val existing = acsRepository.findById(subscriptionId).orElse(null)
         val deviceId = existing?.genieacsDeviceId
-            ?: subscription.tr069DeviceId
             ?: throw IllegalStateException(
                 "La suscripción $subscriptionId no tiene deviceId GenieACS para reiniciar"
             )
@@ -132,11 +129,11 @@ class SubscriptionAcsOpsService(
         existing: SubscriptionAcs?,
     ): GenieAcsDevice? {
         val devices = client.listDevices()
-        val deviceId = existing?.genieacsDeviceId ?: subscription.tr069DeviceId
+        val deviceId = existing?.genieacsDeviceId
         if (!deviceId.isNullOrBlank()) {
             devices.firstOrNull { it.id == deviceId }?.let { return it }
         }
-        val sn = subscription.fiberOnu?.sn ?: existing?.smartoltSerial
+        val sn = subscription.fiberOnuSn ?: existing?.smartoltSerial
         return when (val match = Tr069SerialMatcher.findUnique(sn, devices)) {
             is Tr069SerialMatch.Found -> match.device
             else -> null

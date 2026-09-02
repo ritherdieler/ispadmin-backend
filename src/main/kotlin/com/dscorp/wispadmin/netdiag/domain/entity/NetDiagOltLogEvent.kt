@@ -6,10 +6,19 @@ import javax.persistence.Entity
 import javax.persistence.GeneratedValue
 import javax.persistence.GenerationType
 import javax.persistence.Id
+import javax.persistence.Index
 import javax.persistence.Table
 
 @Entity
-@Table(name = "net_diag_olt_log_event")
+@Table(
+    name = "net_diag_olt_log_event",
+    indexes = [
+        Index(name = "idx_ndole_received", columnList = "received_at"),
+        Index(name = "idx_ndole_board_port_received", columnList = "board,port,received_at"),
+        Index(name = "idx_ndole_unparsed_received", columnList = "is_unparsed,received_at"),
+        Index(name = "idx_ndole_target_received", columnList = "target_id,received_at")
+    ]
+)
 class NetDiagOltLogEvent(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

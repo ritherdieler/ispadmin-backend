@@ -23,7 +23,8 @@ import java.time.format.DateTimeParseException
 class NetDiagIncidentQueryService(
     private val incidentRepository: NetDiagIncidentRepository,
     private val incidentEventRepository: NetDiagIncidentEventRepository,
-    private val maintenanceService: NetDiagMaintenanceService
+    private val maintenanceService: NetDiagMaintenanceService,
+    private val summaryCache: NetDiagIncidentSummaryCache
 ) {
 
     @Transactional(readOnly = true)
@@ -47,11 +48,24 @@ class NetDiagIncidentQueryService(
     }
 
     @Transactional(readOnly = true)
-    fun summarizeIncidents(): IncidentsSummaryDto {
+    fun summarizeIncidents(): IncidentsSummaryDto = summaryCache.get { computeSummary() }
+
+    private fun computeSummary(): IncidentsSummaryDto {
+        var open = 0L
+        var p0Open = 0L
+        var pollStale = 0L
+        incidentRepository.summarizeByStatuses(OPEN_STATUSES).forEach { row ->
+            val severity = row.getOrNull(0) as? String
+            val reasonCode = row.getOrNull(1) as? String
+            val count = (row.getOrNull(2) as? Number)?.toLong() ?: 0L
+            open += count
+            if (severity.equals("P0", ignoreCase = true)) p0Open += count
+            if (reasonCode.equals("POLL_STALE", ignoreCase = true)) pollStale += count
+        }
         return IncidentsSummaryDto(
-            openCount = incidentRepository.countByStatusIn(OPEN_STATUSES),
-            p0OpenCount = incidentRepository.countBySeverityAndStatusIn("P0", OPEN_STATUSES),
-            pollStaleCount = incidentRepository.countByReasonCodeAndStatusIn("POLL_STALE", OPEN_STATUSES)
+            openCount = open,
+            p0OpenCount = p0Open,
+            pollStaleCount = pollStale
         )
     }
 
@@ -75,9 +89,12 @@ class NetDiagIncidentQueryService(
                     incident = incident,
                     type = "ACKNOWLEDGED",
                     payload = null,
+                    reasonCode = incident.reasonCode,
+                    targetId = incident.target?.id,
                     createdAt = Instant.now()
                 )
             )
+            summaryCache.invalidate()
         }
         return toDetail(incident)
     }
@@ -99,9 +116,12 @@ class NetDiagIncidentQueryService(
                 incident = incident,
                 type = "RESOLVED",
                 payload = null,
+                reasonCode = incident.reasonCode,
+                targetId = incident.target?.id,
                 createdAt = Instant.now()
             )
         )
+        summaryCache.invalidate()
         return toDetail(incident)
     }
 
@@ -120,9 +140,12 @@ class NetDiagIncidentQueryService(
                 incident = incident,
                 type = "SILENCED",
                 payload = effectiveUntil.toString(),
+                reasonCode = incident.reasonCode,
+                targetId = incident.target?.id,
                 createdAt = Instant.now()
             )
         )
+        summaryCache.invalidate()
         return toDetail(incident)
     }
 

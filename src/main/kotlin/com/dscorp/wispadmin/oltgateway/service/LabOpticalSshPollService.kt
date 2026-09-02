@@ -56,7 +56,7 @@ class LabOpticalSshPollService(
     private fun poll(ids: Collection<Int>): LabOpticalPollResult {
         var unmapped = 0
         val targets = LabOpticalTargets.resolve(ids) { id ->
-            val sn = subscriptions.findById(id).orElse(null)?.fiberOnu?.sn
+            val sn = subscriptions.findById(id).orElse(null)?.fiberOnuSn
             if (sn.isNullOrBlank()) {
                 unmapped++
                 logger.info("Lab optical SSH unmapped subscription={}", id)

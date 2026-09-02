@@ -6,8 +6,8 @@ import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.service.*
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository
 import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ModelProfiles
+import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.ObjectProvider
@@ -23,7 +23,7 @@ import javax.servlet.http.HttpServletRequest
 @RestController
 class ServiceHealthController(private val access: HealthAccess,private val reader: HealthEvidenceReader,
     private val engine: DiagnosisEngine,private val properties: ServiceHealthProperties,
-    private val acs: SubscriptionAcsRepository,private val optical: OpticalSampleRepository,
+    private val acs: AcsSubscriptionPort,private val optical: OpticalSampleRepository,
     private val counts: WifiCountSampleRepository,private val stations: WifiStationSampleRepository,
     private val hourlies: WifiStationHourlyRepository,
     private val events: HealthEventRepository,private val actions: RemoteActionRepository,
@@ -36,7 +36,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     fun cpe(@PathVariable id: Int,request: HttpServletRequest): CpeStatus {
         val actor=access.require(request)
         val summary=engine.evaluate(reader.read(id))
-        val snap=acs.findById(id).orElse(null)
+        val snap=acs.find(id)
         val rx=summary.sources.firstOrNull { it.metric=="onu_rx_dbm" }
         val state=summary.sources.first { it.metric=="run_state" }
         val inform=summary.sources.first { it.metric=="last_inform" }

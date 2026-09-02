@@ -7,12 +7,22 @@ import javax.persistence.FetchType
 import javax.persistence.GeneratedValue
 import javax.persistence.GenerationType
 import javax.persistence.Id
+import javax.persistence.Index
 import javax.persistence.JoinColumn
 import javax.persistence.ManyToOne
 import javax.persistence.Table
 
+/**
+ * Tabla histórica: su contenido se fusionó en `net_diag_incident_event`. Ya no se escribe;
+ * solo la drena el servicio de retención.
+ */
 @Entity
-@Table(name = "net_diag_alert_decision")
+@Table(
+    name = "net_diag_alert_decision",
+    indexes = [
+        Index(name = "idx_ndad_created", columnList = "created_at")
+    ]
+)
 class NetDiagAlertDecision(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

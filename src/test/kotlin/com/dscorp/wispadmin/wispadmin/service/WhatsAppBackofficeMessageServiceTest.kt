@@ -9,6 +9,7 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.UnpaidInvoiceAggregate
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCode
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDefinition
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateDeliveryService
@@ -41,6 +42,7 @@ class WhatsAppBackofficeMessageServiceTest {
     private val syncedTemplateRepository = mock(WhatsAppSyncedTemplateRepository::class.java)
     private val whatsAppProperties = WhatsAppProperties()
     private val templateDeliveryService = mock(WhatsAppTemplateDeliveryService::class.java)
+    private val serviceWindowService = mock(WhatsAppServiceWindowService::class.java)
 
     private lateinit var service: WhatsAppBackofficeMessageService
     private val paymentRowsById = mutableMapOf<Int, Array<Any>>()
@@ -67,7 +69,8 @@ class WhatsAppBackofficeMessageServiceTest {
             whatsAppMessageLogRepository = whatsAppMessageLogRepository,
             syncedTemplateRepository = syncedTemplateRepository,
             whatsAppProperties = whatsAppProperties,
-            templateDeliveryService = templateDeliveryService
+            templateDeliveryService = templateDeliveryService,
+            serviceWindowService = serviceWindowService
         )
     }
 
@@ -168,7 +171,8 @@ class WhatsAppBackofficeMessageServiceTest {
             whatsAppMessageLogRepository = whatsAppMessageLogRepository,
             syncedTemplateRepository = syncedTemplateRepository,
             whatsAppProperties = whatsAppProperties,
-            templateDeliveryService = templateDeliveryService
+            templateDeliveryService = templateDeliveryService,
+            serviceWindowService = serviceWindowService
         )
 
         (1..4).forEach { id ->

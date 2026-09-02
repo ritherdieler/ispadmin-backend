@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.netdiag.domain.repository
 
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertDecision
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertSuppressionWindow
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAuditLog
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
@@ -77,18 +78,62 @@ interface NetDiagIncidentRepository : JpaRepository<NetDiagIncident, Long> {
     fun countByStatusIn(statuses: Collection<String>): Long
     fun countBySeverityAndStatusIn(severity: String, statuses: Collection<String>): Long
     fun countByReasonCodeAndStatusIn(reasonCode: String, statuses: Collection<String>): Long
+
+    @Query(
+        """
+        SELECT i.severity, i.reasonCode, COUNT(i.id)
+        FROM NetDiagIncident i
+        WHERE UPPER(i.status) IN :statuses
+        GROUP BY i.severity, i.reasonCode
+        """
+    )
+    fun summarizeByStatuses(@Param("statuses") statuses: Collection<String>): List<Array<Any?>>
 }
 
 @Repository
 interface NetDiagIncidentEventRepository : JpaRepository<NetDiagIncidentEvent, Long> {
     fun findByIncidentIdOrderByCreatedAtDesc(incidentId: Long): List<NetDiagIncidentEvent>
+
+    @Query("SELECT e.id FROM NetDiagIncidentEvent e WHERE e.createdAt < :cutoff")
+    fun findIdsOlderThan(@Param("cutoff") cutoff: Instant, pageable: Pageable): List<Long>
 }
 
 @Repository
-interface NetDiagAlertDecisionRepository : JpaRepository<NetDiagAlertDecision, Long>
+interface NetDiagAlertDecisionRepository : JpaRepository<NetDiagAlertDecision, Long> {
+    @Query("SELECT d.id FROM NetDiagAlertDecision d WHERE d.createdAt < :cutoff")
+    fun findIdsOlderThan(@Param("cutoff") cutoff: Instant, pageable: Pageable): List<Long>
+}
 
 @Repository
-interface NetDiagNotificationLogRepository : JpaRepository<NetDiagNotificationLog, Long>
+interface NetDiagAlertSuppressionWindowRepository : JpaRepository<NetDiagAlertSuppressionWindow, Long> {
+    @Modifying(clearAutomatically = true)
+    @Query(
+        """
+        UPDATE NetDiagAlertSuppressionWindow w
+        SET w.eventCount = w.eventCount + 1, w.lastSeenAt = :seenAt
+        WHERE w.incidentId = :incidentId
+          AND w.targetId = :targetId
+          AND w.reasonCode = :reasonCode
+          AND w.windowStart = :windowStart
+        """
+    )
+    fun incrementWindow(
+        @Param("incidentId") incidentId: Long,
+        @Param("targetId") targetId: Long,
+        @Param("reasonCode") reasonCode: String,
+        @Param("windowStart") windowStart: Instant,
+        @Param("seenAt") seenAt: Instant
+    ): Int
+
+    @Query("SELECT w.id FROM NetDiagAlertSuppressionWindow w WHERE w.windowStart < :cutoff")
+    fun findIdsOlderThan(@Param("cutoff") cutoff: Instant, pageable: Pageable): List<Long>
+}
+
+@Repository
+interface NetDiagNotificationLogRepository : JpaRepository<NetDiagNotificationLog, Long> {
+    @Query("SELECT n.id FROM NetDiagNotificationLog n WHERE n.createdAt < :cutoff")
+    fun findIdsOlderThan(@Param("cutoff") cutoff: Instant, pageable: Pageable): List<Long>
+}
 
 @Repository
 interface NetDiagAuditLogRepository : JpaRepository<NetDiagAuditLog, Long>
@@ -131,6 +176,9 @@ interface NetDiagOltLogEventRepository : JpaRepository<NetDiagOltLogEvent, Long>
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM NetDiagOltLogEvent e WHERE e.receivedAt < :cutoff")
     fun deleteByReceivedAtBefore(@Param("cutoff") cutoff: Instant): Int
+
+    @Query("SELECT e.id FROM NetDiagOltLogEvent e WHERE e.receivedAt < :cutoff")
+    fun findIdsOlderThan(@Param("cutoff") cutoff: Instant, pageable: Pageable): List<Long>
 }
 
 @Repository

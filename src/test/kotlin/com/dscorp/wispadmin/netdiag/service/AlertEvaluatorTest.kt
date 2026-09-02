@@ -1,11 +1,10 @@
 package com.dscorp.wispadmin.netdiag.service
 
 import com.dscorp.wispadmin.netdiag.config.NetDiagProperties
-import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertDecision
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
-import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertDecisionRepository
+import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagAlertSuppressionWindowRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
@@ -24,22 +23,25 @@ class AlertEvaluatorTest {
 
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
-    private val alertDecisionRepository = mockk<NetDiagAlertDecisionRepository>()
+    private val suppressionWindowRepository = mockk<NetDiagAlertSuppressionWindowRepository>(relaxed = true)
     private val targetRepository = mockk<NetDiagTargetRepository>()
     private val notifier = mockk<WhatsAppOpsNotifier>(relaxed = true)
     private val llmWebhookService = mockk<NetDiagLlmWebhookService>(relaxed = true)
     private val properties = NetDiagProperties().apply {
         alert.parentMaxDepth = 5
     }
+    private val summaryCache = NetDiagIncidentSummaryCache(properties)
     private val correlationEngine = CorrelationEngine(incidentRepository, targetRepository, properties)
     private val evaluator = AlertEvaluator(
         incidentRepository = incidentRepository,
         incidentEventRepository = incidentEventRepository,
-        alertDecisionRepository = alertDecisionRepository,
+        suppressionWindowRepository = suppressionWindowRepository,
         targetRepository = targetRepository,
         correlationEngine = correlationEngine,
         notifier = notifier,
-        llmWebhookService = llmWebhookService
+        llmWebhookService = llmWebhookService,
+        summaryCache = summaryCache,
+        properties = properties
     )
 
     private val idSeq = AtomicLong(100)
@@ -56,12 +58,12 @@ class AlertEvaluatorTest {
         every {
             incidentRepository.findByTarget_IdAndStatusAndReasonCode(any(), "OPEN", "UPSTREAM_PROBE_FAIL")
         } returns emptyList()
-        every { alertDecisionRepository.save(any()) } answers {
-            firstArg<NetDiagAlertDecision>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
-        }
         every { incidentEventRepository.save(any()) } answers {
             firstArg<NetDiagIncidentEvent>().also { if (it.id == null) it.id = idSeq.incrementAndGet() }
         }
+        every {
+            suppressionWindowRepository.incrementWindow(any(), any(), any(), any(), any())
+        } returns 1
     }
 
     @Test
@@ -83,6 +85,11 @@ class AlertEvaluatorTest {
         assertEquals(listOf("OPEN"), result.decisions)
         assertEquals(listOf(55L), result.openedIncidentIds)
         assertEquals("OPEN", incidentSlot.captured.status)
+        verify {
+            incidentEventRepository.save(match {
+                it.type == "OPENED" && it.reasonCode == "LINK_DOWN" && it.targetId == 2L
+            })
+        }
         verify { notifier.notifyIfNeeded(any()) }
         verify { llmWebhookService.notifyIncidentOpened(any()) }
     }
@@ -147,7 +154,7 @@ class AlertEvaluatorTest {
     }
 
     @Test
-    fun `supresion padre-hijo registra SUPPRESSED_CHILD en incidente ancestro`() {
+    fun `supresion padre-hijo agrega el contador del incidente ancestro sin escribir historial`() {
         val parentIncident = NetDiagIncident(
             id = 10L,
             target = parent,
@@ -170,10 +177,9 @@ class AlertEvaluatorTest {
         assertTrue(result.suppressed)
         assertEquals(listOf("SUPPRESSED"), result.decisions)
         verify {
-            incidentEventRepository.save(match {
-                it.type == "SUPPRESSED_CHILD" && it.incident.id == 10L
-            })
+            suppressionWindowRepository.incrementWindow(10L, 2L, "PON_DOWN", any(), any())
         }
+        verify(exactly = 0) { incidentEventRepository.save(any()) }
         verify(exactly = 0) { incidentRepository.save(any()) }
     }
 }

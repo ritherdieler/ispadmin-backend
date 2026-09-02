@@ -24,3 +24,10 @@ data class AssistanceTicketDto(
     val sheetImageUrl: String?,
     val isExternalCustomer: Boolean = false,
     )
+
+data class AssistanceTicketCountsDto(
+    val byStatus: Map<String, Long>,
+    val open: Long,
+    val closed: Long,
+    val total: Long
+)

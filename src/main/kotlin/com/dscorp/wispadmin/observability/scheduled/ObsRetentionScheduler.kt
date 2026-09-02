@@ -14,7 +14,6 @@ import com.dscorp.wispadmin.observability.repository.ObsSystemMetricRepository
 import com.dscorp.wispadmin.observability.service.ObsReplayService
 import com.dscorp.wispadmin.observability.service.ObsSymbolArtifactService
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -38,7 +37,6 @@ class ObsRetentionScheduler(
 
     private val log = LoggerFactory.getLogger(this::class.java)
 
-    @Scheduled(cron = "0 30 3 * * *", zone = "America/Lima")
     @Transactional
     fun purgeExpiredData() {
         val now = LocalDateTime.now()

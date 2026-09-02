@@ -56,7 +56,6 @@ class SubscriptionServiceTest {
         placeRepository = placeRepository,
         napBoxRepository = mockk(relaxed = true),
         onuService = mockk(relaxed = true),
-        onuRepository = mockk(relaxed = true),
         installationOrderRepository = mockk(relaxed = true),
         notificationService = mockk(relaxed = true),
         subscriptionLogRepository = mockk(relaxed = true),

@@ -9,6 +9,8 @@ class OltCommandExecutor(
 
     fun <T> adhoc(block: (HuaweiCliSession) -> T): T = execute(CliJobType.ADHOC, block)
 
+    fun <T> job(type: CliJobType, block: (HuaweiCliSession) -> T): T = execute(type, block)
+
     fun <T> write(block: (HuaweiCliSession) -> T): T = execute(CliJobType.WRITE, block)
 
     fun ping(): Long = cliBus.ping()

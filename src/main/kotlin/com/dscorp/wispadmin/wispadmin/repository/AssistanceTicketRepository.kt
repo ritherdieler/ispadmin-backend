@@ -40,6 +40,15 @@ interface AssistanceTicketRepository : JpaRepository<AssistanceTicket, Int> {
 
     fun findByStatusIn(statuses: Collection<AssistanceTicketStatus>): List<AssistanceTicket>
 
+    @Query(
+        """
+        SELECT t.status, COUNT(t)
+        FROM AssistanceTicket t
+        GROUP BY t.status
+        """
+    )
+    fun countGroupedByStatus(): List<Array<Any>>
+
     fun findByPhoneOrderByCreatedAtDesc(phone: String): List<AssistanceTicket>
 
     @Query(

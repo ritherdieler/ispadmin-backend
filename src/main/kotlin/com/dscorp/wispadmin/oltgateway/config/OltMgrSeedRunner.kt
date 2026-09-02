@@ -22,6 +22,7 @@ class OltMgrSeedRunner(
 
     companion object {
         private val logger = LoggerFactory.getLogger(OltMgrSeedRunner::class.java)
+        const val SEEDED_MAX_CLI_SESSIONS = 2
     }
 
     override fun run(args: ApplicationArguments?) {
@@ -82,11 +83,13 @@ class OltMgrSeedRunner(
                 vendor = "Huawei",
                 product = code,
                 family = "MA5600T",
-                maxConcurrentCliSessions = 4,
+                maxConcurrentCliSessions = SEEDED_MAX_CLI_SESSIONS,
                 maxConcurrentSnmpWalks = snmpWalks,
                 maxSlotProbe = properties.inventory.maxSlotProbe,
                 defaultPortsPerGponBoard = properties.inventory.defaultPortsPerGponBoard,
-                notes = "CLI: exclusive gateway user, max_concurrent_cli_sessions=4. SNMP: max_concurrent_snmp_walks=$snmpWalks (model limit)"
+                notes = "CLI: exclusive gateway user, max_concurrent_cli_sessions=$SEEDED_MAX_CLI_SESSIONS " +
+                    "(la OLT admite 3; la 3.a queda para operador/backup). " +
+                    "SNMP: max_concurrent_snmp_walks=$snmpWalks (model limit)"
             )
         )
         logger.info(

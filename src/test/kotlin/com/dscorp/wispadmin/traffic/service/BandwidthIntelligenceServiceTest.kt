@@ -123,7 +123,7 @@ class BandwidthIntelligenceServiceTest {
         service.subscriptions(from, to, null, null, null, "consumption", 0, 25)
 
         verify(exactly = 1) { fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, from, to) }
-        verify(exactly = 0) { sampleRepository.summarizeInBucketRange(any(), any(), any()) }
+        verify(exactly = 0) { sampleRepository.findAllInBucketRange(any(), any()) }
     }
 
     @Test

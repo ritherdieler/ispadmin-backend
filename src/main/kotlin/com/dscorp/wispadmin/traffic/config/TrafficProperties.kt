@@ -35,7 +35,8 @@ data class TrafficProperties(
         val enabled: Boolean = true,
         val minimumCoveragePct: Double = 80.0,
         val saturationPct: Double = 80.0,
-        val ruleVersion: String = "traffic-rules-v1"
+        val ruleVersion: String = "traffic-rules-v1",
+        val evaluationBatchSize: Int = 200
     )
 
     data class AggregationProperties(

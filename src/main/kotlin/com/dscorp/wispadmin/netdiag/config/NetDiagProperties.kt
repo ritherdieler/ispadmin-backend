@@ -40,6 +40,13 @@ class NetDiagProperties {
 
     class RetentionProperties {
         var probeRunDays: Int = 30
+        var oltLogEventDays: Int = 14
+        var incidentEventDays: Int = 90
+        var alertDecisionDays: Int = 7
+        var notificationLogDays: Int = 90
+        var suppressionDays: Int = 30
+        var batchSize: Int = 2_000
+        var maxBatchesPerRun: Int = 500
     }
 
     class AlertProperties {
@@ -49,6 +56,8 @@ class NetDiagProperties {
         var lowVoltage: Double = 20.0
         var staleMultiplier: Int = 3
         var parentMaxDepth: Int = 5
+        var suppressionWindowMinutes: Int = 60
+        var summaryCacheMs: Long = 15_000
     }
 
     class WhatsAppProperties {

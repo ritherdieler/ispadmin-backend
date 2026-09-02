@@ -3,17 +3,23 @@ package com.dscorp.wispadmin.oltgateway.service
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredItemDto
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.wispadmin.service.OltService
+import com.dscorp.wispadmin.oltgateway.dto.AutofindRefreshResultDto
 import com.dscorp.wispadmin.oltgateway.dto.CatalogItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
-import com.dscorp.wispadmin.oltgateway.service.SignalPollResult
-import com.dscorp.wispadmin.oltgateway.service.SyncResult
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.wispadmin.response.OnuBySnResponse
 import com.dscorp.wispadmin.wispadmin.response.Response
 import io.mockk.Runs
 import io.mockk.every
@@ -35,8 +41,17 @@ class OnuServiceTest {
     private val signalProvider = mockk<ObjectProvider<OltSignalPollService>>()
     private val importProvider = mockk<ObjectProvider<com.dscorp.wispadmin.oltgateway.service.SmartOltImportService>>()
     private val subscriptionRepository = mockk<SubscriptionRepository>()
+    private val autofindProvider = mockk<ObjectProvider<OltAutofindCacheService>>()
+    private val managerFacadeProvider = mockk<ObjectProvider<OltManagerFacade>>()
+    private val syncJobRunnerProvider = mockk<ObjectProvider<OltGatewaySyncJobRunner>>()
+    private val propertiesProvider = mockk<ObjectProvider<OltGatewayProperties>>()
     private val inventorySync = mockk<OltInventorySyncService>()
     private val signalPoll = mockk<OltSignalPollService>()
+    private val autofindCache = mockk<OltAutofindCacheService>()
+    private val managerFacade = mockk<OltManagerFacade>()
+    private val syncJobRunner = mockk<OltGatewaySyncJobRunner>()
+    private val properties = OltGatewayProperties()
+    private val writeRouter = mockk<OnuWriteRouter>(relaxed = true)
     private lateinit var service: OnuService
 
     @BeforeEach
@@ -46,10 +61,20 @@ class OnuServiceTest {
             inventoryProvider,
             signalProvider,
             importProvider,
-            subscriptionRepository
+            subscriptionRepository,
+            autofindProvider,
+            managerFacadeProvider,
+            syncJobRunnerProvider,
+            propertiesProvider,
+            writeRouter
         )
         every { subscriptionRepository.findActiveIpSnPairsByFiberOnuSnIn(any()) } returns emptyList()
         every { subscriptionRepository.findActiveIpNamePairsByFullNameIn(any()) } returns emptyList()
+        every { propertiesProvider.getIfAvailable() } returns properties
+        every { autofindProvider.getIfAvailable() } returns autofindCache
+        every { managerFacadeProvider.getIfAvailable() } returns managerFacade
+        every { syncJobRunnerProvider.getIfAvailable() } returns syncJobRunner
+        properties.autofind.enabled = true
     }
 
     @Test
@@ -220,9 +245,18 @@ class OnuServiceTest {
     }
 
     @Test
-    fun `unconfigured delega a SmartOLT`() {
-        every { oltService.getUnConfiguredOnus() } returns listOf(
-            Response("1", "gigafiber-ma5608t", "", "", "EG8145V5", "gpon", "0", "HWTC0086CD49")
+    fun `unconfigured se sirve del cache propio sin llamar a SmartOLT`() {
+        every { autofindCache.listUnconfigured() } returns listOf(
+            SmartOltUnconfiguredItemDto(
+                board = "1",
+                olt_id = "gigafiber-ma5608t",
+                onu = "",
+                onu_type_id = "",
+                onu_type_name = "EG8145V5",
+                pon_type = "gpon",
+                port = "0",
+                sn = "HWTC0086CD49"
+            )
         )
 
         val list = service.getUnConfiguredOnus()
@@ -230,11 +264,79 @@ class OnuServiceTest {
         assertEquals(1, list.size)
         assertEquals("HWTC0086CD49", list[0].sn)
         assertEquals("1", list[0].board)
+        verify(exactly = 0) { oltService.getUnConfiguredOnus() }
+        verify(exactly = 0) { autofindCache.refreshLive() }
     }
 
     @Test
-    fun `authorizeOnu delega a SmartOLT`() {
-        every { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) } just Runs
+    fun `unconfigured con refresh fuerza una lectura en vivo antes de responder`() {
+        every { autofindCache.refreshLive() } returns AutofindRefreshResultDto(source = "live", seen = 1, stored = 1)
+        every { autofindCache.listUnconfigured() } returns emptyList()
+
+        service.getUnConfiguredOnus(forceRefresh = true)
+
+        verify(exactly = 1) { autofindCache.refreshLive() }
+        verify(exactly = 1) { autofindCache.listUnconfigured() }
+    }
+
+    @Test
+    fun `unconfigured cae a SmartOLT si el autofind propio esta apagado`() {
+        properties.autofind.enabled = false
+        every { oltService.getUnConfiguredOnus() } returns listOf(
+            Response("1", "gigafiber-ma5608t", "", "", "EG8145V5", "gpon", "0", "HWTC0086CD49")
+        )
+
+        val list = service.getUnConfiguredOnus()
+
+        assertEquals("HWTC0086CD49", list[0].sn)
+        verify(exactly = 1) { oltService.getUnConfiguredOnus() }
+        verify(exactly = 0) { autofindCache.listUnconfigured() }
+    }
+
+    @Test
+    fun `getOnuBySn se sirve del gateway sin tocar SmartOLT`() {
+        every { managerFacade.getOnusDetailsBySn("HWTC0086CD49") } returns SmartOltOnuBySnResponseDto(
+            onus = listOf(SmartOltOnuDto(sn = "HWTC0086CD49", unique_external_id = "ext-1", board = "1", port = "0")),
+            response_code = "200",
+            status = true
+        )
+
+        val response = service.getOnuBySn("HWTC0086CD49")
+
+        assertEquals("HWTC0086CD49", response.onus[0].sn)
+        assertEquals("ext-1", response.onus[0].unique_external_id)
+        verify(exactly = 0) { oltService.getOnuBySn(any()) }
+    }
+
+    @Test
+    fun `getOnuBySn devuelve vacio sin ir a SmartOLT cuando el gateway no conoce el serial`() {
+        every { managerFacade.getOnusDetailsBySn("HWTCDESCONOCIDO") } throws OnuNotFoundException("no existe")
+
+        val response = service.getOnuBySn("HWTCDESCONOCIDO")
+
+        assertTrue(response.onus.isEmpty())
+        assertEquals("404", response.response_code)
+        verify(exactly = 0) { oltService.getOnuBySn(any()) }
+    }
+
+    @Test
+    fun `getOnuBySn cae a SmartOLT si el gateway falla`() {
+        every { managerFacade.getOnusDetailsBySn("HWTC0086CD49") } throws IllegalStateException("olt_unreachable")
+        every { oltService.getOnuBySn("HWTC0086CD49") } returns OnuBySnResponse(
+            onus = emptyList(),
+            response_code = "200",
+            status = true
+        )
+
+        service.getOnuBySn("HWTC0086CD49")
+
+        verify(exactly = 1) { oltService.getOnuBySn("HWTC0086CD49") }
+    }
+
+    @Test
+    fun `authorizeOnu delega en el enrutador de escrituras`() {
+        every { writeRouter.authorize(any<AuthorizeOnuFormDto>()) } returns
+            SmartOltActionResponseDto(status = true)
 
         val result = service.authorizeOnu(
             AuthorizeOnuFormDto(
@@ -249,12 +351,14 @@ class OnuServiceTest {
         )
 
         assertTrue(result.status)
-        verify(exactly = 1) { oltService.authorizeOnuInSmartOltWidthPostMethod(match { it.sn == "HWTC0086CD49" }) }
+        verify(exactly = 1) { writeRouter.authorize(match<AuthorizeOnuFormDto> { it.sn == "HWTC0086CD49" }) }
+        verify(exactly = 0) { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) }
     }
 
     @Test
-    fun `authorizeOnuInSmartOltWidthPostMethod delega a SmartOLT`() {
-        every { oltService.authorizeOnuInSmartOltWidthPostMethod(any()) } just Runs
+    fun `authorizeOnuInSmartOltWidthPostMethod delega en el enrutador de escrituras`() {
+        every { writeRouter.authorize(any<OnuAuthorizationRequest>()) } returns
+            SmartOltActionResponseDto(status = true)
 
         service.authorizeOnuInSmartOltWidthPostMethod(
             OnuAuthorizationRequest(
@@ -273,7 +377,7 @@ class OnuServiceTest {
         )
 
         verify(exactly = 1) {
-            oltService.authorizeOnuInSmartOltWidthPostMethod(match { it.sn == "HWTC0086CD49" && it.zone == "Zone 1" })
+            writeRouter.authorize(match<OnuAuthorizationRequest> { it.sn == "HWTC0086CD49" && it.zone == "Zone 1" })
         }
     }
 
@@ -363,36 +467,66 @@ class OnuServiceTest {
     }
 
     @Test
-    fun `rebootConfiguredOnu delega a SmartOLT`() {
-        every { oltService.rebootOnu("ext-1") } just Runs
+    fun `rebootConfiguredOnu delega en el enrutador de escrituras`() {
+        every { writeRouter.reboot("ext-1") } returns
+            SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
 
         val result = service.rebootConfiguredOnu("ext-1")
 
         assertTrue(result.status)
-        verify(exactly = 1) { oltService.rebootOnu("ext-1") }
+        verify(exactly = 1) { writeRouter.reboot("ext-1") }
+        verify(exactly = 0) { oltService.rebootOnu(any()) }
     }
 
     @Test
-    fun `deleteConfiguredOnu delega a SmartOLT`() {
-        every { oltService.deleteOnu("ext-1") } just Runs
+    fun `deleteConfiguredOnu delega en el enrutador de escrituras`() {
+        every { writeRouter.delete("ext-1") } returns
+            SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
 
         val result = service.deleteConfiguredOnu("ext-1")
 
         assertTrue(result.status)
-        verify(exactly = 1) { oltService.deleteOnu("ext-1") }
+        verify(exactly = 1) { writeRouter.delete("ext-1") }
+        verify(exactly = 0) { oltService.deleteOnu(any()) }
     }
 
     @Test
-    fun `syncInventory y syncSignal delegan al gateway`() {
-        every { inventoryProvider.getIfAvailable() } returns inventorySync
-        every { signalProvider.getIfAvailable() } returns signalPoll
-        every { inventorySync.syncInventoryFromSnmp() } returns SyncResult(inserted = 0, updated = 2, unchanged = 10, durationMs = 100)
-        every { signalPoll.pollSignalsFromSnmp() } returns SignalPollResult(slotsPolled = 2, portsPolled = 8, onusUpdated = 50, durationMs = 200)
+    fun `borrar y reiniciar por SN delegan en el enrutador para que resuelva el identificador`() {
+        service.deleteOnuBySn("HWTC0086CD49")
+        service.rebootOnuBySn("HWTC0086CD49")
 
-        val inv = service.syncInventory()
-        val sig = service.syncSignal()
+        verify(exactly = 1) { writeRouter.deleteBySn("HWTC0086CD49") }
+        verify(exactly = 1) { writeRouter.rebootBySn("HWTC0086CD49") }
+        verify(exactly = 0) { oltService.getOnuBySn(any()) }
+    }
 
-        assertEquals(2, inv.updated)
-        assertEquals(50, sig.onusUpdated)
+    @Test
+    fun `los sync arrancan en segundo plano y responden el estado del trabajo`() {
+        every { syncJobRunner.startSnmpInventory() } returns SyncJobStatusDto(
+            job = OltGatewaySyncJobRunner.JOB_SNMP_INVENTORY,
+            started = true,
+            running = true
+        )
+        every { syncJobRunner.startSignal() } returns SyncJobStatusDto(
+            job = OltGatewaySyncJobRunner.JOB_SIGNAL,
+            started = true,
+            running = true
+        )
+
+        val inv = service.startInventorySync()
+        val sig = service.startSignalSync()
+
+        assertTrue(inv.started)
+        assertTrue(sig.started)
+        verify(exactly = 0) { inventorySync.syncInventoryFromSnmp() }
+        verify(exactly = 0) { signalPoll.pollSignalsFromSnmp() }
+    }
+
+    @Test
+    fun `arrancar un sync falla si el gateway esta deshabilitado`() {
+        every { syncJobRunnerProvider.getIfAvailable() } returns null
+
+        assertThrows(ResponseStatusException::class.java) { service.startInventorySync() }
+        assertThrows(ResponseStatusException::class.java) { service.startSignalSync() }
     }
 }

@@ -106,7 +106,7 @@ class SubscriptionProvisionServiceTest {
 
     @Test
     fun `initializeStatuses ONLY_TV CATV sets olt and tr069 NA`() {
-        val subscription = baseSubscription().apply { fiberOnu = null }
+        val subscription = baseSubscription().apply { fiberOnuSn = null }
         service.initializeStatuses(subscription, InstallationType.ONLY_TV_FIBER)
         assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
         assertEquals(OltProvisionStatus.NA, subscription.oltProvisionStatus)
@@ -128,7 +128,7 @@ class SubscriptionProvisionServiceTest {
             tr069AsyncApplicator = mockk(relaxed = true),
         )
         val subscription = baseSubscription().apply {
-            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
         }
         enabledService.initializeStatuses(subscription, InstallationType.ONLY_TV_FIBER)
         assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
@@ -140,7 +140,7 @@ class SubscriptionProvisionServiceTest {
     fun `applyInstallationResult ONLY_TV with ONU marks olt COMPLETE`() {
         val subscription = baseSubscription().apply {
             installationType = InstallationType.ONLY_TV_FIBER
-            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
             mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
             oltProvisionStatus = OltProvisionStatus.PENDING
             tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
@@ -383,7 +383,7 @@ class SubscriptionProvisionServiceTest {
         val subscription = baseSubscription().apply {
             id = 42
             installationType = InstallationType.ONLY_TV_FIBER
-            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
             oltProvisionStatus = OltProvisionStatus.COMPLETE
             tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
             vlan = "100"
@@ -407,7 +407,7 @@ class SubscriptionProvisionServiceTest {
         val subscription = baseSubscription().apply {
             id = 42
             installationType = InstallationType.ONLY_TV_FIBER
-            fiberOnu = null
+            fiberOnuSn = null
             oltProvisionStatus = OltProvisionStatus.NA
             tr069ProvisionStatus = Tr069ProvisionStatus.NA
         }

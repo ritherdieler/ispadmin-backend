@@ -1,60 +1,40 @@
 package com.dscorp.wispadmin.oltgateway.adapter
 
-import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
-import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
-import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
+import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
+import com.dscorp.wispadmin.oltgateway.port.OltOnuSnapshot
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069SerialMatcher
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 
 @Component
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class HealthOnuAdapter(
-    private val onus: OltMgrOnuRepository,
-    private val olts: OltMgrOltRepository
+    private val inventory: OltInventoryPort
 ) : HealthOnuPort {
 
-    override fun findBySn(sn: String): HealthOnuRef? {
-        val exact = onus.findBySnIgnoreCaseAndDeletedAtIsNull(sn).orElse(null)
-        if (exact != null) return exact.toRef()
-        val normalized = HuaweiGponSnmpCodec.normalizeOntSn(sn)
-        if (!normalized.equals(sn, ignoreCase = true)) {
-            val byNorm = onus.findBySnIgnoreCaseAndDeletedAtIsNull(normalized).orElse(null)
-            if (byNorm != null) return byNorm.toRef()
-        }
-        val suffix = Tr069SerialMatcher.normalizeSuffix(sn) ?: return null
-        return onus.findBySnSuffixIgnoreCaseAndDeletedAtIsNull(suffix).singleOrNull()?.toRef()
-    }
+    override fun findBySn(sn: String): HealthOnuRef? = inventory.findBySn(sn)?.toRef()
 
-    override fun findByExternalId(externalId: String): HealthOnuRef? {
-        return onus.findByExternalIdAndDeletedAtIsNull(externalId).orElse(null)?.toRef()
-    }
+    override fun findByExternalId(externalId: String): HealthOnuRef? =
+        inventory.findByExternalId(externalId)?.toRef()
 
-    override fun findByOltBoardPortOnu(oltId: Long, board: Int, port: Int, onuIndex: Int): HealthOnuRef? {
-        return onus.findByOlt_IdAndBoardAndPortAndOnuIndexAndDeletedAtIsNull(oltId, board, port, onuIndex)
-            .orElse(null)?.toRef()
-    }
+    override fun findByOltBoardPortOnu(oltId: Long, board: Int, port: Int, onuIndex: Int): HealthOnuRef? =
+        inventory.findBySlot(oltId, board, port, onuIndex)?.toRef()
 
-    override fun findByOlt(oltId: Long): List<HealthOnuRef> {
-        return onus.findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }.map { it.toRef() }
-    }
+    override fun findByOlt(oltId: Long): List<HealthOnuRef> =
+        inventory.listConfigured(oltId).map { it.toRef() }
 
-    override fun findOltIdByName(name: String): Long? {
-        return olts.findByName(name).orElse(null)?.id
-    }
+    override fun findOltIdByName(name: String): Long? = inventory.findOltIdByName(name)
 
-    private fun OltMgrOnu.toRef(): HealthOnuRef = HealthOnuRef(
-        id = id!!,
+    private fun OltOnuSnapshot.toRef(): HealthOnuRef = HealthOnuRef(
+        id = id,
         sn = sn,
         externalId = externalId,
-        oltId = olt.id,
-        oltName = olt.name,
+        oltId = oltId,
+        oltName = oltName,
         board = board,
         port = port,
         onuIndex = onuIndex,
-        zoneId = zone?.id
+        zoneId = zoneId
     )
 }

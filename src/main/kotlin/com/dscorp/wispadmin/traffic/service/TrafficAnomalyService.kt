@@ -23,9 +23,23 @@ open class TrafficAnomalyService(
     @Transactional
     open fun evaluate(now: LocalDateTime = LocalDateTime.now()) {
         evaluateSources(now)
-        val rows = hourlyRepository.findInBucketRange(now.minusDays(35), now)
-        rows.groupBy { it.subscriptionId }.forEach { (subscriptionId, history) -> evaluateSubscription(subscriptionId, history.sortedBy { it.bucketStart }, now) }
+        evaluateHourly(now)
         evaluateDaily(now)
+    }
+
+    private fun batchSize() = properties.anomaly.evaluationBatchSize.coerceAtLeast(1)
+
+    private fun evaluateHourly(now: LocalDateTime) {
+        val from = now.minusDays(HOURLY_BASELINE_DAYS)
+        hourlyRepository.findDistinctSubscriptionIdsInBucketRange(from, now)
+            .chunked(batchSize())
+            .forEach { batch ->
+                hourlyRepository.findInBucketRangeForSubscriptions(from, now, batch)
+                    .groupBy { it.subscriptionId }
+                    .forEach { (subscriptionId, history) ->
+                        evaluateSubscription(subscriptionId, history.sortedBy { it.bucketStart }, now)
+                    }
+            }
     }
 
     private fun evaluateSources(now: LocalDateTime) {
@@ -60,14 +74,23 @@ open class TrafficAnomalyService(
     }
 
     private fun evaluateDaily(now: LocalDateTime) {
-        val rows = dailyRepository.findInBucketRange(now.toLocalDate().minusDays(36), now.toLocalDate().plusDays(1))
-        rows.groupBy { it.subscriptionId }.forEach { (id, history) ->
-            val current = history.maxByOrNull { it.bucketStart } ?: return@forEach
-            val baselineValues = history.filter { it.bucketStart < current.bucketStart && it.bucketStart.dayOfWeek == current.bucketStart.dayOfWeek }.map { (it.rxBytesTotal + it.txBytesTotal).toDouble() }
-            if (baselineValues.size < 4) return@forEach
-            val baseline = baselineValues.median(); val mad = baselineValues.map { abs(it - baseline) }.median().coerceAtLeast(1.0); val observed = (current.rxBytesTotal + current.txBytesTotal).toDouble(); val deviation = observed - baseline
-            setState(TrafficAnomalyType.PATTERN_DEVIATION, "subscription:$id", id, null, abs(deviation) > 3 * mad, now, baseline, observed, deviation, current.coveragePct, current.coveragePct / 100.0, "{\"method\":\"median_mad_same_weekday\"}")
-        }
+        val from = now.toLocalDate().minusDays(DAILY_BASELINE_DAYS)
+        val to = now.toLocalDate().plusDays(1)
+        dailyRepository.findDistinctSubscriptionIdsInBucketRange(from, to)
+            .chunked(batchSize())
+            .forEach { batch ->
+                dailyRepository.findInBucketRangeForSubscriptions(from, to, batch)
+                    .groupBy { it.subscriptionId }
+                    .forEach { (id, history) -> evaluateDailySubscription(id, history, now) }
+            }
+    }
+
+    private fun evaluateDailySubscription(id: Int, history: List<SubscriptionTrafficDaily>, now: LocalDateTime) {
+        val current = history.maxByOrNull { it.bucketStart } ?: return
+        val baselineValues = history.filter { it.bucketStart < current.bucketStart && it.bucketStart.dayOfWeek == current.bucketStart.dayOfWeek }.map { (it.rxBytesTotal + it.txBytesTotal).toDouble() }
+        if (baselineValues.size < 4) return
+        val baseline = baselineValues.median(); val mad = baselineValues.map { abs(it - baseline) }.median().coerceAtLeast(1.0); val observed = (current.rxBytesTotal + current.txBytesTotal).toDouble(); val deviation = observed - baseline
+        setState(TrafficAnomalyType.PATTERN_DEVIATION, "subscription:$id", id, null, abs(deviation) > 3 * mad, now, baseline, observed, deviation, current.coveragePct, current.coveragePct / 100.0, "{\"method\":\"median_mad_same_weekday\"}")
     }
 
     private fun setState(type: TrafficAnomalyType, scope: String, subscriptionId: Int?, routerId: Int?, active: Boolean, now: LocalDateTime, baseline: Double?, observed: Double?, deviation: Double?, coverage: Double, confidence: Double, evidence: String) {
@@ -89,4 +112,9 @@ open class TrafficAnomalyService(
     private fun List<Double>.median(): Double { if (isEmpty()) return 0.0; val s = sorted(); val m = s.size / 2; return if (s.size % 2 == 0) (s[m - 1] + s[m]) / 2 else s[m] }
     private fun List<Long>.medianLong(): Long { if (isEmpty()) return 0; val s = sorted(); return s[s.size / 2] }
     private fun List<Double>.averageOrZero() = if (isEmpty()) 0.0 else average()
+
+    companion object {
+        private const val HOURLY_BASELINE_DAYS = 35L
+        private const val DAILY_BASELINE_DAYS = 36L
+    }
 }

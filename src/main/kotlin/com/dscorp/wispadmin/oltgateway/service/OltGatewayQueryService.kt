@@ -24,6 +24,7 @@ import com.dscorp.wispadmin.oltgateway.parser.VersionParser
 import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCommandExecutor
 import org.slf4j.LoggerFactory
 
@@ -43,6 +44,7 @@ class OltGatewayQueryService(
 
     companion object {
         private val logger = LoggerFactory.getLogger(OltGatewayQueryService::class.java)
+        private const val AUTOFIND_COMMAND = "display ont autofind all"
     }
 
     private fun snmpReady(): Boolean {
@@ -109,6 +111,20 @@ class OltGatewayQueryService(
 
     override fun autofindParsed(): List<ParsedAutofindOnt> {
         return autofindViaSsh()
+    }
+
+    override fun autofindParsedBackground(): List<ParsedAutofindOnt> {
+        val output = commandExecutor.job(CliJobType.AUTOFIND_POLL) { session ->
+            session.execute(AUTOFIND_COMMAND)
+        }
+        return autofindParser.parse(output)
+    }
+
+    override fun autofindParsedLive(commandTimeoutMs: Long): List<ParsedAutofindOnt> {
+        val output = commandExecutor.adhoc { session ->
+            session.execute(AUTOFIND_COMMAND, commandTimeoutMs)
+        }
+        return autofindParser.parse(output)
     }
 
     override fun bySnParsed(sn: String): ParsedOnuBySn? {
@@ -195,7 +211,7 @@ class OltGatewayQueryService(
     }
 
     private fun autofindViaSsh(): List<ParsedAutofindOnt> {
-        val output = commandExecutor.run("display ont autofind all")
+        val output = commandExecutor.run(AUTOFIND_COMMAND)
         return autofindParser.parse(output)
     }
 

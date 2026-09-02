@@ -5,7 +5,7 @@ import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort
 import org.springframework.beans.factory.ObjectProvider
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
@@ -18,7 +18,7 @@ import java.time.ZoneId
 
 @Service
 class HealthEvaluationService(
-    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val subscriptions: SubscriptionRepository,
+    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val subscriptions: SubscriptionDirectoryPort,
     private val identity: IdentityService, private val reader: HealthEvidenceReader, private val engine: DiagnosisEngine,
     private val events: HealthEventRepository, private val current: HealthCurrentRepository,
     private val evidence: EvidenceLinkRepository, private val runs: TelemetryRunRepository, private val trafficPort: ObjectProvider<HealthTrafficPort>,
@@ -53,9 +53,9 @@ class HealthEvaluationService(
         // Transactions are bounded by subscription, not by the entire fleet.
         for(id in collectIds) tx.executeWithoutResult {
             cursors.lock("evaluation") ?: return@executeWithoutResult
-            val sub=subscriptions.findById(id).orElse(null) ?: return@executeWithoutResult
+            if(!subscriptions.exists(id)) return@executeWithoutResult
             val now=Instant.now()
-            identity.reconcile(sub,now)
+            identity.reconcile(id,now)
             val input=reader.read(id,now)
             val summary=engine.evaluate(input)
             for(source in input.sources.filter { (it.source=="TRAFFIC" && it.metric=="collector") || (it.source=="NETDIAG" && it.metric=="cpu_load") }) {

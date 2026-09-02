@@ -51,25 +51,25 @@ class OltGatewayCommandService(
     private val inWriteJob: (() -> Unit) -> Unit = { it() }
 ) {
 
+    fun planAuthorize(request: AuthorizeCliRequest): List<String> = listOf(
+        "interface gpon 0/${request.board}",
+        "ont add ${request.port} ${request.ontId} sn-auth ${request.sn} omci " +
+            "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} " +
+            "desc ${sanitizeDesc(request.description)}",
+        "quit",
+        "service-port vlan ${request.vlan} gpon 0/${request.board}/${request.port} ont ${request.ontId} " +
+            "gemport 1 multi-service user-vlan ${request.vlan} tag-transform translate"
+    )
+
     fun authorize(request: AuthorizeCliRequest): AuthorizeCliResult {
         ensureWritesEnabled()
+        val planned = planAuthorize(request)
         val executed = mutableListOf<String>()
         inWriteJob {
-            fun exec(cmd: String) {
+            planned.forEach { cmd ->
                 executed.add(cmd)
                 runCommand(cmd)
             }
-            exec("interface gpon 0/${request.board}")
-            val desc = sanitizeDesc(request.description)
-            exec(
-                "ont add ${request.port} ${request.ontId} sn-auth ${request.sn} omci " +
-                    "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} desc $desc"
-            )
-            exec("quit")
-            exec(
-                "service-port vlan ${request.vlan} gpon 0/${request.board}/${request.port} ont ${request.ontId} " +
-                    "gemport 1 multi-service user-vlan ${request.vlan} tag-transform translate"
-            )
         }
         return AuthorizeCliResult(ontId = request.ontId, commands = executed)
     }

@@ -77,7 +77,7 @@ class SubscriptionAcsOpsServiceTest {
             wifiSsid5 = "acs5g"
             tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
             tr069DeviceId = "B46415-V2804AX15T-12345B4641531C0B6"
-            fiberOnu = Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
         }
         every { subscriptionRepository.findById(10) } returns Optional.of(subscription)
         every { acsRepository.findById(10) } returns Optional.of(
@@ -137,7 +137,7 @@ class SubscriptionAcsOpsServiceTest {
         ).apply {
             id = 10
             tr069DeviceId = "missing-device"
-            fiberOnu = Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
         }
         every { subscriptionRepository.findById(10) } returns Optional.of(subscription)
         every { acsRepository.findById(10) } returns Optional.of(
@@ -226,5 +226,27 @@ class SubscriptionAcsOpsServiceTest {
 
         assertEquals("t2", result.taskId)
         verify { client.reboot("device-1", connectionRequest = false) }
+    }
+
+    @Test
+    fun `reboot no usa el deviceId heredado de subscription`() {
+        every { subscriptionRepository.findById(10) } returns Optional.of(
+            Subscription(
+                firstName = "A",
+                lastName = "B",
+                dni = "1",
+                equipmentCondition = EquipmentCondition.LOAN,
+            ).apply {
+                id = 10
+                tr069DeviceId = "legacy-device"
+            }
+        )
+        every { acsRepository.findById(10) } returns Optional.empty()
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.reboot(10)
+        }
+        assertTrue(ex.message!!.contains("deviceId"))
+        verify(exactly = 0) { client.reboot(any(), any()) }
     }
 }

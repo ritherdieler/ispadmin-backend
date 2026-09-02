@@ -39,6 +39,17 @@ class OltGatewayProperties {
 
     val snmp: SnmpProperties = SnmpProperties()
 
+    val autofind: AutofindProperties = AutofindProperties()
+
+    class AutofindProperties {
+        /** Sirve /onu/unconfigured_onus desde la caché propia en vez de SmartOLT. */
+        var enabled: Boolean = true
+        var refreshIntervalMs: Long = 30_000
+        var initialDelayMs: Long = 20_000
+        /** Timeout duro del refresco forzado desde el botón de campo. */
+        var liveTimeoutMs: Long = 10_000
+    }
+
     class ReachabilityProperties {
         var failureThreshold: Int = 2
         var backoffMs: Long = 120_000
@@ -108,8 +119,11 @@ class OltGatewayProperties {
         var signalInitialDelayMs: Long = 90000
         var alarmEnabled: Boolean = true
         var alarmIntervalMs: Long = 120000
+        /** El volcado de alarmas corre en el carril de fondo; no debe solaparse con el siguiente ciclo. */
+        var alarmCommandTimeoutMs: Long = 120000
         var alarmInitialDelayMs: Long = 45000
-        var skipWhenWriteRunning: Boolean = true
+        /** Con carriles dedicados el fondo ya no compite con las escrituras. */
+        var skipWhenWriteRunning: Boolean = false
         var labOpticalSshEnabled: Boolean = false
         var labOpticalSshIntervalMs: Long = 900000
         var labOpticalSshInitialDelayMs: Long = 120000
@@ -120,7 +134,8 @@ class OltGatewayProperties {
     }
 
     class SessionProperties {
-        var poolSize: Int = 1
+        /** 2 = carril interactivo + carril de fondo; la 3.a sesion de la OLT queda para operador/backup. */
+        var poolSize: Int = 2
         var keepaliveEnabled: Boolean = true
         var keepaliveIntervalMs: Long = 60000
         var keepaliveCommand: String = "display clock"

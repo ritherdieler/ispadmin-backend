@@ -59,7 +59,7 @@ data class SubscriptionRequest(
         napBox = if (napBoxId == null) null else NapBox(id = napBoxId),
         hostDevice = NetworkDevice(id = hostDeviceId),
         cpe = cpeDeviceId?.let { NetworkDevice(id = it) },
-        fiberOnu = onu?.toModel(),
+        fiberOnuSn = onu?.sn?.takeIf { it.isNotBlank() },
         installationType = installationType,
         coupon = couponId?.let { Coupon(id = it) },
         price = price,

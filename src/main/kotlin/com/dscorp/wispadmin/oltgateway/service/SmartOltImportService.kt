@@ -172,9 +172,7 @@ open class SmartOltImportService(
         val board = item.board.toIntOrNull() ?: return UpsertOutcome.UNCHANGED
         val port = item.port.toIntOrNull() ?: return UpsertOutcome.UNCHANGED
         val onuIndex = item.onu.toIntOrNull() ?: return UpsertOutcome.UNCHANGED
-        val externalId = item.uniqueExternalId.ifBlank {
-            "${properties.oltId}_${board}_${port}_$onuIndex"
-        }
+        val externalId = OnuExternalIdPolicy.canonical(properties.oltId, board, port, onuIndex)
         val onu = OltMgrOnu(
             sn = sn,
             externalId = externalId,

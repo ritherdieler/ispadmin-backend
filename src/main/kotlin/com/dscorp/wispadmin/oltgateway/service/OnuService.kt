@@ -2,6 +2,9 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.dto.BoardPortCatalogDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuDetailDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
@@ -10,12 +13,14 @@ import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuItemDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuLiveStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
-import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SmartOltImportResultDto
-import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.wispadmin.data.model.NapBox
 import com.dscorp.wispadmin.wispadmin.data.model.Onu
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.wispadmin.response.Onu as SmartOltOnuLegacy
+import org.slf4j.LoggerFactory
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.response.OnuBySnResponse
@@ -36,7 +41,12 @@ class OnuService @Autowired constructor(
     private val inventorySyncService: ObjectProvider<OltInventorySyncService>,
     private val signalPollService: ObjectProvider<OltSignalPollService>,
     private val smartOltImportService: ObjectProvider<SmartOltImportService>,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val autofindCacheService: ObjectProvider<OltAutofindCacheService>,
+    private val oltManagerFacade: ObjectProvider<OltManagerFacade>,
+    private val syncJobRunner: ObjectProvider<OltGatewaySyncJobRunner>,
+    private val properties: ObjectProvider<OltGatewayProperties>,
+    private val writeRouter: OnuWriteRouter
 ) : OnuOperationsPort {
 
     fun listConfigured(
@@ -96,78 +106,79 @@ class OnuService @Autowired constructor(
         return sync.listBoardsPorts(oltId, board)
     }
 
-    fun getUnConfiguredOnus(): List<Response> {
-        return oltService.getUnConfiguredOnus() ?: emptyList()
-    }
+    fun getUnConfiguredOnus(forceRefresh: Boolean = false): List<Response> {
+        val cache = autofindCacheService.getIfAvailable()
+            ?.takeIf { properties.getIfAvailable()?.autofind?.enabled == true }
+            ?: return oltService.getUnConfiguredOnus() ?: emptyList()
 
-    fun authorizeOnu(request: AuthorizeOnuFormDto): SmartOltActionResponseDto {
-        authorizeOnuInSmartOltWidthPostMethod(
-            OnuAuthorizationRequest(
-                olt_id = request.olt_id,
-                pon_type = request.pon_type,
-                board = request.board,
-                port = request.port,
-                sn = request.sn,
-                vlan = request.vlan,
-                onu_type = request.onu_type,
-                zone = request.zone,
-                name = request.name,
-                onu_mode = request.onu_mode,
-                custom_profile = request.custom_profile
+        if (forceRefresh) {
+            cache.refreshLive()
+        }
+        return cache.listUnconfigured().map { item ->
+            Response(
+                board = item.board,
+                olt_id = item.olt_id,
+                onu = item.onu,
+                onu_type_id = item.onu_type_id,
+                onu_type_name = item.onu_type_name,
+                pon_type = item.pon_type,
+                port = item.port,
+                sn = item.sn
             )
-        )
-        return SmartOltActionResponseDto(status = true, message = "authorized via SmartOLT")
+        }
     }
 
-    fun deleteConfiguredOnu(externalId: String): SmartOltActionResponseDto {
-        oltService.deleteOnu(externalId)
-        return SmartOltActionResponseDto(status = true, unique_external_id = externalId)
+    fun authorizeOnu(request: AuthorizeOnuFormDto): SmartOltActionResponseDto =
+        writeRouter.authorize(request)
+
+    fun deleteConfiguredOnu(externalId: String): SmartOltActionResponseDto =
+        writeRouter.delete(externalId)
+
+    fun rebootConfiguredOnu(externalId: String): SmartOltActionResponseDto =
+        writeRouter.reboot(externalId)
+
+    fun startInventorySync(): SyncJobStatusDto {
+        val runner = syncJobRunner.getIfAvailable()
+            ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OLT gateway no está habilitado")
+        return runner.startSnmpInventory()
     }
 
-    fun rebootConfiguredOnu(externalId: String): SmartOltActionResponseDto {
-        oltService.rebootOnu(externalId)
-        return SmartOltActionResponseDto(status = true, unique_external_id = externalId)
+    fun startSignalSync(): SyncJobStatusDto {
+        val runner = syncJobRunner.getIfAvailable()
+            ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OLT gateway no está habilitado")
+        return runner.startSignal()
     }
 
-    fun syncInventory(): SyncResultDto {
+    fun syncStatus(): SyncStatusDto {
         val sync = inventorySyncService.getIfAvailable()
             ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OLT gateway no está habilitado")
-        val result = sync.syncInventoryFromSnmp()
-        return SyncResultDto(
-            inserted = result.inserted,
-            updated = result.updated,
-            softDeleted = result.softDeleted,
-            unchanged = result.unchanged,
-            durationMs = result.durationMs,
-            skippedReason = result.skippedReason,
-            error = result.error
-        )
-    }
-
-    fun syncSignal(): SignalPollResultDto {
-        val poll = signalPollService.getIfAvailable()
-            ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OLT gateway no está habilitado")
-        val result = poll.pollSignalsFromSnmp()
-        return SignalPollResultDto(
-            slotsPolled = result.slotsPolled,
-            portsPolled = result.portsPolled,
-            onusUpdated = result.onusUpdated,
-            durationMs = result.durationMs,
-            skippedReason = result.skippedReason,
-            error = result.error
+        val inventory = sync.status()
+        val signal = signalPollService.getIfAvailable()?.status()
+        return inventory.copy(
+            signalRunning = signal?.running ?: false,
+            signalLastStartedAt = signal?.lastStartedAt,
+            signalLastResult = signal?.lastResult
         )
     }
 
     fun getOnuBySn(onuSn: String): OnuBySnResponse {
-        return oltService.getOnuBySn(onuSn)
+        val facade = oltManagerFacade.getIfAvailable() ?: return oltService.getOnuBySn(onuSn)
+        return try {
+            facade.getOnusDetailsBySn(onuSn).toLegacyOnuBySnResponse()
+        } catch (ex: OnuNotFoundException) {
+            OnuBySnResponse(onus = emptyList(), response_code = "404", status = false)
+        } catch (ex: Exception) {
+            logger.warn("getOnuBySn desde el gateway falló para SN={}, se cae a SmartOLT: {}", onuSn, ex.message)
+            oltService.getOnuBySn(onuSn)
+        }
     }
 
     override fun moveOnu(request: MoveOnuRequest, onu: Onu, newNapBox: NapBox) {
-        oltService.moveOnu(request, onu, newNapBox)
+        writeRouter.move(request, onu, newNapBox)
     }
 
     override fun authorizeOnuInSmartOltWidthPostMethod(authorizationRequest: OnuAuthorizationRequest) {
-        oltService.authorizeOnuInSmartOltWidthPostMethod(authorizationRequest)
+        writeRouter.authorize(authorizationRequest)
     }
 
     fun importFromSmartOlt(pageSize: Int = 100, maxPages: Int? = null): SmartOltImportResultDto {
@@ -177,31 +188,15 @@ class OnuService @Autowired constructor(
     }
 
     override fun deleteOnu(onuExternalId: String) {
-        deleteConfiguredOnu(onuExternalId)
+        writeRouter.delete(onuExternalId)
     }
 
     override fun deleteOnuBySn(onuSn: String) {
-        val details = getOnuBySn(onuSn)
-        if (details.onus.isEmpty()) {
-            throw IllegalArgumentException("No se encontró la ONU en SmartOLT para el serial indicado")
-        }
-        val uniqueId = details.onus[0].unique_external_id
-        if (uniqueId.isBlank()) {
-            throw IllegalStateException("La ONU no tiene identificador externo en SmartOLT")
-        }
-        deleteConfiguredOnu(uniqueId)
+        writeRouter.deleteBySn(onuSn)
     }
 
     override fun rebootOnuBySn(onuSn: String) {
-        val details = getOnuBySn(onuSn)
-        if (details.onus.isEmpty()) {
-            throw IllegalArgumentException("No se encontró la ONU en SmartOLT para el serial indicado")
-        }
-        val uniqueId = details.onus[0].unique_external_id
-        if (uniqueId.isBlank()) {
-            throw IllegalStateException("La ONU no tiene identificador externo en SmartOLT")
-        }
-        rebootConfiguredOnu(uniqueId)
+        writeRouter.rebootBySn(onuSn)
     }
 
     private fun enrichWithSubscriptionIps(items: List<ConfiguredOnuItemDto>): List<ConfiguredOnuItemDto> {
@@ -280,7 +275,82 @@ class OnuService @Autowired constructor(
         return if (enriched.isNullOrBlank()) detail else detail.copy(ipAddress = enriched)
     }
 
+    private fun SmartOltOnuBySnResponseDto.toLegacyOnuBySnResponse(): OnuBySnResponse = OnuBySnResponse(
+        onus = onus.map { dto ->
+            SmartOltOnuLegacy(
+                address = dto.address,
+                administrative_status = dto.administrative_status,
+                authorization_date = dto.authorization_date,
+                board = dto.board,
+                catv = dto.catv,
+                custom_template_name = dto.custom_template_name,
+                default_gateway = dto.default_gateway,
+                dns1 = dto.dns1,
+                dns2 = dto.dns2,
+                ethernet_ports = emptyList(),
+                ip_address = dto.ip_address,
+                iptv = dto.iptv,
+                iptv_allowed_macs = dto.iptv_allowed_macs,
+                iptv_cvlan = dto.iptv_cvlan,
+                iptv_download_speed = dto.iptv_download_speed,
+                iptv_filtered_macs = dto.iptv_filtered_macs,
+                iptv_service_port = dto.iptv_service_port,
+                iptv_svlan = dto.iptv_svlan,
+                iptv_tag_transform_mode = dto.iptv_tag_transform_mode,
+                iptv_upload_speed = dto.iptv_upload_speed,
+                iptv_vlan = dto.iptv_vlan,
+                mgmt_ip_address = dto.mgmt_ip_address,
+                mgmt_ip_cvlan = dto.mgmt_ip_cvlan,
+                mgmt_ip_default_gateway = dto.mgmt_ip_default_gateway,
+                mgmt_ip_dns1 = dto.mgmt_ip_dns1,
+                mgmt_ip_dns2 = dto.mgmt_ip_dns2,
+                mgmt_ip_mode = dto.mgmt_ip_mode,
+                mgmt_ip_service_port = dto.mgmt_ip_service_port,
+                mgmt_ip_subnet_mask = dto.mgmt_ip_subnet_mask,
+                mgmt_ip_svlan = dto.mgmt_ip_svlan,
+                mgmt_ip_tag_transform_mode = dto.mgmt_ip_tag_transform_mode,
+                mgmt_ip_vlan = dto.mgmt_ip_vlan,
+                mode = dto.mode,
+                name = dto.name,
+                odb_name = dto.odb_name,
+                olt_id = dto.olt_id,
+                olt_name = dto.olt_name,
+                onu = dto.onu,
+                onu_type_id = dto.onu_type_id,
+                onu_type_name = dto.onu_type_name,
+                password = dto.password,
+                pon_type = dto.pon_type,
+                port = dto.port,
+                service_ports = emptyList(),
+                sn = dto.sn,
+                subnet_mask = dto.subnet_mask,
+                tr069_profile = dto.tr069_profile,
+                unique_external_id = dto.unique_external_id,
+                username = dto.username,
+                vlan = dto.vlan,
+                voip_ip_address = dto.voip_ip_address,
+                voip_ip_cvlan = dto.voip_ip_cvlan,
+                voip_ip_default_gateway = dto.voip_ip_default_gateway,
+                voip_ip_dns1 = dto.voip_ip_dns1,
+                voip_ip_dns2 = dto.voip_ip_dns2,
+                voip_ip_mode = dto.voip_ip_mode,
+                voip_ip_service_port = dto.voip_ip_service_port,
+                voip_ip_subnet_mask = dto.voip_ip_subnet_mask,
+                voip_ip_svlan = dto.voip_ip_svlan,
+                voip_ip_tag_transform_mode = dto.voip_ip_tag_transform_mode,
+                voip_ip_vlan = dto.voip_ip_vlan,
+                wan_mode = dto.wan_mode,
+                wifi_ports = dto.wifi_ports,
+                zone_id = dto.zone_id,
+                zone_name = dto.zone_name
+            )
+        },
+        response_code = response_code,
+        status = status
+    )
+
     companion object {
         private const val SUFFIX_LENGTH = 8
+        private val logger = LoggerFactory.getLogger(OnuService::class.java)
     }
 }

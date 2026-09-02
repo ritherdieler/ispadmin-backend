@@ -147,7 +147,7 @@ class Tr069PostInstallProvisionerTest {
         val subscription = fiberSubscription(olt = OltProvisionStatus.COMPLETE).apply {
             installationType = InstallationType.ONLY_TV_FIBER
             ip = null
-            fiberOnu = Onu(sn = "VSOL0031C0B6", onu_type_name = "VSOLVA74")
+            fiberOnuSn = "VSOL0031C0B6"
             plan = Plan(id = 2, name = "TV Cable", type = InstallationType.ONLY_TV_FIBER)
         }
         every { repository.findById(10) } returns Optional.of(subscription)
@@ -189,7 +189,7 @@ class Tr069PostInstallProvisionerTest {
     fun `ONLY_TV CATV without ONU skips GenieACS`() {
         val subscription = fiberSubscription(olt = OltProvisionStatus.NA).apply {
             installationType = InstallationType.ONLY_TV_FIBER
-            fiberOnu = null
+            fiberOnuSn = null
             oltProvisionStatus = OltProvisionStatus.NA
             tr069ProvisionStatus = Tr069ProvisionStatus.NA
         }

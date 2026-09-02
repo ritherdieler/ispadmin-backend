@@ -9,9 +9,9 @@ import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuHistoryDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuLiveStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
-import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SmartOltImportResultDto
-import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
+import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.service.OnuService
 import com.dscorp.wispadmin.wispadmin.data.model.util.BaseResponse
 import com.dscorp.wispadmin.wispadmin.response.Response
@@ -121,8 +121,10 @@ class OnuController(
     ): BoardPortCatalogDto = onuService.listBoardsPorts(oltId, board)
 
     @GetMapping("unconfigured_onus")
-    fun getUnConfiguredOnus(): ResponseEntity<List<Response>> =
-        ResponseEntity.ok(onuService.getUnConfiguredOnus())
+    fun getUnConfiguredOnus(
+        @RequestParam(defaultValue = "false") refresh: Boolean
+    ): ResponseEntity<List<Response>> =
+        ResponseEntity.ok(onuService.getUnConfiguredOnus(refresh))
 
     @PostMapping("authorize")
     fun authorizeOnu(@RequestBody request: AuthorizeOnuFormDto): SmartOltActionResponseDto =
@@ -137,10 +139,13 @@ class OnuController(
         onuService.deleteConfiguredOnu(externalId)
 
     @PostMapping("sync/inventory")
-    fun syncInventory(): SyncResultDto = onuService.syncInventory()
+    fun syncInventory(): SyncJobStatusDto = onuService.startInventorySync()
 
     @PostMapping("sync/signal")
-    fun syncSignal(): SignalPollResultDto = onuService.syncSignal()
+    fun syncSignal(): SyncJobStatusDto = onuService.startSignalSync()
+
+    @GetMapping("sync/status")
+    fun syncStatus(): SyncStatusDto = onuService.syncStatus()
 
     @PostMapping("import/smartolt")
     fun importFromSmartOlt(

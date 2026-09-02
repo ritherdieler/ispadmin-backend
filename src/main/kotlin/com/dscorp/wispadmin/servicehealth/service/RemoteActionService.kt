@@ -4,9 +4,10 @@ import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
+import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
+import com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort
 import com.dscorp.wispadmin.servicehealth.repository.*
-import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.service.genieacs.*
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -33,8 +34,8 @@ data class ActionResult(val actionId: Long,val subscriptionId: Int,val status: S
 
 @Service
 class RemoteActionService(private val properties: ServiceHealthProperties,private val scope: ServiceHealthScope,private val actions: RemoteActionRepository,
-    private val cursors: HealthCursorRepository,private val subscriptions: SubscriptionRepository,
-    private val acs: SubscriptionAcsRepository,private val wifi: WifiCurrentRepository,private val identity: IdentityService,
+    private val cursors: HealthCursorRepository,private val subscriptions: SubscriptionDirectoryPort,
+    private val acs: AcsSubscriptionPort,private val wifi: WifiCurrentRepository,private val identity: IdentityService,
     private val client: GenieAcsClient,private val genie: GenieAcsProperties,private val tx: TransactionTemplate,
     private val json: ObjectMapper,
     private val subscriptionService: SubscriptionService? = null,
@@ -53,11 +54,11 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
                 if(existing.subscriptionId!=id || existing.action!=action || existing.requestDigest!=payloadDigest) throw ResponseStatusException(HttpStatus.CONFLICT,"Clave reutilizada con otra operación")
                 return@execute existing to false
             }
-            val sub=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción inexistente") }
-            val sn=sub.fiberOnu?.sn ?: throw ResponseStatusException(HttpStatus.CONFLICT,"ONU sin identidad")
+            val sub=subscriptions.find(id) ?: throw NoSuchElementException("Suscripción inexistente")
+            val sn=sub.onuSn ?: throw ResponseStatusException(HttpStatus.CONFLICT,"ONU sin identidad")
             if(identity.resolveOnu(sn)!=id) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ONU ambigua")
             val deviceKey="ONU:${sn.uppercase()}"
-            val acsDevice=(acs.findById(id).orElse(null)?.genieacsDeviceId ?: sub.tr069DeviceId)?.takeIf { identity.resolveAcs(it)==id }
+            val acsDevice=acs.findDeviceId(id)?.takeIf { identity.resolveAcs(it)==id }
             if(needsCr && acsDevice==null) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ACS no resuelta")
             val now=Instant.now()
             val previous=actions.findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(deviceKey,
@@ -163,7 +164,7 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
             val inverse=mask xor 0xffffffffL
             require(mask!=0L && (inverse and (inverse+1))==0L) { "Máscara de subred no contigua" }
             require(it.vlanId in 1..4094) { "VLAN inválida" }
-            val subscription=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción inexistente") }
+            val subscription=subscriptions.find(id) ?: throw NoSuchElementException("Suscripción inexistente")
             require(it.ipAddress==subscription.ip && it.vlanId.toString()==subscription.vlan) { "Cambie primero la asignación IP/VLAN mediante el flujo de provisión" }
             values+=profile.buildWanParameterValues(it.ipAddress!!,it.subnetMask!!,it.gateway!!,listOfNotNull(it.dnsPrimary,it.dnsSecondary).joinToString(","),it.vlanId!!)
         }
@@ -185,10 +186,9 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         } catch (_: Exception) { result(finish(action.id!!,"UNVERIFIED",error="ACS_REQUEST_UNCONFIRMED")) }
     }
     private fun deviceForAction(id: Int): Pair<String,String> {
-        val s=acs.findById(id).orElse(null)
+        val s=acs.find(id)
         val w=wifi.findById(id).orElse(null)
-        val deviceId=s?.genieacsDeviceId ?: subscriptions.findById(id).orElse(null)?.tr069DeviceId
-            ?: throw ResponseStatusException(HttpStatus.CONFLICT,"Sin deviceId")
+        val deviceId=s?.deviceId ?: throw ResponseStatusException(HttpStatus.CONFLICT,"Sin deviceId")
         if(identity.resolveAcs(deviceId)!=id) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ACS ambigua")
         val inform=s?.lastInformAt?.toInstant(ZoneOffset.UTC) ?: w?.informAt
         if(inform==null || inform<Instant.now().minusSeconds(properties.periodicInformSeconds*2) || inform>Instant.now().plusSeconds(60)) throw ResponseStatusException(HttpStatus.CONFLICT,"ACS_STALE: no se envía Connection Request")
@@ -200,8 +200,8 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         for(a in actions.findByStatus("PENDING")) {
             if(!scope.collects(a.subscriptionId)) continue
             if(a.createdAt<Instant.now().minusSeconds(21600)) { finish(a.id!!,"UNVERIFIED",error="CONFIRMATION_TIMEOUT"); continue }
-            val currentSub=subscriptions.findById(a.subscriptionId).orElse(null)
-            if(currentSub?.fiberOnu?.sn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey ||
+            val currentSub=subscriptions.find(a.subscriptionId)
+            if(currentSub?.onuSn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey ||
                 (a.acsDeviceId!=null && identity.resolveAcs(a.acsDeviceId!!)!=a.subscriptionId)) {
                 finish(a.id!!,"UNVERIFIED",error="IDENTITY_CHANGED"); continue
             }

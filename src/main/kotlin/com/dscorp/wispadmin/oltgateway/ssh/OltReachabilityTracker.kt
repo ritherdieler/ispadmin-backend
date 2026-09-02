@@ -22,6 +22,7 @@ class OltReachabilityTracker(
             CliJobType.INVENTORY,
             CliJobType.SIGNAL_POLL,
             CliJobType.ALARM_POLL,
+            CliJobType.AUTOFIND_POLL,
             CliJobType.KEEPALIVE -> true
             CliJobType.WRITE,
             CliJobType.ADHOC -> false

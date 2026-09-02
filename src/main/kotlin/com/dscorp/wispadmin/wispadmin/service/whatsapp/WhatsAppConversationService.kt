@@ -1463,7 +1463,7 @@ class WhatsAppConversationService(
     private fun isFiber(subscription: Subscription?): Boolean {
         return subscription?.installationType == InstallationType.FIBER ||
             subscription?.plan?.type == InstallationType.FIBER ||
-            subscription?.fiberOnu != null
+            !subscription?.fiberOnuSn.isNullOrBlank()
     }
 
     private fun isCoaxial(subscription: Subscription?): Boolean {

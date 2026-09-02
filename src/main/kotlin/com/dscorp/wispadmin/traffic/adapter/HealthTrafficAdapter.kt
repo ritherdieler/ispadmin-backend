@@ -8,13 +8,11 @@ import com.dscorp.wispadmin.traffic.config.TrafficProperties
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficAnomalyEventRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficSourceRunRepository
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 
 @Component
-@ConditionalOnProperty(prefix = "traffic", name = ["enabled"], havingValue = "true", matchIfMissing = true)
 class HealthTrafficAdapter(
     private val samples: SubscriptionTrafficSampleRepository,
     private val runs: TrafficSourceRunRepository,

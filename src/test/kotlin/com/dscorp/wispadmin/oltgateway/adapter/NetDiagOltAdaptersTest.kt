@@ -56,6 +56,7 @@ class NetDiagOltAdaptersTest {
     fun `cli adapter ejecuta display alarm active all`() {
         val bus = mockk<OltCliBus>()
         val provider = mockk<ObjectProvider<OltCliBus>>()
+        val timeouts = mutableListOf<Long>()
         every { provider.ifAvailable } returns bus
         every { bus.execute(CliJobType.ALARM_POLL, any<(HuaweiCliSession) -> String>()) } answers {
             val block = secondArg<(HuaweiCliSession) -> String>()
@@ -63,14 +64,21 @@ class NetDiagOltAdaptersTest {
             every { session.execute(any<String>()) } returns "ok"
             every { session.execute(any<String>(), any<Long>()) } answers {
                 val cmd = firstArg<String>()
-                if (cmd.startsWith("display alarm")) "ALARM DUMP" else "ok"
+                if (cmd.startsWith("display alarm")) {
+                    timeouts.add(secondArg())
+                    "ALARM DUMP"
+                } else {
+                    "ok"
+                }
             }
             CliBusResult.Ok(block(session))
         }
+        val properties = OltGatewayProperties().apply { sync.alarmCommandTimeoutMs = 45_000 }
 
-        val outcome = NetDiagOltCliAdapter(provider).runAlarmPoll()
+        val outcome = NetDiagOltCliAdapter(provider, properties).runAlarmPoll()
 
         assertEquals(OltCliOutcome.Ok("ALARM DUMP"), outcome)
+        assertEquals(listOf(45_000L), timeouts)
     }
 
     @Test
@@ -78,32 +86,33 @@ class NetDiagOltAdaptersTest {
         val provider = mockk<ObjectProvider<OltCliBus>>()
         every { provider.ifAvailable } returns null
 
-        val outcome = NetDiagOltCliAdapter(provider).runAlarmPoll()
+        val outcome = NetDiagOltCliAdapter(provider, OltGatewayProperties()).runAlarmPoll()
 
         assertEquals(OltCliOutcome.Skipped("cli_bus_unavailable"), outcome)
     }
 
     @Test
     fun `inventory adapter lista ONUs del PON`() {
-        val oltRepository = mockk<OltMgrOltRepository>()
-        val onuRepository = mockk<OltMgrOnuRepository>()
-        val olt = OltMgrOlt(id = 1L, name = "gigafiber-ma5608t", ipAddress = "10.11.104.2")
-        val onu = OltMgrOnu(id = 16L, sn = "HWTC1", olt = olt, board = 0, port = 1, onuIndex = 16)
-        onu.status = OltMgrOnuStatusCurrent(
-            onuId = 16L,
-            onu = onu,
+        val inventory = mockk<com.dscorp.wispadmin.oltgateway.port.OltInventoryPort>()
+        val snapshot = com.dscorp.wispadmin.oltgateway.port.OltOnuSnapshot(
+            id = 16L,
+            sn = "HWTC1",
+            externalId = "ext",
+            oltId = 1L,
+            oltName = "gigafiber-ma5608t",
+            board = 0,
+            port = 1,
+            onuIndex = 16,
             runState = "offline",
             lastDownCause = "dying-gasp",
             onuRxDbm = BigDecimal("-21.10")
         )
-        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
-        every { oltRepository.findByName("missing") } returns Optional.empty()
-        every { onuRepository.findByOlt_IdAndBoardAndPortWithStatus(1L, 0, 1) } returns listOf(onu)
-        every {
-            onuRepository.findByOlt_IdAndBoardAndPortAndOnuIndexAndDeletedAtIsNull(1L, 0, 1, 16)
-        } returns Optional.of(onu)
+        every { inventory.findOltIdByName("gigafiber-ma5608t") } returns 1L
+        every { inventory.findOltIdByName("missing") } returns null
+        every { inventory.listConfigured(1L) } returns listOf(snapshot)
+        every { inventory.findBySlot(1L, 0, 1, 16) } returns snapshot
 
-        val adapter = NetDiagOltInventoryAdapter(oltRepository, onuRepository)
+        val adapter = NetDiagOltInventoryAdapter(inventory)
 
         assertEquals(1L, adapter.findOltId("gigafiber-ma5608t"))
         val listed = adapter.listOnusOnPon("gigafiber-ma5608t", 0, 1)

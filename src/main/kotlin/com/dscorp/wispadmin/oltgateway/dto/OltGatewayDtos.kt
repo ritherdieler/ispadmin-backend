@@ -113,6 +113,37 @@ data class SyncStatusDto(
     val busBusyJobType: String? = null
 )
 
+/**
+ * Respuesta de los POST de sync, que ya no bloquean el hilo HTTP.
+ * Siempre 200: `started=false` con `skippedReason` si el job ya estaba corriendo.
+ */
+data class SyncJobStatusDto(
+    val job: String,
+    val started: Boolean,
+    val running: Boolean,
+    val skippedReason: String? = null,
+    val lastStartedAt: String? = null,
+    val lastResult: SyncResultDto? = null,
+    val lastSignalResult: SignalPollResultDto? = null
+)
+
+data class AutofindRefreshResultDto(
+    val source: String,
+    val seen: Int = 0,
+    val stored: Int = 0,
+    val removed: Int = 0,
+    val durationMs: Long = 0,
+    val skippedReason: String? = null,
+    val error: String? = null
+)
+
+data class AutofindStatusDto(
+    val running: Boolean,
+    val cachedCount: Long,
+    val lastRefreshAt: String? = null,
+    val lastResult: AutofindRefreshResultDto? = null
+)
+
 data class ConfiguredOnuFilter(
     val q: String? = null,
     val board: Int? = null,

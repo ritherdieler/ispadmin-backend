@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.oltgateway.config
 
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrAuditLogRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
+import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuAutofindRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
@@ -17,7 +18,11 @@ import com.dscorp.wispadmin.oltgateway.parser.OnuSummaryParser
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.VersionParser
 import com.dscorp.wispadmin.oltgateway.service.MockOltGatewayQueryService
+import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheService
+import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheWriter
+import com.dscorp.wispadmin.oltgateway.service.OltAutofindRefreshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayCommandService
+import com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryService
 import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshPollService
@@ -25,6 +30,7 @@ import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
+import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
 import com.dscorp.wispadmin.oltgateway.service.SignalCategoryCalculator
@@ -49,6 +55,8 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @Configuration
 @EnableConfigurationProperties(OltGatewayProperties::class)
@@ -82,7 +90,6 @@ class OltGatewayConfig {
         oltSshClient: OltSshClient,
         properties: OltGatewayProperties
     ): OltCliBus {
-        properties.session.poolSize = 1
         return OltCliBus(oltSshClient, properties).also { it.start() }
     }
 
@@ -184,6 +191,73 @@ class OltGatewayConfig {
         return OltGatewayCommandService(
             runCommand = { "Success\nMA5608T#" },
             properties = properties
+        )
+    }
+
+    @Bean
+    fun onuExternalIdBackfillService(
+        oltRepository: OltMgrOltRepository,
+        onuRepository: OltMgrOnuRepository,
+        properties: OltGatewayProperties
+    ): OnuExternalIdBackfillService {
+        return OnuExternalIdBackfillService(
+            oltRepository = oltRepository,
+            onuRepository = onuRepository,
+            properties = properties
+        )
+    }
+
+    @Bean
+    fun oltAutofindCacheWriter(
+        autofindRepository: OltMgrOnuAutofindRepository,
+        onuRepository: OltMgrOnuRepository,
+        properties: OltGatewayProperties
+    ): OltAutofindCacheWriter {
+        return OltAutofindCacheWriter(
+            autofindRepository = autofindRepository,
+            onuRepository = onuRepository,
+            properties = properties
+        )
+    }
+
+    @Bean
+    fun oltAutofindCacheService(
+        queryFacade: OltGatewayQueryFacade,
+        oltAutofindCacheWriter: OltAutofindCacheWriter,
+        properties: OltGatewayProperties
+    ): OltAutofindCacheService {
+        return OltAutofindCacheService(
+            queryFacade = queryFacade,
+            writer = oltAutofindCacheWriter,
+            properties = properties
+        )
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "olt.gateway.autofind", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+    fun oltAutofindRefreshScheduler(
+        oltAutofindCacheService: OltAutofindCacheService
+    ): OltAutofindRefreshScheduler {
+        return OltAutofindRefreshScheduler(oltAutofindCacheService)
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    fun oltGatewaySyncExecutor(): ExecutorService {
+        return Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "olt-gateway-sync-job").apply { isDaemon = true }
+        }
+    }
+
+    @Bean
+    fun oltGatewaySyncJobRunner(
+        inventorySyncService: OltInventorySyncService,
+        signalPollService: OltSignalPollService,
+        oltGatewaySyncExecutor: ExecutorService
+    ): OltGatewaySyncJobRunner {
+        return OltGatewaySyncJobRunner(
+            inventorySyncService = inventorySyncService,
+            signalPollService = signalPollService,
+            executor = oltGatewaySyncExecutor
         )
     }
 

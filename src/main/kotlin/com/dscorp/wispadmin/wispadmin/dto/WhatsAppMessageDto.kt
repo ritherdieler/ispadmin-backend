@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.dto
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import java.time.LocalDateTime
 
 data class WhatsAppTemplateOptionDto(
     val code: String,
@@ -54,7 +55,9 @@ data class WhatsAppMessageCandidateDto(
     val periodSummary: String? = null,
     @field:JsonProperty("isBimonthly")
     @get:JsonProperty("isBimonthly")
-    val isBimonthly: Boolean = false
+    val isBimonthly: Boolean = false,
+    val serviceWindowOpen: Boolean = false,
+    val serviceWindowExpiresAt: LocalDateTime? = null
 )
 
 data class WhatsAppMessageBatchResultDto(

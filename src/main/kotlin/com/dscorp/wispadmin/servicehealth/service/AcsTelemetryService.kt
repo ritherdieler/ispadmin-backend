@@ -4,7 +4,7 @@ import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
-import com.dscorp.wispadmin.wispadmin.repository.*
+import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsClient
 import com.fasterxml.jackson.databind.JsonNode
 import org.springframework.scheduling.annotation.Scheduled
@@ -18,7 +18,7 @@ import java.time.temporal.ChronoUnit
 @Service
 class AcsTelemetryService(
     private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val client: GenieAcsClient,
-    private val subscriptions: SubscriptionRepository, private val acs: SubscriptionAcsRepository,
+    private val acs: AcsSubscriptionPort,
     private val identity: IdentityService, private val counts: WifiCountSampleRepository,
     private val stations: WifiStationSampleRepository, private val current: WifiCurrentRepository,
     private val cursors: HealthCursorRepository, private val runs: TelemetryRunRepository,
@@ -40,10 +40,7 @@ class AcsTelemetryService(
             val now=Instant.now()
             val run=runs.save(TelemetryRun(source="ACS",equipmentKey="genieacs",startedAt=now))
             try {
-                val ids=collectIds.flatMap { id ->
-                    listOfNotNull(acs.findById(id).orElse(null)?.genieacsDeviceId,
-                        subscriptions.findById(id).orElse(null)?.tr069DeviceId)
-                }.plus(if (scope.environmentTag().isBlank()) properties.pilotAcsDeviceIds else emptyList()).distinct()
+                val ids=collectIds.mapNotNull { id -> acs.findDeviceId(id) }.plus(if (scope.environmentTag().isBlank()) properties.pilotAcsDeviceIds else emptyList()).distinct()
                 for(batch in ids.chunked(50)) {
                     val devices=client.readDeviceCache(batch,WifiTelemetry.countProjection())
                     run.missingCount+=batch.size-devices.size
@@ -55,7 +52,7 @@ class AcsTelemetryService(
                         if(!scope.collects(subId)) continue
                         val inform=WifiTelemetry.parseInstant(device.path("_lastInform"))
                         if(inform==null) { run.missingCount++; continue }
-                        val snapshot=acs.findById(subId).orElse(null)
+                        val snapshot=acs.find(subId)
                         val model=device.path("_deviceId").path("_ProductClass").asText(snapshot?.productClass ?: "")
                         val manufacturer=device.path("_deviceId").path("_Manufacturer").asText(snapshot?.manufacturer ?: "").uppercase()
                         val firmware=WifiTelemetry.value(device,"InternetGatewayDevice.DeviceInfo.SoftwareVersion") ?: snapshot?.softwareVersion ?: "unknown"
@@ -63,11 +60,8 @@ class AcsTelemetryService(
                         if(profile==null) profile=profiles.save(ReadCapabilityProfile(manufacturer=manufacturer,model=model,firmware=firmware,
                             wifiCount=WifiTelemetry.radios(model).isNotEmpty(),wifiSignal=WifiTelemetry.radios(model).isNotEmpty(),
                             verifiedAt=null))
-                        if(snapshot!=null) {
-                            snapshot.lastInformAt=inform.atOffset(ZoneOffset.UTC).toLocalDateTime()
-                            snapshot.productClass=model; snapshot.softwareVersion=firmware
-                            snapshot.updatedAt=now.atOffset(ZoneOffset.UTC).toLocalDateTime(); acs.save(snapshot)
-                        }
+                        if(snapshot!=null) acs.recordInform(subId,inform.atOffset(ZoneOffset.UTC).toLocalDateTime(),
+                            model,firmware,now.atOffset(ZoneOffset.UTC).toLocalDateTime())
                         val parsed=WifiTelemetry.parse(device,subId,if(profile.wifiCount) model else "",now,properties.stationHmacKey)
 
                         if(parsed==null) { run.missingCount++; continue }

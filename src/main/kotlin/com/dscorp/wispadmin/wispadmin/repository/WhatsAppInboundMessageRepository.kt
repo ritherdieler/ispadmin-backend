@@ -99,6 +99,47 @@ interface WhatsAppInboundMessageRepository : JpaRepository<WhatsAppInboundMessag
 
     @Query(
         value = """
+        SELECT phone,
+               MAX(last_inbound_at) AS last_inbound_at,
+               MAX(last_outbound_at) AS last_outbound_at,
+               MAX(latest_media_at) AS latest_media_at,
+               MAX(latest_advisor_at) AS latest_advisor_at
+        FROM (
+            SELECT phone,
+                   MAX(created_at) AS last_inbound_at,
+                   CAST(NULL AS DATETIME) AS last_outbound_at,
+                   MAX(CASE
+                       WHEN LOWER(message_type) = 'image'
+                            OR (
+                                LOWER(message_type) = 'document'
+                                AND LOWER(COALESCE(media_mime_type, '')) LIKE 'application/pdf%'
+                            )
+                       THEN created_at
+                   END) AS latest_media_at,
+                   MAX(CASE
+                       WHEN button_reply_id = 'hablar_asesor' THEN created_at
+                   END) AS latest_advisor_at
+            FROM whatsapp_inbound_message
+            WHERE phone IN (:phones)
+            GROUP BY phone
+            UNION ALL
+            SELECT phone,
+                   CAST(NULL AS DATETIME),
+                   MAX(created_at),
+                   CAST(NULL AS DATETIME),
+                   CAST(NULL AS DATETIME)
+            FROM whatsapp_message_log
+            WHERE phone IN (:phones)
+            GROUP BY phone
+        ) combined
+        GROUP BY phone
+    """,
+        nativeQuery = true
+    )
+    fun aggregateInboxSignalsByPhoneIn(@Param("phones") phones: Collection<String>): List<Array<Any>>
+
+    @Query(
+        value = """
         SELECT m.*
         FROM whatsapp_inbound_message m
         INNER JOIN (

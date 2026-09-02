@@ -7,12 +7,18 @@ import javax.persistence.FetchType
 import javax.persistence.GeneratedValue
 import javax.persistence.GenerationType
 import javax.persistence.Id
+import javax.persistence.Index
 import javax.persistence.JoinColumn
 import javax.persistence.ManyToOne
 import javax.persistence.Table
 
 @Entity
-@Table(name = "net_diag_notification_log")
+@Table(
+    name = "net_diag_notification_log",
+    indexes = [
+        Index(name = "idx_ndnl_created", columnList = "created_at")
+    ]
+)
 class NetDiagNotificationLog(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

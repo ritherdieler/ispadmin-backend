@@ -114,9 +114,9 @@ class ObsIngestionService(
             workflowName = tagString(event.tags, "workflowName")?.take(120),
             workflowCategory = tagString(event.tags, "workflowCategory")?.take(80),
             workflowStatus = tagString(event.tags, "workflowStatus")?.take(20),
-            message = event.message,
+            message = event.message?.take(properties.ingest.maxMessageChars),
             errorType = event.errorType?.take(300),
-            stacktrace = event.stacktrace,
+            stacktrace = event.stacktrace?.take(properties.ingest.maxStacktraceChars),
             environment = event.environment,
             release = event.release,
             correlationId = event.correlationId,
@@ -128,9 +128,12 @@ class ObsIngestionService(
             userAgent = event.userAgent,
             userJson = toJson(event.user),
             deviceJson = toJson(event.device),
-            breadcrumbsJson = toJson(event.breadcrumbs),
+            breadcrumbsJson = toBoundedJson(
+                trimBreadcrumbs(event.breadcrumbs),
+                properties.ingest.maxBreadcrumbsChars
+            ),
             tagsJson = toJson(event.tags),
-            contextJson = toJson(event.context),
+            contextJson = toBoundedJson(event.context, properties.ingest.maxContextChars),
             replayId = event.replayId,
             eventTimestamp = occurredAt,
             createdAt = now
@@ -141,6 +144,19 @@ class ObsIngestionService(
             livePublisher.publishEvent(savedIssue, savedEvent)
         }
         return savedIssue?.id
+    }
+
+    private fun trimBreadcrumbs(breadcrumbs: List<Any?>?): List<Any?>? {
+        if (breadcrumbs == null) return null
+        val max = properties.ingest.maxBreadcrumbs
+        if (max <= 0 || breadcrumbs.size <= max) return breadcrumbs
+        return breadcrumbs.takeLast(max)
+    }
+
+    private fun toBoundedJson(value: Any?, maxChars: Int): String? {
+        val json = toJson(value) ?: return null
+        if (maxChars <= 0 || json.length <= maxChars) return json
+        return """{"truncated":true,"originalChars":${json.length}}"""
     }
 
     private fun shouldSkipIssue(

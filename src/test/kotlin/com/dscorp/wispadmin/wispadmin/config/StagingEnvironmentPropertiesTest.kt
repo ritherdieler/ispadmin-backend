@@ -22,6 +22,7 @@ class StagingEnvironmentPropertiesTest {
             staging.contains("jdbc:mysql://mysql:3306/ispadmin_staging"),
             staging
         )
+        assertTrue(staging.contains("spring.jpa.hibernate.ddl-auto=update"), staging)
         assertFalse(Regex("jdbc:mysql://mysql:3306/ispadmin\\?").containsMatchIn(staging), staging)
     }
 

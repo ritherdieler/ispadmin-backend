@@ -4,11 +4,12 @@ import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.repository.*
-import com.dscorp.wispadmin.wispadmin.repository.*
+import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagTarget
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
+import com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
@@ -27,8 +28,8 @@ data class HealthInputs(
 
 @Service
 class HealthEvidenceReader(
-    private val subscriptions: SubscriptionRepository, private val identity: IdentityService,
-    private val acs: SubscriptionAcsRepository, private val onuPort: ObjectProvider<HealthOnuPort>,
+    private val subscriptions: SubscriptionDirectoryPort, private val identity: IdentityService,
+    private val acs: AcsSubscriptionPort, private val onuPort: ObjectProvider<HealthOnuPort>,
     private val optical: OpticalSampleRepository, private val states: OnuStateEventRepository,
     private val cursors: HealthCursorRepository, private val wifi: WifiCurrentRepository,
     private val stations: WifiStationSampleRepository, private val counts: WifiCountSampleRepository,
@@ -38,13 +39,14 @@ class HealthEvidenceReader(
     private val properties: ServiceHealthProperties, private val json: ObjectMapper
 ) {
     fun requireExists(id: Int) {
-        if(!subscriptions.existsById(id)) throw NoSuchElementException("Suscripción inexistente")
+        if(!subscriptions.exists(id)) throw NoSuchElementException("Suscripción inexistente")
     }
     @Transactional(readOnly=true)
     fun read(id: Int, now: Instant = Instant.now()): HealthInputs {
-        val sub=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción $id no encontrada") }
+        val sub=subscriptions.find(id) ?: throw NoSuchElementException("Suscripción $id no encontrada")
+        val acsEntry=acs.find(id)
         val ids=identity.snapshot(sub).toMutableMap()
-        ids["lab"] = if (acs.findById(id).orElse(null)?.lab == true) "true" else "false"
+        ids["lab"] = if (acsEntry?.lab == true) "true" else "false"
         val from=now.minusSeconds(86400)
         val trafficIdentitySince=identity.currentLinks(id).filter { it.kind in setOf("IP","ROUTER","QUEUE","PLAN","ONU") }.maxOfOrNull { it.validFrom }
         val sources=mutableListOf<Evidence>()
@@ -68,7 +70,7 @@ class HealthEvidenceReader(
         val opticalRun=ids["OLT"]?.let { runs.findTopBySourceAndEquipmentKeyOrderByStartedAtDesc("OLT_OPTICAL",it) }
         sources+=Evidence("OLT","collector",opticalRun?.completedAt,opticalRun?.qualityStatus?.name,
             if(opticalRun?.qualityStatus==Quality.ERROR) Quality.ERROR else qualityAt(opticalRun?.completedAt,now,properties.opticalFreshSeconds),opticalRun?.id?.toString())
-        val a=acs.findById(id).orElse(null)?.takeIf { it.genieacsDeviceId==ids["ACS"] }
+        val a=acsEntry?.takeIf { it.deviceId==ids["ACS"] }
         val w=wifi.findById(id).orElse(null)?.takeIf { it.deviceId==ids["ACS"] }
         val model=a?.productClass ?: w?.model
         model?.let { ids["CPE_MODEL"]=it }
@@ -94,7 +96,7 @@ class HealthEvidenceReader(
             else -> Quality.MISSING
         }
         sources+=Evidence("TRAFFIC","mbps",tAt,t?.let { mapOf("down" to it.avgMbpsDown,"up" to it.avgMbpsUp) },tq,t?.id?.toString(),"/bandwidth-intelligence/subscriptions/$id")
-        val tr=sub.hostDevice?.id?.let { trafficPort.ifAvailable?.latestRun(it) }
+        val tr=sub.hostDeviceId?.let { trafficPort.ifAvailable?.latestRun(it) }
         val trAt=tr?.completedAt?.atZone(ZoneId.of("America/Lima"))?.toInstant()
         sources+=Evidence("TRAFFIC","collector",trAt,tr?.status,
             if(tr?.status in setOf("FAILED","ERROR")) Quality.ERROR else qualityAt(trAt,now,180),tr?.id?.toString())
@@ -143,7 +145,7 @@ class HealthEvidenceReader(
         return HealthInputs(id,now,ids,sources,optics,
             states.listBySubscriptionInUtcWindow(id,from,now).filter { it.onuSn.equals(ids["ONU"],true) && "${it.oltId}:${it.board}:${it.port}"==ids["PON"] },
             wifiStations,
-            trafficEvidence.findBySubscriptionIdAndEventStatus(id,"OPEN").filter { trafficIdentitySince==null || it.observedAt>=trafficIdentitySince },reasonSet,ancestors,sub.serviceStatus.name,
-            mapOf("id" to sub.plan?.id,"download_mbps" to sub.plan?.downloadSpeed,"upload_mbps" to sub.plan?.uploadSpeed))
+            trafficEvidence.findBySubscriptionIdAndEventStatus(id,"OPEN").filter { trafficIdentitySince==null || it.observedAt>=trafficIdentitySince },reasonSet,ancestors,sub.serviceStatus,
+            mapOf("id" to sub.planId,"download_mbps" to sub.planDownloadMbps,"upload_mbps" to sub.planUploadMbps))
     }
 }

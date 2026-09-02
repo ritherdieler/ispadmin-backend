@@ -64,7 +64,7 @@ class CancelledOnuReuseService(
     private fun releaseOnuFromCancelledSubscription(subscription: Subscription, oltSn: String) {
         logger.info("Liberando ONU $oltSn de la suscripcion CANCELLED ${subscription.id} para reuso")
         onuService.deleteOnuBySn(oltSn)
-        subscription.fiberOnu = null
+        subscription.fiberOnuSn = null
         subscriptionRepository.save(subscription)
         subscription.id?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
     }

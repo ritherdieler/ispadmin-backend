@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.netdiag.domain.repository
 
+import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagAlertSuppressionWindow
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import org.hibernate.Hibernate
@@ -12,6 +13,7 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
@@ -44,6 +46,9 @@ class NetDiagIncidentRepositoryJpaTest {
 
     @Autowired
     private lateinit var targetRepository: NetDiagTargetRepository
+
+    @Autowired
+    private lateinit var suppressionRepository: NetDiagAlertSuppressionWindowRepository
 
     @Autowired
     private lateinit var entityManager: EntityManager
@@ -133,6 +138,53 @@ class NetDiagIncidentRepositoryJpaTest {
         assertEquals(2L, incidentRepository.countByStatusIn(statuses))
         assertEquals(1L, incidentRepository.countBySeverityAndStatusIn("P0", statuses))
         assertEquals(1L, incidentRepository.countByReasonCodeAndStatusIn("POLL_STALE", statuses))
+    }
+
+    @Test
+    fun `summarizeByStatuses devuelve los conteos agrupados en una sola consulta`() {
+        val rows = incidentRepository.summarizeByStatuses(listOf("OPEN", "ACKNOWLEDGED"))
+
+        val bySeverityAndReason = rows.associate { (it[0] as String) to (it[2] as Number).toLong() }
+        assertEquals(2, rows.size)
+        assertEquals(1L, bySeverityAndReason["P0"])
+        assertEquals(1L, bySeverityAndReason["P1"])
+        assertEquals("POLL_STALE", rows.first { it[0] == "P1" }[1])
+    }
+
+    @Test
+    fun `el contador de supresiones se incrementa por ventana y se purga por fecha`() {
+        val windowStart = Instant.parse("2026-07-26T12:00:00Z")
+        suppressionRepository.save(
+            NetDiagAlertSuppressionWindow(
+                incidentId = 10L,
+                targetId = target.id!!,
+                reasonCode = "PON_DOWN",
+                windowStart = windowStart,
+                eventCount = 1,
+                firstSeenAt = windowStart,
+                lastSeenAt = windowStart
+            )
+        )
+        entityManager.flush()
+        entityManager.clear()
+
+        val updated = suppressionRepository.incrementWindow(
+            incidentId = 10L,
+            targetId = target.id!!,
+            reasonCode = "PON_DOWN",
+            windowStart = windowStart,
+            seenAt = windowStart.plusSeconds(30)
+        )
+        entityManager.clear()
+
+        assertEquals(1, updated)
+        assertEquals(2L, suppressionRepository.findAll().first().eventCount)
+
+        val expired = suppressionRepository.findIdsOlderThan(
+            Instant.parse("2026-07-27T00:00:00Z"),
+            PageRequest.of(0, 10)
+        )
+        assertEquals(1, expired.size)
     }
 
     @Test

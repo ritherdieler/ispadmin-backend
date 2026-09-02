@@ -26,6 +26,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -277,9 +278,137 @@ class OltManagerFacadeTest {
         assertTrue(response.status)
         assertEquals(1, onu.board)
         assertEquals(0, onu.port)
-        assertEquals("gigafiber-ma5608t_1_0_5", onu.externalId)
         verify { commandService.move(any()) }
         verify { auditLogRepository.save(match { it.action == "move_onu" }) }
+    }
+
+    @Test
+    fun `moveOnu conserva el identificador externo porque es propio y estable`() {
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "4857544311E70E9A",
+            externalId = "gigafiber-ma5608t_0_2_5",
+            olt = olt,
+            board = 0,
+            port = 2,
+            onuIndex = 5,
+            name = "cliente",
+            mainVlanId = 100
+        )
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.of(onu)
+        every { commandService.move(any()) } returns Unit
+        every { onuRepository.save(any()) } answers { firstArg() }
+
+        val response = facade.moveOnu(
+            "4857544311E70E9A",
+            MoveOnuFormDto(olt_id = "gigafiber-ma5608t", board = "1", port = "0")
+        )
+
+        assertEquals("gigafiber-ma5608t_0_2_5", onu.externalId)
+        assertEquals("gigafiber-ma5608t_0_2_5", response.unique_external_id)
+    }
+
+    @Test
+    fun `planAuthorize calcula posicion e identificador sin tocar la OLT`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6
+        every { commandService.planAuthorize(any()) } returns listOf("interface gpon 0/0", "ont add 2 7 sn-auth 4857544311E70E9A")
+
+        val plan = facade.planAuthorize(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "0",
+                port = "2",
+                sn = "4857544311E70E9A",
+                vlan = "100",
+                name = "nuevo"
+            )
+        )
+
+        assertEquals(7, plan.ontId)
+        assertEquals("gigafiber-ma5608t_0_2_7", plan.externalId)
+        assertFalse(plan.alreadyAuthorized)
+        assertEquals(2, plan.commands.size)
+        verify(exactly = 0) { commandService.authorize(any()) }
+        verify(exactly = 0) { onuRepository.save(any()) }
+        verify(exactly = 0) { taskRepository.save(any()) }
+    }
+
+    @Test
+    fun `recordAuthorizeShadow registra la divergencia de posicion sin aplicar nada`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6
+        every { commandService.planAuthorize(any()) } returns listOf("ont add 2 7 sn-auth 4857544311E70E9A")
+
+        val divergence = facade.recordAuthorizeShadow(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "0",
+                port = "2",
+                sn = "4857544311E70E9A",
+                vlan = "100",
+                name = "nuevo"
+            ),
+            applied = AppliedAuthorization(board = 0, port = 2, ontId = 9, externalId = "184")
+        )
+
+        assertTrue(divergence)
+        verify {
+            auditLogRepository.save(
+                match { it.action == "authorize_shadow" && it.onu == null && it.details!!.contains("\"diverges\":true") }
+            )
+        }
+        verify(exactly = 0) { commandService.authorize(any()) }
+        verify(exactly = 0) { onuRepository.save(any()) }
+    }
+
+    @Test
+    fun `recordAuthorizeShadow no reporta divergencia cuando la posicion coincide`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6
+        every { commandService.planAuthorize(any()) } returns emptyList()
+
+        val divergence = facade.recordAuthorizeShadow(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "0",
+                port = "2",
+                sn = "4857544311E70E9A",
+                vlan = "100",
+                name = "nuevo"
+            ),
+            applied = AppliedAuthorization(board = 0, port = 2, ontId = 7, externalId = "184")
+        )
+
+        assertFalse(divergence)
+        verify { auditLogRepository.save(match { it.action == "authorize_shadow" }) }
+    }
+
+    @Test
+    fun `recordAuthorizeShadow marca divergencia cuando no se pudo leer lo aplicado`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6
+        every { commandService.planAuthorize(any()) } returns emptyList()
+
+        val divergence = facade.recordAuthorizeShadow(
+            AuthorizeOnuFormDto(board = "0", port = "2", sn = "4857544311E70E9A"),
+            applied = null
+        )
+
+        assertTrue(divergence)
+    }
+
+    @Test
+    fun `recordAuthorizeShadow nunca propaga un fallo del plan`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(any(), any(), any()) } throws IllegalStateException("db caida")
+
+        val divergence = facade.recordAuthorizeShadow(
+            AuthorizeOnuFormDto(board = "0", port = "2", sn = "4857544311E70E9A"),
+            applied = AppliedAuthorization(board = 0, port = 2, ontId = 9, externalId = "184")
+        )
+
+        assertFalse(divergence)
     }
 
     @Test

@@ -20,6 +20,8 @@ import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppMessageLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.WhatsAppSyncedTemplateRepository
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianPhoneValidator
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.PeruvianWhatsAppPhone
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppServiceWindowService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.UnpaidInvoiceAggregate
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTargetType
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.WhatsAppTemplateCatalog
@@ -50,7 +52,8 @@ class WhatsAppBackofficeMessageService(
     private val whatsAppMessageLogRepository: WhatsAppMessageLogRepository,
     private val syncedTemplateRepository: WhatsAppSyncedTemplateRepository,
     private val whatsAppProperties: WhatsAppProperties,
-    private val templateDeliveryService: WhatsAppTemplateDeliveryService
+    private val templateDeliveryService: WhatsAppTemplateDeliveryService,
+    private val serviceWindowService: WhatsAppServiceWindowService
 ) {
 
     fun listTemplates(): List<WhatsAppTemplateOptionDto> {
@@ -101,14 +104,35 @@ class WhatsAppBackofficeMessageService(
             else -> throw IllegalArgumentException("Plantilla no soportada para candidatos: ${definition.messageType}")
         }
 
+        val candidates = withServiceWindows(partition.first)
         return WhatsAppMessageCandidatesResponseDto(
-            candidates = partition.first,
+            candidates = candidates,
             invalidPhones = partition.second,
             totals = WhatsAppMessageCandidatesTotalsDto(
-                valid = partition.first.size,
+                valid = candidates.size,
                 invalid = partition.second.size
             )
         )
+    }
+
+    private fun withServiceWindows(
+        candidates: List<WhatsAppMessageCandidateDto>
+    ): List<WhatsAppMessageCandidateDto> {
+        if (candidates.isEmpty()) return candidates
+        val variantsByPhone = candidates.associate { it.phone to PeruvianWhatsAppPhone.queryVariants(it.phone) }
+        val windows = serviceWindowService.getServiceWindows(variantsByPhone.values.flatten().distinct())
+        if (windows.isEmpty()) return candidates
+        return candidates.map { candidate ->
+            val window = variantsByPhone[candidate.phone]
+                .orEmpty()
+                .mapNotNull { windows[it] }
+                .let { found -> found.firstOrNull { it.open } ?: found.firstOrNull() }
+                ?: return@map candidate
+            candidate.copy(
+                serviceWindowOpen = window.open,
+                serviceWindowExpiresAt = window.expiresAt
+            )
+        }
     }
 
     fun sendSelected(templateCode: String, targetIds: List<Int>, operatorUsername: String? = null): WhatsAppMessageBatchResultDto {

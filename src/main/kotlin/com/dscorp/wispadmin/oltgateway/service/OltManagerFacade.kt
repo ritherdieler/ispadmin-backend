@@ -27,6 +27,23 @@ import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
+data class AppliedAuthorization(
+    val board: Int?,
+    val port: Int?,
+    val ontId: Int?,
+    val externalId: String?
+)
+
+data class AuthorizePlan(
+    val sn: String,
+    val board: Int,
+    val port: Int,
+    val ontId: Int,
+    val externalId: String,
+    val commands: List<String>,
+    val alreadyAuthorized: Boolean
+)
+
 open class OltManagerFacade(
     private val oltRepository: OltMgrOltRepository,
     private val zoneRepository: OltMgrZoneRepository,
@@ -64,7 +81,7 @@ open class OltManagerFacade(
 
         val imported = OltMgrOnu(
             sn = parsed.sn,
-            externalId = "${properties.oltId}_${parsed.slot}_${parsed.port}_${parsed.ontId}",
+            externalId = OnuExternalIdPolicy.canonical(properties.oltId, parsed.slot, parsed.port, parsed.ontId),
             olt = olt,
             board = parsed.slot,
             port = parsed.port,
@@ -86,6 +103,79 @@ open class OltManagerFacade(
         saved.status = status
         statusRepository.save(status)
         return mapper.toOnuBySnResponse(parsed, properties.oltId)
+    }
+
+    @Transactional(readOnly = true)
+    open fun findSnByExternalId(externalId: String): String? =
+        onuRepository.findByExternalIdAndDeletedAtIsNull(externalId).map { it.sn }.orElse(null)
+
+    @Transactional(readOnly = true)
+    open fun planAuthorize(request: AuthorizeOnuFormDto): AuthorizePlan {
+        val olt = requireOlt()
+        val board = request.board.toInt()
+        val port = request.port.toInt()
+        val vlan = request.vlan.toIntOrNull() ?: 0
+        val existing = onuRepository.findBySnAndDeletedAtIsNull(request.sn)
+        val ontId = existing.map { it.onuIndex }
+            .orElseGet { onuRepository.findMaxOnuIndex(olt.id!!, board, port) + 1 }
+        val commands = commandService.planAuthorize(
+            AuthorizeCliRequest(
+                board = board,
+                port = port,
+                ontId = ontId,
+                sn = request.sn,
+                lineProfileId = properties.writes.defaultLineProfileId,
+                serviceProfileId = properties.writes.defaultServiceProfileId,
+                description = request.name.ifBlank { request.sn },
+                vlan = vlan
+            )
+        )
+        return AuthorizePlan(
+            sn = request.sn,
+            board = board,
+            port = port,
+            ontId = ontId,
+            externalId = OnuExternalIdPolicy.canonical(properties.oltId, board, port, ontId),
+            commands = commands,
+            alreadyAuthorized = existing.isPresent
+        )
+    }
+
+    @Transactional
+    open fun recordAuthorizeShadow(request: AuthorizeOnuFormDto, applied: AppliedAuthorization?): Boolean {
+        val plan = try {
+            planAuthorize(request)
+        } catch (ex: Exception) {
+            auditLogRepository.save(
+                OltMgrAuditLog(
+                    olt = oltRepository.findByName(properties.oltId).orElse(null),
+                    action = "authorize_shadow",
+                    source = "shadow",
+                    details = """{"sn":"${request.sn}","error":"${ex.message?.take(200)}"}"""
+                )
+            )
+            return false
+        }
+
+        val diverges = applied == null ||
+            applied.board != plan.board ||
+            applied.port != plan.port ||
+            applied.ontId != plan.ontId
+        auditLogRepository.save(
+            OltMgrAuditLog(
+                olt = requireOlt(),
+                action = "authorize_shadow",
+                source = "shadow",
+                details = """{"sn":"${plan.sn}",""" +
+                    """"applied":{"board":${applied?.board},"port":${applied?.port},""" +
+                    """"ont_id":${applied?.ontId},"external_id":"${applied?.externalId.orEmpty()}"},""" +
+                    """"gateway":{"board":${plan.board},"port":${plan.port},""" +
+                    """"ont_id":${plan.ontId},"external_id":"${plan.externalId}"},""" +
+                    """"already_authorized":${plan.alreadyAuthorized},"diverges":$diverges,""" +
+                    """"commands":${plan.commands.size}}"""
+            )
+        )
+        return diverges
     }
 
     @Transactional
@@ -126,7 +216,7 @@ open class OltManagerFacade(
                 )
             )
 
-            val externalId = "${properties.oltId}_${board}_${port}_$nextOntId"
+            val externalId = OnuExternalIdPolicy.canonical(properties.oltId, board, port, nextOntId)
             val onu = onuRepository.save(
                 OltMgrOnu(
                     sn = request.sn,
@@ -212,7 +302,6 @@ open class OltManagerFacade(
             )
             onu.board = toBoard
             onu.port = toPort
-            onu.externalId = "${properties.oltId}_${toBoard}_${toPort}_${onu.onuIndex}"
             onu.updatedAt = Instant.now()
             onuRepository.save(onu)
             task.status = "success"

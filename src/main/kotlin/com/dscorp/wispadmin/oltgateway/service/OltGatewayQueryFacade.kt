@@ -17,6 +17,13 @@ interface OltGatewayQueryFacade {
     fun autofind(): SmartOltUnconfiguredOnusResponseDto
     fun bySn(sn: String): SmartOltOnuBySnResponseDto
     fun autofindParsed(): List<ParsedAutofindOnt>
+
+    /** Refresco periódico: carril de fondo, nunca compite con el técnico en campo. */
+    fun autofindParsedBackground(): List<ParsedAutofindOnt> = autofindParsed()
+
+    /** Botón de refrescar: carril interactivo con timeout duro. */
+    fun autofindParsedLive(commandTimeoutMs: Long): List<ParsedAutofindOnt> = autofindParsed()
+
     fun bySnParsed(sn: String): ParsedOnuBySn?
     fun listOnusParsed(): List<ParsedOnuSummary>
     fun listOnus(): OnuSummaryListDto

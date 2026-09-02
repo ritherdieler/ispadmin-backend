@@ -62,7 +62,7 @@ class CancelledOnuReuseServiceTest {
         val cancelled = Subscription(
             id = 1886,
             serviceStatus = ServiceStatus.CANCELLED,
-            fiberOnu = Onu(sn = "HWTC15F5CD86"),
+            fiberOnuSn = "HWTC15F5CD86",
             cancellationDateDatetime = LocalDateTime.of(2025, 1, 1, 0, 0),
             equipmentCondition = EquipmentCondition.LOAN
         )
@@ -74,7 +74,7 @@ class CancelledOnuReuseServiceTest {
         verify(onuService).deleteOnuBySn(oltSn)
         verify(subscriptionRepository).save(cancelled)
         verify(onuService, times(2)).authorizeOnuInSmartOltWidthPostMethod(request)
-        assertNull(cancelled.fiberOnu)
+        assertNull(cancelled.fiberOnuSn)
     }
 
     @Test

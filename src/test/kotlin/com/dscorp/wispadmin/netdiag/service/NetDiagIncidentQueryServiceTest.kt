@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.netdiag.service
 
+import com.dscorp.wispadmin.netdiag.config.NetDiagProperties
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncident
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagIncidentEvent
 import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
@@ -22,10 +23,12 @@ class NetDiagIncidentQueryServiceTest {
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val incidentEventRepository = mockk<NetDiagIncidentEventRepository>()
     private val maintenanceService = mockk<NetDiagMaintenanceService>(relaxed = true)
+    private val summaryCache = NetDiagIncidentSummaryCache(NetDiagProperties())
     private val service = NetDiagIncidentQueryService(
         incidentRepository,
         incidentEventRepository,
-        maintenanceService
+        maintenanceService,
+        summaryCache
     )
 
     private val target = NetDiagTarget(id = 7L, name = "MK1", deviceRefId = 7L)
@@ -125,13 +128,13 @@ class NetDiagIncidentQueryServiceTest {
 
     @Test
     fun `summarize cuenta abiertos p0 y poll stale con agregaciones`() {
-        every { incidentRepository.countByStatusIn(listOf("OPEN", "ACKNOWLEDGED")) } returns 12L
         every {
-            incidentRepository.countBySeverityAndStatusIn("P0", listOf("OPEN", "ACKNOWLEDGED"))
-        } returns 3L
-        every {
-            incidentRepository.countByReasonCodeAndStatusIn("POLL_STALE", listOf("OPEN", "ACKNOWLEDGED"))
-        } returns 2L
+            incidentRepository.summarizeByStatuses(listOf("OPEN", "ACKNOWLEDGED"))
+        } returns listOf(
+            arrayOf<Any?>("P0", "DEVICE_UNREACHABLE", 3L),
+            arrayOf<Any?>("P1", "POLL_STALE", 2L),
+            arrayOf<Any?>("P2", "CPU_HIGH", 7L)
+        )
 
         val summary = service.summarizeIncidents()
 

@@ -7,21 +7,19 @@ import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizati
 import com.dscorp.wispadmin.wispadmin.response.OnuBySnResponse
 import com.dscorp.wispadmin.wispadmin.response.Response
 import com.dscorp.wispadmin.wispadmin.response.UnconfirmedOnuResponse
-import com.dscorp.wispadmin.wispadmin.util.HttpClient
-import org.springframework.beans.factory.annotation.Value
+import com.dscorp.wispadmin.wispadmin.util.SmartOltHttpClient
 import org.springframework.stereotype.Service
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 
 @Service
 class RealOltService(
-    @Value("\${olt.service.base-url}") private val baseUrl: String,
-    @Value("\${olt.service.api-key}") private val apiKey: String
+    private val httpClient: SmartOltHttpClient
 ) : OltService {
 
     override fun getUnConfiguredOnus(): List<Response>? {
         return try {
-            HttpClient.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java).response
+            httpClient.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java).response
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
@@ -29,7 +27,7 @@ class RealOltService(
     }
 
     override fun getOnuBySn(onuSn: String): OnuBySnResponse {
-        return HttpClient.get("onu/get_onus_details_by_sn/${onuSn}", responseType = OnuBySnResponse::class.java)
+        return httpClient.get("onu/get_onus_details_by_sn/${onuSn}", responseType = OnuBySnResponse::class.java)
     }
 
     override fun moveOnu(request: MoveOnuRequest, onu: Onu, newNapBox: NapBox) {
@@ -39,7 +37,7 @@ class RealOltService(
             add("board", newNapBox.oltBoard)
             add("port", newNapBox.oltPort)
         }
-        HttpClient.post("onu/move/${onu.sn}", body, Any::class.java)
+        httpClient.post("onu/move/${onu.sn}", body, Any::class.java)
     }
 
     override fun authorizeOnuInSmartOltWidthPostMethod(authorizationRequest: OnuAuthorizationRequest) {
@@ -57,15 +55,15 @@ class RealOltService(
             body.add("onu_mode", onu_mode)
             body.add("custom_profile", custom_profile)
 
-            HttpClient.post("onu/authorize_onu", body, Any::class.java)
+            httpClient.post("onu/authorize_onu", body, Any::class.java)
         }
     }
 
     override fun deleteOnu(onuExternalId: String) {
-        HttpClient.post("onu/delete/${onuExternalId}", null, Any::class.java)
+        httpClient.post("onu/delete/${onuExternalId}", null, Any::class.java)
     }
 
     override fun rebootOnu(uniqueExternalId: String) {
-        HttpClient.post("onu/reboot/${uniqueExternalId}", null, Any::class.java)
+        httpClient.post("onu/reboot/${uniqueExternalId}", null, Any::class.java)
     }
 }

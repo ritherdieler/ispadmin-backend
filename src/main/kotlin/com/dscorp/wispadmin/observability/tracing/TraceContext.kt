@@ -8,7 +8,8 @@ data class TraceScope(
     val sessionId: String?,
     val platform: String,
     val environment: String?,
-    val release: String?
+    val release: String?,
+    val sampled: Boolean = true
 )
 
 object TraceContext {
