@@ -60,7 +60,8 @@ class RemoteActionPersistenceTest {
             every { identity.resolveAcs("device$id") } returns id
         }
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
-        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs)
+        every { subscriptions.findAllIds() } returns (1..6).toList()
+        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs,subscriptions)
         remote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,identity,client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper())
     }
     @Test fun `parallel double click makes one durable reservation`() {
@@ -111,7 +112,8 @@ class RemoteActionPersistenceTest {
         val provider=mockk<ObjectProvider<HealthLabOpticalPort>>()
         every { provider.ifAvailable } returns port
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
-        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs)
+        every { subscriptions.findAllIds() } returns (1..6).toList()
+        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs,subscriptions)
         val opticalRemote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,mockk<IdentityService>().also { identity ->
             every { identity.resolveOnu("sn1") } returns 1
             every { identity.resolveAcs("device1") } returns 1

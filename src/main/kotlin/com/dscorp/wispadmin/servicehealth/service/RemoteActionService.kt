@@ -45,7 +45,7 @@ class RemoteActionService(private val properties: ServiceHealthProperties,privat
         return mac.doFinal(value.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     fun reserve(id: Int,actor: HealthActor,key: String,action: String,payloadDigest: String,needsCr: Boolean): Pair<RemoteAction,Boolean> {
-        if(!properties.actionsEnabled || !scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones del piloto deshabilitadas")
+        if(!properties.actionsEnabled || !scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones deshabilitadas para esta suscripción")
         return tx.execute {
             cursors.lock("actions") ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Coordinador no inicializado")
             val existing=actions.findByActorIdAndRequestKey(actor.id,key)

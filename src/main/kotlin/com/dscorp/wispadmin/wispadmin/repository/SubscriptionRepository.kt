@@ -57,6 +57,9 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     fun findByClientRequestId(clientRequestId: String): Optional<Subscription>
 
+    @Query("select s.id from Subscription s")
+    fun findAllIds(): List<Int>
+
     @Query(
         """
         SELECT s FROM Subscription s

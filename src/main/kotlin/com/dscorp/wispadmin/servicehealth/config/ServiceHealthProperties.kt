@@ -15,7 +15,7 @@ class ServiceHealthProperties {
     var sharedIncidentNotificationsEnabled = false
     var actionsEnabled = false
     var configEnabled = false
-    // An empty allowlist intentionally collects nothing. Reads remain available.
+    // Empty pilot list collects every non-lab subscription. Non-empty list restricts prod rollout.
     var pilotAcsDeviceIds: List<String> = emptyList()
     var pilotSubscriptionIds: Set<Int> = emptySet()
     var stationHmacKey = ""
@@ -41,11 +41,19 @@ class ServiceHealthProperties {
     var crConcurrency = 3
     fun collects(id: Int?, lab: Boolean = false, environmentTag: String = ""): Boolean {
         if (!enabled || id == null) return false
-        return if (environmentTag.isNotBlank()) lab else !lab && id in pilotSubscriptionIds
+        return when {
+            environmentTag.isNotBlank() -> lab
+            lab -> false
+            pilotSubscriptionIds.isEmpty() -> true
+            else -> id in pilotSubscriptionIds
+        }
     }
-    fun collectionSubscriptionIds(labSubscriptionIds: Collection<Int>, environmentTag: String): Set<Int> {
+    fun collectionSubscriptionIds(labSubscriptionIds: Collection<Int>, environmentTag: String, allSubscriptionIds: Collection<Int>): Set<Int> {
         if (!enabled) return emptySet()
-        return if (environmentTag.isNotBlank()) labSubscriptionIds.toSet()
-        else pilotSubscriptionIds - labSubscriptionIds.toSet()
+        return when {
+            environmentTag.isNotBlank() -> labSubscriptionIds.toSet()
+            pilotSubscriptionIds.isEmpty() -> allSubscriptionIds.toSet() - labSubscriptionIds.toSet()
+            else -> pilotSubscriptionIds - labSubscriptionIds.toSet()
+        }
     }
 }

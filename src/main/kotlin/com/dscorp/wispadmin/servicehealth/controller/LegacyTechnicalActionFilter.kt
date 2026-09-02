@@ -42,7 +42,7 @@ class LegacyTechnicalActionFilter(private val properties: ServiceHealthPropertie
             }
             // Unmapped aliases cannot safely be attributed to an operator/subscription.
             if(id==null) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad de ONU no resuelta")
-            if(!scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acción fuera del piloto habilitado")
+            if(!scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acción no disponible para esta suscripción")
             val retry=subscription?.groupValues?.get(2)=="retry-tr069"
             val actor=access.require(request,retry)
             if(retry && !properties.configEnabled) throw ResponseStatusException(HttpStatus.CONFLICT,"Configuración deshabilitada")

@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.servicehealth.config
 
 import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository
+import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort
 import org.springframework.stereotype.Component
 
@@ -10,6 +11,7 @@ class ServiceHealthScope(
     private val properties: ServiceHealthProperties,
     private val environment: GigafiberEnvironmentProperties,
     private val acs: SubscriptionAcsRepository,
+    private val subscriptions: SubscriptionRepository,
 ) : HealthLabScopePort {
     fun environmentTag(): String = environment.normalizedTag()
 
@@ -19,5 +21,9 @@ class ServiceHealthScope(
         properties.collects(subscriptionId, lab(subscriptionId), environmentTag())
 
     override fun collectionSubscriptionIds(): Set<Int> =
-        properties.collectionSubscriptionIds(acs.findByLabIsTrue().map { it.subscriptionId }, environmentTag())
+        properties.collectionSubscriptionIds(
+            acs.findByLabIsTrue().map { it.subscriptionId },
+            environmentTag(),
+            subscriptions.findAllIds(),
+        )
 }

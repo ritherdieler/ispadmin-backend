@@ -24,7 +24,7 @@ class BlastRadiusService(
 ) {
     @Scheduled(fixedDelayString="\${service.health.blast-radius-interval-ms:60000}",initialDelayString="\${service.health.blast-radius-initial-delay-ms:90000}")
     fun reconcile() {
-        if(!properties.enabled || !properties.correlationEnabled || !properties.sharedIncidentsEnabled || properties.pilotSubscriptionIds.isEmpty()) return
+        if(!properties.enabled || !properties.correlationEnabled || !properties.sharedIncidentsEnabled) return
         val port=netDiagPort.ifAvailable ?: return
         tx.executeWithoutResult {
             cursors.lock("blast-radius") ?: return@executeWithoutResult

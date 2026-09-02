@@ -9,21 +9,26 @@ class ServiceHealthPropertiesTest {
 
     private fun props() = ServiceHealthProperties().apply {
         enabled = true
-        pilotSubscriptionIds = setOf(2310, 2328)
     }
 
     @Test
-    fun `prod collects pilot and skips lab`() {
+    fun `prod collects all non-lab when pilot list is empty`() {
         val p = props()
         assertTrue(p.collects(2328, lab = false, environmentTag = ""))
-        assertFalse(p.collects(2328, lab = true, environmentTag = ""))
-        assertFalse(p.collects(99, lab = false, environmentTag = ""))
+        assertTrue(p.collects(99, lab = false, environmentTag = ""))
         assertFalse(p.collects(99, lab = true, environmentTag = ""))
     }
 
     @Test
+    fun `prod restricts to pilot list when configured`() {
+        val p = props().apply { pilotSubscriptionIds = setOf(2310, 2328) }
+        assertTrue(p.collects(2328, lab = false, environmentTag = ""))
+        assertFalse(p.collects(99, lab = false, environmentTag = ""))
+    }
+
+    @Test
     fun `staging collects only lab regardless of env pilot list`() {
-        val p = props()
+        val p = props().apply { pilotSubscriptionIds = setOf(2310, 2328) }
         assertTrue(p.collects(99, lab = true, environmentTag = "stg"))
         assertFalse(p.collects(2328, lab = false, environmentTag = "stg"))
         assertFalse(p.collects(2310, lab = false, environmentTag = "STG"))
@@ -39,9 +44,10 @@ class ServiceHealthPropertiesTest {
     @Test
     fun `collection ids in staging are lab rows only`() {
         val p = props()
-        assertEquals(setOf(77), p.collectionSubscriptionIds(listOf(77), "stg"))
-        assertEquals(setOf(2310, 2328), p.collectionSubscriptionIds(emptyList(), ""))
-        assertEquals(setOf(2310), p.collectionSubscriptionIds(listOf(2328), ""))
+        assertEquals(setOf(77), p.collectionSubscriptionIds(listOf(77), "stg", listOf(10, 20, 77)))
+        assertEquals(setOf(10, 20), p.collectionSubscriptionIds(listOf(77), "", listOf(10, 20, 77)))
+        val restricted = props().apply { pilotSubscriptionIds = setOf(2310, 2328) }
+        assertEquals(setOf(2310), restricted.collectionSubscriptionIds(listOf(2328), "", listOf(10, 20, 77)))
     }
 
     @Test
