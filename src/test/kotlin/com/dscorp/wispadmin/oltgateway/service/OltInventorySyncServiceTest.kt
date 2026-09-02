@@ -5,12 +5,14 @@ import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuStatusCurrent
+import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuType
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrSyncRun
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrZone
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrAuditLogRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
+import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
@@ -46,6 +48,7 @@ class OltInventorySyncServiceTest {
     private val auditLogRepository = mockk<OltMgrAuditLogRepository>()
     private val syncRunRepository = mockk<OltMgrSyncRunRepository>()
     private val taskRepository = mockk<OltMgrTaskRepository>()
+    private val onuTypeRepository = mockk<OltMgrOnuTypeRepository>()
     private val cliBus = mockk<OltCliBus>()
     private val snmpClient = mockk<OltSnmpClient>()
     private val properties = OltGatewayProperties().apply {
@@ -74,7 +77,8 @@ class OltInventorySyncServiceTest {
             taskRepository = taskRepository,
             properties = properties,
             cliBus = cliBus,
-            snmpClient = snmpClient
+            snmpClient = snmpClient,
+            onuTypeRepository = onuTypeRepository
         )
         every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         every { taskRepository.existsByStatus("running") } returns false
@@ -101,6 +105,23 @@ class OltInventorySyncServiceTest {
         every { auditLogRepository.saveAll(any<Iterable<OltMgrAuditLog>>()) } answers {
             firstArg<Iterable<OltMgrAuditLog>>().toList()
         }
+    }
+
+    @Test
+    fun `listCatalogs expone solo tipos usados por el atributo Type de las ONUs`() {
+        val usedType = OltMgrOnuType(id = 20L, name = "EG8145V5")
+        val unusedType = OltMgrOnuType(id = 21L, name = "HG8245H")
+        every { oltRepository.findAll() } returns listOf(olt)
+        every { onuRepository.findDistinctUsedOnuTypes() } returns listOf(usedType)
+        every { onuTypeRepository.findAll() } returns listOf(usedType, unusedType)
+        every { onuRepository.findDistinctVlans() } returns emptyList()
+        every { onuRepository.findDistinctProfiles() } returns emptyList()
+        every { onuRepository.findDistinctSplitterIds() } returns emptyList()
+        every { onuRepository.findDistinctPonTypes() } returns listOf("gpon")
+
+        val types = service.listCatalogs().onuTypes
+
+        assertEquals(listOf("EG8145V5"), types.map { it.name })
     }
 
     @Test

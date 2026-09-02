@@ -4,7 +4,9 @@ Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en 
 
 Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
 
-Último deploy prod: `./scripts/deploy.sh --deploy` desde `develop` @ `7f7f9af` → release `1.0.3+7f7f9af` (2026-08-31, Wi-Fi ACS por `observed_at` / V36). Detalle: [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md).
+Último deploy prod: `./scripts/deploy.sh --env prod` desde `develop` @ `41ecc90` → release `1.0.3+41ecc90` (2026-09-01). Detalle: [deploy-prod-2026-09-01.md](./deploy-prod-2026-09-01.md).
+
+Deploy anterior: `./scripts/deploy.sh --deploy` desde `develop` @ `7f7f9af` → release `1.0.3+7f7f9af` (2026-08-31, Wi-Fi ACS por `observed_at` / V36). Detalle: [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md).
 
 Deploy anterior: `develop` @ `8e46ea4` → `1.0.3+8e46ea4` (bandwidth intelligence). Ver [deploy-prod-bandwidth-query-perf-2026-08-31.md](./deploy-prod-bandwidth-query-perf-2026-08-31.md). Service-health `84faf53`: [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md). WhatsApp investigation `9586600`: [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md).
 

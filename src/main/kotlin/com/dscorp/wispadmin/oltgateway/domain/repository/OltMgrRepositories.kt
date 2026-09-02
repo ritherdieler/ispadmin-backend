@@ -168,6 +168,11 @@ interface OltMgrOnuRepository : JpaRepository<OltMgrOnu, Long> {
     fun findDistinctPonTypes(): List<String>
 
     @Query(
+        "SELECT DISTINCT t FROM OltMgrOnu o JOIN o.onuType t WHERE o.deletedAt IS NULL ORDER BY t.name"
+    )
+    fun findDistinctUsedOnuTypes(): List<OltMgrOnuType>
+
+    @Query(
         "SELECT DISTINCT o.splitterId FROM OltMgrOnu o WHERE o.deletedAt IS NULL AND o.splitterId IS NOT NULL ORDER BY o.splitterId"
     )
     fun findDistinctSplitterIds(): List<Long>

@@ -331,10 +331,10 @@ open class OltInventorySyncService(
             val id = z.id ?: return@mapNotNull null
             CatalogItemDto(id = id, name = z.name)
         } ?: emptyList()
-        val types = onuTypeRepository()?.findAll()?.mapNotNull { t ->
+        val types = onuRepository().findDistinctUsedOnuTypes().mapNotNull { t ->
             val id = t.id ?: return@mapNotNull null
             CatalogItemDto(id = id, name = t.name)
-        } ?: emptyList()
+        }
         val splitters = onuRepository().findDistinctSplitterIds().map { id ->
             CatalogItemDto(id = id, name = "Splitter $id")
         }
