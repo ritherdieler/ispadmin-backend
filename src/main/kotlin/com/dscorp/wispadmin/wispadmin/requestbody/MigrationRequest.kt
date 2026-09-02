@@ -7,5 +7,6 @@ data class MigrationRequest(
     val planId: Int,
     var subscriptionId: Int,
     val price: Double?,
-    val notes: String?
+    val notes: String?,
+    val vlan: String? = null,
 )

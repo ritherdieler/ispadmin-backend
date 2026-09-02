@@ -62,4 +62,24 @@ class SubscriptionVlanRulesTest {
         SubscriptionVlanRules.assertPoolAligned("100", null)
         SubscriptionVlanRules.assertPoolAligned("1", "  ")
     }
+
+    @Test
+    fun `resolveMigrationVlan usa vlan de la app cuando viene`() {
+        assertEquals("100", SubscriptionVlanRules.resolveMigrationVlan("100"))
+        assertEquals("1", SubscriptionVlanRules.resolveMigrationVlan(" 1 "))
+    }
+
+    @Test
+    fun `resolveMigrationVlan default 100 si app no envia vlan`() {
+        assertEquals("100", SubscriptionVlanRules.resolveMigrationVlan(null))
+        assertEquals("100", SubscriptionVlanRules.resolveMigrationVlan(""))
+        assertEquals("100", SubscriptionVlanRules.resolveMigrationVlan("   "))
+    }
+
+    @Test
+    fun `resolveMigrationVlan rechaza vlan no permitida`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            SubscriptionVlanRules.resolveMigrationVlan("50")
+        }
+    }
 }
