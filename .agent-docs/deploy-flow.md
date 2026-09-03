@@ -4,7 +4,9 @@ Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en 
 
 Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
 
-Último deploy prod: hotfix `hotfix/migration-vlan-from-app` @ `438ce45` (VLAN en migración wireless→fibra). Detalle: [hotfix-migration-vlan-2026-09-02.md](./hotfix-migration-vlan-2026-09-02.md). Base prod previa: `dfd2e4c` (`APP_RELEASE=1.0.3+dfd2e4c`).
+Último deploy prod: hotfix `hotfix/search-debt-hydrate` (deuda/facturas pendientes en `GET /subscription/search`). Detalle: [hotfix-search-debt-hydrate-2026-09-03.md](./hotfix-search-debt-hydrate-2026-09-03.md). Base prod previa: `4c1cc1f`.
+
+Deploy anterior: hotfix `hotfix/migration-vlan-from-app` @ `438ce45` (VLAN en migración wireless→fibra). Detalle: [hotfix-migration-vlan-2026-09-02.md](./hotfix-migration-vlan-2026-09-02.md). Base prod previa: `dfd2e4c` (`APP_RELEASE=1.0.3+dfd2e4c`).
 
 Deploy anterior documentado: `./scripts/deploy.sh --env prod` desde `develop` @ `41ecc90` → release `1.0.3+41ecc90` (2026-09-01). Detalle: [deploy-prod-2026-09-01.md](./deploy-prod-2026-09-01.md).
 
