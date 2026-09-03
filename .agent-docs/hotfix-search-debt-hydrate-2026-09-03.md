@@ -23,4 +23,5 @@ Sin cambios. El mapeo `pendingInvoiceQuantity` / `totalDebt` ya era correcto.
 
 ## Deploy
 
-- Backend: `./scripts/deploy.sh --env prod` desde `hotfix/search-debt-hydrate`.
+- Backend: `./scripts/deploy.sh --env prod` desde `hotfix/search-debt-hydrate` @ `83de8fe` → `APP_RELEASE=1.0.3+83de8fe` (VPS 2026-09-03).
+- Verificado: Tomcat UP, health 200, WAR en webapps, `APP_RELEASE=1.0.3+83de8fe`.
