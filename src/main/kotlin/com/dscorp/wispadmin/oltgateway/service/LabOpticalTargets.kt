@@ -1,10 +1,17 @@
 package com.dscorp.wispadmin.oltgateway.service
 
-import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
+data class LabOnuRef(
+    val id: Long,
+    val sn: String,
+    val oltId: Long?,
+    val board: Int,
+    val port: Int,
+    val onuIndex: Int,
+)
 
 object LabOpticalTargets {
-    data class Target(val subscriptionId: Int, val onu: HealthOnuRef)
+    data class Target(val subscriptionId: Int, val onu: LabOnuRef)
 
-    fun resolve(ids: Collection<Int>, onuOf: (Int) -> HealthOnuRef?): List<Target> =
+    fun resolve(ids: Collection<Int>, onuOf: (Int) -> LabOnuRef?): List<Target> =
         ids.mapNotNull { id -> onuOf(id)?.let { Target(id, it) } }
 }

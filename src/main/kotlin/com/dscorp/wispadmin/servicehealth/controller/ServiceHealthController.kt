@@ -6,8 +6,6 @@ import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.service.*
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ModelProfiles
-import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.ObjectProvider
@@ -22,8 +20,9 @@ import javax.servlet.http.HttpServletRequest
 
 @RestController
 class ServiceHealthController(private val access: HealthAccess,private val reader: HealthEvidenceReader,
-    private val engine: DiagnosisEngine,private val properties: ServiceHealthProperties,
-    private val acs: AcsSubscriptionPort,private val optical: OpticalSampleRepository,
+    private val engine: DiagnosisEngine,private val summaries: HealthSummaryQueryService,
+    private val properties: ServiceHealthProperties,
+    private val optical: OpticalSampleRepository,
     private val counts: WifiCountSampleRepository,private val stations: WifiStationSampleRepository,
     private val hourlies: WifiStationHourlyRepository,
     private val events: HealthEventRepository,private val actions: RemoteActionRepository,
@@ -36,53 +35,23 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     fun cpe(@PathVariable id: Int,request: HttpServletRequest): CpeStatus {
         val actor=access.require(request)
         val summary=engine.evaluate(reader.read(id))
-        val snap=acs.find(id)
         val rx=summary.sources.firstOrNull { it.metric=="onu_rx_dbm" }
         val state=summary.sources.first { it.metric=="run_state" }
         val inform=summary.sources.first { it.metric=="last_inform" }
         val model=summary.identity["CPE_MODEL"] as? String
-        val profile=Tr069ModelProfiles.resolve(null,model)
-        val writable=summary.actionsEnabled && properties.configEnabled && profile!=null && inform.qualityStatus==Quality.FRESH && summary.identity["ACS"]!=null
+        val writable=summary.actionsEnabled && properties.configEnabled && inform.qualityStatus==Quality.FRESH
         return CpeStatus(summary.states["gpon"]=="ONLINE",rx?.value?.toString(),inform.observedAt,summary.identity["ONU"] as? String,
             CpeGponStatus(summary.states["gpon"]!!,rx?.value?.toString(),null,state.qualityStatus),
             CpeAcsStatus(if(inform.qualityStatus==Quality.FRESH) "SYNCED" else if(inform.qualityStatus==Quality.STALE) "STALE" else "UNKNOWN",
                 inform.observedAt,inform.qualityStatus==Quality.FRESH,inform.qualityStatus),
             CpeCapabilities(canWriteWanViaTr069=writable && actor.role=="ADMIN",canWriteWifiViaTr069=writable,
-                vendor=snap?.manufacturer,model=model),summary.actionsEnabled)
+                vendor=null,model=model),summary.actionsEnabled)
     }
 
     @GetMapping("/subscription/{id}/service-health")
     fun summary(@PathVariable id: Int,request: HttpServletRequest): HealthSummary {
         access.require(request)
-        val summary=engine.evaluate(reader.read(id))
-        val context=subscriptionContext.read(id)
-        val open=events.findBySubscriptionIdAndEventStatus(id,"OPEN")
-        return summary.copy(actionPolicy=actionPolicy(summary), subscriber=context.subscriber,
-            serviceContext=context.serviceContext, diagnoses=summary.diagnoses.map { d ->
-            d.copy(suppressingIncidentId=open.firstOrNull { it.diagnosisCode==d.diagnosisCode }?.suppressingIncidentId)
-        })
-    }
-
-    private fun actionPolicy(summary: HealthSummary): Map<String, ActionPolicy> {
-        val now = Instant.now()
-        val sn = summary.identity["ONU"] as? String
-        val deviceKey = sn?.let { "ONU:${it.uppercase()}" }
-        fun policy(enabled: Boolean, reason: String?, aliases: Collection<String>): ActionPolicy {
-            val previous = deviceKey?.let { actions.findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(it, aliases) }
-            val until = previous?.createdAt?.plusSeconds(properties.actionCooldownSeconds)
-            val blocked = until?.isAfter(now) == true
-            return ActionPolicy(enabled && !blocked, when {
-                !enabled -> reason
-                blocked -> "Espere hasta ${until} para solicitar otra lectura"
-                else -> null
-            }, previous?.createdAt, until)
-        }
-        return mapOf(
-            "wifi" to policy(summary.actionsEnabled && summary.identity["ACS"] != null,
-                "Acción Wi-Fi no disponible: falta habilitación o vínculo ACS", listOf("WIFI_REFRESH", "CONFIG", "REBOOT_ACS")),
-            "optical" to policy(summary.actionsEnabled && properties.opticalEnabled && sn != null,
-                "Acción óptica no disponible: falta habilitación o vínculo ONU", listOf("OPTICAL_REFRESH"))
-        )
+        return summaries.summary(id)
     }
 
     @GetMapping("/subscription/{id}/service-health/series")

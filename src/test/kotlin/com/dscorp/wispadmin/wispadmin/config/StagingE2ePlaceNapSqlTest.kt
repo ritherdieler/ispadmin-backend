@@ -19,7 +19,7 @@ class StagingE2ePlaceNapSqlTest {
             "place seed must copy the full prod table, not a single id"
         )
         assertTrue(sql.contains("ST_Contains"))
-        assertTrue(sql.contains("POINT(-77.4137 -11.2177)"))
+        assertTrue(sql.contains("POINT(-77.4107 -11.2156)"))
         assertTrue(sql.contains("9 de octubre"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.mufa"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.nap_box"))

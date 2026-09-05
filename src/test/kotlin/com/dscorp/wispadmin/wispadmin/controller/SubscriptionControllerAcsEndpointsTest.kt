@@ -1,10 +1,13 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
-import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAcs
+import com.dscorp.wispadmin.wispadmin.data.model.Onu
+import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsDto
-import com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsRebootResultDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeCommandResponse
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeTelemetry
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.repository.CouponRepository
 import com.dscorp.wispadmin.wispadmin.repository.NapBoxRepository
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
@@ -16,23 +19,24 @@ import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.springframework.context.ApplicationEventPublisher
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
+import java.util.Optional
 
 class SubscriptionControllerAcsEndpointsTest {
 
-    private val subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>()
+    private val repository = mockk<SubscriptionRepository>()
+    private val gateway = mockk<GatewayOnuActivationClient>()
+    private val gatewayCpe = mockk<ObjectProvider<GatewayOnuActivationClient>>()
     private val subscriptionProvisionService = mockk<com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService>()
     private val controller = SubscriptionController(
-        repository = mockk(relaxed = true),
+        repository = repository,
         subscriptionService = mockk(relaxed = true),
         placeRepository = mockk(relaxed = true),
         planRepository = mockk(relaxed = true),
@@ -44,29 +48,34 @@ class SubscriptionControllerAcsEndpointsTest {
         eventPublisher = mockk(relaxed = true),
         integrityViolationClassifier = SubscriptionIntegrityViolationClassifier(),
         ipConflictNocNotifier = mockk(relaxed = true),
-        tr069AsyncApplicator = mockk(relaxed = true),
-        subscriptionAcsOpsService = subscriptionAcsOpsService,
         subscriptionProvisionService = subscriptionProvisionService,
+        gatewayCpe = gatewayCpe,
     )
+
+    init {
+        every { gatewayCpe.ifAvailable } returns gateway
+        every { repository.findById(42) } returns Optional.of(
+            Subscription(id = 42, fiberOnu = Onu(sn = "SN1"), equipmentCondition = com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition.values().first()).apply {
+                tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
+            }
+        )
+    }
 
     @Test
     fun `GET acs returns 200 with dto`() {
-        every { subscriptionAcsOpsService.getAcs(42) } returns SubscriptionAcs(
-            subscriptionId = 42,
-            genieacsDeviceId = "device-1",
-            provisionStatus = Tr069ProvisionStatus.COMPLETE,
-        ).toDto()
+        every { gateway.telemetry("SN1") } returns GatewayCpeTelemetry(sn = "SN1", productClass = "V2804")
 
         val response = controller.getSubscriptionAcs(42)
 
         assertEquals(HttpStatus.OK, response.statusCode)
         assertEquals(42, response.body?.subscriptionId)
         assertEquals(Tr069ProvisionStatus.COMPLETE, response.body?.provisionStatus)
+        assertEquals("V2804", response.body?.productClass)
     }
 
     @Test
     fun `GET acs returns 404 when missing`() {
-        every { subscriptionAcsOpsService.getAcs(42) } throws NoSuchElementException("missing")
+        every { repository.findById(42) } returns Optional.empty()
 
         val response = controller.getSubscriptionAcs(42)
 
@@ -74,49 +83,34 @@ class SubscriptionControllerAcsEndpointsTest {
     }
 
     @Test
-    fun `POST refresh returns updated dto`() {
-        every { subscriptionAcsOpsService.refresh(42) } returns SubscriptionAcsDto(
-            subscriptionId = 42,
-            genieacsDeviceId = "device-1",
-            softwareVersion = "V2.0",
-        )
+    fun `POST refresh returns gateway ack`() {
+        every { gateway.wifiRefresh("SN1") } returns GatewayCpeCommandResponse(accepted = true, status = "PENDING")
 
         val response = controller.refreshSubscriptionAcs(42)
 
         assertEquals(HttpStatus.OK, response.statusCode)
-        assertTrue(response.body is SubscriptionAcsDto)
-        assertEquals("V2.0", (response.body as SubscriptionAcsDto).softwareVersion)
-        verify { subscriptionAcsOpsService.refresh(42) }
+        assertTrue(response.body is GatewayCpeCommandResponse)
+        verify { gateway.wifiRefresh("SN1") }
     }
 
     @Test
-    fun `POST reboot returns result dto`() {
-        every { subscriptionAcsOpsService.reboot(42) } returns SubscriptionAcsRebootResultDto(
-            subscriptionId = 42,
-            deviceId = "device-1",
-            taskId = "task-1",
-            accepted = true,
-            message = "Reinicio ONU enviado vía TR-069",
-        )
+    fun `POST reboot returns gateway ack`() {
+        every { gateway.reboot("SN1") } returns GatewayCpeCommandResponse(accepted = true, status = "PENDING", message = "ok")
 
         val response = controller.rebootSubscriptionAcs(42)
 
         assertEquals(HttpStatus.OK, response.statusCode)
-        val body = response.body as SubscriptionAcsRebootResultDto
-        assertEquals("task-1", body.taskId)
+        val body = response.body as GatewayCpeCommandResponse
         assertTrue(body.accepted)
     }
 
     @Test
-    fun `POST reboot returns 400 on IllegalStateException`() {
-        every { subscriptionAcsOpsService.reboot(42) } throws IllegalStateException("sin deviceId")
+    fun `POST reboot returns 503 when gateway missing`() {
+        every { gatewayCpe.ifAvailable } returns null
 
         val response = controller.rebootSubscriptionAcs(42)
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
-        @Suppress("UNCHECKED_CAST")
-        val body = response.body as Map<String, String>
-        assertEquals("sin deviceId", body["error"])
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.statusCode)
     }
 
     @Test

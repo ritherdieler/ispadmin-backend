@@ -1,18 +1,17 @@
 package com.dscorp.wispadmin.oltgateway.service
 
+import com.dscorp.wispadmin.events.EventBusPort
+import com.dscorp.wispadmin.events.NoOpEventBus
+import com.dscorp.wispadmin.events.PlatformEvent
+import com.dscorp.wispadmin.events.PlatformEventTypes
+import com.dscorp.wispadmin.oltgateway.dto.LabOpticalRefreshResponseDto
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOpticalInfo
 import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
-import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
-import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalRefresh
-import com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort
-import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
-import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
-import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -27,69 +26,46 @@ data class LabOpticalPollResult(
 @Service
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class LabOpticalSshPollService(
-    private val environment: GigafiberEnvironmentProperties,
-    private val scope: HealthLabScopePort,
-    private val subscriptions: SubscriptionRepository,
-    private val onuPort: HealthOnuPort,
-    private val cliBus: OltCliBus,
+    private val onuQuery: OltHealthOnuQueryService,
+    private val cliBusProvider: ObjectProvider<OltCliBus>,
     private val parser: OpticalInfoParser,
     private val publisher: ApplicationEventPublisher,
-) : HealthLabOpticalPort {
+    private val eventBus: EventBusPort = NoOpEventBus(),
+) {
     private val logger = LoggerFactory.getLogger(LabOpticalSshPollService::class.java)
 
     fun pollAllLab(): LabOpticalPollResult {
-        if (environment.normalizedTag().isBlank()) return LabOpticalPollResult(error = "prod_environment")
-        return poll(scope.collectionSubscriptionIds())
+        return LabOpticalPollResult(error = "no_directory")
     }
 
-    override fun refreshSubscription(subscriptionId: Int): HealthLabOpticalRefresh {
-        if (environment.normalizedTag().isBlank()) return HealthLabOpticalRefresh(false, error = "prod_environment")
-        if (!scope.collects(subscriptionId)) return HealthLabOpticalRefresh(false, error = "not_lab")
-        val result = poll(listOf(subscriptionId))
-        return HealthLabOpticalRefresh(
-            collected = result.collected > 0,
-            unmapped = result.unmapped > 0,
-            error = result.error,
+    fun refreshBySn(sn: String): LabOpticalRefreshResponseDto {
+        if (sn.isBlank()) return LabOpticalRefreshResponseDto(false, error = "missing_sn")
+        val onu = onuQuery.findBySn(sn) ?: return LabOpticalRefreshResponseDto(false, unmapped = true)
+        val ref = LabOnuRef(
+            id = onu.id,
+            sn = onu.sn,
+            oltId = onu.oltId,
+            board = onu.board,
+            port = onu.port,
+            onuIndex = onu.onuIndex,
         )
+        val bus = cliBusProvider.ifAvailable ?: return LabOpticalRefreshResponseDto(false, error = "cli_bus_unavailable")
+        val parsed = readOptical(bus, ref) ?: return LabOpticalRefreshResponseDto(false, error = "ssh_failed")
+        val oltId = ref.oltId ?: return LabOpticalRefreshResponseDto(false, unmapped = true)
+        val rows = listOf(OltSignalPollService.OpticalRow(ref.board, ref.port, parsed))
+        publisher.publishEvent(OltOpticalObservation(oltId, Instant.now(), rows))
+        eventBus.publish(
+            PlatformEvent(
+                type = PlatformEventTypes.ONU_OPTICAL,
+                sn = onu.sn,
+                occurredAt = Instant.now(),
+                payloadJson = """{"rxPowerDbm":${parsed.rxPowerDbm},"runState":"online"}""",
+            )
+        )
+        return LabOpticalRefreshResponseDto(collected = true)
     }
 
-    private fun poll(ids: Collection<Int>): LabOpticalPollResult {
-        var unmapped = 0
-        val targets = LabOpticalTargets.resolve(ids) { id ->
-            val sn = subscriptions.findById(id).orElse(null)?.fiberOnuSn
-            if (sn.isNullOrBlank()) {
-                unmapped++
-                logger.info("Lab optical SSH unmapped subscription={}", id)
-                null
-            } else {
-                onuPort.findBySn(sn) ?: run {
-                    unmapped++
-                    logger.info("Lab optical SSH unmapped sn={} subscription={}", sn, id)
-                    null
-                }
-            }
-        }
-        if (targets.isEmpty()) return LabOpticalPollResult(collected = 0, unmapped = unmapped)
-        var collected = 0
-        for ((oltId, group) in targets.groupBy { it.onu.oltId }) {
-            if (oltId == null) {
-                unmapped += group.size
-                continue
-            }
-            val rows = mutableListOf<OltSignalPollService.OpticalRow>()
-            for (target in group) {
-                val parsed = readOptical(target.onu) ?: continue
-                rows += OltSignalPollService.OpticalRow(target.onu.board, target.onu.port, parsed)
-                collected++
-            }
-            if (rows.isNotEmpty()) {
-                publisher.publishEvent(OltOpticalObservation(oltId, Instant.now(), rows))
-            }
-        }
-        return LabOpticalPollResult(collected = collected, unmapped = unmapped)
-    }
-
-    private fun readOptical(onu: HealthOnuRef): ParsedOpticalInfo? {
+    private fun readOptical(cliBus: OltCliBus, onu: LabOnuRef): ParsedOpticalInfo? {
         return try {
             when (val result = cliBus.execute(CliJobType.ADHOC) { session ->
                 session.execute("interface gpon 0/${onu.board}")

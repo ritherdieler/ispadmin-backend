@@ -19,8 +19,9 @@ La analítica de tráfico es un dominio autónomo. Publica observaciones, agrega
 | Poll | `SubscriptionTrafficPollService` + `SubscriptionTrafficPollScheduler` |
 | Rollups | `SubscriptionTrafficRollupService`, `TrafficAggregationJobService` |
 | Anomalías | `TrafficAnomalyService` (`traffic-rules-v1`) |
-| API red/capacidad | `BandwidthIntelligenceController` → `/traffic/bandwidth/v1/*` |
-| API cliente | `SubscriptionTrafficController` → `/subscription/{id}/traffic*` |
+| API red/capacidad | `BandwidthIntelligenceController` / BFF core → `/traffic/bandwidth/v1/*` (canónico WAR: `/api/traffic/v1/*`) |
+| API cliente | `SubscriptionTrafficController` / BFF core → `/subscription/{id}/traffic*` |
+| Desacople WAR | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
 | Live (no histórico) | `SubscriptionTrafficWebSocket` STOMP `/subscription-traffic/start`; tick cada 2 s; **no se persiste** |
 | Backoffice red | `/bandwidth-intelligence` (`BandwidthIntelligencePage`: Red / Clientes / Collectors / Anomalías) |
 | Backoffice perfil largo | `/traffic-analytics` (hora pico 3/6/12 meses; se conservó) |

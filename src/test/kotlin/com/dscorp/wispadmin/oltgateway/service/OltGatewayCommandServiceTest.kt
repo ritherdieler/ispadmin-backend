@@ -23,7 +23,11 @@ class OltGatewayCommandServiceTest {
         service = OltGatewayCommandService(
             runCommand = { cmd ->
                 commands.add(cmd)
-                "Success\nMA5608T#"
+                if (cmd.startsWith("ont delete")) {
+                    "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"
+                } else {
+                    "Success\nMA5608T#"
+                }
             },
             properties = properties
         )
@@ -71,6 +75,7 @@ class OltGatewayCommandServiceTest {
             )
         )
 
+        assertTrue(commands.first() == "undo service-port port 0/0/2 ont 5")
         assertTrue(commands.any { it == "interface gpon 0/0" })
         assertTrue(commands.any { it == "ont delete 2 5" })
         assertTrue(commands.any { it == "interface gpon 0/1" })
@@ -78,12 +83,37 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
-    fun `delete emite ont delete`() {
+    fun `delete emite undo service-port antes de ont delete`() {
         service.delete(DeleteCliRequest(board = 1, port = 0, ontId = 5))
 
-        assertTrue(commands.any { it == "interface gpon 0/1" })
-        assertTrue(commands.any { it == "ont delete 0 5" })
-        assertTrue(commands.any { it == "quit" })
+        assertEquals(
+            listOf(
+                "undo service-port port 0/1/0 ont 5",
+                "interface gpon 0/1",
+                "ont delete 0 5",
+                "quit",
+            ),
+            commands,
+        )
+    }
+
+    @Test
+    fun `delete lanza si ont delete falla en CLI`() {
+        val failing = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("ont delete")) {
+                    "  Failure: The ONT does not exist\nMA5608T#"
+                } else {
+                    "Success\nMA5608T#"
+                }
+            },
+            properties = properties,
+        )
+
+        assertThrows(IllegalStateException::class.java) {
+            failing.delete(DeleteCliRequest(board = 1, port = 0, ontId = 5))
+        }
     }
 
     @Test

@@ -241,6 +241,7 @@ class Tr069ProvisioningService(
         )
 
         val wanIpPath = "${profileForClientWan.wanIpConnectionPath}.ExternalIPAddress"
+        val wanConnectionStatusPath = "${profileForClientWan.wanIpConnectionPath}.ConnectionStatus"
         val ssid24Path = "${profileForClientWan.wlan24Path}.SSID"
         val ssid5Path = "${profileForClientWan.wlan5Path}.SSID"
         val natPath = "${profileForClientWan.wanIpConnectionPath}.NATEnabled"
@@ -251,6 +252,7 @@ class Tr069ProvisioningService(
             deviceId = device.id,
             parameterNames = listOfNotNull(
                 wanIpPath,
+                wanConnectionStatusPath,
                 request.wifiSsid24?.let { ssid24Path },
                 request.wifiSsid5?.let { ssid5Path },
             ) + if (profileForClientWan.usesHuaweiWanExtensions()) {
@@ -285,11 +287,13 @@ class Tr069ProvisioningService(
             }
 
             val ipOk = client.getDeviceParameterValue(device.id, wanIpPath) == ip
+            val wanUp = client.getDeviceParameterValue(device.id, wanConnectionStatusPath)
+                .equals("Connected", ignoreCase = true)
             val ssid24Ok = request.wifiSsid24.isNullOrBlank() ||
                 client.getDeviceParameterValue(device.id, ssid24Path) == request.wifiSsid24
             val ssid5Ok = request.wifiSsid5.isNullOrBlank() ||
                 client.getDeviceParameterValue(device.id, ssid5Path) == request.wifiSsid5
-            if (ipOk && ssid24Ok && ssid5Ok) {
+            if (ipOk && wanUp && ssid24Ok && ssid5Ok) {
                 return Tr069ProvisionOutcome(
                     status = Tr069ProvisionStatus.COMPLETE,
                     deviceId = device.id,
@@ -624,7 +628,7 @@ class Tr069ProvisioningService(
             "Modelo ONU sin perfil TR-069 ($modelLabel). Importe el CSV del modelo en Administración → Perfiles TR-069."
 
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
-            "Los SSIDs no se confirmaron en el ACS dentro del tiempo de espera."
+            "IP/SSID/WAN ConnectionStatus no se confirmaron en el ACS dentro del tiempo de espera."
 
         fun cidrToSubnetMask(cidr: String): String {
             val prefix = cidr.substringAfter("/", "24").toIntOrNull()?.coerceIn(0, 32) ?: 24

@@ -41,7 +41,9 @@ class OltHistoryService(
         val inventory = inventoryPort.findByOlt(observation.oltId).associateBy { Triple(it.board,it.port,it.onuIndex) }
         observation.rows.forEach { row ->
             run.readCount++
-            val onu = inventory[Triple(row.slot,row.port,row.ontId)] ?: run { run.unmappedCount++; return@forEach }
+            val onu = inventory[Triple(row.slot,row.port,row.ontId)]
+                ?: inventoryPort.findByOltBoardPortOnu(observation.oltId, row.slot, row.port, row.ontId)
+                ?: run { run.unmappedCount++; return@forEach }
             val subId = identity.resolveOnuForCollection(onu.sn)
             if (subId == null) { run.unmappedCount++; return@forEach }
             if (!scope.collects(subId)) return@forEach

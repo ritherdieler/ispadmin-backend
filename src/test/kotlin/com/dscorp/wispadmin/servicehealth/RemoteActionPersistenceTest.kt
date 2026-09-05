@@ -6,17 +6,13 @@ import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
-import com.dscorp.wispadmin.servicehealth.port.AcsRegistryEntry
-import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
+import com.dscorp.wispadmin.servicehealth.port.HealthCpePort
 import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
 import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalRefresh
-import com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort
-import com.dscorp.wispadmin.servicehealth.port.SubscriptionHealthRef
 import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.wispadmin.repository.*
 import org.springframework.beans.factory.ObjectProvider
 import com.dscorp.wispadmin.wispadmin.data.model.*
-import com.dscorp.wispadmin.wispadmin.service.genieacs.*
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.*
 import org.junit.jupiter.api.*
@@ -47,48 +43,41 @@ class RemoteActionPersistenceTest {
     @Autowired lateinit var wifi: WifiCurrentRepository
     @Autowired lateinit var manager: PlatformTransactionManager
     private lateinit var remote: RemoteActionService
-    private lateinit var client: GenieAcsClient
-    private lateinit var acs: AcsSubscriptionPort
-    private lateinit var subscriptions: SubscriptionDirectoryPort
+    private lateinit var cpe: HealthCpePort
+    private lateinit var subscriptions: SubscriptionRepository
     private val actor=HealthActor(1,"TECHNICIAN")
+
+    private fun cpeProvider(port: HealthCpePort): ObjectProvider<HealthCpePort> {
+        val provider = mockk<ObjectProvider<HealthCpePort>>()
+        every { provider.ifAvailable } returns port
+        return provider
+    }
+
+    private fun buildRemote(
+        properties: ServiceHealthProperties,
+        identity: IdentityService,
+        optical: ObjectProvider<HealthLabOpticalPort>? = null,
+    ): RemoteActionService {
+        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), subscriptions)
+        return RemoteActionService(
+            properties, scope, actions, cursors, subscriptions, wifi, identity, cpeProvider(cpe),
+            TransactionTemplate(manager), ObjectMapper(), null, optical,
+        )
+    }
+
     @BeforeEach fun setup() {
         actions.deleteAll(); cursors.deleteAll(); wifi.deleteAll()
         cursors.saveAndFlush(HealthCursor(cursorKey="actions"))
-        subscriptions=mockk<SubscriptionDirectoryPort>()
+        subscriptions=mockk<SubscriptionRepository>()
         val identity=mockk<IdentityService>()
-        acs=mockk(); client=mockk()
+        cpe=mockk(relaxed=true)
         for(id in 1..6) {
-            every { subscriptions.find(id) } returns SubscriptionHealthRef(
-                id = id,
-                onuSn = "sn$id",
-                ip = null,
-                vlan = null,
-                hostDeviceId = null,
-                planId = null,
-                planDownloadMbps = null,
-                planUploadMbps = null,
-                napBoxId = null,
-                serviceStatus = "ACTIVE"
-            )
+            every { subscriptions.findById(id) } returns Optional.of(Subscription(id=id,fiberOnu=Onu(sn="sn$id"),equipmentCondition=EquipmentCondition.values().first()))
             every { identity.resolveOnu("sn$id") } returns id
-            every { acs.findDeviceId(id) } returns "device$id"
-            every { acs.find(id) } returns AcsRegistryEntry(
-                subscriptionId = id,
-                deviceId = "device$id",
-                lastInformAt = null,
-                productClass = null,
-                manufacturer = null,
-                softwareVersion = null,
-                lab = false
-            )
-            every { identity.resolveAcs("device$id") } returns id
         }
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
-        every { subscriptions.allIds() } returns (1..6).toList()
-        every { acs.labSubscriptionIds() } returns emptyList()
-        every { acs.isLab(any()) } returns false
-        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs,subscriptions)
-        remote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,identity,client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper())
+        every { subscriptions.findAllIds() } returns (1..6).toList()
+        remote=buildRemote(properties, identity)
     }
     @Test fun `parallel double click makes one durable reservation`() {
         val pool=Executors.newFixedThreadPool(4)
@@ -114,22 +103,43 @@ class RemoteActionPersistenceTest {
         assertEquals(429,assertThrows(ResponseStatusException::class.java) { remote.reserve(1,actor,"request-2","CONFIG","digest",true) }.rawStatusCode)
         assertEquals(409,assertThrows(ResponseStatusException::class.java) { remote.reserve(1,actor,"request-1","REBOOT_ONU","other",false) }.rawStatusCode)
     }
+
+    @Test fun `manual wifi refresh can be reserved immediately after a previous wifi refresh`() {
+        assertTrue(remote.reserve(1, actor, "wifi-1", "WIFI_REFRESH", "d1", true).second)
+        val second = remote.reserve(1, actor, "wifi-2", "WIFI_REFRESH", "d2", true)
+        assertTrue(second.second)
+        assertEquals(2, actions.count())
+    }
+
+    @Test fun `manual optical refresh can be reserved immediately after a previous optical refresh`() {
+        val properties = ServiceHealthProperties().apply {
+            enabled = true; actionsEnabled = true; opticalEnabled = true
+            pilotSubscriptionIds = (1..6).toSet(); stationHmacKey = "k".repeat(32)
+        }
+        val identity = mockk<IdentityService>()
+        every { identity.resolveOnu("sn1") } returns 1
+        val opticalRemote = buildRemote(properties, identity)
+        assertTrue(opticalRemote.reserve(1, actor, "opt-1", "OPTICAL_REFRESH", "d1", false).second)
+        val second = opticalRemote.reserve(1, actor, "opt-2", "OPTICAL_REFRESH", "d2", false)
+        assertTrue(second.second)
+        assertEquals(2, actions.count())
+    }
     @Test fun `accepted task remains pending until newer sample and preserves task id`() {
         val action=remote.reserve(1,actor,"request-1","WIFI_REFRESH","digest",true).first
         remote.finish(action.id!!,"PENDING","task-1")
         remote.confirmPending()
         assertEquals("PENDING",actions.findById(action.id!!).get().status)
-        wifi.saveAndFlush(WifiCurrent(subscriptionId=1,deviceId="device1",qualityStatus=Quality.FRESH,observedAt=action.createdAt.plusSeconds(1)))
+        wifi.saveAndFlush(WifiCurrent(subscriptionId=1,deviceId="sn1",qualityStatus=Quality.FRESH,observedAt=action.createdAt.plusSeconds(1)))
         remote.confirmPending()
         val result=actions.findById(action.id!!).get()
         assertEquals("CONFIRMED",result.status); assertEquals("task-1",result.taskId)
-        verify { client wasNot Called }
+        verify { cpe wasNot Called }
     }
     @Test fun `technician cannot submit WAN before any device IO`() {
         assertEquals(403,assertThrows(ResponseStatusException::class.java) {
             remote.configure(1,actor,"request-1",CpeConfiguration(network=NetworkConfiguration(ipAddress="10.0.0.1")))
         }.rawStatusCode)
-        verify { client wasNot Called }; verify(exactly=0) { acs.find(any()) }
+        verify { cpe wasNot Called }
         assertEquals(0,actions.count())
     }
     @Test fun `optical refresh confirms when ssh collects`() {
@@ -138,12 +148,10 @@ class RemoteActionPersistenceTest {
         val provider=mockk<ObjectProvider<HealthLabOpticalPort>>()
         every { provider.ifAvailable } returns port
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
-        every { subscriptions.allIds() } returns (1..6).toList()
-        val scope=ServiceHealthScope(properties,GigafiberEnvironmentProperties(),acs,subscriptions)
-        val opticalRemote=RemoteActionService(properties,scope,actions,cursors,subscriptions,acs,wifi,mockk<IdentityService>().also { identity ->
-            every { identity.resolveOnu("sn1") } returns 1
-            every { identity.resolveAcs("device1") } returns 1
-        },client,GenieAcsProperties(),TransactionTemplate(manager),ObjectMapper(),null,provider)
+        every { subscriptions.findAllIds() } returns (1..6).toList()
+        val identity = mockk<IdentityService>()
+        every { identity.resolveOnu("sn1") } returns 1
+        val opticalRemote=buildRemote(properties, identity, provider)
         val result=opticalRemote.refreshOptical(1,actor,"optical-1")
         assertEquals("CONFIRMED",result.status)
         assertEquals(1,actions.count())

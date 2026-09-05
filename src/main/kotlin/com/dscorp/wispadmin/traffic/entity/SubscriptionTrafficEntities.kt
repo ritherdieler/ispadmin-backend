@@ -22,9 +22,11 @@ enum class TrafficAnomalyStatus { OPEN, CLOSED }
 @Entity
 @Table(
     name = "subscription_traffic_sample",
-    uniqueConstraints = [UniqueConstraint(name = "uk_traffic_sample_sub_bucket", columnNames = ["subscription_id", "bucket_start"])],
+    uniqueConstraints = [UniqueConstraint(name = "uk_traffic_sample_ip_bucket", columnNames = ["client_ip", "bucket_start"])],
     indexes = [
-        Index(name = "idx_traffic_sample_bucket", columnList = "bucket_start")
+        Index(name = "idx_traffic_sample_bucket", columnList = "bucket_start"),
+        Index(name = "idx_traffic_sample_ip_bucket", columnList = "client_ip, bucket_start"),
+        Index(name = "idx_traffic_sample_sub_bucket", columnList = "subscription_id, bucket_start")
     ]
 )
 data class SubscriptionTrafficSample(
@@ -32,8 +34,11 @@ data class SubscriptionTrafficSample(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null,
 
-    @Column(name = "subscription_id", nullable = false)
-    var subscriptionId: Int = 0,
+    @Column(name = "client_ip", length = 45, nullable = false)
+    var clientIp: String = "",
+
+    @Column(name = "subscription_id")
+    var subscriptionId: Int? = null,
 
     @Column(name = "host_device_id", nullable = false)
     var hostDeviceId: Int = 0,

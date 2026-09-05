@@ -3,7 +3,10 @@ VPS_USER=root
 VPS_PORT=22
 DOCKER_COMPOSE_DIR=/opt/gigafiber
 DOCKER_TOMCAT_CONTAINER=tomcat9027
+DOCKER_TOMCAT_STAGING_CONTAINER=tomcat-staging
+TOMCAT_STAGING_HTTP_PORT=8081
 DOCKER_TOMCAT_LIB_HOST_DIR=/opt/gigafiber/tomcat/lib
+DOCKER_FACE_MODELS_HOST_DIR=/opt/gigafiber/models
 DOCKER_TOMCAT_DOCKERFILE=/opt/gigafiber/tomcat/Dockerfile
 DOCKER_COMPOSE_FILE=/opt/gigafiber/docker-compose.yml
 CATALINA_HOME=/usr/local/tomcat
@@ -35,6 +38,20 @@ OBS_API_KEY=
 # OLT_GATEWAY_ENABLED=true
 # OLT_GATEWAY_API_KEY=
 # OLT_GATEWAY_PASSWORD=
+# Staging Gateway hornea olt.gateway.writes.enabled=true. Prod: OLT_GATEWAY_WRITES_ENABLED (default false).
+# URL interna horneada en el WAR, no aqui.
+# TRAFFIC_API_KEY=
+# OLT_GATEWAY_INTERNAL_BASE_URL and OLT_GATEWAY_DATASOURCE_URL are baked into the WAR
+# (staging WARs inside tomcat-staging talk on :8080; host→staging is :8081).
+# Do not put them in /opt/gigafiber/.env.
+# ACS_API_KEY=   # openssl rand -hex 16; misma key Gateway ↔ ACS WAR (X-Acs-Key)
+# OLT_GATEWAY_ACS_BASE_URL is baked (staging: http://127.0.0.1:8080/ispadmin-staging-acs)
+# Staging deploy must use: --with oltgateway,traffic,acs (client-enabled patched into application-staging.properties)
+
+# Redis interno (cache 360 + Streams). Staging: REDIS_ENABLED=true REDIS_HOST=redis
+# REDIS_PASSWORD=   # openssl rand -hex 16; no commitear el valor
+# REDIS_PORT=6379
+
 # GenieACS TR-069: loguea cada POST NBI como curl en logs Tomcat (grep '[GenieACS curl]').
 # Activar solo durante pruebas; incluye claves WiFi en texto plano.
 # DEPLOY_GENIEACS_LOG_CURL=true ./scripts/deploy.sh --deploy

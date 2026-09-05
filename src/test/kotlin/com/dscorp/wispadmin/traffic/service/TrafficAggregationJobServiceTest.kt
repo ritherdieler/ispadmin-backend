@@ -28,10 +28,10 @@ class TrafficAggregationJobServiceTest {
     private val fiveMinuteRepository = mockk<SubscriptionTrafficFiveMinuteRepository>()
     private val hourlyRepository = mockk<SubscriptionTrafficHourlyRepository>()
     private val rollupService = mockk<SubscriptionTrafficRollupService>(relaxed = true)
-    private val props = TrafficProperties(
-        poll = TrafficProperties.PollProperties(bucketMinutes = 1),
-        aggregation = TrafficProperties.AggregationProperties(catchUpChunkHours = 6)
-    )
+    private val props = TrafficProperties().apply {
+        poll.bucketMinutes = 1
+        aggregation.catchUpChunkHours = 6
+    }
 
     private fun service() = TrafficAggregationJobService(
         watermarkRepository,

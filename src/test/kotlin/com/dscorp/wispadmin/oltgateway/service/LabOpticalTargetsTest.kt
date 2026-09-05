@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.oltgateway.service
 
-import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -12,8 +11,8 @@ class LabOpticalTargetsTest {
 
     @Test
     fun `resolves every lab onu and skips unmapped`() {
-        val a = HealthOnuRef(1L, "VSOL0031C0B6", "a", 2L, "olt", 1, 6, 10)
-        val b = HealthOnuRef(2L, "VSOL00ABCDEF", "b", 2L, "olt", 1, 7, 3)
+        val a = LabOnuRef(1L, "VSOL0031C0B6", 2L, 1, 6, 10)
+        val b = LabOnuRef(2L, "VSOL00ABCDEF", 2L, 1, 7, 3)
         val targets = LabOpticalTargets.resolve(listOf(2329, 2330, 2331)) { id ->
             when (id) {
                 2329 -> a

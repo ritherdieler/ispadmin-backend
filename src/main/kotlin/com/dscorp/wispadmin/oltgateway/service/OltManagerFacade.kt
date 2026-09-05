@@ -183,6 +183,7 @@ open class OltManagerFacade(
         if (onuRepository.findBySnAndDeletedAtIsNull(request.sn).isPresent) {
             throw OltGatewayConflictException("ONU already authorized for SN=${request.sn}")
         }
+        releaseSoftDeletedSn(request.sn)
         val olt = requireOlt()
         val board = request.board.toInt()
         val port = request.port.toInt()
@@ -344,8 +345,13 @@ open class OltManagerFacade(
         )
         try {
             commandService.delete(DeleteCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex))
+            onu.sn = tombstoneSn(onu.sn, onu.id)
             onu.deletedAt = Instant.now()
             onu.updatedAt = Instant.now()
+            onu.board = -1
+            onu.port = 0
+            onu.onuIndex = (onu.id ?: 0L).toInt().coerceAtLeast(0)
+            onu.externalId = "${properties.oltId}_deleted_${onu.id}"
             onuRepository.save(onu)
             task.status = "success"
             task.finishedAt = Instant.now()
@@ -407,6 +413,22 @@ open class OltManagerFacade(
             taskRepository.save(task)
             throw ex
         }
+    }
+
+    open fun externalIdBySn(sn: String): String? = findExistingBySn(sn)?.externalId
+
+    private fun releaseSoftDeletedSn(sn: String) {
+        val existing = onuRepository.findBySn(sn).orElse(null) ?: return
+        if (existing.deletedAt == null) return
+        existing.sn = tombstoneSn(existing.sn, existing.id)
+        existing.updatedAt = Instant.now()
+        onuRepository.saveAndFlush(existing)
+    }
+
+    private fun tombstoneSn(sn: String, id: Long?): String {
+        val suffix = id?.toString() ?: Instant.now().toEpochMilli().toString()
+        val base = sn.takeWhile { it != '#' }.take(48)
+        return "$base#del#$suffix"
     }
 
     private fun requireOlt(): OltMgrOlt {

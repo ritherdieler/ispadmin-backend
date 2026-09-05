@@ -275,6 +275,8 @@ data class Subscription(
                 ?: "No se pudo configurar la ONU por TR-069. Configure la ONU manualmente."
         Tr069ProvisionStatus.PENDING ->
             tr069LastError ?: "Esperando aprovisionamiento TR-069."
+        Tr069ProvisionStatus.FAILED ->
+            tr069LastError ?: "Falló el aprovisionamiento CPE."
         Tr069ProvisionStatus.NA, null -> null
     }
 

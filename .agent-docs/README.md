@@ -2,13 +2,32 @@
 
 | Tema | Archivo |
 |------|---------|
+| **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
+| **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
+| **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
+| **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
+| **Fix overlay client Gateway + security WAR 2026-09-04** | [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md) |
+| **Diagrama 3 WARs + Redis (SVG / PNG)** | [arquitectura-3-wars.svg](./arquitectura-3-wars.svg) · [arquitectura-3-wars.png](./arquitectura-3-wars.png) |
+| **Diagrama 3 WARs — detalle por rectángulo** | [arquitectura-3-wars-detalle.md](./arquitectura-3-wars-detalle.md) |
+| **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
 | **Diagnóstico técnico convergente — especificación v1.2** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
 | **Deploy prod Wi-Fi ACS `observed_at` / V36 2026-08-31** | [deploy-prod-wifi-observed-at-2026-08-31.md](./deploy-prod-wifi-observed-at-2026-08-31.md) |
 | **Deploy prod service-health 2026-08-30 (opt-in off)** | [deploy-prod-service-health-2026-08-30.md](./deploy-prod-service-health-2026-08-30.md) |
+| **Staging ACS Wi‑Fi sample cadence 3 min** | [staging-acs-wifi-sample-cadence-3min.md](./staging-acs-wifi-sample-cadence-3min.md) |
+| **360: refrescos manuales Wi‑Fi/óptica sin cooldown** | [service-health-manual-refresh-no-cooldown-2026-09-03.md](./service-health-manual-refresh-no-cooldown-2026-09-03.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
+| **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
+| **OLT Gateway WAR (staging primero)** | [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) |
+| **Restore prod WAR 2026-09-03 (recreate staging)** | [restore-prod-war-staging-recreate-2026-09-03.md](./restore-prod-war-staging-recreate-2026-09-03.md) |
+| **Staging Tomcat aislado + WAR selectivo** | [staging-tomcat-isolation-war-selectivo.md](./staging-tomcat-isolation-war-selectivo.md) |
+| **Deploy staging Tomcat aislado 2026-09-05** | [deploy-staging-tomcat-isolation-2026-09-05.md](./deploy-staging-tomcat-isolation-2026-09-05.md) |
+| **Redis + snapshot 360 (staging)** | [redis-snapshot-360-staging-2026-09-03.md](./redis-snapshot-360-staging-2026-09-03.md) |
+| **Gateway desacople fases 1–4** | [gateway-desacople-fases-2026-09-02.md](./gateway-desacople-fases-2026-09-02.md) |
+| **E2E tráfico VSOL lab #2360 staging** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md#e2e-lab-vsol) |
+| **Catálogo HTTP Traffic WAR** | [traffic-http-api-catalogo.md](./traffic-http-api-catalogo.md) |
 | **NetDiag Fase 1 (polls / alertas / WhatsApp / LLM)** | [netdiag-fase1.md](./netdiag-fase1.md) |
 | **NetDiag Fase 1.5 (ROS7 netwatch / optical / traps / syslog)** | [netdiag-fase1.5.md](./netdiag-fase1.5.md) |
 | **NetDiag Fase 2 (mantenimiento / webhook LLM / RADIUS)** | [netdiag-fase2.md](./netdiag-fase2.md) |
@@ -53,7 +72,9 @@
 | **Deploy prod WhatsApp investigation (montos + ADMIN QR) 2026-08-14** | [deploy-prod-whatsapp-investigation-2026-08-14.md](./deploy-prod-whatsapp-investigation-2026-08-14.md) |
 | **Versionado por release en deploy (semver+git)** | [observability-release-versioning-deploy.md](./observability-release-versioning-deploy.md) |
 | **Release en runtime + registro de deploys + filtros por release (backend)** | [observability-release-comparacion-backend.md](./observability-release-comparacion-backend.md) |
-| DJL models en WAR | [djl-models-in-war.md](./djl-models-in-war.md) |
+| DJL models en WAR | [djl-models-in-war.md](./djl-models-in-war.md) (histórico; hoy en disco: [wars-adelgazados-models-fs.md](./wars-adelgazados-models-fs.md)) |
+| **WARs adelgazados (models en FS + jars por perfil)** | [wars-adelgazados-models-fs.md](./wars-adelgazados-models-fs.md) |
+| **Deploy staging 2026-09-05 (WARs adelgazados)** | [deploy-staging-2026-09-05-wars-adelgazados.md](./deploy-staging-2026-09-05-wars-adelgazados.md) |
 | Reconocimiento facial fase 1 | [face-recognition-phase1-improvements.md](./face-recognition-phase1-improvements.md) |
 | Face challenge frontend | [face-challenge-frontend-first.md](./face-challenge-frontend-first.md) |
 | Dashboard payment queries | [dashboard-payment-queries-restore.md](./dashboard-payment-queries-restore.md) |

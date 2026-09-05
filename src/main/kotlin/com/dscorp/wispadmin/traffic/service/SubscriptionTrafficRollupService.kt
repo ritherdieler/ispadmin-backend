@@ -44,7 +44,7 @@ open class SubscriptionTrafficRollupService(
             .associateBy { it.subscriptionId to it.bucketStart }
             .toMutableMap()
         val toSave = mutableListOf<SubscriptionTrafficFiveMinute>()
-        observations.groupBy { it.subscriptionId to truncateFiveMinutes(it.bucketStart) }.forEach { (key, group) ->
+        observations.filter { it.subscriptionId != null }.groupBy { it.subscriptionId!! to truncateFiveMinutes(it.bucketStart) }.forEach { (key, group) ->
             val (subscriptionId, bucketStart) = key
             if (bucketStart < from || bucketStart >= to) return@forEach
             val valid = group.filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }

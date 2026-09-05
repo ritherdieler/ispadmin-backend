@@ -6,9 +6,10 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagIncidentRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagOltLogEventRepository
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagTargetRepository
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltAlarm
+import com.dscorp.wispadmin.netdiag.port.NetDiagOltAlarmParserPort
 import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptor
 import com.dscorp.wispadmin.netdiag.port.NetDiagOltDescriptorPort
-import com.dscorp.wispadmin.oltgateway.adapter.NetDiagOltAlarmParserAdapter
 import com.dscorp.wispadmin.oltgateway.parser.HuaweiOltAlarmParser
 import io.mockk.every
 import io.mockk.mockk
@@ -29,7 +30,25 @@ class OltAlarmIngestServiceTest {
     private val incidentRepository = mockk<NetDiagIncidentRepository>()
     private val signalExtractor = mockk<AlertSignalExtractor>()
     private val alertEvaluator = mockk<AlertEvaluator>()
-    private val parser = NetDiagOltAlarmParserAdapter(HuaweiOltAlarmParser())
+    private val parser = object : NetDiagOltAlarmParserPort {
+        private val huawei = HuaweiOltAlarmParser()
+        override fun parseActiveAlarms(raw: String): List<NetDiagOltAlarm> =
+            huawei.parseActiveAlarms(raw).map { alarm ->
+                NetDiagOltAlarm(
+                    alarmIdHex = alarm.alarmIdHex,
+                    alarmName = alarm.alarmName,
+                    slotId = alarm.slotId,
+                    portId = alarm.portId,
+                    ontId = alarm.ontId,
+                    reasonCode = alarm.reasonCode,
+                    severity = alarm.severity,
+                    component = alarm.component,
+                    isClear = alarm.isClear,
+                    rawBlock = alarm.rawBlock,
+                    unparsed = alarm.reasonCode == HuaweiOltAlarmParser.REASON_UNPARSED
+                )
+            }
+    }
     private val descriptor = object : NetDiagOltDescriptorPort {
         override fun descriptor() = NetDiagOltDescriptor(
             oltId = "gigafiber-ma5608t",

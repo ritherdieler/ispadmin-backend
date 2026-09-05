@@ -23,6 +23,8 @@ class OltGatewayProperties {
 
     var commandTimeoutMs: Long = 30000
 
+    val acs: AcsClientProperties = AcsClientProperties()
+
     val mock: MockProperties = MockProperties()
 
     val ssh: SshProperties = SshProperties()
@@ -148,6 +150,12 @@ class OltGatewayProperties {
         var maxSlotProbe: Int = 7
         var defaultPortsPerGponBoard: Int = 16
         var slotAllProbeTimeoutMs: Long = 15000
+    }
+
+    class AcsClientProperties {
+        var enabled: Boolean = false
+        var internalBaseUrl: String = ""
+        var apiKey: String = ""
     }
 
     fun isValidApiKey(key: String?): Boolean {

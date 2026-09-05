@@ -361,3 +361,64 @@ data class OltSnmpTrapRecentDto(
     val listenPort: Int,
     val items: List<OltSnmpTrapEventDto>
 )
+
+data class OltOnuRefDto(
+    val id: Long,
+    val sn: String,
+    val externalId: String?,
+    val oltId: Long?,
+    val oltName: String?,
+    val board: Int,
+    val port: Int,
+    val onuIndex: Int,
+    val zoneId: Long? = null
+)
+
+data class OltDescriptorDto(
+    val oltId: String,
+    val host: String,
+    val alarmPollEnabled: Boolean,
+    val portsPerGponBoard: Int
+)
+
+data class OltPonOnuDto(
+    val onuIndex: Int,
+    val sn: String,
+    val runState: String?,
+    val lastDownCause: String?,
+    val onuRxDbm: Double?
+)
+
+data class OltParsedAlarmDto(
+    val alarmIdHex: String?,
+    val alarmName: String,
+    val slotId: Int?,
+    val portId: Int?,
+    val ontId: Int?,
+    val reasonCode: String,
+    val severity: String,
+    val component: String,
+    val isClear: Boolean,
+    val rawBlock: String,
+    val unparsed: Boolean
+)
+
+data class OltAlarmPollResponseDto(
+    val raw: String? = null,
+    val skippedReason: String? = null,
+    val alarms: List<OltParsedAlarmDto> = emptyList()
+)
+
+data class OltAlarmParseRequestDto(
+    val raw: String = ""
+)
+
+data class LabOpticalRefreshRequestDto(
+    val sn: String = ""
+)
+
+data class LabOpticalRefreshResponseDto(
+    val collected: Boolean,
+    val unmapped: Boolean = false,
+    val error: String? = null
+)

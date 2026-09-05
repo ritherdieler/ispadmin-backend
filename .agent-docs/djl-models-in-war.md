@@ -1,22 +1,27 @@
-# DJL models packaged in WAR
+# DJL models packaged in WAR (histórico)
 
-Build verified: `bash mvnw clean package -DskipTests` (2026-06-16).
+**Actualización 2026-09-05:** los tres archivos de `src/main/resources/models/` **ya no van en el WAR**. Prod/staging Core los lee desde `/opt/gigafiber/models/`. Detalle y tamaños: [wars-adelgazados-models-fs.md](./wars-adelgazados-models-fs.md).
 
-## Changes
+Build original (modelos *dentro* del WAR): `bash mvnw clean package -DskipTests` (2026-06-16).
+
+## Changes (2026-06)
 
 - Moved `ultranet.zip` and `face_feature.zip` to `src/main/resources/models/`.
 - Added `FaceModelFileResolver` to resolve `classpath:` models into temp files for DJL.
 - Updated `FacePhotoPreprocessorService` and `FacePhotoDescriptorService` to use the resolver.
-- Unified `application-dev.properties` and `application-prod.properties` with:
+- Dev/local (`application-dev.properties`) sigue en classpath:
   - `face.login.djl-model-path=classpath:models/face_feature.zip`
   - `face.login.djl-detector-model-path=classpath:models/ultranet.zip`
 
+Prod/staging:
+
+- `face.login.djl-model-path=/opt/gigafiber/models/face_feature.zip`
+- `face.login.djl-detector-model-path=/opt/gigafiber/models/ultranet.zip`
+- `face.embedding.model-path=/opt/gigafiber/models/arcface_w600k_mbf.onnx`
+
 ## WAR verification
 
-`target/ispadmin.war` includes:
-
-- `WEB-INF/classes/models/face_feature.zip`
-- `WEB-INF/classes/models/ultranet.zip`
+`scripts/verify-djl-war.sh` exige los modelos en source y **falla** si el WAR contiene `WEB-INF/classes/models/`.
 
 ## Runtime verification
 
@@ -28,7 +33,7 @@ With dev profile:
 
 ## Deploy note
 
-Upload `target/ispadmin.war` to Tomcat. External model files under `/opt/ispadmin/models/` are no longer required unless you override the properties with absolute paths.
+`./scripts/deploy.sh --deploy` / `--setup` hace rsync de `src/main/resources/models/` a `/opt/gigafiber/models/` y monta ese directorio en Tomcat.
 
 Build the WAR for Linux Tomcat from macOS with:
 
@@ -44,6 +49,6 @@ bash mvnw clean package -DskipTests -Ddjl.linux.aarch64
 
 Building directly on a Linux server auto-selects the native classifier from `uname -m`.
 
-This bundles `pytorch-native-cpu` and `pytorch-jni` inside the WAR. For Tomcat Docker in production, DJL JARs live in the Docker image `lib/` — see `.agent-docs/deploy-flow.md`.
+DJL JARs live in the Docker image `lib/` — see `.agent-docs/deploy-flow.md`.
 
 Local macOS development uses the matching `osx-aarch64` or `osx-x86_64` native profile automatically.

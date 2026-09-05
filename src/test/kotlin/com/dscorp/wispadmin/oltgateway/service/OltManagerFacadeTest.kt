@@ -219,6 +219,7 @@ class OltManagerFacadeTest {
     @Test
     fun `authorizeOnu crea task CLI insert A y audit`() {
         every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
+        every { onuRepository.findBySn("4857544311E70E9A") } returns Optional.empty()
         every { zoneRepository.findByName("ZonaA") } returns Optional.of(OltMgrZone(id = 2L, name = "ZonaA"))
         every { onuTypeRepository.findByName("HG8245H") } returns Optional.of(OltMgrOnuType(id = 3L, name = "HG8245H"))
         every { commandService.authorize(any()) } returns AuthorizeCliResult(ontId = 7, commands = emptyList())
@@ -430,8 +431,58 @@ class OltManagerFacadeTest {
 
         assertTrue(response.status)
         assertTrue(onu.deletedAt != null)
+        assertTrue(onu.sn.contains("#del#"))
+        assertEquals(-1, onu.board)
+        assertEquals(0, onu.port)
+        assertEquals(10, onu.onuIndex)
+        assertEquals("gigafiber-ma5608t_deleted_10", onu.externalId)
         verify { commandService.delete(any()) }
         verify { auditLogRepository.save(match { it.action == "delete_onu" }) }
+    }
+
+    @Test
+    fun `authorizeOnu frees soft-deleted sn before insert`() {
+        val softDeleted = OltMgrOnu(
+            id = 44L,
+            sn = "ZTEGDC47BFFD",
+            externalId = "gigafiber-ma5608t_1_6_16",
+            olt = olt,
+            board = 1,
+            port = 6,
+            onuIndex = 16,
+            deletedAt = java.time.Instant.parse("2026-09-04T00:00:00Z"),
+        )
+        every { onuRepository.findBySnAndDeletedAtIsNull("ZTEGDC47BFFD") } returns Optional.empty()
+        every { onuRepository.findBySn("ZTEGDC47BFFD") } returns Optional.of(softDeleted)
+        every { onuRepository.saveAndFlush(any()) } answers { firstArg() }
+        every { onuRepository.findMaxOnuIndex(1L, 1, 6) } returns 16
+        every { zoneRepository.findByName("Zone 1") } returns Optional.empty()
+        every { zoneRepository.save(any()) } answers { firstArg<OltMgrZone>().also { it.id = 9L } }
+        every { onuTypeRepository.findByName("F6600RV9.0.21") } returns Optional.empty()
+        every { onuTypeRepository.save(any()) } answers { firstArg<OltMgrOnuType>().also { it.id = 8L } }
+        every { commandService.authorize(any()) } returns AuthorizeCliResult(ontId = 17, commands = emptyList())
+        every { onuRepository.save(any()) } answers { firstArg<OltMgrOnu>().also { if (it.id == null) it.id = 55L } }
+
+        val response = facade.authorizeOnu(
+            AuthorizeOnuFormDto(
+                olt_id = "2",
+                pon_type = "gpon",
+                board = "1",
+                port = "6",
+                sn = "ZTEGDC47BFFD",
+                vlan = "100",
+                onu_type = "F6600RV9.0.21",
+                zone = "Zone 1",
+                name = "Lab",
+                onu_mode = "Routing",
+                custom_profile = "Generic_1",
+            )
+        )
+
+        assertTrue(response.status)
+        assertTrue(softDeleted.sn.startsWith("ZTEGDC47BFFD#del#"))
+        verify { onuRepository.saveAndFlush(softDeleted) }
+        verify { commandService.authorize(any()) }
     }
 
     @Test

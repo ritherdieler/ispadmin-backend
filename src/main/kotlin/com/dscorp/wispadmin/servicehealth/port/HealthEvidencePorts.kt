@@ -162,3 +162,27 @@ interface HealthLabScopePort {
     fun collects(subscriptionId: Int?): Boolean
     fun collectionSubscriptionIds(): Set<Int>
 }
+
+data class HealthCpeTelemetry(
+    val sn: String,
+    val uniqueExternalId: String? = null,
+    val cpeStatus: String = "NA",
+    val lastInformAt: Instant? = null,
+    val productClass: String? = null,
+    val wanIp: String? = null,
+    val ssid24: String? = null,
+    val ssid5: String? = null,
+    val softwareVersion: String? = null,
+)
+
+data class HealthCpeCommand(
+    val accepted: Boolean,
+    val status: String,
+    val message: String? = null,
+)
+
+interface HealthCpePort {
+    fun telemetry(sn: String): HealthCpeTelemetry?
+    fun reboot(sn: String): HealthCpeCommand
+    fun wifiRefresh(sn: String): HealthCpeCommand
+}

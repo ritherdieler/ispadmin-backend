@@ -10,19 +10,21 @@ MODE="deploy"
 SKIP_BUILD=0
 DEPLOY_ENV=""
 WITH_SUBSYSTEMS=""
+ONLY_WARS=""
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|staging] [--with key,key]
+Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|staging] [--with key,key] [--only key,key]
 
-  --setup     Upload DJL libs, patch Docker image/compose, rebuild Tomcat (once)
+  --setup     Upload DJL libs and face models, patch Docker image/compose, rebuild Tomcat (once)
   --full      --setup then deploy WAR
   --war-only  Deploy existing target WAR only
   --deploy    Build, verify, deploy WAR (default)
-  --env       prod (default): ispadmin.war → /ispadmin
-              staging: ispadmin-staging.war → /ispadmin-staging (does not touch ispadmin.war)
-  --with      Optional subsystems to keep in the staging WAR (observability,oltgateway,netdiag,traffic,servicehealth).
-              Default staging: none.
+  --env       prod (default): ispadmin.war → /ispadmin on tomcat9027
+              staging: ispadmin-staging*.war → tomcat-staging :8081 (does not touch tomcat9027 or ispadmin.war)
+  --with      Optional subsystems to keep in the staging Core WAR (observability,oltgateway,netdiag,traffic,servicehealth).
+              Default staging: none. `traffic`, `oltgateway` and `acs` enable HTTP clients; those classes always ship in sibling WARs.
+  --only      Staging: deploy only these WARs (core,oltgateway,traffic,acs). Wins over git mapping.
 
 All deploy modes run the complete Maven test suite before building or connecting to the VPS.
 Any failing test aborts the deployment.
@@ -54,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       WITH_SUBSYSTEMS="${2:-}"
       shift 2
       ;;
+    --only)
+      ONLY_WARS="${2:-}"
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -79,7 +85,11 @@ VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 DOCKER_COMPOSE_DIR="${DOCKER_COMPOSE_DIR:-/opt/gigafiber}"
 DOCKER_TOMCAT_CONTAINER="${DOCKER_TOMCAT_CONTAINER:-tomcat9027}"
+DOCKER_TOMCAT_STAGING_CONTAINER="${DOCKER_TOMCAT_STAGING_CONTAINER:-tomcat-staging}"
+TOMCAT_STAGING_HTTP_PORT="${TOMCAT_STAGING_HTTP_PORT:-8081}"
+TOMCAT_HTTP_PORT="${TOMCAT_HTTP_PORT:-8080}"
 DOCKER_TOMCAT_LIB_HOST_DIR="${DOCKER_TOMCAT_LIB_HOST_DIR:-/opt/gigafiber/tomcat/lib}"
+DOCKER_FACE_MODELS_HOST_DIR="${DOCKER_FACE_MODELS_HOST_DIR:-/opt/gigafiber/models}"
 DOCKER_TOMCAT_DOCKERFILE="${DOCKER_TOMCAT_DOCKERFILE:-/opt/gigafiber/tomcat/Dockerfile}"
 DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-/opt/gigafiber/docker-compose.yml}"
 CATALINA_HOME="${CATALINA_HOME:-/usr/local/tomcat}"
@@ -91,14 +101,57 @@ OBS_BASE_URL="${OBS_BASE_URL:-}"
 OBS_API_KEY="${OBS_API_KEY:-}"
 
 DEPLOY_ENV="${DEPLOY_ENV:-prod}"
+TOMCAT_COMPOSE_SERVICE="tomcat"
 if [[ "$DEPLOY_ENV" == "staging" ]]; then
   WAR_NAME="ispadmin-staging.war"
   APP_CONTEXT_PATH="/ispadmin-staging"
   MAVEN_WAR_PROFILE="staging-war"
+  TRAFFIC_WAR_NAME="ispadmin-staging-traffic.war"
+  TRAFFIC_CONTEXT_PATH="/ispadmin-staging-traffic"
+  TRAFFIC_MAVEN_PROFILE="traffic-staging-war"
+  OLTGATEWAY_WAR_NAME="ispadmin-staging-oltgateway.war"
+  OLTGATEWAY_CONTEXT_PATH="/ispadmin-staging-oltgateway"
+  OLTGATEWAY_MAVEN_PROFILE="oltgateway-staging-war"
+  ACS_WAR_NAME="ispadmin-staging-acs.war"
+  ACS_CONTEXT_PATH="/ispadmin-staging-acs"
+  ACS_MAVEN_PROFILE="acs-staging-war"
+  DOCKER_TOMCAT_CONTAINER="$DOCKER_TOMCAT_STAGING_CONTAINER"
+  TOMCAT_HTTP_PORT="$TOMCAT_STAGING_HTTP_PORT"
+  TOMCAT_COMPOSE_SERVICE="tomcat-staging"
 else
   APP_CONTEXT_PATH="/ispadmin"
   MAVEN_WAR_PROFILE="prod-war"
+  TRAFFIC_WAR_NAME=""
+  TRAFFIC_CONTEXT_PATH=""
+  TRAFFIC_MAVEN_PROFILE=""
+  OLTGATEWAY_WAR_NAME=""
+  OLTGATEWAY_CONTEXT_PATH=""
+  OLTGATEWAY_MAVEN_PROFILE=""
+  ACS_WAR_NAME=""
+  ACS_CONTEXT_PATH=""
+  ACS_MAVEN_PROFILE=""
 fi
+
+if [[ "$DEPLOY_ENV" == "staging" ]]; then
+  if [[ -n "$ONLY_WARS" ]]; then
+    SELECTED_WARS="$(bash "$SCRIPT_DIR/deploy-select-wars.sh" --only "$ONLY_WARS")"
+  elif [[ "$MODE" == "setup" ]]; then
+    SELECTED_WARS="acs,core,oltgateway,traffic"
+  else
+    SELECTED_WARS="$(cd "$PROJECT_DIR" && bash "$SCRIPT_DIR/deploy-select-wars.sh")"
+  fi
+else
+  if [[ -n "$ONLY_WARS" ]]; then
+    echo "Ignoring --only on prod (core WAR only)"
+  fi
+  SELECTED_WARS="core"
+fi
+echo "Selected WARs: $SELECTED_WARS (env=$DEPLOY_ENV container=$DOCKER_TOMCAT_CONTAINER port=$TOMCAT_HTTP_PORT)"
+
+war_selected() {
+  local key="$1"
+  [[ ",${SELECTED_WARS}," == *",${key},"* ]]
+}
 
 if [[ -z "$VPS_HOST" ]]; then
   echo "VPS_HOST is required in deploy.config.local" >&2
@@ -200,7 +253,7 @@ run_rsync() {
   if [[ -n "$SSH_IDENTITY_FILE" ]]; then
     rsh+=" -i $SSH_IDENTITY_FILE"
   fi
-  rsync -hW --partial --progress -e "$rsh" "$@"
+  rsync -htW --partial --progress -e "$rsh" "$@"
 }
 
 run_tests() {
@@ -210,27 +263,81 @@ run_tests() {
 }
 
 build_war() {
-  local models_dir="$PROJECT_DIR/src/main/resources/models"
-  for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
-    if [[ ! -f "$models_dir/$model" ]]; then
-      echo "Missing $models_dir/$model — required for facial recognition." >&2
-      exit 1
+  if war_selected core; then
+    local models_dir="$PROJECT_DIR/src/main/resources/models"
+    for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
+      if [[ ! -f "$models_dir/$model" ]]; then
+        echo "Missing $models_dir/$model — required for facial recognition." >&2
+        exit 1
+      fi
+    done
+    echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
+    local maven_args=(package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
+    if [[ "$DEPLOY_ENV" == "staging" ]]; then
+      mkdir -p "$PROJECT_DIR/target"
+      bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
+      local excludes
+      excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
+      maven_args+=("-Dsubsystem.excludes=$excludes")
+      maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
     fi
-  done
-  echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
-  local maven_args=(clean package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
-  if [[ "$DEPLOY_ENV" == "staging" ]]; then
-    mkdir -p "$PROJECT_DIR/target"
-    bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
-    local excludes
-    excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
-    maven_args+=("-Dsubsystem.excludes=$excludes")
-    maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
+    (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
+    VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
+    if [[ "$DEPLOY_ENV" == "staging" ]]; then
+      VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
+    fi
+  else
+    echo "Skipping core WAR package (not in $SELECTED_WARS)"
   fi
-  (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
-  VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
   if [[ "$DEPLOY_ENV" == "staging" ]]; then
-    VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
+    if war_selected traffic; then
+      build_traffic_war
+    fi
+    if war_selected oltgateway; then
+      build_oltgateway_war
+    fi
+    if war_selected acs; then
+      build_acs_war
+    fi
+  fi
+}
+
+build_traffic_war() {
+  if [[ -z "${TRAFFIC_MAVEN_PROFILE:-}" ]]; then
+    return 0
+  fi
+  echo "Building $TRAFFIC_WAR_NAME (Maven profile $TRAFFIC_MAVEN_PROFILE)..."
+  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$TRAFFIC_MAVEN_PROFILE")
+  local traffic_war="$PROJECT_DIR/target/$TRAFFIC_WAR_NAME"
+  if [[ ! -f "$traffic_war" ]]; then
+    echo "Missing $traffic_war" >&2
+    exit 1
+  fi
+}
+
+build_oltgateway_war() {
+  if [[ -z "${OLTGATEWAY_MAVEN_PROFILE:-}" ]]; then
+    return 0
+  fi
+  echo "Building $OLTGATEWAY_WAR_NAME (Maven profile $OLTGATEWAY_MAVEN_PROFILE)..."
+  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$OLTGATEWAY_MAVEN_PROFILE")
+  local gateway_war="$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME"
+  if [[ ! -f "$gateway_war" ]]; then
+    echo "Missing $gateway_war" >&2
+    exit 1
+  fi
+}
+
+build_acs_war() {
+  if [[ -z "${ACS_MAVEN_PROFILE:-}" ]]; then
+    return 0
+  fi
+  echo "Building $ACS_WAR_NAME (Maven profile $ACS_MAVEN_PROFILE)..."
+  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$ACS_MAVEN_PROFILE")
+  local acs_war="$PROJECT_DIR/target/$ACS_WAR_NAME"
+  if [[ ! -f "$acs_war" ]]; then
+    echo "Missing $acs_war" >&2
+    exit 1
   fi
 }
 
@@ -242,6 +349,94 @@ upload_tomcat_lib() {
   echo "Uploading DJL jars to $DOCKER_TOMCAT_LIB_HOST_DIR ..."
   run_ssh "mkdir -p '$DOCKER_TOMCAT_LIB_HOST_DIR'"
   run_scp "$TOMCAT_LIB_SRC"/*.jar "$SSH_TARGET:$DOCKER_TOMCAT_LIB_HOST_DIR/"
+}
+
+ensure_face_models_volume() {
+  echo "Ensuring $TOMCAT_COMPOSE_SERVICE mounts $DOCKER_FACE_MODELS_HOST_DIR ..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+python3 - <<PY
+from pathlib import Path
+
+compose_path = Path("$DOCKER_COMPOSE_FILE")
+text = compose_path.read_text()
+mount = "$DOCKER_FACE_MODELS_HOST_DIR:/opt/gigafiber/models:ro"
+service_header = "  $TOMCAT_COMPOSE_SERVICE:"
+if not compose_path.is_file():
+    raise SystemExit("docker-compose not found: $DOCKER_COMPOSE_FILE")
+if service_header not in text:
+    raise SystemExit("compose service not found: $TOMCAT_COMPOSE_SERVICE")
+lines = text.splitlines()
+out = []
+in_tomcat = False
+in_volumes = False
+inserted = False
+for line in lines:
+    if line.rstrip() == service_header:
+        in_tomcat = True
+        in_volumes = False
+    elif in_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
+        if not inserted:
+            out.append("    volumes:")
+            out.append(f"      - {mount}")
+            inserted = True
+        in_tomcat = False
+        in_volumes = False
+    if in_tomcat and line.strip() == "volumes:":
+        in_volumes = True
+    if in_tomcat and mount in line:
+        inserted = True
+    out.append(line)
+    if in_tomcat and in_volumes and not inserted and line.startswith("      - "):
+        out.append(f"      - {mount}")
+        inserted = True
+if in_tomcat and not inserted:
+    out.append("    volumes:")
+    out.append(f"      - {mount}")
+    inserted = True
+if not inserted:
+    raise SystemExit("Could not insert face models volume under $TOMCAT_COMPOSE_SERVICE")
+if "\\n".join(out) == "\\n".join(lines):
+    print("docker-compose already mounts face models on $TOMCAT_COMPOSE_SERVICE")
+else:
+    compose_path.write_text("\\n".join(out) + "\\n")
+    print("Added face models volume to $TOMCAT_COMPOSE_SERVICE")
+PY
+EOF
+}
+
+upload_face_models() {
+  if ! war_selected core; then
+    echo "Skipping face models (core WAR not selected)"
+    return 0
+  fi
+  local src="$PROJECT_DIR/src/main/resources/models"
+  local dest="$DOCKER_FACE_MODELS_HOST_DIR"
+  for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
+    if [[ ! -f "$src/$model" ]]; then
+      echo "Missing $src/$model — required on VPS for facial login." >&2
+      exit 1
+    fi
+  done
+  echo "Uploading face models to $dest ..."
+  run_ssh "mkdir -p '$dest'"
+  for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
+    run_rsync "$src/$model" "$SSH_TARGET:$dest/$model"
+  done
+  ensure_face_models_volume
+  if run_ssh "docker inspect '$DOCKER_TOMCAT_CONTAINER' >/dev/null 2>&1"; then
+    local mounts
+    mounts="$(run_ssh "docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' '$DOCKER_TOMCAT_CONTAINER'")"
+    if grep -qx '/opt/gigafiber/models' <<< "$mounts"; then
+      echo "Face models volume already mounted in $DOCKER_TOMCAT_CONTAINER"
+    else
+      echo "Copying face models into $DOCKER_TOMCAT_CONTAINER ..."
+      run_ssh "docker exec '$DOCKER_TOMCAT_CONTAINER' mkdir -p /opt/gigafiber/models"
+      for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
+        run_ssh "docker cp '$dest/$model' '$DOCKER_TOMCAT_CONTAINER:/opt/gigafiber/models/$model'"
+      done
+    fi
+  fi
 }
 
 upload_dockerfile() {
@@ -340,16 +535,22 @@ EOF
 }
 
 rebuild_tomcat_container() {
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    echo "Staging: rebuild image if needed, start tomcat-staging only (not tomcat9027)..."
+    ensure_tomcat_staging
+    run_ssh "cd '$DOCKER_COMPOSE_DIR' && docker compose build tomcat && docker compose up -d tomcat-staging"
+    return 0
+  fi
   echo "Rebuilding Tomcat container..."
   run_ssh "cd '$DOCKER_COMPOSE_DIR' && docker compose build tomcat && docker compose up -d tomcat"
 }
 
 wait_for_tomcat() {
-  echo "Waiting for Tomcat to start..."
+  echo "Waiting for Tomcat to start on $TOMCAT_HTTP_PORT..."
   local i
   for i in $(seq 1 60); do
-    if run_ssh "curl -sf -o /dev/null http://127.0.0.1:8080/ 2>/dev/null"; then
-      echo "Tomcat is responding on port 8080"
+    if run_ssh "curl -sf -o /dev/null http://127.0.0.1:${TOMCAT_HTTP_PORT}/ 2>/dev/null"; then
+      echo "Tomcat is responding on port $TOMCAT_HTTP_PORT"
       return 0
     fi
     sleep 5
@@ -359,13 +560,19 @@ wait_for_tomcat() {
 }
 
 restore_host_wars() {
-  echo "Restoring WARs from $DOCKER_COMPOSE_DIR into Tomcat webapps..."
+  echo "Restoring WARs from $DOCKER_COMPOSE_DIR into $DOCKER_TOMCAT_CONTAINER webapps..."
+  local wars
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    wars="ispadmin-staging.war ispadmin-staging-traffic.war ispadmin-staging-oltgateway.war ispadmin-staging-acs.war"
+  else
+    wars="ispadmin.war ispadmin-traffic.war ispadmin-oltgateway.war ispadmin-acs.war"
+  fi
   run_ssh "bash -s" <<EOF
 set -euo pipefail
 CONTAINER='$DOCKER_TOMCAT_CONTAINER'
 CATALINA='$CATALINA_HOME'
 HOST_DIR='$DOCKER_COMPOSE_DIR'
-for war in ispadmin.war ispadmin-staging.war; do
+for war in $wars; do
   if [[ -f "\$HOST_DIR/\$war" ]]; then
     docker cp "\$HOST_DIR/\$war" "\$CONTAINER:\$CATALINA/webapps/\$war"
     echo "Restored \$war"
@@ -375,6 +582,10 @@ EOF
 }
 
 ensure_war_profile_isolation() {
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    echo "Staging uses tomcat-staging; skipping prod compose isolation"
+    return 0
+  fi
   echo "Removing shared SPRING_PROFILES_ACTIVE / SPRING_DATASOURCE_URL so each WAR uses its baked profile..."
   local changed
   changed="$(run_ssh "bash -s" <<EOF
@@ -447,76 +658,84 @@ EOF
 }
 
 prepare_prod_war_on_host_if_splitting() {
-  if [[ "$DEPLOY_ENV" != "staging" ]]; then
-    return 0
-  fi
-  local pinned
-  pinned="$(run_ssh "grep -c 'SPRING_PROFILES_ACTIVE' '$DOCKER_COMPOSE_FILE' || true")"
-  pinned="$(printf '%s' "$pinned" | tail -n 1)"
-  if [[ "$pinned" == "0" || -z "$pinned" ]]; then
-    return 0
-  fi
-  echo "Compose still pins SPRING_PROFILES_ACTIVE; baking ispadmin.war (prod) onto the host before the split..."
-  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -Pprod-war)
-  VERIFY_WAR="$PROJECT_DIR/target/ispadmin.war" bash "$SCRIPT_DIR/verify-djl-war.sh"
-  run_rsync "$PROJECT_DIR/target/ispadmin.war" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/ispadmin.war"
+  return 0
 }
 
 sync_war_to_host() {
-  if [[ -f "$WAR_PATH" ]]; then
-    echo "Staging $WAR_NAME on VPS host before any Tomcat recreate..."
+  if war_selected core && [[ -f "$WAR_PATH" ]]; then
+    echo "Staging $WAR_NAME on VPS host..."
     run_rsync "$WAR_PATH" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/$WAR_NAME"
+  fi
+  if war_selected traffic && [[ -n "${TRAFFIC_WAR_NAME:-}" && -f "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME" ]]; then
+    echo "Staging $TRAFFIC_WAR_NAME on VPS host..."
+    run_rsync "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/$TRAFFIC_WAR_NAME"
+  fi
+  if war_selected oltgateway && [[ -n "${OLTGATEWAY_WAR_NAME:-}" && -f "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME" ]]; then
+    echo "Staging $OLTGATEWAY_WAR_NAME on VPS host..."
+    run_rsync "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/$OLTGATEWAY_WAR_NAME"
+  fi
+  if war_selected acs && [[ -n "${ACS_WAR_NAME:-}" && -f "$PROJECT_DIR/target/$ACS_WAR_NAME" ]]; then
+    echo "Staging $ACS_WAR_NAME on VPS host..."
+    run_rsync "$PROJECT_DIR/target/$ACS_WAR_NAME" "$SSH_TARGET:${DOCKER_COMPOSE_DIR%/}/$ACS_WAR_NAME"
   fi
 }
 
-ensure_nginx_staging() {
-  echo "Ensuring nginx location /ispadmin-staging/ ..."
-  local snippet
-  snippet="$(cat "$SCRIPT_DIR/nginx-ispadmin-staging.location.conf")"
-  run_ssh "bash -s" <<EOF
-set -euo pipefail
-CONF='/etc/nginx/sites-enabled/api.gigafiberperu.cloud.conf'
-if grep -q 'location /ispadmin-staging/' "\$CONF"; then
-  echo "nginx already has /ispadmin-staging/"
-  exit 0
-fi
-python3 - <<'PY'
-from pathlib import Path
-conf = Path("/etc/nginx/sites-enabled/api.gigafiberperu.cloud.conf")
-text = conf.read_text()
-snippet = """$snippet"""
-marker = "    location /ispadmin/ws {"
-idx = text.find(marker)
-if idx == -1:
-    raise SystemExit("Could not find location /ispadmin/ws in nginx conf")
-end = text.find("    location / {", idx)
-if end == -1:
-    raise SystemExit("Could not find location / after websocket block")
-conf.write_text(text[:end] + snippet.rstrip() + "\\n\\n" + text[end:])
-print("Inserted /ispadmin-staging/ nginx locations")
-PY
-nginx -t
-nginx -s reload
-echo "nginx reloaded"
-EOF
+ensure_tomcat_staging() {
+  if [[ "$DEPLOY_ENV" != "staging" ]]; then
+    return 0
+  fi
+  echo "Ensuring compose service tomcat-staging (host port $TOMCAT_STAGING_HTTP_PORT)..."
+  run_scp "$SCRIPT_DIR/ensure-tomcat-staging-compose.py" "$SSH_TARGET:/tmp/ensure-tomcat-staging-compose.py"
+  run_ssh "python3 /tmp/ensure-tomcat-staging-compose.py '$DOCKER_COMPOSE_FILE'"
+  run_ssh "cd '$DOCKER_COMPOSE_DIR' && docker compose up -d tomcat-staging"
 }
 
-wait_for_app() {
-  echo "Waiting for $WAR_NAME to deploy at $APP_CONTEXT_PATH/ ..."
+ensure_nginx_staging() {
+  if [[ "$DEPLOY_ENV" != "staging" ]]; then
+    return 0
+  fi
+  echo "Ensuring nginx /ispadmin-staging* → gigafiber_backend_staging :$TOMCAT_STAGING_HTTP_PORT ..."
+  run_scp "$SCRIPT_DIR/rewrite-nginx-staging-upstream.py" "$SSH_TARGET:/tmp/rewrite-nginx-staging-upstream.py"
+  run_scp "$SCRIPT_DIR/nginx-ispadmin-staging.location.conf" "$SSH_TARGET:/tmp/nginx-ispadmin-staging.location.conf"
+  run_ssh "python3 /tmp/rewrite-nginx-staging-upstream.py /etc/nginx/sites-enabled/api.gigafiberperu.cloud.conf /tmp/nginx-ispadmin-staging.location.conf && nginx -t && nginx -s reload && echo nginx reloaded"
+}
+
+wait_health() {
+  local path="$1"
   local i code
+  echo "Waiting for http://127.0.0.1:${TOMCAT_HTTP_PORT}${path} ..."
   for i in $(seq 1 90); do
-    code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080${APP_CONTEXT_PATH}/ 2>/dev/null || true")"
+    code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${TOMCAT_HTTP_PORT}${path} 2>/dev/null || true")"
     if [[ "$code" == "200" || "$code" == "302" ]]; then
-      echo "Application is responding (HTTP $code)"
+      echo "Responding (HTTP $code) ${path}"
       return 0
     fi
     sleep 5
   done
-  echo "Application did not become ready in time (last HTTP $code)" >&2
+  echo "Did not become ready in time ${path} (last HTTP $code)" >&2
   return 1
 }
 
+wait_for_app() {
+  if war_selected core; then
+    wait_health "${APP_CONTEXT_PATH}/"
+  fi
+  if war_selected traffic; then
+    wait_health "${TRAFFIC_CONTEXT_PATH}/actuator/health"
+  fi
+  if war_selected oltgateway; then
+    wait_health "${OLTGATEWAY_CONTEXT_PATH}/actuator/health"
+  fi
+  if war_selected acs; then
+    wait_health "${ACS_CONTEXT_PATH}/actuator/health"
+  fi
+}
+
 deploy_war() {
+  if ! war_selected core; then
+    echo "Skipping core WAR deploy (not in $SELECTED_WARS)"
+    return 0
+  fi
   if [[ ! -f "$WAR_PATH" ]]; then
     echo "Missing $WAR_PATH" >&2
     exit 1
@@ -524,9 +743,7 @@ deploy_war() {
   local war_bytes remote_war
   war_bytes="$(wc -c < "$WAR_PATH" | tr -d ' ')"
   remote_war="${DOCKER_COMPOSE_DIR%/}/$WAR_NAME"
-  echo "Uploading $WAR_NAME (${war_bytes} bytes) via rsync to $remote_war ..."
-  run_rsync "$WAR_PATH" "$SSH_TARGET:$remote_war"
-  echo "Deploying $WAR_NAME to container $DOCKER_TOMCAT_CONTAINER ..."
+  echo "Deploying $WAR_NAME (${war_bytes} bytes) from host $remote_war to $DOCKER_TOMCAT_CONTAINER ..."
   run_ssh "bash -s" <<EOF
 set -euo pipefail
 CONTAINER='$DOCKER_TOMCAT_CONTAINER'
@@ -553,7 +770,118 @@ fi
 EOF
 }
 
+deploy_traffic_war() {
+  if ! war_selected traffic; then
+    return 0
+  fi
+  if [[ -z "${TRAFFIC_WAR_NAME:-}" ]]; then
+    return 0
+  fi
+  local war_path="$PROJECT_DIR/target/$TRAFFIC_WAR_NAME"
+  if [[ ! -f "$war_path" ]]; then
+    echo "Missing $war_path" >&2
+    exit 1
+  fi
+  local war_bytes remote_war
+  war_bytes="$(wc -c < "$war_path" | tr -d ' ')"
+  remote_war="${DOCKER_COMPOSE_DIR%/}/$TRAFFIC_WAR_NAME"
+  echo "Deploying $TRAFFIC_WAR_NAME (${war_bytes} bytes) from host $remote_war to $DOCKER_TOMCAT_CONTAINER ..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+CONTAINER='$DOCKER_TOMCAT_CONTAINER'
+CATALINA='$CATALINA_HOME'
+WAR='$TRAFFIC_WAR_NAME'
+REMOTE_WAR='$remote_war'
+EXPECTED_BYTES='$war_bytes'
+CONTEXT_DIR='${TRAFFIC_WAR_NAME%.war}'
+
+remote_bytes="\$(wc -c < "\$REMOTE_WAR" | tr -d ' ')"
+if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
+  echo "Remote traffic WAR size mismatch: expected \$EXPECTED_BYTES got \$remote_bytes" >&2
+  exit 1
+fi
+
+docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/\$CONTEXT_DIR \$CATALINA/webapps/\$WAR"
+docker cp "\$REMOTE_WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
+EOF
+}
+
+deploy_oltgateway_war() {
+  if ! war_selected oltgateway; then
+    return 0
+  fi
+  if [[ -z "${OLTGATEWAY_WAR_NAME:-}" ]]; then
+    return 0
+  fi
+  local war_path="$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME"
+  if [[ ! -f "$war_path" ]]; then
+    echo "Missing $war_path" >&2
+    exit 1
+  fi
+  local war_bytes remote_war
+  war_bytes="$(wc -c < "$war_path" | tr -d ' ')"
+  remote_war="${DOCKER_COMPOSE_DIR%/}/$OLTGATEWAY_WAR_NAME"
+  echo "Deploying $OLTGATEWAY_WAR_NAME (${war_bytes} bytes) from host $remote_war to $DOCKER_TOMCAT_CONTAINER ..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+CONTAINER='$DOCKER_TOMCAT_CONTAINER'
+CATALINA='$CATALINA_HOME'
+WAR='$OLTGATEWAY_WAR_NAME'
+REMOTE_WAR='$remote_war'
+EXPECTED_BYTES='$war_bytes'
+CONTEXT_DIR='${OLTGATEWAY_WAR_NAME%.war}'
+
+remote_bytes="\$(wc -c < "\$REMOTE_WAR" | tr -d ' ')"
+if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
+  echo "Remote oltgateway WAR size mismatch: expected \$EXPECTED_BYTES got \$remote_bytes" >&2
+  exit 1
+fi
+
+docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/\$CONTEXT_DIR \$CATALINA/webapps/\$WAR"
+docker cp "\$REMOTE_WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
+EOF
+}
+
+deploy_acs_war() {
+  if ! war_selected acs; then
+    return 0
+  fi
+  if [[ -z "${ACS_WAR_NAME:-}" ]]; then
+    return 0
+  fi
+  local war_path="$PROJECT_DIR/target/$ACS_WAR_NAME"
+  if [[ ! -f "$war_path" ]]; then
+    echo "Missing $war_path" >&2
+    exit 1
+  fi
+  local war_bytes remote_war
+  war_bytes="$(wc -c < "$war_path" | tr -d ' ')"
+  remote_war="${DOCKER_COMPOSE_DIR%/}/$ACS_WAR_NAME"
+  echo "Deploying $ACS_WAR_NAME (${war_bytes} bytes) from host $remote_war to $DOCKER_TOMCAT_CONTAINER ..."
+  run_ssh "bash -s" <<EOF
+set -euo pipefail
+CONTAINER='$DOCKER_TOMCAT_CONTAINER'
+CATALINA='$CATALINA_HOME'
+WAR='$ACS_WAR_NAME'
+REMOTE_WAR='$remote_war'
+EXPECTED_BYTES='$war_bytes'
+CONTEXT_DIR='${ACS_WAR_NAME%.war}'
+
+remote_bytes="\$(wc -c < "\$REMOTE_WAR" | tr -d ' ')"
+if [[ "\$remote_bytes" != "\$EXPECTED_BYTES" ]]; then
+  echo "Remote ACS WAR size mismatch: expected \$EXPECTED_BYTES got \$remote_bytes" >&2
+  exit 1
+fi
+
+docker exec "\$CONTAINER" sh -c "rm -rf \$CATALINA/webapps/\$CONTEXT_DIR \$CATALINA/webapps/\$WAR"
+docker cp "\$REMOTE_WAR" "\$CONTAINER:\$CATALINA/webapps/\$WAR"
+EOF
+}
+
 verify_djl_logs() {
+  if ! war_selected core; then
+    return 0
+  fi
   echo "Checking DJL startup in container logs..."
   local i
   for i in $(seq 1 12); do
@@ -569,8 +897,11 @@ verify_djl_logs() {
 }
 
 verify_http() {
+  if ! war_selected core; then
+    return 0
+  fi
   local code
-  code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080${APP_CONTEXT_PATH}/ || true")"
+  code="$(run_ssh "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${TOMCAT_HTTP_PORT}${APP_CONTEXT_PATH}/ || true")"
   echo "GET ${APP_CONTEXT_PATH}/ -> HTTP $code"
   [[ "$code" == "200" || "$code" == "302" ]]
 }
@@ -581,6 +912,16 @@ setup_djl() {
     build_war
   fi
   upload_tomcat_lib
+  if [[ "$DEPLOY_ENV" == "staging" ]]; then
+    ensure_tomcat_staging
+    upload_face_models
+    echo "Staging setup: not patching or recreating prod tomcat"
+    rebuild_tomcat_container
+    wait_for_tomcat
+    verify_djl_logs || true
+    return 0
+  fi
+  upload_face_models
   patch_remote_docker_files
   rebuild_tomcat_container
   wait_for_tomcat
@@ -751,6 +1092,12 @@ case "$MODE" in
     ensure_nginx_staging
     update_release_env
     deploy_war
+    deploy_traffic_war
+    deploy_oltgateway_war
+    deploy_acs_war
+    if [[ "$DEPLOY_ENV" == "staging" ]]; then
+      restore_host_wars
+    fi
     wait_for_app
     verify_djl_logs || true
     verify_http || true
@@ -761,12 +1108,19 @@ case "$MODE" in
     check_version_not_registered
     run_tests
     init_ssh
+    ensure_tomcat_staging
     prepare_prod_war_on_host_if_splitting
     sync_war_to_host
     ensure_war_profile_isolation
     ensure_nginx_staging
     update_release_env
     deploy_war
+    deploy_traffic_war
+    deploy_oltgateway_war
+    deploy_acs_war
+    if [[ "$DEPLOY_ENV" == "staging" ]]; then
+      restore_host_wars
+    fi
     wait_for_app
     verify_http || true
     register_deploy
@@ -777,12 +1131,20 @@ case "$MODE" in
     run_tests
     build_war
     init_ssh
+    ensure_tomcat_staging
+    upload_face_models
     prepare_prod_war_on_host_if_splitting
     sync_war_to_host
     ensure_war_profile_isolation
     ensure_nginx_staging
     update_release_env
     deploy_war
+    deploy_traffic_war
+    deploy_oltgateway_war
+    deploy_acs_war
+    if [[ "$DEPLOY_ENV" == "staging" ]]; then
+      restore_host_wars
+    fi
     wait_for_app
     verify_http || true
     register_deploy

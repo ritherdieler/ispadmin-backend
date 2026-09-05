@@ -12,7 +12,6 @@ import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficDailyRepositor
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficHourlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficMonthlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -22,7 +21,6 @@ import java.time.format.DateTimeFormatter
 
 @Service
 open class SubscriptionTrafficQueryService(
-    private val subscriptionRepository: SubscriptionRepository,
     private val sampleRepository: SubscriptionTrafficSampleRepository,
     private val hourlyRepository: SubscriptionTrafficHourlyRepository,
     private val dailyRepository: SubscriptionTrafficDailyRepository,
@@ -38,8 +36,7 @@ open class SubscriptionTrafficQueryService(
         granularity: String,
         from: LocalDateTime?,
         to: LocalDateTime?
-    ): SubscriptionTrafficSeriesDto? {
-        if (!subscriptionRepository.existsById(subscriptionId)) return null
+    ): SubscriptionTrafficSeriesDto {
         val normalized = granularity.lowercase()
         val rangeTo = to ?: LocalDateTime.now()
         val rangeFrom = from ?: defaultFrom(normalized, rangeTo)
@@ -95,23 +92,57 @@ open class SubscriptionTrafficQueryService(
     }
 
     @Transactional(readOnly = true)
-    open fun getLatest(subscriptionId: Int): SubscriptionTrafficLatestDto? {
-        if (!subscriptionRepository.existsById(subscriptionId)) return null
-        val latest = sampleRepository.findTopBySubscriptionIdOrderByBucketStartDesc(subscriptionId)
-        return SubscriptionTrafficLatestDto(
-            subscriptionId = subscriptionId,
-            bucketStart = latest?.bucketStart?.toString(),
-            rxBytes = latest?.rxBytesDelta,
-            txBytes = latest?.txBytesDelta,
-            avgMbpsDown = latest?.avgMbpsDown,
-            avgMbpsUp = latest?.avgMbpsUp,
-            polledAt = latest?.bucketStart?.toString()
+    open fun getSeriesByIp(
+        clientIp: String,
+        granularity: String,
+        from: LocalDateTime?,
+        to: LocalDateTime?
+    ): SubscriptionTrafficSeriesDto {
+        val normalized = granularity.lowercase()
+        val rangeTo = to ?: LocalDateTime.now()
+        val rangeFrom = from ?: defaultFrom(normalized, rangeTo)
+        val points = when (normalized) {
+            "sample" -> sampleRepository
+                .findByClientIpAndBucketStartBetweenOrderByBucketStartAsc(clientIp, rangeFrom, rangeTo)
+                .filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }
+                .takeLast(MAX_POINTS)
+                .map {
+                    SubscriptionTrafficPointDto(
+                        bucketStart = it.bucketStart.toString(),
+                        rxBytes = it.rxBytesDelta ?: 0,
+                        txBytes = it.txBytesDelta ?: 0,
+                        avgMbpsDown = it.avgMbpsDown ?: 0.0,
+                        avgMbpsUp = it.avgMbpsUp ?: 0.0
+                    )
+                }
+            else -> emptyList()
+        }
+        val labeled = sampleRepository.findTopByClientIpOrderByBucketStartDesc(clientIp)?.subscriptionId ?: 0
+        return SubscriptionTrafficSeriesDto(
+            subscriptionId = labeled,
+            granularity = normalized,
+            points = points,
+            clientIp = clientIp,
         )
     }
 
     @Transactional(readOnly = true)
-    open fun getSummary(subscriptionId: Int, month: String?): SubscriptionTrafficSummaryDto? {
-        if (!subscriptionRepository.existsById(subscriptionId)) return null
+    open fun getLatest(subscriptionId: Int): SubscriptionTrafficLatestDto {
+        val latest = sampleRepository.findTopBySubscriptionIdOrderByBucketStartDesc(subscriptionId)
+        return toLatestDto(subscriptionId, latest)
+    }
+
+    @Transactional(readOnly = true)
+    open fun getLatestByIp(clientIp: String): SubscriptionTrafficLatestDto {
+        val latest = sampleRepository.findTopByClientIpOrderByBucketStartDesc(clientIp)
+        return toLatestDto(latest?.subscriptionId ?: 0, latest).copy(
+            clientIp = clientIp,
+            ip = latest?.clientIp ?: clientIp,
+        )
+    }
+
+    @Transactional(readOnly = true)
+    open fun getSummary(subscriptionId: Int, month: String?): SubscriptionTrafficSummaryDto {
         val yearMonth = month?.let { YearMonth.parse(it) } ?: YearMonth.now()
         val label = yearMonth.format(DateTimeFormatter.ofPattern("yyyy-MM"))
         val monthly = monthlyRepository.findBySubscriptionIdAndYearMonth(subscriptionId, label)
@@ -137,7 +168,21 @@ open class SubscriptionTrafficQueryService(
             from,
             to.minusDays(1)
         )
-        if (dailyRows.isEmpty()) return null
+        if (dailyRows.isEmpty()) {
+            return SubscriptionTrafficSummaryDto(
+                subscriptionId = subscriptionId,
+                yearMonth = label,
+                rxBytesTotal = 0,
+                txBytesTotal = 0,
+                rxGbTotal = 0.0,
+                txGbTotal = 0.0,
+                maxMbpsDown = 0.0,
+                maxMbpsUp = 0.0,
+                p95MbpsDown = 0.0,
+                p95MbpsUp = 0.0,
+                activeDays = 0,
+            )
+        }
         val rxTotal = dailyRows.sumOf { it.rxBytesTotal }
         val txTotal = dailyRows.sumOf { it.txBytesTotal }
         return SubscriptionTrafficSummaryDto(
@@ -156,14 +201,12 @@ open class SubscriptionTrafficQueryService(
     }
 
     @Transactional(readOnly = true)
-    open fun getToday(subscriptionId: Int): SubscriptionTrafficDayDto? {
-        if (!subscriptionRepository.existsById(subscriptionId)) return null
+    open fun getToday(subscriptionId: Int): SubscriptionTrafficDayDto {
         return buildDayView(subscriptionId, LocalDate.now())
     }
 
     @Transactional(readOnly = true)
-    open fun getDay(subscriptionId: Int, date: LocalDate): SubscriptionTrafficDayDto? {
-        if (!subscriptionRepository.existsById(subscriptionId)) return null
+    open fun getDay(subscriptionId: Int, date: LocalDate): SubscriptionTrafficDayDto {
         return buildDayView(subscriptionId, date)
     }
 
@@ -220,6 +263,26 @@ open class SubscriptionTrafficQueryService(
             else -> hour
         }
         return "$display:00 $suffix"
+    }
+
+    private fun toLatestDto(subscriptionId: Int, latest: SubscriptionTrafficSample?): SubscriptionTrafficLatestDto {
+        val ip = latest?.clientIp?.takeIf { it.isNotBlank() }
+        return SubscriptionTrafficLatestDto(
+            subscriptionId = subscriptionId,
+            bucketStart = latest?.bucketStart?.toString(),
+            rxBytes = latest?.rxBytesDelta,
+            txBytes = latest?.txBytesDelta,
+            avgMbpsDown = latest?.avgMbpsDown,
+            avgMbpsUp = latest?.avgMbpsUp,
+            polledAt = latest?.bucketStart?.toString(),
+            ip = ip,
+            clientIp = ip,
+            sampleStatus = latest?.sampleStatus?.name,
+            hostDeviceId = latest?.hostDeviceId,
+            collectedAt = latest?.collectedAt?.toString(),
+            queueId = latest?.queueId,
+            id = latest?.id,
+        )
     }
 
     private fun defaultFrom(granularity: String, to: LocalDateTime): LocalDateTime = when (granularity) {

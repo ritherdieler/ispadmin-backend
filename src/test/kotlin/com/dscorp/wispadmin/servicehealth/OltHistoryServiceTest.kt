@@ -67,6 +67,35 @@ class OltHistoryServiceTest {
     }
 
     @Test
+    fun `looks up onu by board port index when olt inventory page omits it`() {
+        every { onuProvider.ifAvailable } returns onuPort
+        every { onuPort.findByOlt(2L) } returns listOf(
+            HealthOnuRef(1L, "HWTC0000D424", "other", 2L, "gigafiber-ma5608t", 1, 6, 1),
+        )
+        every { onuPort.findByOltBoardPortOnu(2L, 1, 6, 10) } returns HealthOnuRef(
+            7952L, "VSOL0031C0B6", "gigafiber-ma5608t_1_6_10", 2L, "gigafiber-ma5608t", 1, 6, 10,
+        )
+        every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2360
+        every { scope.collects(2360) } returns true
+        every { runs.save(any()) } answers { firstArg<TelemetryRun>().also { if (it.id == null) it.id = 1L } }
+        val saved = slot<OpticalSample>()
+        every { optical.save(capture(saved)) } answers { firstArg() }
+
+        service.onOptical(
+            HealthOpticalObservation(
+                oltId = 2L,
+                observedAt = now,
+                rows = listOf(HealthOpticalRow(1, 6, 10, -19.46, 32.8, -24.21, 50.0, null, 420)),
+            ),
+        )
+
+        assertEquals(2360, saved.captured.subscriptionId)
+        assertEquals(7952L, saved.captured.onuId)
+        assertEquals(-19.46, saved.captured.onuRxDbm)
+        verify(exactly = 1) { onuPort.findByOltBoardPortOnu(2L, 1, 6, 10) }
+    }
+
+    @Test
     fun `staging skips non-lab subscription even if identity resolves`() {
         every { onuProvider.ifAvailable } returns onuPort
         every { onuPort.findByOlt(2L) } returns listOf(

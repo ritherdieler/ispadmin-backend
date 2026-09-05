@@ -14,13 +14,12 @@ import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
-import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069PostInstallProvisioner
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import org.slf4j.LoggerFactory
-import org.springframework.context.annotation.Lazy
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -33,8 +32,8 @@ class SubscriptionProvisionService(
     private val placeRepository: PlaceRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
     private val errorLogRepository: ErrorLogRepository,
-    private val genieAcsProperties: GenieAcsProperties,
-    @Lazy private val tr069AsyncApplicator: Tr069AsyncApplicator,
+    private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
+    @Value("\${olt.gateway.client-enabled:false}") private val cpeEnabled: Boolean = false,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
 
@@ -49,7 +48,7 @@ class SubscriptionProvisionService(
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
                 subscription.oltProvisionStatus = OltProvisionStatus.PENDING
                 subscription.tr069ProvisionStatus =
-                    if (genieAcsProperties.enabled) Tr069ProvisionStatus.PENDING
+                    if (cpeProvisionEnabled()) Tr069ProvisionStatus.PENDING
                     else Tr069ProvisionStatus.NA
             }
             InstallationType.ONLY_TV_FIBER -> {
@@ -58,7 +57,7 @@ class SubscriptionProvisionService(
                 subscription.oltProvisionStatus =
                     if (hasOnu) OltProvisionStatus.PENDING else OltProvisionStatus.NA
                 subscription.tr069ProvisionStatus = when {
-                    hasOnu && genieAcsProperties.enabled -> Tr069ProvisionStatus.PENDING
+                    hasOnu && cpeProvisionEnabled() -> Tr069ProvisionStatus.PENDING
                     else -> Tr069ProvisionStatus.NA
                 }
             }
@@ -81,17 +80,21 @@ class SubscriptionProvisionService(
                 subscription.mikrotikProvisionStatus =
                     if (result.queueAdded) MikrotikProvisionStatus.COMPLETE
                     else MikrotikProvisionStatus.PENDING
-                subscription.oltProvisionStatus =
-                    if (result.onuAuthorized) OltProvisionStatus.COMPLETE
-                    else OltProvisionStatus.PENDING
+                subscription.oltProvisionStatus = mapOltStatus(result)
+                mapCpeStatus(subscription, result.cpeStatus)
+                result.uniqueExternalId?.let { id ->
+                    subscription.fiberOnu?.uniqueExternalId = id
+                }
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
                 val hasOnu = !subscription.fiberOnuSn.isNullOrBlank() || result.onuSn != null
                 if (hasOnu) {
-                    subscription.oltProvisionStatus =
-                        if (result.onuAuthorized) OltProvisionStatus.COMPLETE
-                        else OltProvisionStatus.PENDING
+                    subscription.oltProvisionStatus = mapOltStatus(result)
+                    mapCpeStatus(subscription, result.cpeStatus)
+                    result.uniqueExternalId?.let { id ->
+                        subscription.fiberOnu?.uniqueExternalId = id
+                    }
                 } else {
                     subscription.oltProvisionStatus = OltProvisionStatus.NA
                     subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
@@ -193,22 +196,59 @@ class SubscriptionProvisionService(
         return subscription
     }
 
+    private fun cpeProvisionEnabled(): Boolean =
+        gatewayActivation.ifAvailable != null || cpeEnabled
+
+    private fun mapOltStatus(result: InstallationResult): OltProvisionStatus = when {
+        result.onuAuthorized -> OltProvisionStatus.COMPLETE
+        !result.oltError.isNullOrBlank() -> OltProvisionStatus.FAILED
+        else -> OltProvisionStatus.PENDING
+    }
+
+    private fun mapCpeStatus(subscription: Subscription, raw: String?) {
+        val mapped = when (raw?.uppercase()) {
+            "COMPLETE" -> Tr069ProvisionStatus.COMPLETE
+            "PENDING" -> Tr069ProvisionStatus.PENDING
+            "FAILED" -> Tr069ProvisionStatus.FAILED
+            "NA" -> Tr069ProvisionStatus.NA
+            else -> null
+        } ?: return
+        subscription.tr069ProvisionStatus = mapped
+    }
+
     private fun maybeRetryTr069(subscription: Subscription, request: SubscriptionRequest) {
-        if (!genieAcsProperties.enabled) return
         if (!isTr069Eligible(subscription)) return
         if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) return
         if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING) return
-        val id = subscription.id ?: return
+        pullTr069FromGateway(subscription)
+    }
+
+    @Transactional
+    fun refreshTr069FromGateway(subscription: Subscription): Subscription {
+        if (!isTr069Eligible(subscription)) return subscription
+        if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) return subscription
+        if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING &&
+            subscription.tr069ProvisionStatus != Tr069ProvisionStatus.FAILED
+        ) {
+            return subscription
+        }
+        val before = subscription.tr069ProvisionStatus
+        pullTr069FromGateway(subscription)
+        if (subscription.tr069ProvisionStatus != before) {
+            repository.save(subscription)
+        }
+        return subscription
+    }
+
+    private fun pullTr069FromGateway(subscription: Subscription) {
+        val sn = subscription.fiberOnu?.sn ?: return
+        val gateway = gatewayActivation.ifAvailable ?: return
         try {
-            val dto = subscription.toDto()
-            tr069AsyncApplicator.applyExclusive(dto, request)
-            repository.findById(id).ifPresent { refreshed ->
-                subscription.tr069ProvisionStatus = refreshed.tr069ProvisionStatus
-                subscription.tr069LastError = refreshed.tr069LastError
-                subscription.tr069DeviceId = refreshed.tr069DeviceId
-            }
+            val status = gateway.activationBySn(sn)
+            mapCpeStatus(subscription, status.cpeStatus)
+            status.message?.let { subscription.tr069LastError = it.take(500) }
         } catch (ex: Exception) {
-            logger.warn("Fallo reintento TR-069 para suscripción $id", ex)
+            logger.warn("Fallo consulta estado CPE para suscripción ${subscription.id}", ex)
             persistProvisionError(ex)
         }
     }
@@ -281,18 +321,27 @@ class SubscriptionProvisionService(
             )
         }
 
-        val status = subscription.tr069ProvisionStatus
-        if (status == Tr069ProvisionStatus.COMPLETE) {
+        val current = subscription.tr069ProvisionStatus
+        if (current == Tr069ProvisionStatus.COMPLETE) {
             return subscription.toDto()
         }
-        if (status != Tr069ProvisionStatus.MANUAL_REQUIRED && status != Tr069ProvisionStatus.PENDING) {
+        if (current != Tr069ProvisionStatus.MANUAL_REQUIRED &&
+            current != Tr069ProvisionStatus.PENDING &&
+            current != Tr069ProvisionStatus.FAILED
+        ) {
             throw IllegalStateException(
-                "TR-069 no admite reintento en estado ${status ?: "null"}"
+                "TR-069 no admite reintento en estado ${current ?: "null"}"
             )
         }
 
-        val request = buildRequestFromSubscription(subscription)
-        return tr069AsyncApplicator.applyExclusive(subscription.toDto(), request)
+        val sn = subscription.fiberOnu?.sn ?: throw IllegalStateException("ONU sin serial")
+        val gateway = gatewayActivation.ifAvailable
+            ?: throw IllegalStateException("Gateway ONU no disponible")
+        val activation = gateway.activationBySn(sn)
+        mapCpeStatus(subscription, activation.cpeStatus)
+        activation.message?.let { subscription.tr069LastError = it.take(500) }
+        repository.save(subscription)
+        return subscription.toDto()
     }
 
     private fun isTr069Eligible(subscription: Subscription): Boolean {

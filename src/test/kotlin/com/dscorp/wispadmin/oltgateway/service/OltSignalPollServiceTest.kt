@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class OltSignalPollServiceTest {
 
     private val publisher = mockk<org.springframework.context.ApplicationEventPublisher>(relaxed=true)
+    private val platformBus = com.dscorp.wispadmin.events.RecordingEventBus()
     private val cliBus = mockk<OltCliBus>()
     private val snmpClient = mockk<OltSnmpClient>()
     private val oltRepository = mockk<OltMgrOltRepository>()
@@ -93,8 +94,10 @@ class OltSignalPollServiceTest {
             properties = properties,
             cliBus = cliBus,
             snmpClient = snmpClient,
-            eventPublisher = publisher
+            eventPublisher = publisher,
+            eventBus = platformBus,
         )
+        platformBus.published.clear()
         every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
         every { taskRepository.existsByStatus("running") } returns false
         every { statusRepository.save(any()) } answers { firstArg() }
@@ -197,6 +200,8 @@ class OltSignalPollServiceTest {
         assertEquals(0, BigDecimal("-20.00").compareTo(status.onuRxDbm))
         verify(exactly = 0) { statusRepository.findById(any()) }
         verify { statusRepository.saveAll(match<Iterable<OltMgrOnuStatusCurrent>> { it.single() === status }) }
+        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL && it.sn == "SNOPT001" })
+        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE && it.sn == "SNOPT001" })
     }
 
     @Test

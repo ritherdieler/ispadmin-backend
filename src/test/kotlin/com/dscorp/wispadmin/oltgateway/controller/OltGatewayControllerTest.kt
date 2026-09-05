@@ -8,7 +8,6 @@ import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.HealthResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollStatusDto
-import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayExceptionHandler
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
@@ -33,12 +32,13 @@ class OltGatewayControllerTest {
     private val queryFacade = mockk<OltGatewayQueryFacade>()
     private val inventorySyncService = mockk<OltInventorySyncService>()
     private val signalPollService = mockk<OltSignalPollService>()
-    private val syncJobRunner = mockk<com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner>()
     private val smartOltImportService = mockk<com.dscorp.wispadmin.oltgateway.service.SmartOltImportService>()
     private val properties = com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties()
     private val trapBuffer = com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer(10)
-    private val externalIdBackfillService =
-        mockk<com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService>()
+    private val healthOnuQuery = mockk<com.dscorp.wispadmin.oltgateway.service.OltHealthOnuQueryService>()
+    private val netDiagInventory = mockk<com.dscorp.wispadmin.oltgateway.service.OltNetDiagInventoryQueryService>()
+    private val alarmCli = mockk<com.dscorp.wispadmin.oltgateway.service.OltAlarmCliService>()
+    private val labOptical = mockk<com.dscorp.wispadmin.oltgateway.service.LabOpticalSshPollService>()
 
     private val mockMvc: MockMvc = MockMvcBuilders
         .standaloneSetup(
@@ -46,11 +46,13 @@ class OltGatewayControllerTest {
                 queryFacade,
                 inventorySyncService,
                 signalPollService,
-                syncJobRunner,
                 smartOltImportService,
                 properties,
                 trapBuffer,
-                externalIdBackfillService
+                healthOnuQuery,
+                netDiagInventory,
+                alarmCli,
+                labOptical
             )
         )
         .setControllerAdvice(OltGatewayExceptionHandler())
@@ -119,75 +121,60 @@ class OltGatewayControllerTest {
     }
 
     @Test
-    fun `admin sync inventory encola el trabajo y responde su estado`() {
-        every { syncJobRunner.startInventory() } returns SyncJobStatusDto(
-            job = "inventory",
-            started = true,
-            running = true,
-            lastStartedAt = "2026-07-17T12:00:00Z"
+    fun `admin sync inventory dispara sync y retorna SyncResult`() {
+        every { inventorySyncService.syncInventory() } returns SyncResult(
+            inserted = 2,
+            updated = 1,
+            softDeleted = 0,
+            unchanged = 3,
+            durationMs = 120
         )
 
         mockMvc.perform(post("/api/olt-gateway/admin/sync/inventory"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.job").value("inventory"))
-            .andExpect(jsonPath("$.started").value(true))
-            .andExpect(jsonPath("$.running").value(true))
+            .andExpect(jsonPath("$.inserted").value(2))
+            .andExpect(jsonPath("$.updated").value(1))
+            .andExpect(jsonPath("$.unchanged").value(3))
+            .andExpect(jsonPath("$.durationMs").value(120))
 
-        verify(exactly = 1) { syncJobRunner.startInventory() }
-        verify(exactly = 0) { inventorySyncService.syncInventory() }
+        verify(exactly = 1) { inventorySyncService.syncInventory() }
     }
 
     @Test
-    fun `admin sync snmp-inventory encola el trabajo snmp`() {
-        every { syncJobRunner.startSnmpInventory() } returns SyncJobStatusDto(
-            job = "snmp-inventory",
-            started = true,
-            running = true
+    fun `admin sync snmp-inventory dispara syncInventoryFromSnmp`() {
+        every { inventorySyncService.syncInventoryFromSnmp() } returns SyncResult(
+            inserted = 5,
+            updated = 0,
+            softDeleted = 0,
+            unchanged = 10,
+            durationMs = 40
         )
 
         mockMvc.perform(post("/api/olt-gateway/admin/sync/snmp-inventory"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.job").value("snmp-inventory"))
-            .andExpect(jsonPath("$.started").value(true))
+            .andExpect(jsonPath("$.inserted").value(5))
+            .andExpect(jsonPath("$.unchanged").value(10))
 
-        verify(exactly = 1) { syncJobRunner.startSnmpInventory() }
-        verify(exactly = 0) { inventorySyncService.syncInventoryFromSnmp() }
+        verify(exactly = 1) { inventorySyncService.syncInventoryFromSnmp() }
     }
 
     @Test
-    fun `admin sync signal informa si ya hay un ciclo corriendo`() {
-        every { syncJobRunner.startSignal() } returns SyncJobStatusDto(
-            job = "signal",
-            started = false,
-            running = true,
-            skippedReason = "already_running"
+    fun `admin sync signal dispara poll y retorna SignalPollResult`() {
+        every { signalPollService.pollSignals() } returns SignalPollResult(
+            slotsPolled = 2,
+            portsPolled = 32,
+            onusUpdated = 100,
+            durationMs = 450
         )
 
         mockMvc.perform(post("/api/olt-gateway/admin/sync/signal"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.job").value("signal"))
-            .andExpect(jsonPath("$.started").value(false))
-            .andExpect(jsonPath("$.skippedReason").value("already_running"))
+            .andExpect(jsonPath("$.slotsPolled").value(2))
+            .andExpect(jsonPath("$.portsPolled").value(32))
+            .andExpect(jsonPath("$.onusUpdated").value(100))
+            .andExpect(jsonPath("$.durationMs").value(450))
 
-        verify(exactly = 0) { signalPollService.pollSignals() }
-    }
-
-    @Test
-    fun `admin external-id-backfill retorna el resumen de reescrituras`() {
-        every { externalIdBackfillService.backfill() } returns
-            com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillResult(
-                scanned = 813,
-                rewritten = 800,
-                collisions = 1
-            )
-
-        mockMvc.perform(post("/api/olt-gateway/admin/onus/external-id-backfill"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.scanned").value(813))
-            .andExpect(jsonPath("$.rewritten").value(800))
-            .andExpect(jsonPath("$.collisions").value(1))
-
-        verify(exactly = 1) { externalIdBackfillService.backfill() }
+        verify(exactly = 1) { signalPollService.pollSignals() }
     }
 
     @Test

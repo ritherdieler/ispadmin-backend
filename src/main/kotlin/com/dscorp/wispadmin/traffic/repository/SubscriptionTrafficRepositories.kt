@@ -33,6 +33,16 @@ interface SubscriptionTrafficSampleRepository : JpaRepository<SubscriptionTraffi
 
     fun findBySubscriptionIdAndBucketStart(subscriptionId: Int, bucketStart: LocalDateTime): SubscriptionTrafficSample?
 
+    fun findByClientIpAndBucketStart(clientIp: String, bucketStart: LocalDateTime): SubscriptionTrafficSample?
+
+    fun findTopByClientIpOrderByBucketStartDesc(clientIp: String): SubscriptionTrafficSample?
+
+    fun findByClientIpAndBucketStartBetweenOrderByBucketStartAsc(
+        clientIp: String,
+        from: LocalDateTime,
+        to: LocalDateTime
+    ): List<SubscriptionTrafficSample>
+
     fun deleteBySubscriptionId(subscriptionId: Int): Long
 
     @Query(

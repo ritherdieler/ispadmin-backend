@@ -77,6 +77,7 @@ class OltGatewayCommandService(
     fun move(request: MoveCliRequest) {
         ensureWritesEnabled()
         inWriteJob {
+            runCommand("undo service-port port 0/${request.fromBoard}/${request.fromPort} ont ${request.fromOntId}")
             runCommand("interface gpon 0/${request.fromBoard}")
             runCommand("ont delete ${request.fromPort} ${request.fromOntId}")
             runCommand("quit")
@@ -97,9 +98,11 @@ class OltGatewayCommandService(
     fun delete(request: DeleteCliRequest) {
         ensureWritesEnabled()
         inWriteJob {
-            runCommand("interface gpon 0/${request.board}")
-            runCommand("ont delete ${request.port} ${request.ontId}")
-            runCommand("quit")
+            runChecked("undo service-port port 0/${request.board}/${request.port} ont ${request.ontId}")
+            runChecked("interface gpon 0/${request.board}")
+            val deleted = runChecked("ont delete ${request.port} ${request.ontId}")
+            requireCliOk(deleted, "ont delete ${request.port} ${request.ontId}")
+            runChecked("quit")
         }
     }
 
@@ -110,6 +113,31 @@ class OltGatewayCommandService(
             runCommand("ont reboot ${request.port} ${request.ontId}")
             runCommand("quit")
         }
+    }
+
+    private fun runChecked(command: String): String {
+        val output = runCommand(command)
+        if (looksLikeCliFailure(output) && !command.startsWith("undo service-port")) {
+            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(300)}")
+        }
+        return output
+    }
+
+    private fun requireCliOk(output: String, command: String) {
+        if (looksLikeCliFailure(output)) {
+            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(400)}")
+        }
+        val confirmed = output.contains(Regex("(?i)success:\\s*[1-9]\\d*")) ||
+            output.contains(Regex("(?i)Number of ONTs that can be deleted:\\s*[1-9]\\d*"))
+        if (!confirmed) {
+            throw IllegalStateException("OLT CLI did not confirm delete for '$command': ${output.takeLast(400)}")
+        }
+    }
+
+    private fun looksLikeCliFailure(output: String): Boolean {
+        return output.contains(Regex("(?i)Failure:")) ||
+            output.contains(Regex("(?i)Parameter error")) ||
+            output.contains(Regex("(?i)Error:"))
     }
 
     private fun ensureWritesEnabled() {

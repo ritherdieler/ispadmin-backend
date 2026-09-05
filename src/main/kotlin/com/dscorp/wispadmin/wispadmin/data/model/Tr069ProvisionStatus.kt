@@ -4,5 +4,6 @@ enum class Tr069ProvisionStatus {
     NA,
     PENDING,
     COMPLETE,
-    MANUAL_REQUIRED
+    MANUAL_REQUIRED,
+    FAILED
 }

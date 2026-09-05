@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
 @ComponentScan(
     basePackages = [
         "com.dscorp.wispadmin.wispadmin",
+        "com.dscorp.wispadmin.events",
         "com.dscorp.wispadmin.observability",
         "com.dscorp.wispadmin.oltgateway",
         "com.dscorp.wispadmin.routeros",
@@ -32,7 +33,12 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
     excludeFilters = [
         ComponentScan.Filter(type = FilterType.CUSTOM, classes = [TypeExcludeFilter::class]),
         ComponentScan.Filter(type = FilterType.CUSTOM, classes = [AutoConfigurationExcludeFilter::class]),
-        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [SubsystemScanFilter::class])
+        ComponentScan.Filter(type = FilterType.CUSTOM, classes = [SubsystemScanFilter::class]),
+        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.traffic\\.TrafficApplication"]),
+        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.oltgateway\\.OltGatewayApplication"]),
+        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.acs\\..*"]),
+        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.wispadmin\\.service\\.genieacs\\..*"]),
+        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.wispadmin\\.controller\\.Tr069ModelProfileController"]),
     ]
 )
 @SubsystemEntityScan

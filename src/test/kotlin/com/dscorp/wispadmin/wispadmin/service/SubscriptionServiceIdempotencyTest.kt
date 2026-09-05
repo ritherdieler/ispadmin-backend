@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.ApplicationEventPublisher
 import java.util.Optional
 
@@ -51,10 +52,10 @@ class SubscriptionServiceIdempotencyTest {
             placeRepository = placeRepository,
             installationStrategyFactory = installationStrategyFactory,
             errorLogRepository = errorLogRepository,
-            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
-                enabled = false
+            gatewayActivation = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient>>().also {
+                every { it.ifAvailable } returns null
             },
-            tr069AsyncApplicator = mockk(relaxed = true),
+            cpeEnabled = false,
         )
     }
 
@@ -195,7 +196,7 @@ class SubscriptionServiceIdempotencyTest {
             result.mikrotikProvisionStatus
         )
         assertEquals(
-            com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.PENDING,
+            com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus.FAILED,
             result.oltProvisionStatus
         )
         assertEquals(

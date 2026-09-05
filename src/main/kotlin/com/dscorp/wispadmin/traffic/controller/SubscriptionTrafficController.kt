@@ -45,7 +45,6 @@ class SubscriptionTrafficController(
         @RequestParam(required = false) month: String?
     ): SubscriptionTrafficSummaryDto {
         return queryService.getSummary(id, month)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Subscription or traffic summary not found")
     }
 
     @GetMapping("/{id}/traffic/today")

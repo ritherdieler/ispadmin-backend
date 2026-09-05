@@ -18,8 +18,10 @@ class ServiceHealthProperties {
     // Empty pilot list collects every non-lab subscription. Non-empty list restricts prod rollout.
     var pilotAcsDeviceIds: List<String> = emptyList()
     var pilotSubscriptionIds: Set<Int> = emptySet()
+    var labSubscriptionIds: Set<Int> = emptySet()
     var stationHmacKey = ""
     var periodicInformSeconds = 3600L
+    var snapshotFreshSeconds = 60L
     var opticalFreshSeconds = 2400L
     var stateFreshSeconds = 1200L
     var opticalDegradationDb = 3.0

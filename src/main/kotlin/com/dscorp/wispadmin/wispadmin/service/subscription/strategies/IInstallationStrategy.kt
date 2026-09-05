@@ -23,6 +23,8 @@ data class InstallationResult(
     val queueAdded: Boolean,
     val onuAuthorized: Boolean = false,
     val onuSn: String? = null,
+    val uniqueExternalId: String? = null,
+    val cpeStatus: String? = null,
     val mikrotikError: String? = null,
     val oltError: String? = null
 )

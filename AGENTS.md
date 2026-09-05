@@ -8,6 +8,36 @@ Workflows opcionales: `.cursor/skills/` (feature, TDD, endpoint, review) y `Skil
 
 No apliques skills de Jetpack Compose / R8 / Navigation 3 al backend. Esos docs en `Skills/` y `.skills/mobile-best-practices` son referencia para la app **IpsAdmin**, no para este código.
 
+## Pruebas: camino más corto (obligatorio)
+
+Antes de **deploy staging/prod** o de un e2e largo, elige el camino **más corto** que demuestre el comportamiento. Deploy no es el primer escalón de verificación.
+
+### Orden por defecto
+
+1. **Unit / TDD** del servicio o parser tocado.
+2. **Smoke local** si la dependencia es alcanzable desde la Mac (p. ej. OLT `10.11.104.2` por SSH/VPN): live test `@Tag("live")`, script o el mismo stack CLI/HTTP en local.
+3. **Staging / e2e** solo cuando el bug o la feature **depende** del WAR desplegado, overlay, Redis en VPS, Tomcat multi-WAR, o del flujo Android↔Core completo.
+
+### Anti-patrón
+
+Desplegar staging “para probar” un cambio que solo habla con la OLT (authorize/delete/CLI) cuando desde local ya se puede llamar al mismo `OltGatewayCommandService` / SSH. Eso **pierde tiempo** (build + upload + restart) sin ganar señal.
+
+Ejemplo correcto: `OLT_WRITE_LIVE=true ./mvnw -Dtest=OltGatewayDeleteLiveSmokeTest test` antes de cualquier `deploy.sh --env staging`.
+
+Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
+
+## Desacople de subsistemas (obligatorio)
+
+El **core** y todos los subsistemas (OLT Gateway, NetDiag, traffic, service-health, observability, CRM WhatsApp, …) deben permanecer **lo más desacoplados posible**.
+
+Todos los **clientes externos** (backoffice, app Android, scripts operativos, integraciones cliente de UI) deben hablar **solo con el core**. El core es la **fachada pública** y el **orquestador** de todos los subsistemas.
+
+Entre core ↔ subsistemas y entre subsistemas se conectan por **REST/HTTP JSON**, **WebSocket** (incl. STOMP donde ya exista) o **Redis Streams interno** (`gigafiber.events`, no expuesto a clientes). Detalle: `.agent-docs/subsistemas-desacople-transporte.md`.
+
+No exponer a clientes externos endpoints, sockets o contratos de un subsistema por conveniencia. Si un cliente necesita datos o acciones de un subsistema, debe consumirlos a través del core.
+
+Prohibido reacoplar por JDBC cruzado, inyección de facades/repos de otro paquete/WAR o imports de dominio ajeno. Detalle y vocabulario (core ≠ CRM): `.agent-docs/subsistemas-desacople-transporte.md`.
+
 ## Documentación obligatoria de comandos OLT
 
 Cada vez que **ejecutes, implementes, pruebes o depures** un comando **nuevo** hacia la OLT (SSH CLI) o un endpoint del OLT Gateway (HTTP), documéntalo **en el mismo turno**, antes de cerrar la tarea.

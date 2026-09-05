@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.config
 
+import com.dscorp.wispadmin.events.EventBusPort
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrAuditLogRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuAutofindRepository
@@ -291,6 +292,40 @@ class OltGatewayConfig {
     }
 
     @Bean
+    fun acsCpeClient(
+        properties: OltGatewayProperties,
+        objectMapper: ObjectMapper,
+    ): com.dscorp.wispadmin.oltgateway.client.AcsCpeClient {
+        return if (properties.acs.enabled && properties.acs.internalBaseUrl.isNotBlank()) {
+            com.dscorp.wispadmin.oltgateway.client.HttpAcsCpeClient(
+                properties,
+                org.springframework.web.client.RestTemplate(
+                    org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
+                        setConnectTimeout(3_000)
+                        setReadTimeout(120_000)
+                    }
+                ),
+                objectMapper,
+            )
+        } else {
+            com.dscorp.wispadmin.oltgateway.client.NoOpAcsCpeClient()
+        }
+    }
+
+    @Bean
+    fun onuActivationService(
+        oltManagerFacade: OltManagerFacade,
+        acsCpeClient: com.dscorp.wispadmin.oltgateway.client.AcsCpeClient,
+        eventBus: EventBusPort,
+    ): com.dscorp.wispadmin.oltgateway.service.OnuActivationService {
+        return com.dscorp.wispadmin.oltgateway.service.OnuActivationService(
+            oltManagerFacade,
+            acsCpeClient,
+            eventBus,
+        )
+    }
+
+    @Bean
     @ConditionalOnProperty(prefix = "olt.gateway.snmp", name = ["enabled"], havingValue = "true")
     fun oltSnmpBusRegistry(properties: OltGatewayProperties): OltSnmpBusRegistry {
         return OltSnmpBusRegistry(acquireTimeoutMs = properties.snmp.acquireTimeoutMs)
@@ -378,7 +413,8 @@ class OltGatewayConfig {
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
         snmpClient: ObjectProvider<OltSnmpClient>,
-        eventPublisher: org.springframework.context.ApplicationEventPublisher
+        eventPublisher: org.springframework.context.ApplicationEventPublisher,
+        eventBus: EventBusPort,
     ): OltSignalPollService {
         return OltSignalPollService(
             oltRepository = oltRepository,
@@ -391,7 +427,8 @@ class OltGatewayConfig {
             properties = properties,
             cliBus = cliBus.ifAvailable,
             snmpClient = snmpClient.ifAvailable,
-            eventPublisher = eventPublisher
+            eventPublisher = eventPublisher,
+            eventBus = eventBus,
         )
     }
 

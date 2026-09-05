@@ -32,6 +32,7 @@ class PlatformAuthFilter(
         if (path.startsWith("/observability") || path.contains("/observability/")) return true
         if (path.startsWith("/api/olt-gateway") || path.contains("/api/olt-gateway/")) return true
         if (path.startsWith("/api/netdiag") || path.contains("/api/netdiag/")) return true
+        if (path.startsWith("/internal/traffic") || path.contains("/internal/traffic/")) return true
         if (path.contains("/ws")) return true
         return isPublicPath(path)
     }

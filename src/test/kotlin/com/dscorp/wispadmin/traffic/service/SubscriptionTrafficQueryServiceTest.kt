@@ -6,7 +6,6 @@ import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficDailyRepositor
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficHourlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficMonthlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -16,14 +15,12 @@ import java.time.LocalDateTime
 
 class SubscriptionTrafficQueryServiceTest {
 
-    private val subscriptionRepository = mockk<SubscriptionRepository>()
     private val sampleRepository = mockk<SubscriptionTrafficSampleRepository>()
     private val hourlyRepository = mockk<SubscriptionTrafficHourlyRepository>()
     private val dailyRepository = mockk<SubscriptionTrafficDailyRepository>()
     private val monthlyRepository = mockk<SubscriptionTrafficMonthlyRepository>()
 
     private val service = SubscriptionTrafficQueryService(
-        subscriptionRepository,
         sampleRepository,
         hourlyRepository,
         dailyRepository,
@@ -32,7 +29,6 @@ class SubscriptionTrafficQueryServiceTest {
 
     @Test
     fun `getSeries retorna puntos sample`() {
-        every { subscriptionRepository.existsById(1) } returns true
         val bucket = LocalDateTime.of(2026, 8, 27, 10, 0)
         every {
             sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())
@@ -56,8 +52,52 @@ class SubscriptionTrafficQueryServiceTest {
     }
 
     @Test
+    fun `getSeries by subscription no mezcla samples de otra suscripcion tras reasignar IP`() {
+        val t1 = LocalDateTime.of(2026, 8, 20, 10, 0)
+        val t2 = LocalDateTime.of(2026, 8, 21, 10, 0)
+        every {
+            sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(10, any(), any())
+        } returns listOf(
+            SubscriptionTrafficSample(
+                clientIp = "192.168.250.20",
+                subscriptionId = 10,
+                hostDeviceId = 8,
+                bucketStart = t1,
+                rxBytesDelta = 111,
+                txBytesDelta = 10,
+                avgMbpsDown = 1.0,
+                avgMbpsUp = 0.1,
+            )
+        )
+
+        val series = service.getSeries(10, "sample", t1.minusHours(1), t2.plusHours(1))
+
+        assertEquals(1, series!!.points.size)
+        assertEquals(111, series.points.single().rxBytes)
+    }
+
+    @Test
+    fun `getLatest incluye ip y sampleStatus`() {
+        every { sampleRepository.findTopBySubscriptionIdOrderByBucketStartDesc(2360) } returns SubscriptionTrafficSample(
+            id = 9L,
+            clientIp = "192.168.250.20",
+            subscriptionId = 2360,
+            hostDeviceId = 8,
+            sampleStatus = com.dscorp.wispadmin.traffic.entity.TrafficSampleStatus.OK,
+            avgMbpsDown = 12.0,
+            queueId = "q-1",
+        )
+
+        val latest = service.getLatest(2360)
+
+        assertEquals(2360, latest.subscriptionId)
+        assertEquals("192.168.250.20", latest.ip)
+        assertEquals("OK", latest.sampleStatus)
+        assertEquals("q-1", latest.queueId)
+    }
+
+    @Test
     fun `getSeries retorna los ultimos puntos sample cuando hay mas de MAX_POINTS`() {
-        every { subscriptionRepository.existsById(1) } returns true
         val samples = (0 until 600).map { index ->
             SubscriptionTrafficSample(
                 subscriptionId = 1,
@@ -83,7 +123,6 @@ class SubscriptionTrafficQueryServiceTest {
 
     @Test
     fun `getSummary agrega desde daily si no hay monthly`() {
-        every { subscriptionRepository.existsById(1) } returns true
         every { monthlyRepository.findBySubscriptionIdAndYearMonth(1, "2026-08") } returns null
         every {
             dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())
@@ -104,11 +143,28 @@ class SubscriptionTrafficQueryServiceTest {
         val summary = service.getSummary(1, "2026-08")
 
         assertNotNull(summary)
+        assertEquals(1_000_000_000, summary.rxBytesTotal)
+    }
+
+    @Test
+    fun `getSummary returns zeros when there is no monthly or daily rollup`() {
+        every { monthlyRepository.findBySubscriptionIdAndYearMonth(2360, "2026-09") } returns null
+        every {
+            dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(2360, any(), any())
+        } returns emptyList()
+
+        val summary = service.getSummary(2360, "2026-09")
+
+        assertEquals(2360, summary.subscriptionId)
+        assertEquals("2026-09", summary.yearMonth)
+        assertEquals(0, summary.rxBytesTotal)
+        assertEquals(0, summary.txBytesTotal)
+        assertEquals(0.0, summary.rxGbTotal)
+        assertEquals(0, summary.activeDays)
     }
 
     @Test
     fun `getDay agrega samples por hora`() {
-        every { subscriptionRepository.existsById(1) } returns true
         val day = java.time.LocalDate.of(2026, 8, 27)
         every {
             sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())

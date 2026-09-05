@@ -31,10 +31,10 @@ import java.util.*
 import java.time.YearMonth
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.subscription.RegistrationProgressMapper
 import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.web.multipart.MultipartFile
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -55,9 +55,8 @@ class SubscriptionController(
     private val eventPublisher: ApplicationEventPublisher,
     private val integrityViolationClassifier: SubscriptionIntegrityViolationClassifier,
     private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
-    private val tr069AsyncApplicator: Tr069AsyncApplicator,
-    private val subscriptionAcsOpsService: SubscriptionAcsOpsService,
     private val subscriptionProvisionService: SubscriptionProvisionService,
+    private val gatewayCpe: ObjectProvider<GatewayOnuActivationClient>,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
 ) {
 
@@ -158,40 +157,49 @@ class SubscriptionController(
 
     @GetMapping("/{subscriptionId}/registration-progress")
     fun getRegistrationProgress(@PathVariable subscriptionId: Int): ResponseEntity<RegistrationProgressDto> {
-        val subscription = repository.findById(subscriptionId).orElse(null)
+        val existing = repository.findById(subscriptionId).orElse(null)
             ?: return ResponseEntity.notFound().build()
+        val subscription = subscriptionProvisionService.refreshTr069FromGateway(existing)
         return ResponseEntity.ok(RegistrationProgressMapper.from(subscription.toDto()))
     }
 
     @GetMapping("/{subscriptionId}/acs")
     fun getSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<SubscriptionAcsDto> {
-        return try {
-            ResponseEntity.ok(subscriptionAcsOpsService.getAcs(subscriptionId))
-        } catch (_: NoSuchElementException) {
-            ResponseEntity.notFound().build()
-        }
+        val subscription = repository.findById(subscriptionId).orElse(null)
+            ?: return ResponseEntity.notFound().build()
+        val sn = subscription.fiberOnu?.sn ?: return ResponseEntity.notFound().build()
+        val telemetry = gatewayCpe.ifAvailable?.telemetry(sn)
+        return ResponseEntity.ok(
+            SubscriptionAcsDto(
+                subscriptionId = subscriptionId,
+                smartoltSerial = sn,
+                provisionStatus = subscription.tr069ProvisionStatus,
+                lastError = subscription.tr069LastError,
+                productClass = telemetry?.productClass,
+                wanIpCache = telemetry?.wanIp,
+                ssid24 = telemetry?.ssid24,
+                ssid5 = telemetry?.ssid5,
+                softwareVersion = telemetry?.softwareVersion,
+            )
+        )
     }
 
     @PostMapping("/{subscriptionId}/acs/refresh")
     fun refreshSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
-        return try {
-            ResponseEntity.ok(subscriptionAcsOpsService.refresh(subscriptionId))
-        } catch (_: NoSuchElementException) {
-            ResponseEntity.notFound().build()
-        } catch (ex: IllegalStateException) {
-            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
-        }
+        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnu?.sn
+            ?: return ResponseEntity.notFound().build()
+        val client = gatewayCpe.ifAvailable
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Gateway no disponible"))
+        return ResponseEntity.ok(client.wifiRefresh(sn))
     }
 
     @PostMapping("/{subscriptionId}/acs/reboot")
     fun rebootSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
-        return try {
-            ResponseEntity.ok(subscriptionAcsOpsService.reboot(subscriptionId))
-        } catch (_: NoSuchElementException) {
-            ResponseEntity.notFound().build()
-        } catch (ex: IllegalStateException) {
-            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
-        }
+        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnu?.sn
+            ?: return ResponseEntity.notFound().build()
+        val client = gatewayCpe.ifAvailable
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Gateway no disponible"))
+        return ResponseEntity.ok(client.reboot(sn))
     }
 
     @PostMapping("/{subscriptionId}/acs/retry-tr069")
@@ -435,8 +443,6 @@ class SubscriptionController(
                 }
             )
 
-            // TR-069 fuera de la TX y del hilo HTTP (async ~90s); el cliente hace poll de progreso
-            tr069AsyncApplicator.schedule(subscription, newSubscription)
             publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {
@@ -463,7 +469,6 @@ class SubscriptionController(
                         newSubscription = newSubscription,
                         onSuccess = { }
                     )
-                    tr069AsyncApplicator.schedule(dto, newSubscription)
                     return BaseResponse(
                         data = dto,
                         status = 200,
@@ -489,7 +494,6 @@ class SubscriptionController(
                 }
             )
 
-            tr069AsyncApplicator.schedule(subscription, newSubscription)
             publishSubscriptionChanged(subscription.id)
             BaseResponse(data = subscription, status = 200)
         } catch (e: DataIntegrityViolationException) {

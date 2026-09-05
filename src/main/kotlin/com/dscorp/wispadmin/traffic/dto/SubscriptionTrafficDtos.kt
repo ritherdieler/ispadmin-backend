@@ -13,7 +13,8 @@ data class SubscriptionTrafficPointDto(
 data class SubscriptionTrafficSeriesDto(
     val subscriptionId: Int,
     val granularity: String,
-    val points: List<SubscriptionTrafficPointDto>
+    val points: List<SubscriptionTrafficPointDto>,
+    val clientIp: String? = null,
 )
 
 data class SubscriptionTrafficLatestDto(
@@ -23,7 +24,14 @@ data class SubscriptionTrafficLatestDto(
     val txBytes: Long?,
     val avgMbpsDown: Double?,
     val avgMbpsUp: Double?,
-    val polledAt: String?
+    val polledAt: String?,
+    val ip: String? = null,
+    val clientIp: String? = null,
+    val sampleStatus: String? = null,
+    val hostDeviceId: Int? = null,
+    val collectedAt: String? = null,
+    val queueId: String? = null,
+    val id: Long? = null,
 )
 
 data class SubscriptionTrafficSummaryDto(

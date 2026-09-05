@@ -2,18 +2,16 @@ package com.dscorp.wispadmin.traffic.service
 
 import com.dscorp.wispadmin.traffic.entity.TrafficAnomalyStatus
 import com.dscorp.wispadmin.traffic.dto.BandwidthNetworkDto
+import com.dscorp.wispadmin.traffic.port.TrafficDirectoryPort
+import com.dscorp.wispadmin.traffic.port.TrafficDirectoryTarget
 import com.dscorp.wispadmin.traffic.repository.BandwidthNetworkBucketProjection
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficDailyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficFiveMinuteRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficHourlyRepository
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficAnomalyEventRepository
+import com.dscorp.wispadmin.traffic.repository.TrafficRouterRepository
 import com.dscorp.wispadmin.traffic.repository.TrafficSourceRunRepository
-import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
-import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
-import com.dscorp.wispadmin.wispadmin.data.model.Plan
-import com.dscorp.wispadmin.wispadmin.data.model.Subscription
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -24,7 +22,8 @@ import java.time.LocalDateTime
 
 class BandwidthIntelligenceServiceTest {
 
-    private val subscriptionRepository = mockk<SubscriptionRepository>()
+    private val directory = mockk<TrafficDirectoryPort>()
+    private val routerRepository = mockk<TrafficRouterRepository>(relaxed = true)
     private val sampleRepository = mockk<SubscriptionTrafficSampleRepository>(relaxed = true)
     private val fiveMinuteRepository = mockk<SubscriptionTrafficFiveMinuteRepository>()
     private val hourlyRepository = mockk<SubscriptionTrafficHourlyRepository>(relaxed = true)
@@ -34,7 +33,8 @@ class BandwidthIntelligenceServiceTest {
     private val aggregationJobService = mockk<TrafficAggregationJobService>(relaxed = true)
 
     private val service = BandwidthIntelligenceService(
-        subscriptionRepository,
+        directory,
+        routerRepository,
         sampleRepository,
         fiveMinuteRepository,
         hourlyRepository,
@@ -60,7 +60,7 @@ class BandwidthIntelligenceServiceTest {
         assertEquals(40.0, series.points.first().avgMbpsDown)
         verify(exactly = 1) { fiveMinuteRepository.aggregateNetworkBuckets(from, to) }
         verify(exactly = 0) { fiveMinuteRepository.findInBucketRange(any(), any()) }
-        verify(exactly = 0) { subscriptionRepository.findForTrafficPolling() }
+        verify(exactly = 0) { directory.list() }
     }
 
     @Test
@@ -71,7 +71,7 @@ class BandwidthIntelligenceServiceTest {
 
         verify(exactly = 1) { fiveMinuteRepository.aggregateNetworkBucketsByHost(from, to, 7) }
         verify(exactly = 0) { fiveMinuteRepository.findInBucketRange(any(), any()) }
-        verify(exactly = 0) { subscriptionRepository.findForTrafficPolling() }
+        verify(exactly = 0) { directory.list() }
     }
 
     @Test
@@ -104,7 +104,7 @@ class BandwidthIntelligenceServiceTest {
             bucket(from, rx = 1000, tx = 100, down = 20.0, up = 3.0, coverage = 100.0)
         )
         every { hourlyRepository.countDistinctSubscriptions(from, to) } returns 1
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { directory.list() } returns listOf(target(1))
         every { anomalyRepository.countByEventStatus(TrafficAnomalyStatus.OPEN) } returns 0
 
         val snapshot: BandwidthNetworkDto = service.network(from, to, "auto", null, null)
@@ -117,7 +117,7 @@ class BandwidthIntelligenceServiceTest {
 
     @Test
     fun `ranking de clientes en 24 horas usa datos consolidados de 5 minutos`() {
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { directory.list() } returns listOf(target(1))
         every { fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, from, to) } returns emptyList()
 
         service.subscriptions(from, to, null, null, null, "consumption", 0, 25)
@@ -130,7 +130,7 @@ class BandwidthIntelligenceServiceTest {
     fun `ranking de clientes en rangos mayores a 7 dias usa datos diarios`() {
         val monthFrom = LocalDateTime.of(2026, 8, 1, 10, 0)
         val monthTo = monthFrom.plusDays(30)
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(subscription(1))
+        every { directory.list() } returns listOf(target(1))
         every { dailyRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, monthFrom.toLocalDate(), monthTo.toLocalDate().plusDays(1)) } returns emptyList()
 
         service.subscriptions(monthFrom, monthTo, null, null, null, "consumption", 0, 25)
@@ -141,9 +141,9 @@ class BandwidthIntelligenceServiceTest {
 
     @Test
     fun `series de red con plan agrega solo ids elegibles`() {
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(
-            subscription(1, routerId = 1, planId = 9, download = 100),
-            subscription(2, routerId = 1, planId = 3, download = 50)
+        every { directory.list() } returns listOf(
+            target(1, routerId = 1, planId = 9, download = 100),
+            target(2, routerId = 1, planId = 3, download = 50)
         )
         every {
             fiveMinuteRepository.aggregateNetworkBucketsBySubscriptions(from, to, setOf(1))
@@ -164,9 +164,9 @@ class BandwidthIntelligenceServiceTest {
             bucket(from.plusMinutes(5), rx = 2000, tx = 400, down = 80.0, up = 10.0, coverage = 100.0)
         )
         every { fiveMinuteRepository.countDistinctSubscriptions(from, to) } returns 12
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(
-            subscription(1, download = 100),
-            subscription(2, download = 50)
+        every { directory.list() } returns listOf(
+            target(1, download = 100),
+            target(2, download = 50)
         )
         every { anomalyRepository.countByEventStatus(TrafficAnomalyStatus.OPEN) } returns 3
 
@@ -185,9 +185,9 @@ class BandwidthIntelligenceServiceTest {
     fun `subscriptions con varias ids no hace findInBucketRange global`() {
         val customerFrom = LocalDateTime.of(2026, 8, 29, 10, 0)
         val customerTo = LocalDateTime.of(2026, 8, 31, 10, 0)
-        every { subscriptionRepository.findForTrafficPolling() } returns listOf(
-            subscription(1, download = 100),
-            subscription(2, download = 50)
+        every { directory.list() } returns listOf(
+            target(1, download = 100),
+            target(2, download = 50)
         )
         every {
             fiveMinuteRepository.findInBucketRangeForSubscriptions(customerFrom, customerTo, setOf(1, 2))
@@ -233,16 +233,19 @@ class BandwidthIntelligenceServiceTest {
         override fun getCoveragePct(): Double = coverage
     }
 
-    private fun subscription(
+    private fun target(
         id: Int,
         routerId: Int = 1,
         planId: Int = 1,
         download: Int = 100
-    ) = Subscription(
-        id = id,
+    ) = TrafficDirectoryTarget(
+        subscriptionId = id,
         ip = "10.0.0.$id",
-        hostDevice = NetworkDevice(id = routerId, name = "R$routerId"),
-        plan = Plan(id = planId, name = "P$planId", downloadSpeed = download, uploadSpeed = download / 2),
-        equipmentCondition = EquipmentCondition.LOAN
+        routerHint = routerId,
+        planId = planId,
+        planName = "P$planId",
+        planDownloadMbps = download,
+        planUploadMbps = download / 2,
+        displayName = "C$id",
     )
 }

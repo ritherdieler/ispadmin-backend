@@ -7,9 +7,12 @@ import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateRequest
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Component
 
 @Component
@@ -17,6 +20,7 @@ class FiberInstallationStrategy(
     private val cancelledOnuReuseService: CancelledOnuReuseService,
     private val simpleQueueProvisioner: SimpleQueueProvisioner,
     private val environment: GigafiberEnvironmentProperties,
+    private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
 ) : IInstallationStrategy {
 
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -38,35 +42,93 @@ class FiberInstallationStrategy(
         var queueAdded = false
         var onuAuthorized = false
         var onuSn: String? = null
+        var uniqueExternalId: String? = null
+        var cpeStatus: String? = null
         var mikrotikError: String? = null
         var oltError: String? = null
 
         request.onu?.let { onuRequest ->
             onuSn = onuRequest.sn
-
-            val authorizeRequest = OnuAuthorizationRequest(
-                olt_id = onuRequest.olt_id,
-                pon_type = onuRequest.pon_type,
-                board = onuRequest.board,
-                port = onuRequest.port,
-                sn = onuRequest.sn,
-                vlan = resolveVlan(subscription),
-                onu_type = onuRequest.onu_type_name,
-                zone = DEFAULT_ZONE,
-                name = subscription.getFullName(),
-                onu_mode = DEFAULT_ONU_MODE,
-                custom_profile = DEFAULT_CUSTOM_PROFILE
-            )
-
-            try {
-                cancelledOnuReuseService.authorizeWithCancelledReuse(authorizeRequest)
-                onuAuthorized = true
-            } catch (error: Exception) {
-                oltError = error.message ?: "Error autorizando ONU en OLT"
-                logger.error(
-                    "No se pudo autorizar ONU en OLT para suscripción ${subscription.id}",
-                    error
+            val vlan = resolveVlan(subscription)
+            val gateway = gatewayActivation.ifAvailable
+            if (gateway != null) {
+                logger.info(
+                    "FIBER OLT via Gateway activate sn={} subscriptionId={}",
+                    onuRequest.sn,
+                    subscription.id,
                 )
+                try {
+                    val activated = gateway.activate(
+                        GatewayOnuActivateRequest(
+                            oltId = onuRequest.olt_id,
+                            ponType = onuRequest.pon_type,
+                            board = onuRequest.board,
+                            port = onuRequest.port,
+                            sn = onuRequest.sn,
+                            vlan = vlan,
+                            onuType = onuRequest.onu_type_name,
+                            zone = DEFAULT_ZONE,
+                            name = subscription.getFullName(),
+                            onuMode = DEFAULT_ONU_MODE,
+                            customProfile = DEFAULT_CUSTOM_PROFILE,
+                            ip = subscription.ip,
+                            ipSegment = subscription.ipPool?.ipSegment,
+                            wifiSsid24 = request.wifiSsid24,
+                            wifiPassword24 = request.wifiPassword24,
+                            wifiSsid5 = request.wifiSsid5,
+                            wifiPassword5 = request.wifiPassword5,
+                        )
+                    )
+                    uniqueExternalId = activated.uniqueExternalId
+                    cpeStatus = activated.cpeStatus
+                    onuAuthorized = activated.oltStatus.equals("COMPLETE", ignoreCase = true)
+                    if (!onuAuthorized) {
+                        oltError = activated.message ?: "OLT activate failed"
+                    }
+                    subscription.fiberOnu?.uniqueExternalId = uniqueExternalId
+                    logger.info(
+                        "FIBER OLT Gateway result sn={} oltStatus={} cpeStatus={} uniqueExternalId={}",
+                        onuRequest.sn,
+                        activated.oltStatus,
+                        activated.cpeStatus,
+                        activated.uniqueExternalId,
+                    )
+                } catch (error: Exception) {
+                    oltError = error.message ?: "Error autorizando ONU en Gateway"
+                    logger.error(
+                        "No se pudo activar ONU via Gateway para suscripción ${subscription.id}",
+                        error
+                    )
+                }
+            } else {
+                logger.warn(
+                    "FIBER OLT Gateway client unavailable; SmartOLT fallback sn={} subscriptionId={}",
+                    onuRequest.sn,
+                    subscription.id,
+                )
+                val authorizeRequest = OnuAuthorizationRequest(
+                    olt_id = onuRequest.olt_id,
+                    pon_type = onuRequest.pon_type,
+                    board = onuRequest.board,
+                    port = onuRequest.port,
+                    sn = onuRequest.sn,
+                    vlan = vlan,
+                    onu_type = onuRequest.onu_type_name,
+                    zone = DEFAULT_ZONE,
+                    name = subscription.getFullName(),
+                    onu_mode = DEFAULT_ONU_MODE,
+                    custom_profile = DEFAULT_CUSTOM_PROFILE
+                )
+                try {
+                    cancelledOnuReuseService.authorizeWithCancelledReuse(authorizeRequest)
+                    onuAuthorized = true
+                } catch (error: Exception) {
+                    oltError = error.message ?: "Error autorizando ONU en OLT"
+                    logger.error(
+                        "No se pudo autorizar ONU en OLT para suscripción ${subscription.id}",
+                        error
+                    )
+                }
             }
 
             val queueResult = simpleQueueProvisioner.ensureQueue(subscription, device, plan)
@@ -80,6 +142,8 @@ class FiberInstallationStrategy(
             queueAdded = queueAdded,
             onuAuthorized = onuAuthorized,
             onuSn = onuSn,
+            uniqueExternalId = uniqueExternalId,
+            cpeStatus = cpeStatus,
             mikrotikError = mikrotikError,
             oltError = oltError
         )

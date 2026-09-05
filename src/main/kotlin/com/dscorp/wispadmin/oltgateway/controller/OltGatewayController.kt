@@ -3,10 +3,23 @@ package com.dscorp.wispadmin.oltgateway.controller
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.dto.BoardPortCatalogDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuDetailDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuHistoryDto
+import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuLiveStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuPageDto
 import com.dscorp.wispadmin.oltgateway.dto.ErrorResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.HealthResponseDto
+import com.dscorp.wispadmin.oltgateway.dto.LabOpticalRefreshRequestDto
+import com.dscorp.wispadmin.oltgateway.dto.LabOpticalRefreshResponseDto
+import com.dscorp.wispadmin.oltgateway.dto.OltAlarmParseRequestDto
+import com.dscorp.wispadmin.oltgateway.dto.OltAlarmPollResponseDto
+import com.dscorp.wispadmin.oltgateway.dto.OltDescriptorDto
+import com.dscorp.wispadmin.oltgateway.dto.OltOnuRefDto
+import com.dscorp.wispadmin.oltgateway.dto.OltParsedAlarmDto
+import com.dscorp.wispadmin.oltgateway.dto.OltPonOnuDto
+import com.dscorp.wispadmin.oltgateway.dto.OnuCatalogsDto
 import com.dscorp.wispadmin.oltgateway.dto.OltInfoDto
 import com.dscorp.wispadmin.oltgateway.dto.OltSnmpTrapEventDto
 import com.dscorp.wispadmin.oltgateway.dto.OltSnmpTrapRecentDto
@@ -16,18 +29,18 @@ import com.dscorp.wispadmin.oltgateway.dto.OnuSummaryListDto
 import com.dscorp.wispadmin.oltgateway.dto.OpticalInfoDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SmartOltImportResultDto
-import com.dscorp.wispadmin.oltgateway.dto.SyncJobStatusDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
-import com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner
+import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshPollService
+import com.dscorp.wispadmin.oltgateway.service.OltAlarmCliService
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
+import com.dscorp.wispadmin.oltgateway.service.OltHealthOnuQueryService
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
+import com.dscorp.wispadmin.oltgateway.service.OltNetDiagInventoryQueryService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
-import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillResult
-import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService
 import com.dscorp.wispadmin.oltgateway.service.SmartOltImportService
 import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
-import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayOpenApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
@@ -40,6 +53,7 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -56,11 +70,13 @@ class OltGatewayController(
     private val queryFacade: OltGatewayQueryFacade,
     private val inventorySyncService: OltInventorySyncService,
     private val signalPollService: OltSignalPollService,
-    private val syncJobRunner: OltGatewaySyncJobRunner,
     private val smartOltImportService: SmartOltImportService,
     private val properties: OltGatewayProperties,
     private val recentOltSnmpTrapBuffer: RecentOltSnmpTrapBuffer,
-    private val externalIdBackfillService: OnuExternalIdBackfillService
+    private val healthOnuQuery: OltHealthOnuQueryService,
+    private val netDiagInventory: OltNetDiagInventoryQueryService,
+    private val alarmCli: OltAlarmCliService,
+    private val labOptical: LabOpticalSshPollService,
 ) {
 
     @GetMapping("/health")
@@ -78,7 +94,7 @@ class OltGatewayController(
 
     @GetMapping("/olt/info")
     @Operation(summary = "Info de la OLT", description = "Versión y boards de la OLT.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -106,7 +122,7 @@ class OltGatewayController(
         description = "Lista ONUs no confirmadas (SNMP listAutofind cuando snmp.enabled; SSH deprecado). " +
             "Contrato compatible SmartOLT."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -125,7 +141,7 @@ class OltGatewayController(
 
     @GetMapping("/onus/by-sn/{sn}")
     @Operation(summary = "ONU por serial", description = "Busca ONU por SN. Contrato compatible SmartOLT.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -153,7 +169,7 @@ class OltGatewayController(
 
     @GetMapping("/onus")
     @Operation(summary = "Listado de ONUs", description = "Resumen live vía SNMP listConfiguredOnus (SSH inventory deprecado). Preferir /onus/configured para DB.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -172,7 +188,7 @@ class OltGatewayController(
 
     @GetMapping("/onus/configured")
     @Operation(summary = "ONUs configuradas (DB)", description = "Listado paginado desde olt_mgr_onu + status. Sin SSH.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -242,17 +258,16 @@ class OltGatewayController(
     @PostMapping("/admin/sync/inventory")
     @Operation(
         summary = "Sync inventario (SNMP)",
-        description = "Arranca el sync en segundo plano y responde de inmediato. " +
-            "El resultado se consulta en GET /admin/sync/status. " +
-            "Inventario SN+estado vía SNMP→DB; SSH inventory está deprecado."
+        description = "Inventario SN+estado vía SNMP→DB. SSH inventory está deprecado; " +
+            "solo si olt.gateway.snmp.allow-ssh-inventory-fallback=true."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Estado del trabajo de sync",
-                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
+                description = "Resultado del sync",
+                content = [Content(schema = Schema(implementation = SyncResultDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -261,21 +276,31 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncInventory(): SyncJobStatusDto = syncJobRunner.startInventory()
+    fun syncInventory(): SyncResultDto {
+        val result = inventorySyncService.syncInventory()
+        return SyncResultDto(
+            inserted = result.inserted,
+            updated = result.updated,
+            softDeleted = result.softDeleted,
+            unchanged = result.unchanged,
+            durationMs = result.durationMs,
+            skippedReason = result.skippedReason,
+            error = result.error
+        )
+    }
 
     @PostMapping("/admin/sync/snmp-inventory")
     @Operation(
         summary = "Sync inventario vía SNMP",
-        description = "Arranca el sync en segundo plano y responde de inmediato. " +
-            "GETBULK SN+runState → DB (sin SSH). Requiere olt.gateway.snmp.enabled + community RO."
+        description = "GETBULK SN+runState → DB (sin SSH). Requiere olt.gateway.snmp.enabled + community RO."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Estado del trabajo de sync SNMP",
-                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
+                description = "Resultado del sync SNMP",
+                content = [Content(schema = Schema(implementation = SyncResultDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -284,21 +309,32 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncSnmpInventory(): SyncJobStatusDto = syncJobRunner.startSnmpInventory()
+    fun syncSnmpInventory(): SyncResultDto {
+        val result = inventorySyncService.syncInventoryFromSnmp()
+        return SyncResultDto(
+            inserted = result.inserted,
+            updated = result.updated,
+            softDeleted = result.softDeleted,
+            unchanged = result.unchanged,
+            durationMs = result.durationMs,
+            skippedReason = result.skippedReason,
+            error = result.error
+        )
+    }
 
     @PostMapping("/admin/sync/signal")
     @Operation(
         summary = "Sync señal óptica (SNMP)",
-        description = "Arranca el poll en segundo plano y responde de inmediato. " +
-            "GETBULK óptica SNMP→DB (~5 min scheduler); SSH display ont optical-info está deprecado."
+        description = "GETBULK óptica SNMP→DB (~5 min scheduler). SSH display ont optical-info está deprecado; " +
+            "solo si olt.gateway.snmp.allow-ssh-signal-fallback=true."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Estado del trabajo de signal poll",
-                content = [Content(schema = Schema(implementation = SyncJobStatusDto::class))]
+                description = "Resultado del signal poll",
+                content = [Content(schema = Schema(implementation = SignalPollResultDto::class))]
             ),
             ApiResponse(
                 responseCode = "401",
@@ -307,7 +343,17 @@ class OltGatewayController(
             )
         ]
     )
-    fun syncSignal(): SyncJobStatusDto = syncJobRunner.startSignal()
+    fun syncSignal(): SignalPollResultDto {
+        val result = signalPollService.pollSignals()
+        return SignalPollResultDto(
+            slotsPolled = result.slotsPolled,
+            portsPolled = result.portsPolled,
+            onusUpdated = result.onusUpdated,
+            durationMs = result.durationMs,
+            skippedReason = result.skippedReason,
+            error = result.error
+        )
+    }
 
     @PostMapping("/admin/import/smartolt")
     @Operation(
@@ -315,7 +361,7 @@ class OltGatewayController(
         description = "Hidrata catálogos (zones, onu types) y metadatos de negocio en olt_mgr_* desde SmartOLT cloud. " +
             "Idempotente por SN; no reemplaza posición PON del sync SNMP."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -335,31 +381,13 @@ class OltGatewayController(
         @RequestParam(required = false) maxPages: Int?
     ): SmartOltImportResultDto = smartOltImportService.importFromSmartOlt(pageSize, maxPages)
 
-    @PostMapping("/admin/onus/external-id-backfill")
-    @Operation(
-        summary = "Backfill de identificadores externos",
-        description = "Reescribe los external_id heredados de SmartOLT al formato propio " +
-            "{oltId}_{board}_{port}_{onuIndex}. Idempotente: no toca los que ya son propios."
-    )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
-    @ApiResponses(
-        value = [
-            ApiResponse(
-                responseCode = "200",
-                description = "Resultado del backfill",
-                content = [Content(schema = Schema(implementation = OnuExternalIdBackfillResult::class))]
-            )
-        ]
-    )
-    fun backfillExternalIds(): OnuExternalIdBackfillResult = externalIdBackfillService.backfill()
-
     @GetMapping("/admin/snmp/traps/recent")
     @Operation(
         summary = "Traps SNMP recientes (dump)",
         description = "Buffer en memoria del receptor ASN.1 Huawei (udp olt.gateway.snmp.trap.listen-port). " +
             "No reusa NetDiag :1620 MikroTik. Requiere trap.enabled=true para recibir."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -396,7 +424,7 @@ class OltGatewayController(
 
     @GetMapping("/admin/sync/status")
     @Operation(summary = "Estado del sync", description = "Inventory + signal + profundidad del bus CLI.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -428,7 +456,7 @@ class OltGatewayController(
 
     @GetMapping("/onus/{slot}/{port}/{ontId}")
     @Operation(summary = "Detalle de ONU", description = "Detalle nativo por slot/port/ontId.")
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -459,7 +487,7 @@ class OltGatewayController(
         summary = "Info óptica de ONU",
         description = "RX/TX/OLT-Rx vía SNMP listOptical por puerto (SSH optical-info deprecado)."
     )
-    @SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
             ApiResponse(
@@ -484,4 +512,106 @@ class OltGatewayController(
         @PathVariable @Min(0) @Max(15) port: Int,
         @PathVariable @Min(0) @Max(127) ontId: Int
     ): OpticalInfoDto = queryFacade.optical(slot, port, ontId)
+
+    @GetMapping("/onus/configured/{externalId}")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun getConfigured(@PathVariable externalId: String): ConfiguredOnuDetailDto =
+        inventorySyncService.getConfiguredByExternalId(externalId)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "ONU no encontrada"
+            )
+
+    @GetMapping("/onus/configured/{externalId}/status")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun getConfiguredStatus(@PathVariable externalId: String): ConfiguredOnuLiveStatusDto =
+        inventorySyncService.getLiveStatusByExternalId(externalId)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "ONU no encontrada"
+            )
+
+    @GetMapping("/onus/configured/{externalId}/history")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun getConfiguredHistory(
+        @PathVariable externalId: String,
+        @RequestParam(defaultValue = "50") @Min(1) @Max(200) limit: Int
+    ): ConfiguredOnuHistoryDto =
+        inventorySyncService.getHistoryByExternalId(externalId, limit)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "ONU no encontrada"
+            )
+
+    @GetMapping("/onus/catalog")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun listCatalogs(): OnuCatalogsDto = inventorySyncService.listCatalogs()
+
+    @GetMapping("/onus/catalog/boards-ports")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun listBoardsPorts(
+        @RequestParam(required = false) oltId: Long?,
+        @RequestParam(required = false) board: Int?
+    ): BoardPortCatalogDto = inventorySyncService.listBoardsPorts(oltId, board)
+
+    @GetMapping("/descriptor")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun descriptor(): OltDescriptorDto = alarmCli.descriptor()
+
+    @GetMapping("/health-onus/by-sn")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun healthOnuBySn(@RequestParam sn: String): OltOnuRefDto? = healthOnuQuery.findBySn(sn)
+
+    @GetMapping("/health-onus/by-external-id")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun healthOnuByExternalId(@RequestParam id: String): OltOnuRefDto? = healthOnuQuery.findByExternalId(id)
+
+    @GetMapping("/health-onus/by-position")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun healthOnuByPosition(
+        @RequestParam oltId: Long,
+        @RequestParam board: Int,
+        @RequestParam port: Int,
+        @RequestParam onuIndex: Int
+    ): OltOnuRefDto? = healthOnuQuery.findByOltBoardPortOnu(oltId, board, port, onuIndex)
+
+    @GetMapping("/health-onus/by-olt/{oltId}")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun healthOnusByOlt(@PathVariable oltId: Long): List<OltOnuRefDto> = healthOnuQuery.findByOlt(oltId)
+
+    @GetMapping("/olts/id-by-name")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun oltIdByName(@RequestParam name: String): Map<String, Long?> =
+        mapOf("id" to healthOnuQuery.findOltIdByName(name))
+
+    @GetMapping("/onus/pon")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun onusOnPon(
+        @RequestParam oltName: String,
+        @RequestParam board: Int,
+        @RequestParam port: Int
+    ): List<OltPonOnuDto> = netDiagInventory.listOnusOnPon(oltName, board, port)
+
+    @GetMapping("/onus/pon/one")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun onuOnPon(
+        @RequestParam oltName: String,
+        @RequestParam board: Int,
+        @RequestParam port: Int,
+        @RequestParam onuIndex: Int
+    ): OltPonOnuDto? = netDiagInventory.findOnu(oltName, board, port, onuIndex)
+
+    @PostMapping("/admin/alarms/poll")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun pollAlarms(): OltAlarmPollResponseDto = alarmCli.pollActiveAlarms()
+
+    @PostMapping("/admin/alarms/parse")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun parseAlarms(@RequestBody request: OltAlarmParseRequestDto): List<OltParsedAlarmDto> =
+        alarmCli.parse(request.raw)
+
+    @PostMapping("/admin/lab-optical/refresh")
+    @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
+    fun refreshLabOptical(@RequestBody request: LabOpticalRefreshRequestDto): LabOpticalRefreshResponseDto =
+        labOptical.refreshBySn(request.sn)
 }

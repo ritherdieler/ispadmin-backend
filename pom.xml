@@ -21,8 +21,11 @@
         <pytorch.version>2.7.1</pytorch.version>
         <pytorch.jni.version>2.7.1-0.36.0</pytorch.jni.version>
         <warName>ispadmin</warName>
+        <start-class>com.dscorp.wispadmin.wispadmin.WispAdminApplication</start-class>
         <subsystem.excludes>WEB-INF/classes/__no_subsystem_exclude__/**</subsystem.excludes>
         <subsystem.with></subsystem.with>
+        <lib.excludes>WEB-INF/lib/__no_lib_exclude__/**</lib.excludes>
+        <lib.excludes.satellite>WEB-INF/lib/firebase-admin-*.jar,WEB-INF/lib/google-cloud-*.jar,WEB-INF/lib/google-auth-library-*.jar,WEB-INF/lib/google-http-client-*.jar,WEB-INF/lib/google-oauth-client-*.jar,WEB-INF/lib/google-api-client-*.jar,WEB-INF/lib/google-api-services-*.jar,WEB-INF/lib/gapic-google-*.jar,WEB-INF/lib/grpc-*.jar,WEB-INF/lib/proto-google-*.jar,WEB-INF/lib/protobuf-java-*.jar,WEB-INF/lib/conscrypt-*.jar,WEB-INF/lib/gax-*.jar,WEB-INF/lib/api-common-*.jar,WEB-INF/lib/opencensus-*.jar,WEB-INF/lib/poi-*.jar,WEB-INF/lib/xmlbeans-*.jar,WEB-INF/lib/commons-math3-*.jar,WEB-INF/lib/SparseBitSet-*.jar,WEB-INF/lib/curvesapi-*.jar,WEB-INF/lib/meilisearch-*.jar,WEB-INF/lib/jts-*.jar,WEB-INF/lib/hibernate-spatial-*.jar,WEB-INF/lib/geolatte-geom-*.jar,WEB-INF/lib/postgresql-*.jar,WEB-INF/lib/spring-webflux-*.jar,WEB-INF/lib/reactor-netty-*.jar,WEB-INF/lib/kotlinx-coroutines-reactor-*.jar</lib.excludes.satellite>
     </properties>
     <repositories>
         <repository>
@@ -222,6 +225,14 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.module</groupId>
+            <artifactId>jackson-module-kotlin</artifactId>
+        </dependency>
 
         <!-- DJL ejecuta el modelo facial en Java, sin Node, Chrome ni JavaScript. -->
         <dependency>
@@ -411,7 +422,7 @@
             <id>staging-war</id>
             <properties>
                 <warName>ispadmin-staging</warName>
-                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**</subsystem.excludes>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**,WEB-INF/classes/com/dscorp/wispadmin/acs/**</subsystem.excludes>
             </properties>
             <build>
                 <plugins>
@@ -429,7 +440,7 @@
                                     <target>
                                         <replaceregexp file="${project.build.outputDirectory}/application.properties"
                                                        match="^spring\.profiles\.active=.*"
-                                                       replace="spring.profiles.active=prod,staging"
+                                                       replace="spring.profiles.active=prod,staging,subsystem"
                                                        byline="true"/>
                                         <replaceregexp file="${project.build.outputDirectory}/application.properties"
                                                        match="^server\.servlet\.context-path=.*"
@@ -442,10 +453,306 @@
                                             <arg value="${subsystem.with}"/>
                                             <arg value="--write-dir"/>
                                             <arg value="${project.build.directory}"/>
+                                            <arg value="--props-dir"/>
+                                            <arg value="${project.build.outputDirectory}"/>
                                         </exec>
-                                        <concat destfile="${project.build.outputDirectory}/application-staging.properties" append="true">
-                                            <fileset dir="${project.build.directory}" includes="subsystem-enabled.properties"/>
-                                        </concat>
+                                        <copy file="${project.build.directory}/subsystem-enabled.properties"
+                                              tofile="${project.build.outputDirectory}/application-subsystem.properties"
+                                              overwrite="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>traffic-war</id>
+            <properties>
+                <warName>ispadmin-traffic</warName>
+                <start-class>com.dscorp.wispadmin.traffic.TrafficApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**,WEB-INF/classes/com/dscorp/wispadmin/acs/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite},WEB-INF/lib/sshd-*.jar,WEB-INF/lib/snmp4j-*.jar,WEB-INF/lib/swagger-ui-*.jar</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-traffic-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,traffic"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/prod_traffic?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>traffic-staging-war</id>
+            <properties>
+                <warName>ispadmin-staging-traffic</warName>
+                <start-class>com.dscorp.wispadmin.traffic.TrafficApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**,WEB-INF/classes/com/dscorp/wispadmin/acs/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite},WEB-INF/lib/sshd-*.jar,WEB-INF/lib/snmp4j-*.jar,WEB-INF/lib/swagger-ui-*.jar</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-traffic-staging-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,traffic"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/stg_traffic?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-traffic.properties"
+                                                       match="^server\.servlet\.context-path=.*"
+                                                       replace="server.servlet.context-path=/ispadmin-staging-traffic"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-traffic.properties"
+                                                       match="prod_traffic"
+                                                       replace="stg_traffic"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-traffic.properties"
+                                                       match="^traffic\.core-base-url=.*"
+                                                       replace="traffic.core-base-url=http://127.0.0.1:8080/ispadmin-staging"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-traffic.properties"
+                                                       match="^traffic\.router-seed\.source-schema=.*"
+                                                       replace="traffic.router-seed.source-schema=ispadmin_staging"
+                                                       byline="true"/>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-traffic.properties">
+gigafiber.redis.enabled=true
+gigafiber.redis.host=redis
+</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>oltgateway-war</id>
+            <properties>
+                <warName>ispadmin-oltgateway</warName>
+                <start-class>com.dscorp.wispadmin.oltgateway.OltGatewayApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**,WEB-INF/classes/com/dscorp/wispadmin/acs/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite}</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-oltgateway-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,oltgateway"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/prod_oltgateway?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^gigafiber\.redis\.enabled=.*"
+                                                       replace="gigafiber.redis.enabled=true"
+                                                       byline="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>oltgateway-staging-war</id>
+            <properties>
+                <warName>ispadmin-staging-oltgateway</warName>
+                <start-class>com.dscorp.wispadmin.oltgateway.OltGatewayApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**,WEB-INF/classes/com/dscorp/wispadmin/acs/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite}</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-oltgateway-staging-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,oltgateway"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/stg_oltgateway?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-oltgateway.properties"
+                                                       match="^server\.servlet\.context-path=.*"
+                                                       replace="server.servlet.context-path=/ispadmin-staging-oltgateway"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-oltgateway.properties"
+                                                       match="prod_oltgateway"
+                                                       replace="stg_oltgateway"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-oltgateway.properties"
+                                                       match="^olt\.gateway\.acs\.internal-base-url=.*"
+                                                       replace="olt.gateway.acs.internal-base-url=http://127.0.0.1:8080/ispadmin-staging-acs"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^olt\.gateway\.writes\.enabled=.*"
+                                                       replace="olt.gateway.writes.enabled=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^gigafiber\.redis\.enabled=.*"
+                                                       replace="gigafiber.redis.enabled=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-oltgateway.properties"
+                                                       match="^olt\.gateway\.writes\.enabled=.*"
+                                                       replace="olt.gateway.writes.enabled=true"
+                                                       byline="true"/>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-oltgateway.properties">
+gigafiber.redis.enabled=true
+gigafiber.redis.host=redis
+</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>acs-war</id>
+            <properties>
+                <warName>ispadmin-acs</warName>
+                <start-class>com.dscorp.wispadmin.acs.AcsApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite},WEB-INF/lib/sshd-*.jar,WEB-INF/lib/snmp4j-*.jar,WEB-INF/lib/swagger-ui-*.jar</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-acs-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,acs"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/prod_acs?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-acs.properties">
+acs.profiles.catalog=ispadmin
+</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>acs-staging-war</id>
+            <properties>
+                <warName>ispadmin-staging-acs</warName>
+                <start-class>com.dscorp.wispadmin.acs.AcsApplication</start-class>
+                <subsystem.excludes>WEB-INF/classes/com/dscorp/wispadmin/wispadmin/**,WEB-INF/classes/com/dscorp/wispadmin/observability/**,WEB-INF/classes/com/dscorp/wispadmin/oltgateway/**,WEB-INF/classes/com/dscorp/wispadmin/netdiag/**,WEB-INF/classes/com/dscorp/wispadmin/traffic/**,WEB-INF/classes/com/dscorp/wispadmin/servicehealth/**</subsystem.excludes>
+                <lib.excludes>${lib.excludes.satellite},WEB-INF/lib/sshd-*.jar,WEB-INF/lib/snmp4j-*.jar,WEB-INF/lib/swagger-ui-*.jar</lib.excludes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bake-acs-staging-profile</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <replaceregexp file="${project.build.outputDirectory}/application.properties"
+                                                       match="^spring\.profiles\.active=.*"
+                                                       replace="spring.profiles.active=prod,acs"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-prod.properties"
+                                                       match="^spring\.datasource\.url=.*"
+                                                       replace="spring.datasource.url=jdbc:mysql://mysql:3306/stg_acs?useUnicode=yes&amp;characterEncoding=UTF-8&amp;serverTimezone=America/Lima&amp;useSSL=false&amp;allowPublicKeyRetrieval=true&amp;createDatabaseIfNotExist=true"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-acs.properties"
+                                                       match="^server\.servlet\.context-path=.*"
+                                                       replace="server.servlet.context-path=/ispadmin-staging-acs"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-acs.properties"
+                                                       match="prod_acs"
+                                                       replace="stg_acs"
+                                                       byline="true"/>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-acs.properties">
+acs.profiles.catalog=ispadmin_staging
+</echo>
                                     </target>
                                 </configuration>
                             </execution>
@@ -463,6 +770,9 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>${start-class}</mainClass>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -517,7 +827,11 @@
                         WEB-INF/lib/onnxruntime-engine-${djl.version}.jar,
                         WEB-INF/lib/onnxruntime-*.jar,
                         WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class,
-                        ${subsystem.excludes}
+                        WEB-INF/classes/application-local.properties,
+                        WEB-INF/classes/models/**,
+                        WEB-INF/lib/tomcat-embed-*.jar,
+                        ${subsystem.excludes},
+                        ${lib.excludes}
                     </packagingExcludes>
                 </configuration>
             </plugin>

@@ -60,4 +60,15 @@ class ServiceHealthPropertiesTest {
         assertEquals(90L, p.stationHourlyRetentionDays)
         assertEquals(14L, p.stationRetentionDays)
     }
+
+    @Test
+    fun `staging wifi sample cadence is three minutes`() {
+        val p = ServiceHealthProperties().apply {
+            acsWifiSampleTargetSeconds = 180
+            acsGpvCooldownSeconds = 180
+        }
+        assertEquals(180L, p.acsWifiSampleTargetSeconds)
+        assertEquals(180L, p.acsGpvCooldownSeconds)
+        assertEquals(360L, p.wifiSampleFreshSeconds())
+    }
 }

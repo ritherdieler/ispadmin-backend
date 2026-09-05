@@ -1,5 +1,9 @@
 package com.dscorp.wispadmin.oltgateway.service
 
+import com.dscorp.wispadmin.events.EventBusPort
+import com.dscorp.wispadmin.events.NoOpEventBus
+import com.dscorp.wispadmin.events.PlatformEvent
+import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnuStatusCurrent
@@ -41,7 +45,8 @@ open class OltSignalPollService(
     properties: OltGatewayProperties,
     cliBus: OltCliBus? = null,
     snmpClient: OltSnmpClient? = null,
-    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null
+    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
+    private val eventBus: EventBusPort = NoOpEventBus(),
 ) {
 
     companion object {
@@ -382,6 +387,25 @@ open class OltSignalPollService(
             val onu = byKey[Triple(row.slot, row.port, row.optical.ontId)] ?: continue
             if (upsertOptical(onu, row.optical, now, pendingStatuses)) {
                 updated++
+                eventBus.publish(
+                    PlatformEvent(
+                        type = PlatformEventTypes.ONU_OPTICAL,
+                        sn = onu.sn,
+                        occurredAt = now,
+                        payloadJson = """{"rxPowerDbm":${row.optical.rxPowerDbm},"runState":"${onu.status?.runState ?: ""}"}""",
+                    )
+                )
+                val runState = onu.status?.runState
+                if (!runState.isNullOrBlank()) {
+                    eventBus.publish(
+                        PlatformEvent(
+                            type = PlatformEventTypes.ONU_STATE,
+                            sn = onu.sn,
+                            occurredAt = now,
+                            payloadJson = """{"runState":"$runState"}""",
+                        )
+                    )
+                }
             }
         }
         if (pendingStatuses.isNotEmpty()) {

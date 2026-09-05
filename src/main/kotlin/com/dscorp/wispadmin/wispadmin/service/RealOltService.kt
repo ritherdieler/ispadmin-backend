@@ -2,24 +2,44 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.NapBox
 import com.dscorp.wispadmin.wispadmin.data.model.Onu
+import com.dscorp.wispadmin.wispadmin.oltclient.OltGatewayHttpClient
+import com.dscorp.wispadmin.wispadmin.oltclient.OnuSerialNormalizer
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.MoveOnuRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.response.OnuBySnResponse
 import com.dscorp.wispadmin.wispadmin.response.Response
 import com.dscorp.wispadmin.wispadmin.response.UnconfirmedOnuResponse
-import com.dscorp.wispadmin.wispadmin.util.SmartOltHttpClient
+import com.dscorp.wispadmin.wispadmin.util.HttpClient
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
 
 @Service
 class RealOltService(
-    private val httpClient: SmartOltHttpClient
+    @Value("\${olt.service.base-url}") private val baseUrl: String,
+    @Value("\${olt.service.api-key}") private val apiKey: String,
+    @Value("\${olt.gateway.client-enabled:false}") private val gatewayClientEnabled: Boolean,
+    private val gatewayHttp: ObjectProvider<OltGatewayHttpClient>,
+    private val objectMapper: ObjectMapper,
 ) : OltService {
 
     override fun getUnConfiguredOnus(): List<Response>? {
+        if (gatewayClientEnabled) {
+            val client = gatewayHttp.ifAvailable
+            if (client != null) {
+                return try {
+                    fetchUnconfiguredFromGateway(client)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    emptyList()
+                }
+            }
+        }
         return try {
-            httpClient.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java).response
+            HttpClient.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java).response
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
@@ -27,7 +47,7 @@ class RealOltService(
     }
 
     override fun getOnuBySn(onuSn: String): OnuBySnResponse {
-        return httpClient.get("onu/get_onus_details_by_sn/${onuSn}", responseType = OnuBySnResponse::class.java)
+        return HttpClient.get("onu/get_onus_details_by_sn/${onuSn}", responseType = OnuBySnResponse::class.java)
     }
 
     override fun moveOnu(request: MoveOnuRequest, onu: Onu, newNapBox: NapBox) {
@@ -37,7 +57,7 @@ class RealOltService(
             add("board", newNapBox.oltBoard)
             add("port", newNapBox.oltPort)
         }
-        httpClient.post("onu/move/${onu.sn}", body, Any::class.java)
+        HttpClient.post("onu/move/${onu.sn}", body, Any::class.java)
     }
 
     override fun authorizeOnuInSmartOltWidthPostMethod(authorizationRequest: OnuAuthorizationRequest) {
@@ -55,15 +75,23 @@ class RealOltService(
             body.add("onu_mode", onu_mode)
             body.add("custom_profile", custom_profile)
 
-            httpClient.post("onu/authorize_onu", body, Any::class.java)
+            HttpClient.post("onu/authorize_onu", body, Any::class.java)
         }
     }
 
     override fun deleteOnu(onuExternalId: String) {
-        httpClient.post("onu/delete/${onuExternalId}", null, Any::class.java)
+        HttpClient.post("onu/delete/${onuExternalId}", null, Any::class.java)
     }
 
     override fun rebootOnu(uniqueExternalId: String) {
-        httpClient.post("onu/reboot/${uniqueExternalId}", null, Any::class.java)
+        HttpClient.post("onu/reboot/${uniqueExternalId}", null, Any::class.java)
+    }
+
+    private fun fetchUnconfiguredFromGateway(client: OltGatewayHttpClient): List<Response> {
+        val body = client.getJson("/api/olt-gateway/onu/unconfigured_onus").body ?: return emptyList()
+        val parsed = objectMapper.readValue(body, UnconfirmedOnuResponse::class.java)
+        return parsed.response.map { item ->
+            item.copy(sn = OnuSerialNormalizer.preferredSn(item.sn))
+        }
     }
 }

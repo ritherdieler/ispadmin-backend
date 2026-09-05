@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Hard cleanup TR-069 e2e lab (§4 runbook: MikroTik → SmartOLT → Firebase → MySQL → ACS).
+# Hard cleanup TR-069 e2e lab (§4 runbook: MikroTik → OLT → Firebase → MySQL → ACS).
+# Staging deletes ONU via local OLT Gateway WAR; prod still uses SmartOLT cloud.
 # Usage:
 #   ./scripts/tr069-e2e-hard-cleanup.sh --dni 91234567
 #   ./scripts/tr069-e2e-hard-cleanup.sh --sn HWTCC6FBA6AA
@@ -27,7 +28,7 @@ while [[ $# -gt 0 ]]; do
     --allow-empty) ALLOW_EMPTY=1; shift ;;
     --force) FORCE=1; shift ;;
     -h|--help)
-      sed -n '1,13p' "$0"
+      sed -n '1,14p' "$0"
       exit 0
       ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
@@ -57,8 +58,9 @@ DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:?DEPLOY_SSH_PASSWORD required}"
 FIREBASE_BUCKET="${FIREBASE_BUCKET:-ispadmin-687ca.appspot.com}"
 FIREBASE_SA="${FIREBASE_SERVICE_ACCOUNT_JSON:-$BACKEND_ROOT/src/main/resources/firebase_service_account_prod.json}"
 
+export SSHPASS="$DEPLOY_SSH_PASSWORD"
 ssh_vps() {
-  sshpass -p "$DEPLOY_SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -p "$VPS_PORT" \
+  sshpass -e ssh -o StrictHostKeyChecking=no -p "$VPS_PORT" \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     "${VPS_USER}@${VPS_HOST}" "$@"
 }
@@ -77,11 +79,11 @@ WHERE="1=0"
 ROW="$(mysql_q "SELECT CONCAT_WS('|', id, IFNULL(fiber_onu_sn,''), IFNULL(ip,''), IFNULL(facade_photo_url,''), IFNULL(host_device_id,8), IFNULL(first_name,''), IFNULL(last_name,''), IFNULL(dni,'')) FROM subscription WHERE $WHERE ORDER BY id DESC LIMIT 1;" || true)"
 if [[ -z "${ROW// }" ]]; then
   echo "No subscription row for id=$ID sn=$SN dni=$DNI"
-  if [[ "$ALLOW_EMPTY" -eq 1 ]]; then
-    exit 0
-  fi
   if [[ -z "$SN" ]]; then
     exit 0
+  fi
+  if [[ "$ALLOW_EMPTY" -eq 1 ]]; then
+    echo "allow-empty with SN=$SN: continue OLT delete only"
   fi
   SUB_ID=""
   SUB_SN="$SN"
@@ -96,7 +98,6 @@ else
   echo "id=$SUB_ID sn=$SUB_SN ip=$SUB_IP host=$HOST_DEVICE_ID name=$FIRST_NAME $LAST_NAME dni=$ROW_DNI"
 fi
 
-# Safety: only delete e2e lab rows unless --force
 is_lab_row() {
   [[ "${FIRST_NAME}" == E2e* || "${FIRST_NAME}" == E2E* ]] && return 0
   [[ "${LAST_NAME}" == Prueba* || "${LAST_NAME}" == Mimi* ]] && return 0
@@ -118,14 +119,6 @@ fi
 ACS_DEVICE="$(mysql_q "SELECT IFNULL(genieacs_device_id,'') FROM subscription_acs WHERE subscription_id=${SUB_ID:-0} LIMIT 1;" 2>/dev/null || true)"
 ACS_DEVICE="$(echo "$ACS_DEVICE" | tr -d '\r')"
 
-# SmartOLT API key from WAR on VPS
-SMARTOLT_KEY="${SMARTOLT_API_KEY:-}"
-if [[ -z "$SMARTOLT_KEY" ]]; then
-  SMARTOLT_KEY="$(ssh_vps 'docker exec tomcat9027 bash -lc "grep -h olt.service.api-key /usr/local/tomcat/webapps/ispadmin/WEB-INF/classes/application-prod.properties | head -1 | cut -d= -f2-"' | tr -d '\r')"
-fi
-[[ -n "$SMARTOLT_KEY" ]] || { echo "Missing SmartOLT API key" >&2; exit 1; }
-
-# --- 4.1 MikroTik ---
 if [[ -n "$SUB_IP" ]]; then
   echo "== MikroTik queue target ${SUB_IP}/32 =="
   ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
@@ -159,22 +152,74 @@ print('MK_DONE')
 PY"
 fi
 
-# --- 4.2 SmartOLT ---
 if [[ -n "$SUB_SN" ]]; then
-  echo "== SmartOLT delete $SUB_SN =="
-  EXT="$(curl -sS -H "X-Token: $SMARTOLT_KEY" \
-    "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("onus") or [{}])[0].get("unique_external_id") or ""))' || true)"
-  if [[ -n "$EXT" ]]; then
-    curl -sS -X POST -H "X-Token: $SMARTOLT_KEY" \
-      "https://gigafiberperu.smartolt.com/api/onu/delete/$EXT" \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin).get("response","?"))' || true
+  if [[ "$E2E_ENV" == "staging" ]]; then
+    echo "== OLT Gateway delete $SUB_SN (ispadmin-staging-oltgateway) =="
+    ssh_vps "bash -s" <<EOF
+set -euo pipefail
+set -a
+# shellcheck disable=SC1091
+source /opt/gigafiber/.env
+set +a
+KEY="\${OLT_GATEWAY_API_KEY:?OLT_GATEWAY_API_KEY missing on VPS}"
+GW="http://127.0.0.1:8081/ispadmin-staging-oltgateway"
+SN=$(printf '%q' "$SUB_SN")
+hdr=(-H "X-Olt-Gateway-Key: \$KEY" -H "Content-Type: application/json")
+EXT=""
+for path in \
+  "/api/olt-gateway/onu/get_onus_details_by_sn/\$SN" \
+  "/api/olt-gateway/onus/by-sn/\$SN"
+do
+  body=\$(curl -sS "\${hdr[@]}" "\$GW\$path" || true)
+  EXT=\$(python3 -c 'import json,sys
+raw=sys.stdin.read().strip()
+if not raw:
+  raise SystemExit
+d=json.loads(raw)
+onus=d.get("onus") if isinstance(d,dict) else None
+if isinstance(onus,list) and onus:
+  print(onus[0].get("unique_external_id") or "")
+elif isinstance(d,dict):
+  print(d.get("unique_external_id") or d.get("uniqueExternalId") or "")
+' <<<"\$body" 2>/dev/null || true)
+  if [[ -n "\$EXT" ]]; then
+    break
+  fi
+done
+if [[ -z "\$EXT" ]]; then
+  echo "ONU not authorized in OLT Gateway (ok)"
+  exit 0
+fi
+echo "external_id=\$EXT"
+resp=\$(curl -sS -w "\\nHTTP:%{http_code}" -X POST "\${hdr[@]}" "\$GW/api/olt-gateway/onu/delete/\$EXT" || true)
+echo "\$resp"
+code=\$(echo "\$resp" | sed -n 's/^HTTP://p' | tail -1)
+if [[ "\$code" != "200" ]]; then
+  echo "Gateway delete returned HTTP \$code" >&2
+  exit 1
+fi
+echo "ONU was deleted"
+EOF
   else
-    echo "ONU not authorized in SmartOLT (ok)"
+    echo "== SmartOLT delete $SUB_SN =="
+    SMARTOLT_KEY="${SMARTOLT_API_KEY:-}"
+    if [[ -z "$SMARTOLT_KEY" ]]; then
+      SMARTOLT_KEY="$(ssh_vps 'docker exec tomcat9027 bash -lc "grep -h olt.service.api-key /usr/local/tomcat/webapps/ispadmin/WEB-INF/classes/application-prod.properties | head -1 | cut -d= -f2-"' | tr -d '\r')"
+    fi
+    [[ -n "$SMARTOLT_KEY" ]] || { echo "Missing SmartOLT API key" >&2; exit 1; }
+    EXT="$(curl -sS -H "X-Token: $SMARTOLT_KEY" \
+      "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("onus") or [{}])[0].get("unique_external_id") or ""))' || true)"
+    if [[ -n "$EXT" ]]; then
+      curl -sS -X POST -H "X-Token: $SMARTOLT_KEY" \
+        "https://gigafiberperu.smartolt.com/api/onu/delete/$EXT" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("response","?"))' || true
+    else
+      echo "ONU not authorized in SmartOLT (ok)"
+    fi
   fi
 fi
 
-# --- 4.3.1 Firebase Storage ---
 FIREBASE_EXIT=0
 FIREBASE_PY="$SCRIPT_DIR/tr069_e2e_firebase_delete.py"
 if [[ -n "$FACADE_URL" && "$FACADE_URL" != "NULL" ]]; then
@@ -209,7 +254,6 @@ PY
   fi
 fi
 
-# --- 4.3 MySQL ---
 if [[ -n "$SUB_ID" ]]; then
   echo "== MySQL delete id=$SUB_ID =="
   SN_SQL="${SUB_SN:-__none__}"
@@ -231,7 +275,6 @@ DELETE FROM olt_mgr_onu WHERE id = @onu_id;
 "
 fi
 
-# --- 4.4 GenieACS ---
 if [[ -n "$ACS_DEVICE" ]]; then
   echo "== ACS purge $ACS_DEVICE =="
   ssh_vps "python3 - <<'PY'

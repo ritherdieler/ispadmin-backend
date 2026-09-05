@@ -33,6 +33,20 @@ class RouterOsTrafficCounterParserTest {
     }
 
     @Test
+    fun `normalizeTarget uses first address of a multi target queue`() {
+        assertEquals(
+            "192.168.250.20",
+            RouterOsTrafficCounterParser.normalizeTarget("192.168.250.20/32,10.0.0.1/32,192.168.1.1"),
+        )
+    }
+
+    @Test
+    fun `normalizeTarget skips targets longer than 45 chars after normalize`() {
+        val longHost = "host-that-is-clearly-longer-than-forty-five-characters.example"
+        assertNull(RouterOsTrafficCounterParser.normalizeTarget(longHost))
+    }
+
+    @Test
     fun `computeDelta returns positive delta`() {
         val delta = RouterOsTrafficCounterParser.computeDelta(previous = 100L, current = 250L, counterReset = false)
         assertEquals(150L, delta)

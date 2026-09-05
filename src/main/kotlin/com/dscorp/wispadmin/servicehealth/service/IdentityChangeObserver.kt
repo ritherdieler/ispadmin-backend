@@ -2,7 +2,7 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
-import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAcs
+import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.aspectj.lang.annotation.AfterReturning
 import org.aspectj.lang.annotation.Aspect
 import org.springframework.context.ApplicationEventPublisher
@@ -18,31 +18,21 @@ data class SubscriptionIdentityChanged(val id: Int)
 @Aspect
 @Component
 class IdentityChangePublisher(private val publisher: ApplicationEventPublisher,private val properties: ServiceHealthProperties) {
-    /** Scoped to the two repositories that own subscription identity: every other save is not advised. */
-    @AfterReturning(pointcut=IDENTITY_SAVE_POINTCUT,returning="result")
+    @AfterReturning(pointcut="execution(* org.springframework.data.repository.CrudRepository+.save(..)) || execution(* org.springframework.data.jpa.repository.JpaRepository+.saveAndFlush(..)) || execution(* org.springframework.data.repository.CrudRepository+.saveAll(..))",returning="result")
     fun saved(result: Any?) {
         val values=if(result is Iterable<*>) result.toList() else listOf(result)
         values.forEach { value ->
-            val id=when(value) { is Subscription -> value.id; is SubscriptionAcs -> value.subscriptionId; else -> null }
+            val id=when(value) { is Subscription -> value.id; else -> null }
             if(properties.collects(id)) publisher.publishEvent(SubscriptionIdentityChanged(id!!))
         }
-    }
-
-    companion object {
-        const val IDENTITY_SAVE_POINTCUT =
-            "(execution(* org.springframework.data.repository.CrudRepository+.save(..)) || " +
-                "execution(* org.springframework.data.jpa.repository.JpaRepository+.saveAndFlush(..)) || " +
-                "execution(* org.springframework.data.repository.CrudRepository+.saveAll(..))) && " +
-                "(this(com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository) || " +
-                "this(com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository))"
     }
 }
 
 @Component
-class IdentityChangeObserver(private val identity: IdentityService) {
+class IdentityChangeObserver(private val subscriptions: SubscriptionRepository,private val identity: IdentityService) {
     @TransactionalEventListener(phase=TransactionPhase.AFTER_COMMIT,fallbackExecution=true)
     @Transactional(propagation=Propagation.REQUIRES_NEW)
     fun changed(event: SubscriptionIdentityChanged) {
-        identity.reconcile(event.id)
+        subscriptions.findById(event.id).orElse(null)?.let { identity.reconcile(it) }
     }
 }

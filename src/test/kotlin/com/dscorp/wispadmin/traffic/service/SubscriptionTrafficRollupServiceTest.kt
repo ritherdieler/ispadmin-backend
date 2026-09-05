@@ -60,12 +60,10 @@ class SubscriptionTrafficRollupServiceTest {
         every { fiveMinuteRepository.saveAll(capture(saved)) } answers { firstArg() }
 
         service(
-            TrafficProperties(
-                poll = TrafficProperties.PollProperties(bucketMinutes = 1),
-                aggregation = TrafficProperties.AggregationProperties(
-                    oneMinuteSince = "2026-08-29T00:00:00"
-                )
-            )
+            TrafficProperties().apply {
+                poll.bucketMinutes = 1
+                aggregation.oneMinuteSince = "2026-08-29T00:00:00"
+            }
         ).rollupFiveMinute(bucket, bucket.plusMinutes(5))
 
         val row = saved.captured.single()
@@ -100,12 +98,10 @@ class SubscriptionTrafficRollupServiceTest {
         every { fiveMinuteRepository.saveAll(capture(saved)) } answers { firstArg() }
 
         service(
-            TrafficProperties(
-                poll = TrafficProperties.PollProperties(bucketMinutes = 1),
-                aggregation = TrafficProperties.AggregationProperties(
-                    oneMinuteSince = "2026-08-29T00:00:00"
-                )
-            )
+            TrafficProperties().apply {
+                poll.bucketMinutes = 1
+                aggregation.oneMinuteSince = "2026-08-29T00:00:00"
+            }
         ).rollupFiveMinute(bucket, bucket.plusMinutes(5))
 
         val row = saved.captured.single()

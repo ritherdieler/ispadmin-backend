@@ -10,6 +10,9 @@ import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.dto.OnuDto
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateRequest
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateResponse
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import io.mockk.every
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.springframework.beans.factory.ObjectProvider
 
 class FiberInstallationStrategyTest {
 
@@ -36,6 +40,7 @@ class FiberInstallationStrategyTest {
             mock(CancelledOnuReuseService::class.java),
             mockk(relaxed = true),
             environment,
+            noGateway(),
         )
     }
 
@@ -129,7 +134,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation does not throw when MikroTik TLS handshake fails`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -161,7 +166,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation uses offline client ip as simple queue target`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -183,6 +188,75 @@ class FiberInstallationStrategyTest {
         verify {
             queueProvisioner.ensureQueue(match { it.ip == "192.168.1.77" }, host, subscription.plan!!)
         }
+    }
+
+    @Test
+    fun `processInstallation uses gateway activate and returns partial CPE`() {
+        val gateway = mockk<GatewayOnuActivationClient>()
+        val provider = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+        every { provider.ifAvailable } returns gateway
+        every { gateway.activate(any()) } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "gigafiber-ma5608t_1_0_5",
+            sn = "ALCL12345678",
+            oltStatus = "COMPLETE",
+            cpeStatus = "PENDING",
+        )
+        val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, provider)
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
+            place = Place(id = 4, name = "Huacho")
+            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "ALCL12345678")
+        }
+
+        val result = strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest(),
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!
+        )
+
+        assertTrue(result.onuAuthorized)
+        assertEquals("PENDING", result.cpeStatus)
+        assertEquals("gigafiber-ma5608t_1_0_5", result.uniqueExternalId)
+        verify { gateway.activate(match<GatewayOnuActivateRequest> { it.sn == "ALCL12345678" && it.vlan == "100" }) }
+        verify(exactly = 0) { onuReuse.authorizeWithCancelledReuse(any()) }
+    }
+
+    @Test
+    fun `processInstallation falls back to SmartOLT when gateway client unavailable`() {
+        val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
+            place = Place(id = 4, name = "Huacho")
+        }
+
+        val result = strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest(),
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!
+        )
+
+        assertTrue(result.onuAuthorized)
+        verify(exactly = 1) { onuReuse.authorizeWithCancelledReuse(any()) }
+    }
+
+    private fun noGateway(): ObjectProvider<GatewayOnuActivationClient> {
+        val provider = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+        every { provider.ifAvailable } returns null
+        return provider
     }
 
     private fun cloudCoreRouter(id: Int, vlanId: Int?, disabled: Boolean = false): NetworkDevice =

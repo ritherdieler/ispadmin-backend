@@ -16,8 +16,10 @@ import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
+import com.dscorp.wispadmin.wispadmin.data.model.Onu
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateResponse
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.IInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -43,7 +46,8 @@ class SubscriptionProvisionServiceTest {
     private val installationStrategyFactory = mockk<InstallationStrategyFactory>()
     private val installationStrategy = mockk<IInstallationStrategy>()
     private val errorLogRepository = mockk<ErrorLogRepository>(relaxed = true)
-    private val tr069AsyncApplicator = mockk<Tr069AsyncApplicator>(relaxed = true)
+    private val gatewayClient = mockk<GatewayOnuActivationClient>()
+    private val gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>()
 
     private val service = SubscriptionProvisionService(
         repository = repository,
@@ -52,11 +56,13 @@ class SubscriptionProvisionServiceTest {
         placeRepository = placeRepository,
         installationStrategyFactory = installationStrategyFactory,
         errorLogRepository = errorLogRepository,
-        genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
-            enabled = false
-        },
-        tr069AsyncApplicator = tr069AsyncApplicator,
+        gatewayActivation = gatewayActivation,
+        cpeEnabled = false,
     )
+
+    init {
+        every { gatewayActivation.ifAvailable } returns null
+    }
 
     @Test
     fun `initializeStatuses sets wireless mikrotik pending and olt NA`() {
@@ -91,10 +97,10 @@ class SubscriptionProvisionServiceTest {
             placeRepository = placeRepository,
             installationStrategyFactory = installationStrategyFactory,
             errorLogRepository = errorLogRepository,
-            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
-                enabled = true
+            gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>().also {
+                every { it.ifAvailable } returns null
             },
-            tr069AsyncApplicator = mockk(relaxed = true),
+            cpeEnabled = true,
         )
         val subscription = baseSubscription()
         enabledService.initializeStatuses(subscription, InstallationType.FIBER)
@@ -122,10 +128,10 @@ class SubscriptionProvisionServiceTest {
             placeRepository = placeRepository,
             installationStrategyFactory = installationStrategyFactory,
             errorLogRepository = errorLogRepository,
-            genieAcsProperties = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsProperties().apply {
-                enabled = true
+            gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>().also {
+                every { it.ifAvailable } returns null
             },
-            tr069AsyncApplicator = mockk(relaxed = true),
+            cpeEnabled = true,
         )
         val subscription = baseSubscription().apply {
             fiberOnuSn = "VSOL0031C0B6"
@@ -208,7 +214,7 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
-    fun `applyInstallationResult keeps olt pending when fiber onu fails`() {
+    fun `applyInstallationResult marks olt FAILED when fiber onu has oltError`() {
         val subscription = baseSubscription().apply {
             mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
             oltProvisionStatus = OltProvisionStatus.PENDING
@@ -219,9 +225,44 @@ class SubscriptionProvisionServiceTest {
             InstallationType.FIBER
         )
         assertEquals(MikrotikProvisionStatus.COMPLETE, subscription.mikrotikProvisionStatus)
-        assertEquals(OltProvisionStatus.PENDING, subscription.oltProvisionStatus)
-        assertTrue(subscription.isProvisioningPending())
+        assertEquals(OltProvisionStatus.FAILED, subscription.oltProvisionStatus)
         assertTrue(subscription.provisionLastError!!.contains("olt timeout"))
+    }
+
+    @Test
+    fun `applyInstallationResult keeps olt PENDING when fiber onu unauthorized without oltError`() {
+        val subscription = baseSubscription().apply {
+            mikrotikProvisionStatus = MikrotikProvisionStatus.PENDING
+            oltProvisionStatus = OltProvisionStatus.PENDING
+        }
+        service.applyInstallationResult(
+            subscription,
+            InstallationResult(queueAdded = true, onuAuthorized = false),
+            InstallationType.FIBER
+        )
+        assertEquals(OltProvisionStatus.PENDING, subscription.oltProvisionStatus)
+    }
+
+    @Test
+    fun `applyInstallationResult marks olt FAILED when ONLY_TV onu has oltError`() {
+        val subscription = baseSubscription().apply {
+            installationType = InstallationType.ONLY_TV_FIBER
+            fiberOnu = Onu(sn = "VSOL0031C0B6")
+            mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
+            oltProvisionStatus = OltProvisionStatus.PENDING
+            tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+        }
+        service.applyInstallationResult(
+            subscription,
+            InstallationResult(
+                queueAdded = false,
+                onuAuthorized = false,
+                onuSn = "VSOL0031C0B6",
+                oltError = "OLT activate failed",
+            ),
+            InstallationType.ONLY_TV_FIBER,
+        )
+        assertEquals(OltProvisionStatus.FAILED, subscription.oltProvisionStatus)
     }
 
     @Test
@@ -322,28 +363,54 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
+    fun `refreshTr069FromGateway persists COMPLETE from gateway while PENDING`() {
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.FIBER
+            fiberOnu = Onu(sn = "ZTEGDC47BFFD")
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+        }
+        every { gatewayActivation.ifAvailable } returns gatewayClient
+        every { gatewayClient.activationBySn("ZTEGDC47BFFD") } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "ext-1",
+            sn = "ZTEGDC47BFFD",
+            oltStatus = "COMPLETE",
+            cpeStatus = "COMPLETE",
+        )
+        every { repository.save(subscription) } returns subscription
+
+        val result = service.refreshTr069FromGateway(subscription)
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
+        verify(exactly = 1) { repository.save(subscription) }
+    }
+
+    @Test
     fun `retryTr069 reapplies provision when MANUAL_REQUIRED and OLT COMPLETE`() {
         val subscription = baseSubscription().apply {
             id = 42
             installationType = InstallationType.FIBER
+            fiberOnu = Onu(sn = "ALCL123")
             oltProvisionStatus = OltProvisionStatus.COMPLETE
             tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
             vlan = "100"
             ip = "192.168.30.10"
         }
         every { repository.findById(42) } returns Optional.of(subscription)
-        every {
-            tr069AsyncApplicator.applyExclusive(any(), any())
-        } returns SubscriptionDto(
-            id = 42,
-            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
-            tr069Message = "ONU configurada automáticamente por TR-069.",
+        every { repository.save(subscription) } returns subscription
+        every { gatewayActivation.ifAvailable } returns gatewayClient
+        every { gatewayClient.activationBySn("ALCL123") } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "ext-1",
+            sn = "ALCL123",
+            oltStatus = "COMPLETE",
+            cpeStatus = "COMPLETE",
         )
 
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { tr069AsyncApplicator.applyExclusive(any(), any()) }
+        verify(exactly = 1) { gatewayClient.activationBySn("ALCL123") }
     }
 
     @Test
@@ -359,7 +426,7 @@ class SubscriptionProvisionServiceTest {
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
+        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
     }
 
     @Test
@@ -375,7 +442,7 @@ class SubscriptionProvisionServiceTest {
         assertThrows(IllegalStateException::class.java) {
             service.retryTr069(42)
         }
-        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
+        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
     }
 
     @Test
@@ -389,17 +456,18 @@ class SubscriptionProvisionServiceTest {
             vlan = "100"
         }
         every { repository.findById(42) } returns Optional.of(subscription)
-        every {
-            tr069AsyncApplicator.applyExclusive(any(), any())
-        } returns SubscriptionDto(
-            id = 42,
-            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE,
+        every { repository.save(subscription) } returns subscription
+        every { gatewayActivation.ifAvailable } returns gatewayClient
+        every { gatewayClient.activationBySn("VSOL0031C0B6") } returns GatewayOnuActivateResponse(
+            sn = "VSOL0031C0B6",
+            oltStatus = "COMPLETE",
+            cpeStatus = "COMPLETE",
         )
 
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { tr069AsyncApplicator.applyExclusive(any(), any()) }
+        verify(exactly = 1) { gatewayClient.activationBySn("VSOL0031C0B6") }
     }
 
     @Test
@@ -416,7 +484,7 @@ class SubscriptionProvisionServiceTest {
         assertThrows(IllegalStateException::class.java) {
             service.retryTr069(42)
         }
-        verify(exactly = 0) { tr069AsyncApplicator.applyExclusive(any(), any()) }
+        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
     }
 
     @Test

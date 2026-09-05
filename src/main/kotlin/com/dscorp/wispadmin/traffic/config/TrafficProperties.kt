@@ -9,38 +9,53 @@ import org.springframework.context.annotation.Configuration
 class TrafficConfig
 
 @ConfigurationProperties(prefix = "traffic")
-data class TrafficProperties(
-    val poll: PollProperties = PollProperties(),
-    val retention: RetentionProperties = RetentionProperties(),
-    val anomaly: AnomalyProperties = AnomalyProperties(),
-    val aggregation: AggregationProperties = AggregationProperties()
-) {
-    data class PollProperties(
-        val enabled: Boolean = true,
-        val intervalMs: Long = 60_000,
-        val initialDelayMs: Long = 30_000,
-        val bucketMinutes: Int = 1,
-        val maxParallelRouters: Int = 3
-    )
+class TrafficProperties {
+    var poll: PollProperties = PollProperties()
+    var retention: RetentionProperties = RetentionProperties()
+    var anomaly: AnomalyProperties = AnomalyProperties()
+    var aggregation: AggregationProperties = AggregationProperties()
+    var apiKey: String = ""
+    var coreBaseUrl: String = ""
+    var internalBaseUrl: String = ""
+    var clientEnabled: Boolean = false
+    var directoryTtlSeconds: Long = 60
+    var routerSeed: RouterSeedProperties = RouterSeedProperties()
 
-    data class RetentionProperties(
-        val rawDays: Int = 3,
-        val fiveMinuteDays: Int = 30,
-        val hourlyDays: Int = 730,
-        val dailyDays: Int = 1825,
-        val networkHourDays: Int = 400
-    )
+    fun isValidApiKey(key: String?): Boolean {
+        if (apiKey.isBlank() || key.isNullOrBlank()) return false
+        return apiKey == key
+    }
 
-    data class AnomalyProperties(
-        val enabled: Boolean = true,
-        val minimumCoveragePct: Double = 80.0,
-        val saturationPct: Double = 80.0,
-        val ruleVersion: String = "traffic-rules-v1",
-        val evaluationBatchSize: Int = 200
-    )
+    class RouterSeedProperties {
+        var enabled: Boolean = true
+        var sourceSchema: String = ""
+    }
 
-    data class AggregationProperties(
-        val catchUpChunkHours: Int = 1,
-        val oneMinuteSince: String? = null
-    )
+    class PollProperties {
+        var enabled: Boolean = true
+        var intervalMs: Long = 60_000
+        var initialDelayMs: Long = 30_000
+        var bucketMinutes: Int = 1
+        var maxParallelRouters: Int = 3
+    }
+
+    class RetentionProperties {
+        var rawDays: Int = 3
+        var fiveMinuteDays: Int = 30
+        var hourlyDays: Int = 730
+        var dailyDays: Int = 1825
+        var networkHourDays: Int = 400
+    }
+
+    class AnomalyProperties {
+        var enabled: Boolean = true
+        var minimumCoveragePct: Double = 80.0
+        var saturationPct: Double = 80.0
+        var ruleVersion: String = "traffic-rules-v1"
+    }
+
+    class AggregationProperties {
+        var catchUpChunkHours: Int = 1
+        var oneMinuteSince: String? = null
+    }
 }

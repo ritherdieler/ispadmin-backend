@@ -1,3 +1,4 @@
+undo service-port port 0/0/2 ont 5
 interface gpon 0/0
 ont delete 2 5
 quit

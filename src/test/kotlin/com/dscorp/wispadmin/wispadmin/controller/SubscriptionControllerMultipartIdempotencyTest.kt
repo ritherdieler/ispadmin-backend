@@ -16,8 +16,6 @@ import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIpConflictNocNotifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069AsyncApplicator
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -39,8 +37,7 @@ class SubscriptionControllerMultipartIdempotencyTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val integrityViolationClassifier = SubscriptionIntegrityViolationClassifier()
     private val ipConflictNocNotifier = mockk<SubscriptionIpConflictNocNotifier>(relaxed = true)
-    private val tr069AsyncApplicator = mockk<Tr069AsyncApplicator>(relaxed = true)
-    private val subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>(relaxed = true)
+    private val gatewayCpe = mockk<org.springframework.beans.factory.ObjectProvider<com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient>>()
 
     private val controller = SubscriptionController(
         repository = subscriptionRepository,
@@ -55,14 +52,13 @@ class SubscriptionControllerMultipartIdempotencyTest {
         eventPublisher = eventPublisher,
         integrityViolationClassifier = integrityViolationClassifier,
         ipConflictNocNotifier = ipConflictNocNotifier,
-        tr069AsyncApplicator = tr069AsyncApplicator,
-        subscriptionAcsOpsService = subscriptionAcsOpsService,
         subscriptionProvisionService = mockk(relaxed = true),
+        gatewayCpe = gatewayCpe,
     )
 
     @BeforeEach
-    fun stubTr069() {
-        every { tr069AsyncApplicator.schedule(any(), any()) } returns Unit
+    fun stubGateway() {
+        every { gatewayCpe.ifAvailable } returns null
     }
 
     @Test

@@ -2,7 +2,7 @@
 
 Fuente de verdad para **repetir** el alta FIBER Android contra `ispadmin-staging`. Leer esto antes de tocar seed, red o el script. Detalle por tema en los docs enlazados; no inventar IPs, SN ni comandos.
 
-Fecha de consolidación: 2026-09-01. Último e2e verde (ping + Firebase 204): suscripción **2349** (2026-09-01 16:05).
+Fecha de consolidación: 2026-09-01. Último e2e Espresso **completo** (olt+TR-069): pendiente 2026-09-04 (olt COMPLETE, TR-069 no cerró en 300s). Ver [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md).
 
 ## Cómo correr (Mac)
 
@@ -24,6 +24,18 @@ E2E_ONU_SN=ZTEGDC47BFFD E2E_WIFI_SSID=lab-zte-e2e-24 E2E_WIFI_PASS='LabZteWifi24
 ```
 
 El wrapper: precleanup → login API → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso → ping MK2 → `tr069-e2e-hard-cleanup.sh --env staging`.
+
+Tras el alta, el POST no espera TR-069. Flags Core: `oltProvisionStatus=COMPLETE` y `tr069ProvisionStatus=PENDING|COMPLETE`. Poll HTTP:
+
+```bash
+cd ispadmin-backend
+E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_onu_activation_status_staging.sh
+E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_onu_cpe_day2_staging.sh
+```
+
+Day-2 (360 / wifi-refresh / reboot) va Core → Gateway. Si CPE `COMPLETE`, entregar WiFi 2.4/5 **antes** del hard cleanup.
+
+Para dejar la suscripción viva (p. ej. verla en Diagnóstico 360): `SKIP_POST_CLEANUP=1`. Lab VSOL ACS `12345B4641531C0B6` → SN Android/SmartOLT `VSOL0031C0B6` (corrida 2026-09-03: suscripción **2360**, [staging-android-vsol-360-2360-2026-09-03.md](./staging-android-vsol-360-2360-2026-09-03.md)).
 
 Éxito del script: `E2E_FIBER_STAGING_ESPRESSO_OK`. Si `tr069ProvisionStatus=COMPLETE`, entregar al usuario **SSID y clave** 2.4/5 **antes** del hard cleanup (regla `AGENTS.md` backend). El 5 GHz es `{ssid24} - 5G` con la misma clave.
 
@@ -132,7 +144,9 @@ Para CR/GenieACS **desde el VPS** a `.250.x` faltaría añadir el CIDR a `wg-olt
 
 ## Cleanup (§4)
 
-Orden: MikroTik cola → SmartOLT → Firebase Storage → MySQL → GenieACS tasks/faults.
+Orden: MikroTik cola → **OLT Gateway local** (`ispadmin-staging-oltgateway`, `X-Olt-Gateway-Key`) → Firebase Storage → MySQL → GenieACS tasks/faults.
+
+No usar SmartOLT cloud en staging: el alta va por Gateway SSH; el cleanup debe borrar la misma ONT (`get_onus_details_by_sn` / `onus/by-sn` → `POST …/onu/delete/{externalId}`). Con `--allow-empty --sn …` también intenta el delete OLT aunque no haya fila `subscription`.
 
 - Schema: `--env staging` → `ispadmin_staging`.
 - Firebase: `scripts/tr069_e2e_firebase_delete.py` (CA de `certifi` / `/etc/ssl/cert.pem`). Python.org 3.13 en Mac no tiene `…/etc/openssl/cert.pem`; urllib sin CA fallaba y **abortaba antes del DELETE MySQL**. El helper usa CA bundle; si Firebase falla, MySQL/ACS **siguen**. Verificado 2026-09-01: delete 204 de las fotos residuales `facades/1788295485102_…` y `facades/1788294259720_…`.

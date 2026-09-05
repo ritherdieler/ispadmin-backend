@@ -6,7 +6,7 @@ import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
-import com.dscorp.wispadmin.wispadmin.config.OpenApiConfig
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayOpenApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/olt-gateway")
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @Tag(name = "OLT Gateway SmartOLT Compat", description = "Aliases HTTP compatibles con SmartOLT (6 ops)")
-@SecurityRequirement(name = OpenApiConfig.OLT_GATEWAY_SECURITY_SCHEME)
+@SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
 class SmartOltCompatController(
     private val oltManagerFacade: OltManagerFacade
 ) {

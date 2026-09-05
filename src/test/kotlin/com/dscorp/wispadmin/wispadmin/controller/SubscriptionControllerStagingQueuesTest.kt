@@ -4,7 +4,6 @@ import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionIntegrityViolationClassifier
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
-import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsOpsService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import io.mockk.every
 import io.mockk.mockk
@@ -31,9 +30,8 @@ class SubscriptionControllerStagingQueuesTest {
             eventPublisher = mockk(relaxed = true),
             integrityViolationClassifier = SubscriptionIntegrityViolationClassifier(),
             ipConflictNocNotifier = mockk(relaxed = true),
-            tr069AsyncApplicator = mockk(relaxed = true),
-            subscriptionAcsOpsService = mockk<SubscriptionAcsOpsService>(relaxed = true),
             subscriptionProvisionService = mockk<SubscriptionProvisionService>(relaxed = true),
+            gatewayCpe = mockk(relaxed = true),
             environment = environment
         )
     }
@@ -65,9 +63,8 @@ class SubscriptionControllerStagingQueuesTest {
             eventPublisher = mockk(relaxed = true),
             integrityViolationClassifier = SubscriptionIntegrityViolationClassifier(),
             ipConflictNocNotifier = mockk(relaxed = true),
-            tr069AsyncApplicator = mockk(relaxed = true),
-            subscriptionAcsOpsService = mockk(relaxed = true),
             subscriptionProvisionService = mockk(relaxed = true),
+            gatewayCpe = mockk(relaxed = true),
             environment = environment
         )
 

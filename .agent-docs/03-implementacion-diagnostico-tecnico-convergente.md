@@ -64,11 +64,11 @@ Backoffice: `src/features/service-health/`; reutiliza `SubscriptionTrafficPanel`
 Rutas relativas al contexto existente `/ispadmin`:
 
 - `GET /subscription/{id}/cpe-status`: contrato camelCase existente, GPON/ACS separados y capacidades explícitas. 404 si no existe la suscripción; parcial si faltan fuentes.
-- `GET /subscription/{id}/service-health`: resumen y reglas habilitadas, `diagnosis_code`, `missing_evidence`, confianza y siguiente comprobación.
+- `GET /subscription/{id}/service-health`: lee cache Redis (`health:360:{id}`) o `service_health_current` si está fresco (default 60 s); si no, reevalúa en vivo (`HealthEvidenceReader` + HTTP a traffic/gateway), persiste el snapshot y rellena cache. El contrato JSON no cambia.
 - `GET /subscription/{id}/service-health/series?from=...&to=...`: óptica, conteos y señal; máximo 90 días, 24 h por defecto.
 - `GET /subscription/{id}/service-health/timeline?page=0&size=50&from=...&to=...`: eventos paginados y últimas acciones de la ventana.
 - `GET /onu/configured/{externalId}/optical-series`: histórico de la ONU física; no mezcla otra ONU que haya pertenecido al mismo abonado.
-- `POST /subscription/{id}/acs/wifi-refresh`: petición manual limitada.
+- `POST /subscription/{id}/acs/wifi-refresh`: petición manual **sin** cooldown de 10 min ni bloqueo por muestra &lt; 15 min (sí Inform fresco / `ACS_STALE` y límite de CR concurrentes). Misma política para óptica manual; ver [service-health-manual-refresh-no-cooldown-2026-09-03.md](./service-health-manual-refresh-no-cooldown-2026-09-03.md).
 - `PUT /subscription/{id}/cpe-config`: WAN/Wi-Fi con validación completa previa.
 - `GET /subscription/{id}/service-health/actions/{actionId}`: estado y confirmación por sección.
 - `GET /api/netdiag/incidents/{id}/affected-subscriptions?page=0&size=50`: afectados, recuperación, alcance y diagnóstico. Conserva la protección API-key de NetDiag cuando esté habilitada, además del bearer del operador.

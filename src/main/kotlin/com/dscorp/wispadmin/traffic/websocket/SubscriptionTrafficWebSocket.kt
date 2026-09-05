@@ -1,12 +1,15 @@
 package com.dscorp.wispadmin.traffic.websocket
 
+import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
+import com.dscorp.wispadmin.routeros.port.MikrotikClient
+import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
+import com.dscorp.wispadmin.traffic.entity.TrafficRouter
+import com.dscorp.wispadmin.traffic.port.TrafficDirectoryPort
+import com.dscorp.wispadmin.traffic.repository.TrafficRouterRepository
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickBuilder
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickState
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
-import com.dscorp.wispadmin.wispadmin.service.MikroTikConnectionService
-import com.dscorp.wispadmin.wispadmin.websocket.WebSocketSessionCleanup
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.messaging.handler.annotation.MessageMapping
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor
 import org.springframework.messaging.simp.SimpMessagingTemplate
@@ -19,16 +22,19 @@ import java.util.concurrent.TimeUnit
 
 @Controller
 class SubscriptionTrafficWebSocket(
-    @Autowired private val messagingTemplate: SimpMessagingTemplate,
-    @Autowired private val subscriptionRepository: SubscriptionRepository,
-    @Autowired private val mikrotikConnectionService: MikroTikConnectionService
-) : WebSocketSessionCleanup {
+    private val messagingTemplate: SimpMessagingTemplate,
+    private val directory: TrafficDirectoryPort,
+    private val routerRepository: TrafficRouterRepository,
+    @Qualifier("trafficPollMikrotikClient")
+    private val mikrotikClient: MikrotikClient,
+    private val routerOsClientProperties: RouterOsClientProperties,
+) : TrafficWebSocketSessionCleanup {
     private val logger = LoggerFactory.getLogger(SubscriptionTrafficWebSocket::class.java)
 
     private data class SubscriptionMonitorTarget(
         val subscriptionId: Int,
         val ip: String,
-        val deviceId: Int
+        val deviceId: Int,
     )
 
     private val runningTasks = mutableMapOf<Int, ScheduledFuture<*>>()
@@ -37,51 +43,41 @@ class SubscriptionTrafficWebSocket(
     private val subscriptionTargets = ConcurrentHashMap<Int, SubscriptionMonitorTarget>()
     private val deviceSubscriptions = ConcurrentHashMap<Int, MutableSet<Int>>()
     private val tickStates = ConcurrentHashMap<Int, SubscriptionTrafficLiveTickState>()
-    private val cleanupScheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
-
+    private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(2)
     private val sessionTimeoutMs = 5 * 60 * 1000L
     private val monitorIntervalMs = 2000L
 
     init {
-        cleanupScheduler.scheduleAtFixedRate({
-            cleanupInactiveSessions()
-        }, 1, 1, TimeUnit.MINUTES)
+        scheduler.scheduleAtFixedRate({ cleanupInactiveSessions() }, 1, 1, TimeUnit.MINUTES)
     }
 
     @MessageMapping("/subscription-traffic/start")
     fun startSubscriptionTrafficMonitor(request: Map<String, Any>, headerAccessor: SimpMessageHeaderAccessor) {
         val sessionId = headerAccessor.sessionId ?: return
         val subscriptionId = (request["subscriptionId"] as? Number)?.toInt() ?: return
-
         if (activeSessions[subscriptionId]?.contains(sessionId) == true) {
             sessionActivity[sessionId] = System.currentTimeMillis()
             return
         }
-
-        val subscription = subscriptionRepository.findByIdWithHostDevice(subscriptionId) ?: run {
-            logger.warn("Subscription {} not found for live traffic", subscriptionId)
+        val target = try {
+            directory.list().firstOrNull { it.subscriptionId == subscriptionId }
+        } catch (ex: Exception) {
+            logger.warn("Live traffic directory failed for {}: {}", subscriptionId, ex.message)
+            null
+        }
+        val ip = target?.ip?.trim().orEmpty()
+        if (ip.isEmpty()) {
+            logger.warn("Subscription {} missing ip for live traffic", subscriptionId)
             return
         }
-
-        val ip = subscription.ip?.trim().orEmpty()
-        val hostDevice = subscription.hostDevice
-        if (ip.isEmpty() || hostDevice == null) {
-            logger.warn("Subscription {} missing ip or hostDevice for live traffic", subscriptionId)
-            return
-        }
-
-        val deviceId = hostDevice.id
+        val deviceId = target?.routerHint ?: routerRepository.findByEnabledTrue().firstOrNull()?.id ?: return
         activeSessions.computeIfAbsent(subscriptionId) { mutableSetOf() }.add(sessionId)
         sessionActivity[sessionId] = System.currentTimeMillis()
-        subscriptionTargets[subscriptionId] = SubscriptionMonitorTarget(
-            subscriptionId = subscriptionId,
-            ip = ip,
-            deviceId = deviceId
-        )
+        subscriptionTargets[subscriptionId] = SubscriptionMonitorTarget(subscriptionId, ip, deviceId)
         deviceSubscriptions.computeIfAbsent(deviceId) { mutableSetOf() }.add(subscriptionId)
-
         if (deviceSubscriptions[deviceId]?.size == 1) {
-            startDeviceMonitoring(hostDevice, deviceId)
+            val router = routerRepository.findById(deviceId).orElse(null) ?: return
+            startDeviceMonitoring(router, deviceId)
         }
     }
 
@@ -96,28 +92,33 @@ class SubscriptionTrafficWebSocket(
         activeSessions.entries
             .filter { (_, sessions) -> sessions.contains(sessionId) }
             .map { it.key }
-            .forEach { subscriptionId ->
-                removeSession(subscriptionId, sessionId)
-            }
+            .forEach { subscriptionId -> removeSession(subscriptionId, sessionId) }
         sessionActivity.remove(sessionId)
     }
 
-    private fun startDeviceMonitoring(device: com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice, deviceId: Int) {
+    private fun startDeviceMonitoring(router: TrafficRouter, deviceId: Int) {
         if (runningTasks.containsKey(deviceId)) return
-
-        val task = mikrotikConnectionService.scheduleMonitoring(
-            device = device,
-            path = "/queue/simple",
-            intervalMs = monitorIntervalMs,
-            onData = { queueRows ->
-                if (deviceSubscriptions[deviceId].isNullOrEmpty()) {
-                    stopDeviceMonitoring(deviceId)
-                    return@scheduleMonitoring
-                }
-                publishTicksForDevice(deviceId, queueRows)
-            },
-            shouldContinue = { !deviceSubscriptions[deviceId].isNullOrEmpty() }
+        val deviceRef = MikrotikDeviceRef(
+            id = router.id.toString(),
+            host = router.host,
+            port = routerOsClientProperties.classic.port,
+            username = router.username,
+            password = router.password,
         )
+        val task = scheduler.scheduleAtFixedRate({
+            if (deviceSubscriptions[deviceId].isNullOrEmpty()) {
+                stopDeviceMonitoring(deviceId)
+                return@scheduleAtFixedRate
+            }
+            try {
+                mikrotikClient.withSession(deviceRef) { session ->
+                    val queues = session.print("/queue/simple", proplist = listOf(".id", "target", "name", "bytes", "rate"))
+                    publishTicksForDevice(deviceId, queues)
+                }
+            } catch (ex: Exception) {
+                logger.warn("Live traffic poll failed for router {}: {}", deviceId, ex.message)
+            }
+        }, 0, monitorIntervalMs, TimeUnit.MILLISECONDS)
         runningTasks[deviceId] = task
     }
 
@@ -131,7 +132,7 @@ class SubscriptionTrafficWebSocket(
                 subscriptionId = subscriptionId,
                 queueRow = queueRow,
                 previous = previous,
-                intervalSeconds = monitorIntervalMs / 1000.0
+                intervalSeconds = monitorIntervalMs / 1000.0,
             )
             tickStates[subscriptionId] = result.nextState
             messagingTemplate.convertAndSend("/topic/subscription-traffic/$subscriptionId", result.tick)
@@ -142,7 +143,6 @@ class SubscriptionTrafficWebSocket(
         val removed = activeSessions[subscriptionId]?.remove(sessionId) ?: false
         sessionActivity.remove(sessionId)
         if (!removed) return
-
         if (activeSessions[subscriptionId].isNullOrEmpty()) {
             activeSessions.remove(subscriptionId)
             val target = subscriptionTargets.remove(subscriptionId)
@@ -160,7 +160,6 @@ class SubscriptionTrafficWebSocket(
     private fun stopDeviceMonitoring(deviceId: Int) {
         runningTasks[deviceId]?.cancel(false)
         runningTasks.remove(deviceId)
-        mikrotikConnectionService.closeConnection(deviceId)
     }
 
     private fun cleanupInactiveSessions() {
@@ -168,8 +167,6 @@ class SubscriptionTrafficWebSocket(
         sessionActivity.entries
             .filter { (_, lastActivity) -> currentTime - lastActivity > sessionTimeoutMs }
             .map { it.key }
-            .forEach { sessionId ->
-                handleUserDisconnect(sessionId)
-            }
+            .forEach { sessionId -> handleUserDisconnect(sessionId) }
     }
 }

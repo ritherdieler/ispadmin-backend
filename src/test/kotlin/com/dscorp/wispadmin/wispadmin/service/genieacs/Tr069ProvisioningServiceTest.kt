@@ -207,7 +207,42 @@ class Tr069ProvisioningServiceTest {
         assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
         val getPaths = drainGetPaths()
         assertTrue(getPaths.any { it.contains("WANConnectionDevice.2") && it.contains("ExternalIPAddress") }, getPaths.toString())
+        assertTrue(getPaths.any { it.contains("WANConnectionDevice.2") && it.contains("ConnectionStatus") }, getPaths.toString())
         assertTrue(getPaths.none { it.contains("WANConnectionDevice.1") && it.contains("ExternalIPAddress") }, getPaths.toString())
+    }
+
+    @Test
+    fun `does not complete while client WAN ConnectionStatus is Disconnected`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueClientWanAlreadyPresent()
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        repeat(6) {
+            server.enqueue(emptyFaults())
+            server.enqueue(deviceClientWanIp("192.168.30.216", connectionStatus = "Disconnected"))
+            server.enqueue(deviceClientWanIp("192.168.30.216", connectionStatus = "Disconnected"))
+        }
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                ip = "192.168.30.216",
+                ipSegment = "192.168.30.0/24",
+                wanVlanId = 100,
+                wifiSsid24 = null,
+                wifiPassword24 = null,
+                wifiSsid5 = null,
+                wifiPassword5 = null,
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.PENDING, outcome.status)
+        assertTrue(
+            outcome.message!!.contains("ConnectionStatus") ||
+                outcome.message!!.contains("IP/SSID"),
+            outcome.message,
+        )
     }
 
     @Test
@@ -324,6 +359,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp("192.168.30.250"))
         server.enqueue(deviceClientWanIp("192.168.30.250"))
         server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
         server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
@@ -576,6 +612,7 @@ class Tr069ProvisioningServiceTest {
         repeat(6) {
             server.enqueue(emptyFaults())
             server.enqueue(deviceClientWanIp("192.168.123.4"))
+            server.enqueue(deviceClientWanIp("192.168.123.4"))
             server.enqueue(deviceWithSsids("wrong24", "wrong5"))
             server.enqueue(deviceWithSsids("wrong24", "wrong5"))
         }
@@ -600,9 +637,11 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(deviceClientWanIp("192.168.123.4"))
+        server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceWithSsids("wrong24", "wrong5"))
         server.enqueue(deviceWithSsids("wrong24", "wrong5"))
         server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -624,6 +663,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -672,6 +712,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(deviceClientWanIp(ip, wanDeviceIndex = 1, wcdIndex = 1, wanIpInstance = 2))
+        server.enqueue(deviceClientWanIp(ip, wanDeviceIndex = 1, wcdIndex = 1, wanIpInstance = 2))
         server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
         server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-5", ssid24Index = 1, ssid5Index = 5))
     }
@@ -681,6 +722,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(emptyFaults())
         server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp(ip))
         server.enqueue(deviceClientWanIp(ip))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
@@ -716,6 +758,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(taskAccepted())
         repeat(3) { server.enqueue(emptyDevices()) }
         server.enqueue(emptyFaults())
+        server.enqueue(deviceClientWanIp(ip))
         server.enqueue(deviceClientWanIp(ip))
         server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
         server.enqueue(deviceWithSsids("lab-hg8145-24", "lab-hg8145-5", ssid24Index = 1, ssid5Index = 5))
@@ -956,6 +999,7 @@ class Tr069ProvisioningServiceTest {
         wanDeviceIndex: Int = 1,
         wcdIndex: Int = 2,
         wanIpInstance: Int = 1,
+        connectionStatus: String = "Connected",
     ) = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")
@@ -967,7 +1011,8 @@ class Tr069ProvisioningServiceTest {
                 "WANDevice":{"$wanDeviceIndex":{
                   "WANConnectionDevice":{"$wcdIndex":{
                     "WANIPConnection":{"$wanIpInstance":{
-                      "ExternalIPAddress":{"_value":"$wanIp"}
+                      "ExternalIPAddress":{"_value":"$wanIp"},
+                      "ConnectionStatus":{"_value":"$connectionStatus"}
                     }}
                   }}
                 }}
@@ -1006,7 +1051,8 @@ class Tr069ProvisioningServiceTest {
                 "WANDevice":{"$wanDeviceIndex":{
                   "WANConnectionDevice":{"$wcdIndex":{
                     "WANIPConnection":{"$wanIpInstance":{
-                      "ExternalIPAddress":{"_value":"192.168.123.4"}
+                      "ExternalIPAddress":{"_value":"192.168.123.4"},
+                      "ConnectionStatus":{"_value":"Connected"}
                     }}
                   }}
                 }}
@@ -1022,7 +1068,7 @@ class Tr069ProvisioningServiceTest {
     ): MockResponse {
         val slots = indices.joinToString(",") { index ->
             val body = if (withWanIp || index != indices.last()) {
-                """"$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.123.4"}}}}"""
+                """"$index":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.123.4"},"ConnectionStatus":{"_value":"Connected"}}}}"""
             } else {
                 """"$index":{}"""
             }
