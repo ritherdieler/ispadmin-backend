@@ -20,6 +20,7 @@ import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceCutManager
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceReactivationManager
+import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -124,14 +125,21 @@ class SubscriptionService(
         try {
             val subscription = repository.findById(request.subscriptionId).get()
             val plan = planRepository.findById(request.planId).get()
+            val vlan = SubscriptionVlanRules.resolveMigrationVlan(request.vlan)
+            val hostDevice = subscription.hostDevice
+                ?: throw IllegalStateException("La suscripción debe tener hostDevice asignado")
+            if (hostDevice.disabled) {
+                throw IllegalStateException("network_device id=${hostDevice.id} esta deshabilitado")
+            }
             val authorizationRequest = request.onu.toAuthorizationRequest(
                 customerFullName = subscription.getFullName(),
-                vlan = fiberInstallationStrategy.resolveVlan(subscription)
+                vlan = vlan
             )
             subscription.apply {
                 this.plan = plan
                 isMigration = true
                 installationType = InstallationType.FIBER
+                this.vlan = vlan
                 fiberOnuSn = request.onu.sn.takeIf { it.isNotBlank() }
                 migrationDate = Date()
                 migrationNote = request.notes

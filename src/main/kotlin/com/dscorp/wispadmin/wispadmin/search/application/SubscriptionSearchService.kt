@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.search.application
 
 import com.dscorp.wispadmin.wispadmin.dto.PageResponseDto
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
+import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.search.api.SearchEngine
 import com.dscorp.wispadmin.wispadmin.search.api.model.SearchHit
@@ -10,16 +11,19 @@ import com.dscorp.wispadmin.wispadmin.search.api.model.SearchQuery
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class SubscriptionSearchService(
     private val searchEngine: SearchEngine,
     @Qualifier("dbSearchEngineAdapter") private val fallbackSearchEngine: SearchEngine,
-    private val subscriptionRepository: SubscriptionRepository
+    private val subscriptionRepository: SubscriptionRepository,
+    private val paymentRepository: PaymentRepository,
 ) {
 
     private val logger = LoggerFactory.getLogger(SubscriptionSearchService::class.java)
 
+    @Transactional(readOnly = true)
     fun search(term: String?, status: String?, page: Int, size: Int): PageResponseDto<SubscriptionDto> {
         val filters = buildFilters(status)
         val query = SearchQuery(term = term.orEmpty().trim(), filters = filters, page = page, size = size)
@@ -54,7 +58,16 @@ class SubscriptionSearchService(
         val orderedIds = hits.mapNotNull { it.id.toIntOrNull() }
         if (orderedIds.isEmpty()) return emptyList()
 
-        val byId = subscriptionRepository.findAllById(orderedIds).associateBy { it.id }
+        val subscriptions = subscriptionRepository.findAllById(orderedIds)
+        if (subscriptions.isNotEmpty()) {
+            val paymentsBySubscriptionId = paymentRepository
+                .findBySubscriptionIdInFetchResponsible(orderedIds)
+                .groupBy { it.subscription?.id }
+            subscriptions.forEach { subscription ->
+                subscription.payments = paymentsBySubscriptionId[subscription.id].orEmpty().toMutableSet()
+            }
+        }
+        val byId = subscriptions.associateBy { it.id }
         return orderedIds.mapNotNull { byId[it]?.toDto() }
     }
 

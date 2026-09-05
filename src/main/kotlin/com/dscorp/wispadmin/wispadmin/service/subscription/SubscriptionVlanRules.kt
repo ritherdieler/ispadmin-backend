@@ -20,6 +20,11 @@ object SubscriptionVlanRules {
         return vlan
     }
 
+    fun resolveMigrationVlan(rawFromApp: String?): String {
+        val trimmed = rawFromApp?.trim().orEmpty()
+        return requireAppVlan(if (trimmed.isEmpty()) "100" else trimmed)
+    }
+
     fun assertPoolAligned(vlan: String, ipSegment: String?, environmentTag: String? = null) {
         if (ipSegment.isNullOrBlank()) return
         val segment = ipSegment.trim()
