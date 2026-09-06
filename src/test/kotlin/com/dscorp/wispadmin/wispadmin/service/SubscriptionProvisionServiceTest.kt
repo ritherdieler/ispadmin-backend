@@ -247,7 +247,7 @@ class SubscriptionProvisionServiceTest {
     fun `applyInstallationResult marks olt FAILED when ONLY_TV onu has oltError`() {
         val subscription = baseSubscription().apply {
             installationType = InstallationType.ONLY_TV_FIBER
-            fiberOnu = Onu(sn = "VSOL0031C0B6")
+            fiberOnuSn = "VSOL0031C0B6"
             mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
             oltProvisionStatus = OltProvisionStatus.PENDING
             tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
@@ -367,7 +367,7 @@ class SubscriptionProvisionServiceTest {
         val subscription = baseSubscription().apply {
             id = 42
             installationType = InstallationType.FIBER
-            fiberOnu = Onu(sn = "ZTEGDC47BFFD")
+            fiberOnuSn = "ZTEGDC47BFFD"
             oltProvisionStatus = OltProvisionStatus.COMPLETE
             tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
         }
@@ -391,7 +391,7 @@ class SubscriptionProvisionServiceTest {
         val subscription = baseSubscription().apply {
             id = 42
             installationType = InstallationType.FIBER
-            fiberOnu = Onu(sn = "ALCL123")
+            fiberOnuSn = "ALCL123"
             oltProvisionStatus = OltProvisionStatus.COMPLETE
             tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
             vlan = "100"

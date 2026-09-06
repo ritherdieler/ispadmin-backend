@@ -53,18 +53,6 @@ class NetDiagTelemetryRetentionAdapter(
 }
 
 @Component
-class TrafficTelemetryRetentionAdapter(
-    private val service: ObjectProvider<com.dscorp.wispadmin.traffic.service.SubscriptionTrafficRetentionService>
-) : TelemetryRetentionPort {
-    override fun name() = "traffic"
-    override fun purgeExpired(now: Instant): Int {
-        val result = service.ifAvailable?.purgeExpired() ?: return 0
-        return result.rawDeleted + result.fiveMinuteDeleted + result.hourlyDeleted +
-            result.dailyDeleted + result.networkHourDeleted
-    }
-}
-
-@Component
 class ObservabilityTelemetryRetentionAdapter(
     private val scheduler: ObjectProvider<com.dscorp.wispadmin.observability.scheduled.ObsRetentionScheduler>
 ) : TelemetryRetentionPort {

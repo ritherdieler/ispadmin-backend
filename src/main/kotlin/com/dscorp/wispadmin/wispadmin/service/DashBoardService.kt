@@ -4,8 +4,9 @@ import com.dscorp.wispadmin.wispadmin.data.model.*
 import com.dscorp.wispadmin.wispadmin.data.model.toDto
 import com.dscorp.wispadmin.wispadmin.dto.*
 import com.dscorp.wispadmin.wispadmin.repository.*
-import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
+import com.dscorp.wispadmin.wispadmin.oltclient.OltGatewayHttpClient
 import com.dscorp.wispadmin.wispadmin.util.PerformanceMonitor
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 
@@ -35,7 +36,8 @@ class DashBoardService(
     private val userRepository: UserRepository,
     private val networkDeviceRepository: NetworkDeviceRepository,
     private val napBoxRepository: NapBoxRepository,
-    private val oltInventory: ObjectProvider<OltInventoryPort>,
+    private val oltGatewayHttp: ObjectProvider<OltGatewayHttpClient>,
+    private val objectMapper: ObjectMapper,
     private val performanceMonitor: PerformanceMonitor,
     private val paymentStatisticsService: PaymentStatisticsService
 ) {
@@ -884,13 +886,20 @@ class DashBoardService(
         )
     }
 
-    /**
-     * Obtiene datos de salud de la red
-     */
+    private fun countConfiguredOnus(): Long {
+        val client = oltGatewayHttp.ifAvailable ?: return 0L
+        return try {
+            val body = client.getJson("/api/olt-gateway/onus/configured", "page=0&size=1").body ?: return 0L
+            objectMapper.readTree(body).path("totalElements").asLong(0L)
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     fun getNetworkHealthData(): NetworkHealthResumeDto {
         val devices = networkDeviceRepository.findAll()
         val napBoxes = napBoxRepository.findAll()
-        val configuredOnus = oltInventory.ifAvailable?.countConfigured() ?: 0L
+        val configuredOnus = countConfiguredOnus()
 
         val devicesByType = devices
             .groupBy { it.networkDeviceType.name }

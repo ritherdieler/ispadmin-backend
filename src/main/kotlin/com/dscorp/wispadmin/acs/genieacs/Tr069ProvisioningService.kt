@@ -248,20 +248,31 @@ class Tr069ProvisioningService(
         val maskPath = "${profileForClientWan.wanIpConnectionPath}.SubnetMask"
         val dnsPath = "${profileForClientWan.wanIpConnectionPath}.DNSServers"
         request.onPhase?.invoke("Verificando configuración…")
-        client.getParameterValues(
-            deviceId = device.id,
-            parameterNames = listOfNotNull(
-                wanIpPath,
-                wanConnectionStatusPath,
-                request.wifiSsid24?.let { ssid24Path },
-                request.wifiSsid5?.let { ssid5Path },
-            ) + if (profileForClientWan.usesHuaweiWanExtensions()) {
-                listOf(natPath, maskPath, dnsPath)
-            } else {
-                emptyList()
-            },
-            connectionRequest = true,
-        )
+        val verifyParams = listOfNotNull(
+            wanIpPath,
+            wanConnectionStatusPath,
+            request.wifiSsid24?.let { ssid24Path },
+            request.wifiSsid5?.let { ssid5Path },
+        ) + if (profileForClientWan.usesHuaweiWanExtensions()) {
+            listOf(natPath, maskPath, dnsPath)
+        } else {
+            emptyList()
+        }
+        fun refreshVerifyCache() {
+            val gpv = client.getParameterValues(
+                deviceId = device.id,
+                parameterNames = verifyParams,
+                connectionRequest = true,
+            )
+            if (gpv.statusCode == 202) {
+                log.warn(
+                    "ONU {} GPV verificación encolado (HTTP 202); CR/sesión ACS no aplicada aún lastInform={}",
+                    device.id,
+                    device.lastInform,
+                )
+            }
+        }
+        refreshVerifyCache()
         if (profileForClientWan.usesHuaweiWanExtensions()) {
             repairIsolatedL3IfNeeded(
                 deviceId = device.id,
@@ -275,6 +286,10 @@ class Tr069ProvisioningService(
             )?.let { return it }
         }
 
+        var lastObservedIp: String? = null
+        var lastObservedStatus: String? = null
+        var lastObservedSsid24: String? = null
+        var lastObservedSsid5: String? = null
         while (clock() <= applyDeadline) {
             resolveTaskFault(device.id, lastResult)?.let { genieError ->
                 return Tr069ProvisionOutcome(
@@ -286,13 +301,22 @@ class Tr069ProvisioningService(
                 )
             }
 
-            val ipOk = client.getDeviceParameterValue(device.id, wanIpPath) == ip
-            val wanUp = client.getDeviceParameterValue(device.id, wanConnectionStatusPath)
-                .equals("Connected", ignoreCase = true)
-            val ssid24Ok = request.wifiSsid24.isNullOrBlank() ||
-                client.getDeviceParameterValue(device.id, ssid24Path) == request.wifiSsid24
-            val ssid5Ok = request.wifiSsid5.isNullOrBlank() ||
-                client.getDeviceParameterValue(device.id, ssid5Path) == request.wifiSsid5
+            lastObservedIp = client.getDeviceParameterValue(device.id, wanIpPath)
+            lastObservedStatus = client.getDeviceParameterValue(device.id, wanConnectionStatusPath)
+            lastObservedSsid24 = if (request.wifiSsid24.isNullOrBlank()) {
+                null
+            } else {
+                client.getDeviceParameterValue(device.id, ssid24Path)
+            }
+            lastObservedSsid5 = if (request.wifiSsid5.isNullOrBlank()) {
+                null
+            } else {
+                client.getDeviceParameterValue(device.id, ssid5Path)
+            }
+            val ipOk = lastObservedIp == ip
+            val wanUp = lastObservedStatus.equals("Connected", ignoreCase = true)
+            val ssid24Ok = request.wifiSsid24.isNullOrBlank() || lastObservedSsid24 == request.wifiSsid24
+            val ssid5Ok = request.wifiSsid5.isNullOrBlank() || lastObservedSsid5 == request.wifiSsid5
             if (ipOk && wanUp && ssid24Ok && ssid5Ok) {
                 return Tr069ProvisionOutcome(
                     status = CpeStatus.COMPLETE,
@@ -301,10 +325,34 @@ class Tr069ProvisioningService(
                     acsSnapshot = snapshotAfterTask,
                 )
             }
+            log.warn(
+                "ONU {} verificación ACS pendiente ip={}/{} status={} ssid24={}/{} ssid5={}/{} lastInform={}",
+                device.id,
+                lastObservedIp,
+                ip,
+                lastObservedStatus,
+                lastObservedSsid24,
+                request.wifiSsid24,
+                lastObservedSsid5,
+                request.wifiSsid5,
+                device.lastInform,
+            )
             sleeper(properties.pollIntervalMs)
+            if (clock() <= applyDeadline) {
+                refreshVerifyCache()
+            }
         }
 
-        val genieError = SSID_VERIFICATION_TIMEOUT_MESSAGE
+        val genieError = verificationTimeoutMessage(
+            expectedIp = ip,
+            observedIp = lastObservedIp,
+            observedStatus = lastObservedStatus,
+            expectedSsid24 = request.wifiSsid24,
+            observedSsid24 = lastObservedSsid24,
+            expectedSsid5 = request.wifiSsid5,
+            observedSsid5 = lastObservedSsid5,
+            lastInform = device.lastInform,
+        )
         return Tr069ProvisionOutcome(
             status = CpeStatus.PENDING,
             deviceId = device.id,
@@ -629,6 +677,33 @@ class Tr069ProvisioningService(
 
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
             "IP/SSID/WAN ConnectionStatus no se confirmaron en el ACS dentro del tiempo de espera."
+
+        fun verificationTimeoutMessage(
+            expectedIp: String,
+            observedIp: String?,
+            observedStatus: String?,
+            expectedSsid24: String?,
+            observedSsid24: String?,
+            expectedSsid5: String?,
+            observedSsid5: String?,
+            lastInform: String?,
+        ): String {
+            val parts = mutableListOf(
+                SSID_VERIFICATION_TIMEOUT_MESSAGE,
+                "ip observado=${observedIp ?: "-"} esperado=$expectedIp",
+                "ConnectionStatus=${observedStatus ?: "-"}",
+            )
+            if (!expectedSsid24.isNullOrBlank()) {
+                parts += "ssid24 observado=${observedSsid24 ?: "-"} esperado=$expectedSsid24"
+            }
+            if (!expectedSsid5.isNullOrBlank()) {
+                parts += "ssid5 observado=${observedSsid5 ?: "-"} esperado=$expectedSsid5"
+            }
+            if (!lastInform.isNullOrBlank()) {
+                parts += "lastInform=$lastInform"
+            }
+            return parts.joinToString(" | ")
+        }
 
         fun cidrToSubnetMask(cidr: String): String {
             val prefix = cidr.substringAfter("/", "24").toIntOrNull()?.coerceIn(0, 32) ?: 24

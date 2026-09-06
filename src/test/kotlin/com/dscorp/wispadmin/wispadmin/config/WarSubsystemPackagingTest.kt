@@ -169,6 +169,39 @@ class WarSubsystemPackagingTest {
     }
 
     @Test
+    fun satelliteProfilesExcludeCoreFlywayMigrations() {
+        val pom = Files.readString(root().resolve("pom.xml"))
+        listOf(
+            "traffic-war",
+            "traffic-staging-war",
+            "oltgateway-war",
+            "oltgateway-staging-war",
+            "acs-war",
+            "acs-staging-war",
+        ).forEach { profileId ->
+            val slice = profileProperties(pom, profileId)
+            assertTrue(
+                slice.contains("WEB-INF/classes/db/migration/**"),
+                "$profileId must omit core Flyway scripts: $slice",
+            )
+        }
+        val traffic = Files.readString(root().resolve("src/main/resources/application-traffic.properties"))
+        val acs = Files.readString(root().resolve("src/main/resources/application-acs.properties"))
+        val gateway = Files.readString(root().resolve("src/main/resources/application-oltgateway.properties"))
+        assertTrue(Regex("""^spring\.flyway\.enabled=false\s*$""", RegexOption.MULTILINE).containsMatchIn(traffic), traffic)
+        assertTrue(Regex("""^spring\.flyway\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(acs), acs)
+        assertTrue(acs.contains("classpath:db/acs"), acs)
+        assertTrue(gateway.contains("classpath:db/oltgateway"), gateway)
+    }
+
+    @Test
+    fun deployScriptPromotesSatelliteWarsOutOfIsolatedTargetDirectory() {
+        val script = Files.readString(root().resolve("scripts/deploy.sh"))
+        assertTrue(script.contains("promote_packaged_war"), script.take(400))
+        assertTrue(script.contains("target/\${name%.war}/\$name"), script)
+    }
+
+    @Test
     fun packagedWarsOmitFaceModelFilesWhenPresent() {
         val target = root().resolve("target")
         val wars = listOf(
@@ -177,7 +210,15 @@ class WarSubsystemPackagingTest {
             "ispadmin-staging-acs.war",
             "ispadmin-staging-traffic.war",
             "ispadmin-staging-oltgateway.war",
-        ).map { target.resolve(it) }.filter { Files.isRegularFile(it) }
+        ).map { name ->
+            val flat = target.resolve(name)
+            val nested = target.resolve(name.removeSuffix(".war")).resolve(name)
+            when {
+                Files.isRegularFile(flat) -> flat
+                Files.isRegularFile(nested) -> nested
+                else -> null
+            }
+        }.filterNotNull()
         if (wars.isEmpty()) return
         wars.forEach { war ->
             ZipFile(war.toFile()).use { zip ->

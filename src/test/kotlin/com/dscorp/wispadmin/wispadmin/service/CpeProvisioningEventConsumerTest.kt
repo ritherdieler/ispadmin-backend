@@ -27,7 +27,7 @@ class CpeProvisioningEventConsumerTest {
                 "payloadJson" to """{"cpeStatus":"COMPLETE","uniqueExternalId":"ext-1"}""",
             )
         )
-        verify { flags.apply("ZTEGDC47BFFD", "COMPLETE") }
+        verify { flags.apply("ZTEGDC47BFFD", "COMPLETE", any(), any()) }
     }
 
     @Test
@@ -40,6 +40,6 @@ class CpeProvisioningEventConsumerTest {
                 "payloadJson" to """{"cpeStatus":"COMPLETE"}""",
             )
         )
-        verify(exactly = 0) { flags.apply(any(), any()) }
+        verify(exactly = 0) { flags.apply(any(), any(), any(), any()) }
     }
 }

@@ -46,7 +46,16 @@ OBS_API_KEY=
 # Do not put them in /opt/gigafiber/.env.
 # ACS_API_KEY=   # openssl rand -hex 16; misma key Gateway ↔ ACS WAR (X-Acs-Key)
 # OLT_GATEWAY_ACS_BASE_URL is baked (staging: http://127.0.0.1:8080/ispadmin-staging-acs)
-# Staging deploy must use: --with oltgateway,traffic,acs (client-enabled patched into application-staging.properties)
+# Staging deploy must keep embedded modules in Core and enable HTTP clients:
+# --with observability,netdiag,servicehealth,oltgateway,traffic,acs
+
+# SmartOLT cloud (solo si olt.provider.*=SMARTOLT en el WAR Gateway). No commitear el valor.
+# OLT_SERVICE_BASE_URL=https://gigafiberperu.smartolt.com/api/
+# OLT_SERVICE_API_KEY=
+# OLT_PROVIDER_AUTHORIZE=GATEWAY
+# OLT_PROVIDER_DELETE=GATEWAY
+# OLT_PROVIDER_REBOOT=GATEWAY
+# OLT_PROVIDER_MOVE=GATEWAY
 
 # Redis interno (cache 360 + Streams). Staging: REDIS_ENABLED=true REDIS_HOST=redis
 # REDIS_PASSWORD=   # openssl rand -hex 16; no commitear el valor
@@ -56,3 +65,6 @@ OBS_API_KEY=
 # Activar solo durante pruebas; incluye claves WiFi en texto plano.
 # DEPLOY_GENIEACS_LOG_CURL=true ./scripts/deploy.sh --deploy
 # DEPLOY_GENIEACS_LOG_CURL=
+
+# Runtime variable forwarded through the deployment environment (no real value here):
+# OLT_GATEWAY_OPERATION_SECRET=

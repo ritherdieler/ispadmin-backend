@@ -109,6 +109,78 @@ class SubsystemDependencyRulesTest {
         )
     }
 
+    @Test
+    fun coreShippedCodeDoesNotReferenceSplitWarTypes() {
+        val shipped = listOf(
+            "shared",
+            "wispadmin",
+            "events",
+            "transport",
+            "netdiag",
+            "servicehealth",
+            "observability",
+        )
+        val pattern = Regex("""com\.dscorp\.wispadmin\.(traffic|oltgateway|acs)\.""")
+        val violations = shipped.flatMap { pkg ->
+            val sourceRoot = mainKotlin.resolve("com/dscorp/wispadmin/$pkg")
+            if (!Files.isDirectory(sourceRoot)) return@flatMap emptyList()
+            Files.walk(sourceRoot).asSequence()
+                .filter { it.isRegularFile() && it.toString().endsWith(".kt") }
+                .flatMap { file ->
+                    val relative = file.relativeTo(root)
+                    Files.readAllLines(file).asSequence().mapIndexedNotNull { index, line ->
+                        if (!pattern.containsMatchIn(line)) return@mapIndexedNotNull null
+                        "$relative:${index + 1}: ${line.trim()}"
+                    }
+                }
+                .toList()
+        }
+        assertTrue(violations.isEmpty()) {
+            "El core no puede referenciar tipos de wars split (traffic, oltgateway, acs):\n${violations.joinToString("\n")}"
+        }
+    }
+
+    @Test
+    fun embeddedModulesImportCoreOnlyThroughAllowlistedAdapters() {
+        val allowed = setOf(
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/config/ServiceHealthScope.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/controller/HealthAccess.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/AcsTelemetryService.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/DiagnosisEngine.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/HealthEvidenceReader.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/IdentityChangeObserver.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/IdentityService.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/RemoteActionService.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/servicehealth/service/ServiceHealthSubscriptionContextReader.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/NetDiagDeviceDirectoryAdapter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminOntSubscriptionAdapter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminRadiusImpactAdapter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/netdiag/service/WhatsAppOpsNotifier.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/config/ObservabilityApiKeyFilter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/config/ObservabilityWebSocketHandshakeInterceptor.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/config/TraceContextFilter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/controller/ObservabilityEventController.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/service/InProcessObservabilityReporter.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/service/ObsIngestionService.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/tracing/ObsTracer.kt",
+            "src/main/kotlin/com/dscorp/wispadmin/observability/tracing/TracingClientHttpRequestInterceptor.kt",
+        )
+        val actual = listOf("servicehealth", "netdiag", "observability").flatMap { pkg ->
+            findForbiddenPrefixes(
+                sourcePackage = pkg,
+                prefixes = listOf("import com.dscorp.wispadmin.wispadmin."),
+            ).map { it.substringBefore(':') }
+        }.toSet()
+        val unexpected = actual - allowed
+        val stale = allowed - actual
+        assertTrue(unexpected.isEmpty()) {
+            "Nuevos imports al core fuera de adapters embebidos:\n${unexpected.joinToString("\n")}"
+        }
+        assertTrue(stale.isEmpty()) {
+            "Allowlist H8 desactualizada; quitar archivos que ya no importan core:\n${stale.joinToString("\n")}"
+        }
+    }
+
     private fun assertNoForbiddenImports(sourcePackage: String, forbidden: List<String>) {
         val violations = findViolations(sourcePackage, forbidden)
         assertTrue(violations.isEmpty()) {
@@ -137,6 +209,7 @@ class SubsystemDependencyRulesTest {
         val sourceRoot = mainKotlin.resolve("com/dscorp/wispadmin/$sourcePackage")
         if (!Files.isDirectory(sourceRoot)) return emptyList()
         val importPrefixes = forbidden.map { "import com.dscorp.wispadmin.$it." }
+        val splitWars = setOf("oltgateway", "traffic", "acs")
         return Files.walk(sourceRoot).asSequence()
             .filter { it.isRegularFile() && it.toString().endsWith(".kt") }
             .flatMap { file ->
@@ -145,10 +218,14 @@ class SubsystemDependencyRulesTest {
                     .mapIndexedNotNull { index, line ->
                         val trimmed = line.trim()
                         if (importPrefixes.none { trimmed.startsWith(it) }) return@mapIndexedNotNull null
-                        val isPortContract = forbidden.any {
+                        val portTarget = forbidden.firstOrNull {
                             trimmed.startsWith("import com.dscorp.wispadmin.$it.port.")
                         }
-                        if (isPortContract) return@mapIndexedNotNull null
+                        if (portTarget != null) {
+                            val coreUsingSplitPort =
+                                sourcePackage == "wispadmin" && portTarget in splitWars
+                            if (!coreUsingSplitPort) return@mapIndexedNotNull null
+                        }
                         "$relative:${index + 1}: $trimmed"
                     }
             }

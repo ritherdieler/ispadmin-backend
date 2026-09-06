@@ -17,7 +17,10 @@ class HttpTrafficDirectoryClient(
     private val objectMapper: ObjectMapper,
 ) : TrafficDirectoryPort {
 
-    private val restTemplate = RestTemplate()
+    private val restTemplate = RestTemplate(org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
+        setConnectTimeout(3_000)
+        setReadTimeout(8_000)
+    })
     private val lock = Any()
     @Volatile
     private var cached: List<TrafficDirectoryTarget> = emptyList()
@@ -38,7 +41,7 @@ class HttpTrafficDirectoryClient(
             }
             fetched
         } catch (ex: Exception) {
-            if (cachedAtMs > 0) {
+            if (cachedAtMs > 0 && now - cachedAtMs <= properties.directoryMaxStaleSeconds * 1000) {
                 logger.warn("Traffic directory refresh failed; using cache: {}", ex.message)
                 cached
             } else {
@@ -52,14 +55,28 @@ class HttpTrafficDirectoryClient(
         if (base.isEmpty()) return emptyList()
         val headers = HttpHeaders()
         headers.set(TRAFFIC_KEY_HEADER, properties.apiKey)
-        val response = restTemplate.exchange(
-            "$base/internal/traffic/targets",
-            HttpMethod.GET,
-            HttpEntity<Void>(headers),
-            String::class.java,
-        )
-        val body = response.body ?: return emptyList()
-        return objectMapper.readValue(body, Array<TrafficDirectoryTarget>::class.java).toList()
+        val collected = mutableListOf<TrafficDirectoryTarget>()
+        var after = 0
+        repeat(10_000) {
+            val response = restTemplate.exchange(
+                "$base/internal/traffic/targets/page?after=$after&size=200",
+                HttpMethod.GET, HttpEntity<Void>(headers), String::class.java,
+            )
+            val root = objectMapper.readTree(response.body ?: error("Empty target page"))
+                ?: error("Empty target page")
+            check(root.path("items").isArray && root.has("nextCursor")) { "Invalid target page" }
+            val items = root.path("items").map { objectMapper.treeToValue(it, TrafficDirectoryTarget::class.java) }
+            check(items.size <= 200 && items.all { it.subscriptionId > after }) { "Invalid target order" }
+            check(items.zipWithNext().all { (a, b) -> a.subscriptionId < b.subscriptionId }) { "Invalid target order" }
+            collected.addAll(items)
+            val cursor = root.path("nextCursor")
+            if (cursor.isNull) return collected
+            check(cursor.isIntegralNumber && cursor.canConvertToInt()) { "Invalid target cursor" }
+            val next = cursor.asInt()
+            check(next > after && items.all { it.subscriptionId <= next }) { "Target cursor did not advance" }
+            after = next
+        }
+        error("Target directory exceeds page limit")
     }
 
     companion object {

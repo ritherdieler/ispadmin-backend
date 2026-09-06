@@ -17,7 +17,9 @@ class TrafficSecurityConfig {
         http.csrf().disable()
             .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             .and()
-            .authorizeRequests().anyRequest().permitAll()
+            .authorizeRequests()
+            .antMatchers("/actuator/health", "/actuator/health/**", "/api/traffic/v1/**", "/ws/**").permitAll()
+            .anyRequest().denyAll()
         return http.build()
     }
 }

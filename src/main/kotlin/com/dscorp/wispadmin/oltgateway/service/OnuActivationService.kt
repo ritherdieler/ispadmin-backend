@@ -24,62 +24,67 @@ class OnuActivationService(
     private val oltManagerFacade: OltManagerFacade,
     private val acsCpeClient: AcsCpeClient,
     private val eventBus: EventBusPort,
-    private val acsExecutor: Executor = Executors.newCachedThreadPool(),
+    private val journal: ActivationJournal = MemoryActivationJournal(),
+    private val acsExecutor: Executor = Executors.newFixedThreadPool(4),
 ) {
     private val log = LoggerFactory.getLogger(OnuActivationService::class.java)
-    private val bySn = ConcurrentHashMap<String, OnuActivationStatusDto>()
-    private val byExternalId = ConcurrentHashMap<String, String>()
-
-    fun activate(request: OnuActivateRequestDto): OnuActivateResponseDto {
-        val sn = request.sn.trim()
-        val authorized = authorizeOlt(request)
-        if (authorized == null) {
-            val failed = OnuActivateResponseDto(
-                sn = sn,
-                oltStatus = OltActivationStatus.FAILED,
-                cpeStatus = CpeProvisionStatus.NA,
-                message = "OLT authorize failed",
-            )
-            remember(failed)
-            return failed
+    fun activate(rawRequest: OnuActivateRequestDto): OnuActivateResponseDto {
+        val request=rawRequest.copy(sn=rawRequest.sn.trim().uppercase())
+        require(request.sn.isNotBlank()) { "ONU serial is required" }
+        val (operation,acquired)=journal.acquire(request)
+        if(!acquired) return response(operation.status)
+        if(operation.stage=="OLT") {
+            val authorized=authorizeOlt(request)
+            val externalId=authorized?.first
+            if(externalId==null) {
+                operation.status=OnuActivationStatusDto(sn=request.sn,oltStatus=OltActivationStatus.FAILED,cpeStatus=CpeProvisionStatus.NA,message=authorized?.second ?: "OLT authorize failed",updatedAtEpochMs=Instant.now().toEpochMilli())
+                operation.stage="DONE"
+                journal.save(operation)
+                return response(operation.status)
+            }
+            operation.status=OnuActivationStatusDto(externalId,request.sn,OltActivationStatus.COMPLETE,CpeProvisionStatus.PENDING,updatedAtEpochMs=Instant.now().toEpochMilli())
+            operation.stage="ACS"
+            journal.save(operation)
         }
-        val (externalId, oltError) = authorized
-        if (externalId == null) {
-            val failed = OnuActivateResponseDto(
-                sn = sn,
-                oltStatus = OltActivationStatus.FAILED,
-                cpeStatus = CpeProvisionStatus.NA,
-                message = oltError,
-            )
-            remember(failed)
-            return failed
+        if(operation.stage=="ACS_STATUS") {
+            val remote=runCatching { acsCpeClient.status(request.sn) }.getOrNull()
+            if(remote!=null && remote.status!=CpeProvisionStatus.NA) {
+                if(remote.status==CpeProvisionStatus.PENDING) {
+                    operation.leaseUntil=System.currentTimeMillis()+30_000
+                    journal.save(operation)
+                    return response(operation.status)
+                }
+                operation.status=operation.status.copy(cpeStatus=remote.status,message=remote.message,updatedAtEpochMs=Instant.now().toEpochMilli())
+                operation.stage="DONE"
+                journal.save(operation)
+                publishPending()
+                return response(operation.status)
+            }
+            if(operation.attempts>=MAX_PROVISION_ATTEMPTS) {
+                operation.leaseUntil=System.currentTimeMillis()+30_000
+                journal.save(operation)
+                return response(operation.status)
+            }
+            operation.stage="ACS"
+            journal.save(operation)
         }
-        val pending = OnuActivateResponseDto(
-            uniqueExternalId = externalId,
-            sn = sn,
-            oltStatus = OltActivationStatus.COMPLETE,
-            cpeStatus = CpeProvisionStatus.PENDING,
-        )
-        remember(pending)
-        acsExecutor.execute { runAcs(request, externalId) }
+        val pending=response(operation.status)
+        acsExecutor.execute { runAcs(operation) }
         return pending
     }
 
-    fun statusBySn(sn: String): OnuActivationStatusDto? = bySn[sn.trim().uppercase()]
+    fun statusBySn(sn: String): OnuActivationStatusDto? = journal.bySn(sn.trim().uppercase())?.status
+    fun statusByExternalId(externalId: String): OnuActivationStatusDto? = journal.byExternalId(externalId)?.status
 
-    fun statusByExternalId(externalId: String): OnuActivationStatusDto? {
-        val sn = byExternalId[externalId] ?: return acsCpeClient.status(externalId)?.let {
-            OnuActivationStatusDto(
-                uniqueExternalId = externalId,
-                sn = it.sn,
-                oltStatus = OltActivationStatus.COMPLETE,
-                cpeStatus = it.status,
-                message = it.message,
-                updatedAtEpochMs = Instant.now().toEpochMilli(),
-            )
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString="\${olt.gateway.activation-recovery-ms:30000}")
+    fun recover() {
+        journal.pending().forEach { operation ->
+            runCatching { activate(operation.request) }.onFailure { log.warn("Activation recovery failed id={}",operation.operationId) }
         }
-        return statusBySn(sn)
+        publishPending()
     }
+
+    private fun response(status: OnuActivationStatusDto)=OnuActivateResponseDto(status.uniqueExternalId,status.sn,status.oltStatus,status.cpeStatus,status.message)
 
     fun reboot(sn: String): CpeCommandResponseDto {
         val ack = acsCpeClient.reboot(sn)
@@ -109,72 +114,37 @@ class OnuActivationService(
         }
     }
 
-    private fun runAcs(request: OnuActivateRequestDto, externalId: String) {
+    private fun runAcs(operation: ActivationOperation) {
+        val request=operation.request
+        val externalId=operation.status.uniqueExternalId ?: return
+        operation.attempts+=1
+        journal.save(operation)
         try {
-            val outcome = acsCpeClient.provision(
-                AcsCpeProvisionRequest(
-                    sn = request.sn,
-                    uniqueExternalId = externalId,
-                    onuType = request.onuType,
-                    ip = request.ip,
-                    ipSegment = request.ipSegment,
-                    wanVlanId = request.vlan.toIntOrNull() ?: 1,
-                    wifiSsid24 = request.wifiSsid24,
-                    wifiPassword24 = request.wifiPassword24,
-                    wifiSsid5 = request.wifiSsid5,
-                    wifiPassword5 = request.wifiPassword5,
-                )
-            )
-            remember(
-                OnuActivateResponseDto(
-                    uniqueExternalId = externalId,
-                    sn = request.sn,
-                    oltStatus = OltActivationStatus.COMPLETE,
-                    cpeStatus = outcome.status,
-                    message = outcome.message,
-                )
-            )
-            eventBus.publish(
-                PlatformEvent(
-                    type = PlatformEventTypes.CPE_PROVISIONING,
-                    sn = request.sn,
-                    occurredAt = Instant.now(),
-                    payloadJson = """{"cpeStatus":"${outcome.status}","uniqueExternalId":"$externalId"}""",
-                )
-            )
-        } catch (ex: Exception) {
-            log.warn("ACS provision failed for SN={}: {}", request.sn, ex.message)
-            remember(
-                OnuActivateResponseDto(
-                    uniqueExternalId = externalId,
-                    sn = request.sn,
-                    oltStatus = OltActivationStatus.COMPLETE,
-                    cpeStatus = CpeProvisionStatus.FAILED,
-                    message = ex.message,
-                )
-            )
-            eventBus.publish(
-                PlatformEvent(
-                    type = PlatformEventTypes.CPE_PROVISIONING,
-                    sn = request.sn,
-                    occurredAt = Instant.now(),
-                    payloadJson = """{"cpeStatus":"FAILED","uniqueExternalId":"$externalId"}""",
-                )
-            )
+            val outcome=acsCpeClient.provision(AcsCpeProvisionRequest(
+                sn=request.sn,uniqueExternalId=externalId,onuType=request.onuType,ip=request.ip,ipSegment=request.ipSegment,
+                wanVlanId=request.vlan.toIntOrNull() ?: 1,wifiSsid24=request.wifiSsid24,wifiPassword24=request.wifiPassword24,
+                wifiSsid5=request.wifiSsid5,wifiPassword5=request.wifiPassword5))
+            operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,updatedAtEpochMs=Instant.now().toEpochMilli())
+            operation.stage=if(outcome.status==CpeProvisionStatus.PENDING) "ACS_STATUS" else "DONE"
+            operation.leaseUntil=System.currentTimeMillis()+30_000
+            journal.save(operation)
+            publishPending()
+        } catch(ex: Exception) {
+            operation.stage="ACS_STATUS"
+            operation.leaseUntil=System.currentTimeMillis()+30_000
+            journal.save(operation)
+            log.warn("ACS outcome unconfirmed operation={}",operation.operationId)
         }
     }
 
-    private fun remember(response: OnuActivateResponseDto) {
-        val status = OnuActivationStatusDto(
-            uniqueExternalId = response.uniqueExternalId,
-            sn = response.sn,
-            oltStatus = response.oltStatus,
-            cpeStatus = response.cpeStatus,
-            message = response.message,
-            updatedAtEpochMs = Instant.now().toEpochMilli(),
-        )
-        bySn[response.sn.uppercase()] = status
-        response.uniqueExternalId?.let { byExternalId[it] = response.sn }
+    private fun publishPending() {
+        journal.unpublished().forEach { operation ->
+            val event=PlatformEvent(type=PlatformEventTypes.CPE_PROVISIONING,sn=operation.request.sn,
+                occurredAt=Instant.ofEpochMilli(operation.status.updatedAtEpochMs),eventId=operation.operationId,
+                operationId=operation.operationId,producer="oltgateway",
+                payloadJson="""{"cpeStatus":"${operation.status.cpeStatus}"}""")
+            if(eventBus.tryPublish(event)) journal.published(operation.operationId)
+        }
     }
 
     private fun OnuActivateRequestDto.toAuthorizeForm() = AuthorizeOnuFormDto(
@@ -190,4 +160,8 @@ class OnuActivationService(
         onu_mode = onuMode,
         custom_profile = customProfile,
     )
+
+    companion object {
+        const val MAX_PROVISION_ATTEMPTS = 3
+    }
 }

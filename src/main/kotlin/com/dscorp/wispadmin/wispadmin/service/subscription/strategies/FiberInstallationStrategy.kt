@@ -85,7 +85,6 @@ class FiberInstallationStrategy(
                     if (!onuAuthorized) {
                         oltError = activated.message ?: "OLT activate failed"
                     }
-                    subscription.fiberOnu?.uniqueExternalId = uniqueExternalId
                     logger.info(
                         "FIBER OLT Gateway result sn={} oltStatus={} cpeStatus={} uniqueExternalId={}",
                         onuRequest.sn,

@@ -9,7 +9,7 @@ import com.dscorp.wispadmin.oltgateway.port.OltAutofindSnapshot
 import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
 import com.dscorp.wispadmin.oltgateway.port.OltOnuSnapshot
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069SerialMatcher
+import com.dscorp.wispadmin.transport.SerialSuffix
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 
@@ -29,7 +29,7 @@ class OltInventoryService(
             val byNorm = onus.findBySnIgnoreCaseAndDeletedAtIsNull(normalized).orElse(null)
             if (byNorm != null) return byNorm.toSnapshot()
         }
-        val suffix = Tr069SerialMatcher.normalizeSuffix(sn) ?: return null
+        val suffix = SerialSuffix.normalizeSuffix(sn) ?: return null
         return onus.findBySnSuffixIgnoreCaseAndDeletedAtIsNull(suffix).singleOrNull()?.toSnapshot()
     }
 

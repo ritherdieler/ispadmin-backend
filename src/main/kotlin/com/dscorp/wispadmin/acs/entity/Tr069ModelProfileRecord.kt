@@ -1,10 +1,10 @@
-package com.dscorp.wispadmin.wispadmin.data.model
+package com.dscorp.wispadmin.acs.entity
 
-import com.dscorp.wispadmin.wispadmin.dto.Tr069ModelProfileDto
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ModelProfile
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069VlanParameterSpec
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069VlanValueKind
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069WifiSecurityPrepSpec
+import com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfile
+import com.dscorp.wispadmin.acs.genieacs.Tr069ProfileDraft
+import com.dscorp.wispadmin.acs.genieacs.Tr069VlanParameterSpec
+import com.dscorp.wispadmin.acs.genieacs.Tr069VlanValueKind
+import com.dscorp.wispadmin.acs.genieacs.Tr069WifiSecurityPrepSpec
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
@@ -15,7 +15,7 @@ import javax.persistence.Table
 
 @Entity
 @Table(name = "tr069_model_profile")
-data class Tr069ModelProfileEntity(
+class Tr069ModelProfileRecord(
     @Id
     @Column(name = "product_class", length = 64)
     var productClass: String = "",
@@ -68,38 +68,36 @@ data class Tr069ModelProfileEntity(
     @Column(name = "imported_by", length = 64)
     var importedBy: String? = null,
 ) {
-    fun toModelProfile(objectMapper: ObjectMapper): Tr069ModelProfile {
-        return Tr069ModelProfile(
-            productClass = productClass,
-            wanConnectionDeviceIndex = wanConnectionDeviceIndex,
-            wanIpConnectionPath = wanIpConnectionPath,
-            wanGponLinkConfigPath = wanGponLinkConfigPath,
-            vlanParameters = decodeVlanParameters(objectMapper, vlanParametersJson),
-            wlan24Path = wlan24Path.orEmpty(),
-            wlan5Path = wlan5Path.orEmpty(),
-            wifiSecurityPrep = decodeWifiSecurityPrep(objectMapper, wifiSecurityPrepJson),
-            clientWanIpConnectionPath = clientWanIpConnectionPath,
-            clientVlanParameters = decodeVlanParameters(objectMapper, clientVlanParametersJson ?: "[]"),
-        )
-    }
+    fun toModelProfile(objectMapper: ObjectMapper): Tr069ModelProfile = Tr069ModelProfile(
+        productClass = productClass,
+        wanConnectionDeviceIndex = wanConnectionDeviceIndex,
+        wanIpConnectionPath = wanIpConnectionPath,
+        wanGponLinkConfigPath = wanGponLinkConfigPath,
+        vlanParameters = decodeVlan(objectMapper, vlanParametersJson),
+        wlan24Path = wlan24Path.orEmpty(),
+        wlan5Path = wlan5Path.orEmpty(),
+        wifiSecurityPrep = decodeWifi(objectMapper, wifiSecurityPrepJson),
+        clientWanIpConnectionPath = clientWanIpConnectionPath,
+        clientVlanParameters = decodeVlan(objectMapper, clientVlanParametersJson ?: "[]"),
+    )
 
-    fun toDto(objectMapper: ObjectMapper): Tr069ModelProfileDto = Tr069ModelProfileDto(
+    fun toDto(objectMapper: ObjectMapper): AcsModelProfileDto = AcsModelProfileDto(
         productClass = productClass,
         manufacturer = manufacturer,
         wanConnectionDeviceIndex = wanConnectionDeviceIndex,
         wanIpConnectionPath = wanIpConnectionPath,
         wanGponLinkConfigPath = wanGponLinkConfigPath,
-        vlanParameters = decodeVlanParameters(objectMapper, vlanParametersJson),
+        vlanParameters = decodeVlan(objectMapper, vlanParametersJson),
         wlan24Path = wlan24Path,
         wlan5Path = wlan5Path,
-        wifiSecurityPrep = decodeWifiSecurityPrep(objectMapper, wifiSecurityPrepJson),
+        wifiSecurityPrep = decodeWifi(objectMapper, wifiSecurityPrepJson),
         clientWanIpConnectionPath = clientWanIpConnectionPath,
-        clientVlanParameters = decodeVlanParameters(objectMapper, clientVlanParametersJson ?: "[]"),
-        aliases = decodeAliases(aliasesJson, objectMapper),
+        clientVlanParameters = decodeVlan(objectMapper, clientVlanParametersJson ?: "[]"),
+        aliases = decodeStrings(objectMapper, aliasesJson),
         sourceDeviceId = sourceDeviceId,
         sourceSerial = sourceSerial,
-        warnings = decodeWarnings(warningsJson, objectMapper),
-        importedAt = importedAt,
+        warnings = decodeStrings(objectMapper, warningsJson),
+        importedAt = importedAt.toString(),
         importedBy = importedBy,
     )
 
@@ -107,22 +105,22 @@ data class Tr069ModelProfileEntity(
         private val stringListType = object : TypeReference<List<String>>() {}
 
         fun fromDraft(
-            draft: com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ProfileDraft,
+            draft: Tr069ProfileDraft,
             importedBy: String?,
             objectMapper: ObjectMapper,
             aliases: List<String> = emptyList(),
-        ): Tr069ModelProfileEntity = Tr069ModelProfileEntity(
+        ): Tr069ModelProfileRecord = Tr069ModelProfileRecord(
             productClass = draft.productClass,
             manufacturer = draft.manufacturer,
             wanConnectionDeviceIndex = draft.wanConnectionDeviceIndex,
             wanIpConnectionPath = draft.wanIpConnectionPath,
             clientWanIpConnectionPath = draft.clientWanIpConnectionPath,
             wanGponLinkConfigPath = draft.wanGponLinkConfigPath,
-            vlanParametersJson = encodeVlanParameters(objectMapper, draft.vlanParameters),
-            clientVlanParametersJson = encodeVlanParameters(objectMapper, draft.clientVlanParameters),
+            vlanParametersJson = encodeVlan(objectMapper, draft.vlanParameters),
+            clientVlanParametersJson = encodeVlan(objectMapper, draft.clientVlanParameters),
             wlan24Path = draft.wlan24Path,
             wlan5Path = draft.wlan5Path,
-            wifiSecurityPrepJson = encodeWifiSecurityPrep(objectMapper, draft.wifiSecurityPrep),
+            wifiSecurityPrepJson = encodeWifi(objectMapper, draft.wifiSecurityPrep),
             aliasesJson = if (aliases.isEmpty()) null else objectMapper.writeValueAsString(aliases.distinct()),
             sourceDeviceId = draft.deviceId,
             sourceSerial = draft.serialNumber,
@@ -131,14 +129,12 @@ data class Tr069ModelProfileEntity(
             importedBy = importedBy,
         )
 
-        fun encodeWifiSecurityPrep(
-            objectMapper: ObjectMapper,
-            parameters: List<Tr069WifiSecurityPrepSpec>,
-        ): String = objectMapper.writeValueAsString(
-            parameters.map { mapOf("parameterSuffix" to it.parameterSuffix, "value" to it.value, "type" to it.type) },
-        )
+        fun encodeWifi(objectMapper: ObjectMapper, parameters: List<Tr069WifiSecurityPrepSpec>): String =
+            objectMapper.writeValueAsString(
+                parameters.map { mapOf("parameterSuffix" to it.parameterSuffix, "value" to it.value, "type" to it.type) },
+            )
 
-        fun decodeWifiSecurityPrep(objectMapper: ObjectMapper, json: String): List<Tr069WifiSecurityPrepSpec> {
+        fun decodeWifi(objectMapper: ObjectMapper, json: String): List<Tr069WifiSecurityPrepSpec> {
             if (json.isBlank() || json == "[]") return emptyList()
             val stored: List<Map<String, String>> =
                 objectMapper.readValue(json, object : TypeReference<List<Map<String, String>>>() {})
@@ -151,12 +147,12 @@ data class Tr069ModelProfileEntity(
             }
         }
 
-        fun encodeVlanParameters(objectMapper: ObjectMapper, parameters: List<Tr069VlanParameterSpec>): String =
+        fun encodeVlan(objectMapper: ObjectMapper, parameters: List<Tr069VlanParameterSpec>): String =
             objectMapper.writeValueAsString(
                 parameters.map { mapOf("path" to it.path, "valueKind" to it.valueKind.name) },
             )
 
-        fun decodeVlanParameters(objectMapper: ObjectMapper, json: String): List<Tr069VlanParameterSpec> {
+        fun decodeVlan(objectMapper: ObjectMapper, json: String): List<Tr069VlanParameterSpec> {
             if (json.isBlank() || json == "[]") return emptyList()
             val stored: List<Map<String, String>> =
                 objectMapper.readValue(json, object : TypeReference<List<Map<String, String>>>() {})
@@ -168,14 +164,45 @@ data class Tr069ModelProfileEntity(
             }
         }
 
-        private fun decodeAliases(json: String?, objectMapper: ObjectMapper): List<String> {
-            if (json.isNullOrBlank()) return emptyList()
-            return objectMapper.readValue(json, stringListType)
-        }
-
-        private fun decodeWarnings(json: String?, objectMapper: ObjectMapper): List<String> {
+        fun decodeStrings(objectMapper: ObjectMapper, json: String?): List<String> {
             if (json.isNullOrBlank()) return emptyList()
             return objectMapper.readValue(json, stringListType)
         }
     }
 }
+
+data class AcsModelProfileDto(
+    val productClass: String,
+    val manufacturer: String? = null,
+    val wanConnectionDeviceIndex: Int,
+    val wanIpConnectionPath: String,
+    val wanGponLinkConfigPath: String? = null,
+    val vlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
+    val wlan24Path: String? = null,
+    val wlan5Path: String? = null,
+    val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
+    val clientWanIpConnectionPath: String? = null,
+    val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
+    val aliases: List<String> = emptyList(),
+    val sourceDeviceId: String? = null,
+    val sourceSerial: String? = null,
+    val warnings: List<String> = emptyList(),
+    val importedAt: String? = null,
+    val importedBy: String? = null,
+)
+
+data class AcsModelProfileImportResultDto(
+    val saved: AcsModelProfileDto,
+    val replacedExisting: Boolean,
+)
+
+data class AcsModelProfilePreviewDto(
+    val draft: AcsModelProfileDto,
+    val readyToImport: Boolean,
+)
+
+data class AcsProfileCsvCommand(
+    val csv: String,
+    val aliases: List<String> = emptyList(),
+    val importedBy: String? = null,
+)

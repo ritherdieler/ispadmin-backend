@@ -82,9 +82,6 @@ class SubscriptionProvisionService(
                     else MikrotikProvisionStatus.PENDING
                 subscription.oltProvisionStatus = mapOltStatus(result)
                 mapCpeStatus(subscription, result.cpeStatus)
-                result.uniqueExternalId?.let { id ->
-                    subscription.fiberOnu?.uniqueExternalId = id
-                }
             }
             InstallationType.ONLY_TV_FIBER -> {
                 subscription.mikrotikProvisionStatus = MikrotikProvisionStatus.COMPLETE
@@ -92,9 +89,6 @@ class SubscriptionProvisionService(
                 if (hasOnu) {
                     subscription.oltProvisionStatus = mapOltStatus(result)
                     mapCpeStatus(subscription, result.cpeStatus)
-                    result.uniqueExternalId?.let { id ->
-                        subscription.fiberOnu?.uniqueExternalId = id
-                    }
                 } else {
                     subscription.oltProvisionStatus = OltProvisionStatus.NA
                     subscription.tr069ProvisionStatus = Tr069ProvisionStatus.NA
@@ -241,7 +235,7 @@ class SubscriptionProvisionService(
     }
 
     private fun pullTr069FromGateway(subscription: Subscription) {
-        val sn = subscription.fiberOnu?.sn ?: return
+        val sn = subscription.fiberOnuSn ?: return
         val gateway = gatewayActivation.ifAvailable ?: return
         try {
             val status = gateway.activationBySn(sn)
@@ -334,7 +328,7 @@ class SubscriptionProvisionService(
             )
         }
 
-        val sn = subscription.fiberOnu?.sn ?: throw IllegalStateException("ONU sin serial")
+        val sn = subscription.fiberOnuSn ?: throw IllegalStateException("ONU sin serial")
         val gateway = gatewayActivation.ifAvailable
             ?: throw IllegalStateException("Gateway ONU no disponible")
         val activation = gateway.activationBySn(sn)

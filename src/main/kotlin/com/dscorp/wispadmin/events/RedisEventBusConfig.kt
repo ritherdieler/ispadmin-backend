@@ -18,6 +18,10 @@ import java.time.Instant
 
 @ConfigurationProperties(prefix = "gigafiber.redis")
 class GigafiberRedisProperties {
+    var namespace: String = ""
+    var pendingIdleMs: Long = 60_000
+    var maxDeliveries: Long = 5
+    fun namespaced(key: String): String = if (namespace.isBlank()) key else "$namespace:$key"
     var enabled: Boolean = false
     var host: String = "127.0.0.1"
     var port: Int = 6379
@@ -69,7 +73,7 @@ class RedisEventBusConfig {
     @Bean
     @Primary
     @ConditionalOnProperty(prefix = "gigafiber.redis", name = ["enabled"], havingValue = "true")
-    fun redisLiveTelemetry(redis: StringRedisTemplate): LiveTelemetryPort = RedisLiveTelemetry(redis)
+    fun redisLiveTelemetry(redis: StringRedisTemplate, properties: GigafiberRedisProperties): LiveTelemetryPort = RedisLiveTelemetry(redis, properties)
 
     @Bean
     @ConditionalOnMissingBean(EventBusPort::class)
@@ -90,20 +94,24 @@ class RedisStreamEventBus(
 ) : EventBusPort {
     private val logger = LoggerFactory.getLogger(RedisStreamEventBus::class.java)
 
-    override fun publish(event: PlatformEvent) {
-        try {
+    override fun publish(event: PlatformEvent) { tryPublish(event) }
+
+    override fun tryPublish(event: PlatformEvent): Boolean {
+        return try {
             val fields = PlatformEventCodec.toFields(event)
             val options = XAddOptions.maxlen(properties.streamMaxlen).approximateTrimming(true)
             val body = fields.entries.associate { it.key.toByteArray() to it.value.toByteArray() }
             redis.execute<Any> { connection ->
                 connection.streamCommands().xAdd(
                     StreamRecords.mapBacked<ByteArray, ByteArray, ByteArray>(body)
-                        .withStreamKey(properties.stream.toByteArray()),
+                        .withStreamKey(properties.namespaced(properties.stream).toByteArray()),
                     options,
                 )
             }
+            true
         } catch (ex: Exception) {
             logger.warn("Redis stream publish failed type={}: {}", event.type, ex.message)
+            false
         }
     }
 }
@@ -132,11 +140,12 @@ class RedisHealthSnapshotCache(
         }
     }
 
-    private fun key(subscriptionId: Int) = "health:360:$subscriptionId"
+    private fun key(subscriptionId: Int) = properties.namespaced("health:360:$subscriptionId")
 }
 
 class RedisLiveTelemetry(
     private val redis: StringRedisTemplate,
+    private val properties: GigafiberRedisProperties = GigafiberRedisProperties(),
 ) : LiveTelemetryPort {
     private val logger = LoggerFactory.getLogger(RedisLiveTelemetry::class.java)
 
@@ -166,8 +175,8 @@ class RedisLiveTelemetry(
             sample.avgMbpsUp?.let { hash["mbpsUp"] = it.toString() }
             sample.collectedAt?.let { hash["collectedAt"] = it.toString() }
             sample.hostDeviceId?.let { hash["hostDeviceId"] = it.toString() }
-            redis.opsForHash<String, String>().putAll(trafficKey(subscriptionId), hash)
-            redis.expire(trafficKey(subscriptionId), Duration.ofMinutes(5))
+            listOf("mbpsDown","mbpsUp","hostDeviceId").forEach { hash.putIfAbsent(it, "") }
+            replaceSnapshot(trafficKey(subscriptionId),hash,requireNotNull(sample.collectedAt),300)
         } catch (ex: Exception) {
             logger.warn("Redis live traffic put failed id={}: {}", subscriptionId, ex.message)
         }
@@ -180,7 +189,7 @@ class RedisLiveTelemetry(
             val sn = hash["sn"] ?: return null
             LiveOnuState(
                 sn = sn,
-                runState = hash["runState"],
+                runState = hash["runState"]?.takeIf { it.isNotBlank() },
                 rxPowerDbm = hash["rxPowerDbm"]?.toDoubleOrNull(),
                 observedAt = hash["observedAt"]?.let { Instant.parse(it) } ?: Instant.EPOCH,
             )
@@ -198,13 +207,34 @@ class RedisLiveTelemetry(
             )
             state.runState?.let { hash["runState"] = it }
             state.rxPowerDbm?.let { hash["rxPowerDbm"] = it.toString() }
-            redis.opsForHash<String, String>().putAll(onuKey(subscriptionId), hash)
-            redis.expire(onuKey(subscriptionId), Duration.ofMinutes(15))
+            if (state.updateKind == "optical") {
+                hash.remove("runState")
+                hash.remove("observedAt")
+                hash["opticalObservedAt"] = state.observedAt.toString()
+                hash.putIfAbsent("rxPowerDbm", "")
+            } else if (state.updateKind == "state") {
+                hash.remove("rxPowerDbm")
+                hash.putIfAbsent("runState", "")
+            } else listOf("runState","rxPowerDbm").forEach { hash.putIfAbsent(it, "") }
+            replaceSnapshot(onuKey(subscriptionId),hash,state.observedAt,900,"_timestamp:${state.updateKind}")
         } catch (ex: Exception) {
             logger.warn("Redis live onu put failed id={}: {}", subscriptionId, ex.message)
         }
     }
 
-    private fun trafficKey(id: Int) = "health:live:$id:traffic"
-    private fun onuKey(id: Int) = "health:live:$id:onu"
+    private fun replaceSnapshot(key: String, hash: Map<String,String>, at: Instant, ttl: Long, timestampKey: String = "_timestamp") {
+        val script=org.springframework.data.redis.core.script.DefaultRedisScript<Long>("""
+            local previous = tonumber(redis.call('HGET', KEYS[1], ARGV[3]) or '-1')
+            if previous >= tonumber(ARGV[1]) then return 0 end
+            for i=4,#ARGV,2 do redis.call('HSET',KEYS[1],ARGV[i],ARGV[i+1]) end
+            redis.call('HSET',KEYS[1],ARGV[3],ARGV[1])
+            redis.call('EXPIRE',KEYS[1],ARGV[2])
+            return 1
+        """.trimIndent(),Long::class.java)
+        val args=listOf(at.toEpochMilli().toString(),ttl.toString(),timestampKey)+hash.flatMap { listOf(it.key,it.value) }
+        redis.execute(script,listOf(key),*args.toTypedArray())
+    }
+
+    private fun trafficKey(id: Int) = properties.namespaced("health:live:$id:traffic")
+    private fun onuKey(id: Int) = properties.namespaced("health:live:$id:onu")
 }

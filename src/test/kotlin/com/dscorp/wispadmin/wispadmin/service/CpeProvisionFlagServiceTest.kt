@@ -18,7 +18,7 @@ class CpeProvisionFlagServiceTest {
     fun `applies COMPLETE when serial maps to one subscription`() {
         val sub = Subscription(
             id = 42,
-            fiberOnu = Onu(sn = "ZTEGDC47BFFD"),
+            fiberOnuSn = "ZTEGDC47BFFD",
             equipmentCondition = EquipmentCondition.values().first(),
         )
         every { subscriptions.findByExactOnuSerial("ZTEGDC47BFFD") } returns listOf(sub)
@@ -31,7 +31,7 @@ class CpeProvisionFlagServiceTest {
     fun `applies FAILED when serial maps to one subscription`() {
         val sub = Subscription(
             id = 42,
-            fiberOnu = Onu(sn = "ZTEGDC47BFFD"),
+            fiberOnuSn = "ZTEGDC47BFFD",
             equipmentCondition = EquipmentCondition.values().first(),
         )
         every { subscriptions.findByExactOnuSerial("ZTEGDC47BFFD") } returns listOf(sub)

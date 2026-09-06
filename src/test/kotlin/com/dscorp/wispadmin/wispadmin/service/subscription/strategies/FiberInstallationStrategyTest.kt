@@ -210,7 +210,7 @@ class FiberInstallationStrategyTest {
             vlan = "100"
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
-            fiberOnu = com.dscorp.wispadmin.wispadmin.data.model.Onu(sn = "ALCL12345678")
+            fiberOnuSn = "ALCL12345678"
         }
 
         val result = strategy.processInstallation(

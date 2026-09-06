@@ -9,11 +9,10 @@ import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
 import com.dscorp.wispadmin.servicehealth.port.HealthOpticalObservation
 import com.dscorp.wispadmin.servicehealth.port.HealthOpticalRow
-import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.transport.InternalUris
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -27,7 +26,6 @@ import java.time.Instant
 class HealthOltGatewayHttpClient(
     @Value("\${olt.gateway.internal-base-url:}") private val baseUrl: String,
     @Value("\${olt.gateway.api-key:}") private val apiKey: String,
-    private val subscriptions: ObjectProvider<SubscriptionRepository>,
 ) : HealthOnuPort, HealthLabOpticalPort, HealthCpePort {
 
     private val objectMapper = ObjectMapper()
@@ -36,29 +34,27 @@ class HealthOltGatewayHttpClient(
         setReadTimeout(30_000)
     })
 
-    override fun findBySn(sn: String): HealthOnuRef? = getRef("/api/olt-gateway/health-onus/by-sn?sn=$sn")
+    override fun findBySn(sn: String): HealthOnuRef? = getRef(query("/api/olt-gateway/health-onus/by-sn", mapOf("sn" to sn)))
 
     override fun findByExternalId(externalId: String): HealthOnuRef? =
-        getRef("/api/olt-gateway/health-onus/by-external-id?id=$externalId")
+        getRef(query("/api/olt-gateway/health-onus/by-external-id", mapOf("id" to externalId)))
 
     override fun findByOltBoardPortOnu(oltId: Long, board: Int, port: Int, onuIndex: Int): HealthOnuRef? =
-        getRef("/api/olt-gateway/health-onus/by-position?oltId=$oltId&board=$board&port=$port&onuIndex=$onuIndex")
+        getRef(query("/api/olt-gateway/health-onus/by-position", mapOf("oltId" to oltId, "board" to board, "port" to port, "onuIndex" to onuIndex)))
 
     override fun findByOlt(oltId: Long): List<HealthOnuRef> {
-        val node = getJson("/api/olt-gateway/health-onus/by-olt/$oltId") ?: return emptyList()
+        val node = getJson(path("api", "olt-gateway", "health-onus", "by-olt", oltId.toString())) ?: return emptyList()
         if (!node.isArray) return emptyList()
         return node.mapNotNull { it.toRef() }
     }
 
     override fun findOltIdByName(name: String): Long? {
-        val node = getJson("/api/olt-gateway/olts/id-by-name?name=$name") ?: return null
+        val node = getJson(query("/api/olt-gateway/olts/id-by-name", mapOf("name" to name))) ?: return null
         return node.path("id").takeIf { it.isNumber }?.asLong()
     }
 
-    override fun refreshSubscription(subscriptionId: Int): HealthLabOpticalRefresh {
-        val sn = subscriptions.ifAvailable?.findById(subscriptionId)?.orElse(null)?.fiberOnu?.sn
-            ?: return HealthLabOpticalRefresh(false, error = "missing_sn")
-        val node = postJson("/api/olt-gateway/admin/lab-optical/refresh", """{"sn":"$sn"}""")
+    override fun refreshBySn(sn: String): HealthLabOpticalRefresh {
+        val node = postJson(path("api", "olt-gateway", "admin", "lab-optical", "refresh"), objectMapper.writeValueAsString(mapOf("sn" to sn)))
             ?: return HealthLabOpticalRefresh(false, error = "gateway_unavailable")
         return HealthLabOpticalRefresh(
             collected = node.path("collected").asBoolean(false),
@@ -68,7 +64,7 @@ class HealthOltGatewayHttpClient(
     }
 
     override fun telemetry(sn: String): HealthCpeTelemetry? {
-        val node = getJson("/api/olt-gateway/onus/$sn/cpe/telemetry") ?: return null
+        val node = getJson(path("api", "olt-gateway", "onus", sn, "cpe", "telemetry")) ?: return null
         return HealthCpeTelemetry(
             sn = node.path("sn").asText(sn),
             uniqueExternalId = node.path("uniqueExternalId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
@@ -84,12 +80,12 @@ class HealthOltGatewayHttpClient(
         )
     }
 
-    override fun reboot(sn: String): HealthCpeCommand = command("/api/olt-gateway/onus/$sn/cpe/reboot")
+    override fun reboot(sn: String): HealthCpeCommand = command(path("api", "olt-gateway", "onus", sn, "cpe", "reboot"))
 
-    override fun wifiRefresh(sn: String): HealthCpeCommand = command("/api/olt-gateway/onus/$sn/cpe/wifi-refresh")
+    override fun wifiRefresh(sn: String): HealthCpeCommand = command(path("api", "olt-gateway", "onus", sn, "cpe", "wifi-refresh"))
 
-    private fun command(path: String): HealthCpeCommand {
-        val node = postJson(path, "{}")
+    private fun command(uri: java.net.URI): HealthCpeCommand {
+        val node = postJson(uri, "{}")
             ?: return HealthCpeCommand(false, "FAILED", "gateway_unavailable")
         return HealthCpeCommand(
             accepted = node.path("accepted").asBoolean(false),
@@ -99,12 +95,12 @@ class HealthOltGatewayHttpClient(
     }
 
     fun pullOptical(): List<HealthOpticalObservation> {
-        val node = getJson("/api/olt-gateway/onus/configured?size=200") ?: return emptyList()
-        val items = node.path("items")
-        if (!items.isArray) return emptyList()
-        val observedAt = Instant.now()
-        return items.groupBy { it.path("oltId").takeIf { n -> n.isNumber }?.asLong() }
-            .mapNotNull { (oltId, rows) ->
+        val items = configuredItems()
+        return items.filter { observationTime(it) != null }.groupBy {
+            it.path("oltId").takeIf { n -> n.isNumber }?.asLong() to observationTime(it)!!
+        }
+            .mapNotNull { (key, rows) ->
+                val (oltId, observedAt) = key
                 if (oltId == null) return@mapNotNull null
                 HealthOpticalObservation(
                     oltId = oltId,
@@ -126,17 +122,33 @@ class HealthOltGatewayHttpClient(
             }
     }
 
-    fun pullStates(): List<Triple<String, String?, String?>> {
-        val node = getJson("/api/olt-gateway/onus/configured?size=200") ?: return emptyList()
-        val items = node.path("items")
-        if (!items.isArray) return emptyList()
-        return items.mapNotNull { item ->
-            val sn = item.path("sn").asText(null)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            Triple(sn, item.path("runState").asText(null), item.path("lastDownCause").asText(null))
-        }
+    fun pullStates(): List<Triple<String, String?, String?>> = pullStateObservations().map { Triple(it.sn,it.state,it.cause) }
+
+    fun pullStateObservations(): List<HealthStateObservation> = configuredItems().mapNotNull { item ->
+        val sn=item.path("sn").asText(null)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val at=observationTime(item) ?: return@mapNotNull null
+        HealthStateObservation(sn,item.path("runState").asText(null),item.path("lastDownCause").asText(null),at)
     }
 
-    private fun getRef(path: String): HealthOnuRef? = getJson(path)?.toRef()
+    private fun observationTime(item: JsonNode): Instant? =
+        item.path("polledAt").asText(null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+
+    private fun configuredItems(): List<JsonNode> {
+        if (baseUrl.isBlank()) return emptyList()
+        val items = mutableListOf<JsonNode>()
+        var page = 0
+        do {
+            val node = getJson(query("/api/olt-gateway/onus/configured", mapOf("size" to 200, "page" to page)))
+                ?: throw org.springframework.web.client.ResourceAccessException("Incomplete ONU inventory at page $page")
+            require(node.path("items").isArray && node.path("totalPages").canConvertToInt()) { "Invalid ONU page" }
+            items.addAll(node.path("items"))
+            page++
+            require(page <= 10_000) { "ONU pagination limit exceeded" }
+        } while (page < node.path("totalPages").asInt())
+        return items
+    }
+
+    private fun getRef(uri: java.net.URI): HealthOnuRef? = getJson(uri)?.toRef()
 
     private fun JsonNode.toRef(): HealthOnuRef? {
         val id = path("id").takeIf { it.isNumber }?.asLong() ?: return null
@@ -153,43 +165,36 @@ class HealthOltGatewayHttpClient(
         )
     }
 
-    private fun getJson(path: String): JsonNode? {
-        val base = baseUrl.trim().trimEnd('/')
-        if (base.isEmpty()) return null
+    private fun query(path: String, params: Map<String, Any?>) =
+        if (baseUrl.isBlank()) java.net.URI.create("http://127.0.0.1/") else InternalUris.uri(baseUrl, path, params)
+    private fun path(vararg segments: String) =
+        if (baseUrl.isBlank()) java.net.URI.create("http://127.0.0.1/") else InternalUris.path(baseUrl, *segments)
+
+    private fun getJson(uri: java.net.URI): JsonNode? {
+        if (baseUrl.isBlank()) return null
         return try {
             val headers = HttpHeaders()
             headers.set("X-Olt-Gateway-Key", apiKey)
-            val response = restTemplate.exchange(
-                "$base$path",
-                HttpMethod.GET,
-                HttpEntity<Void>(headers),
-                String::class.java,
-            )
+            val response = restTemplate.exchange(uri, HttpMethod.GET, HttpEntity<Void>(headers), String::class.java)
             val body = response.body ?: return null
             objectMapper.readTree(body)
         } catch (ex: Exception) {
-            logger.warn("Health OLT HTTP failed for {}: {}", path, ex.message)
+            logger.warn("Health OLT HTTP failed for {}: {}", uri, ex.message)
             null
         }
     }
 
-    private fun postJson(path: String, json: String): JsonNode? {
-        val base = baseUrl.trim().trimEnd('/')
-        if (base.isEmpty()) return null
+    private fun postJson(uri: java.net.URI, json: String): JsonNode? {
+        if (baseUrl.isBlank()) return null
         return try {
             val headers = HttpHeaders()
             headers.set("X-Olt-Gateway-Key", apiKey)
             headers.set("Content-Type", "application/json")
-            val response = restTemplate.exchange(
-                "$base$path",
-                HttpMethod.POST,
-                HttpEntity(json, headers),
-                String::class.java,
-            )
+            val response = restTemplate.exchange(uri, HttpMethod.POST, HttpEntity(json, headers), String::class.java)
             val body = response.body ?: return null
             objectMapper.readTree(body)
         } catch (ex: Exception) {
-            logger.warn("Health OLT HTTP POST failed for {}: {}", path, ex.message)
+            logger.warn("Health OLT HTTP POST failed for {}: {}", uri, ex.message)
             null
         }
     }
@@ -198,3 +203,5 @@ class HealthOltGatewayHttpClient(
         val logger = LoggerFactory.getLogger(HealthOltGatewayHttpClient::class.java)
     }
 }
+
+data class HealthStateObservation(val sn: String,val state: String?,val cause: String?,val observedAt: Instant)

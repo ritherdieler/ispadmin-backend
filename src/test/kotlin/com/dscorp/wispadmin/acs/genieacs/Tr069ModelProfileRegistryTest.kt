@@ -13,14 +13,14 @@ class Tr069ModelProfileRegistryTest {
 
     @Test
     fun `empty catalog leaves no imported profiles`() {
-        val registry = Tr069ModelProfileRegistry(mockk(relaxed = true), ObjectMapper(), "")
+        val registry = Tr069ModelProfileRegistry(mockk(relaxed = true), ObjectMapper())
         registry.init()
         assertFalse(registry.hasImportedProfiles())
     }
 
     @Test
     fun `resolves F6600R aliases through dynamic resolver`() {
-        val registry = Tr069ModelProfileRegistry(mockk(relaxed = true), ObjectMapper(), "")
+        val registry = Tr069ModelProfileRegistry(mockk(relaxed = true), ObjectMapper())
         val profile = Tr069ModelProfile(
             productClass = "F6600R",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",

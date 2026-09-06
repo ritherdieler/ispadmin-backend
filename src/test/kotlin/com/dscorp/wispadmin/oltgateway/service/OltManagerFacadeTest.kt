@@ -3,6 +3,8 @@ package com.dscorp.wispadmin.oltgateway.service
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
+import com.dscorp.wispadmin.oltgateway.config.OnuWriteProvider
+import com.dscorp.wispadmin.oltgateway.config.OnuWriteProviderProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOnu
@@ -21,6 +23,8 @@ import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuBySn
+import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltWriteClient
+import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltWriteResult
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -43,6 +47,8 @@ class OltManagerFacadeTest {
     private val taskRepository = mockk<OltMgrTaskRepository>()
     private val auditLogRepository = mockk<OltMgrAuditLogRepository>()
     private val commandService = mockk<OltGatewayCommandService>()
+    private val smartOltWriteClient = mockk<SmartOltWriteClient>(relaxed = true)
+    private val writeProviderProperties = OnuWriteProviderProperties()
     private val queryFacade = mockk<OltGatewayQueryFacade>()
     private val mapper = SmartOltCompatMapper()
     private val properties = OltGatewayProperties().apply {
@@ -58,6 +64,10 @@ class OltManagerFacadeTest {
 
     @BeforeEach
     fun setUp() {
+        writeProviderProperties.authorize = OnuWriteProvider.GATEWAY
+        writeProviderProperties.delete = OnuWriteProvider.GATEWAY
+        writeProviderProperties.reboot = OnuWriteProvider.GATEWAY
+        writeProviderProperties.move = OnuWriteProvider.GATEWAY
         facade = OltManagerFacade(
             oltRepository = oltRepository,
             zoneRepository = zoneRepository,
@@ -67,6 +77,7 @@ class OltManagerFacadeTest {
             taskRepository = taskRepository,
             auditLogRepository = auditLogRepository,
             commandService = commandService,
+            writeRouter = OnuWriteRouter(writeProviderProperties, commandService, smartOltWriteClient),
             queryFacade = queryFacade,
             mapper = mapper,
             properties = properties
@@ -253,6 +264,42 @@ class OltManagerFacadeTest {
         verify { commandService.authorize(any()) }
         verify { taskRepository.save(match { it.type == "authorize" && it.status == "success" }) }
         verify { auditLogRepository.save(match { it.action == "authorize_onu" && it.onu?.id == 20L }) }
+    }
+
+    @Test
+    fun `authorizeOnu SMARTOLT persiste unique_external_id cloud sin SSH`() {
+        writeProviderProperties.authorize = OnuWriteProvider.SMARTOLT
+        every { onuRepository.findBySnAndDeletedAtIsNull("ZTEGDC47BFFD") } returns Optional.empty()
+        every { onuRepository.findBySn("ZTEGDC47BFFD") } returns Optional.empty()
+        every { zoneRepository.findByName("Zone 1") } returns Optional.of(OltMgrZone(id = 2L, name = "Zone 1"))
+        every { onuTypeRepository.findByName("F6600RV9.0.21") } returns Optional.of(OltMgrOnuType(id = 3L, name = "F6600RV9.0.21"))
+        every { smartOltWriteClient.authorize(any()) } returns SmartOltWriteResult(true, "cloud_1_6_16")
+        val savedOnu = slot<OltMgrOnu>()
+        every { onuRepository.save(capture(savedOnu)) } answers {
+            firstArg<OltMgrOnu>().also { it.id = 20L }
+        }
+        every { onuRepository.findMaxOnuIndex(1L, 1, 6) } returns 15
+
+        val response = facade.authorizeOnu(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "1",
+                port = "6",
+                sn = "ZTEGDC47BFFD",
+                vlan = "100",
+                onu_type = "F6600RV9.0.21",
+                zone = "Zone 1",
+                name = "lab",
+                onu_mode = "Routing",
+                custom_profile = "Generic_1"
+            )
+        )
+
+        assertTrue(response.status)
+        assertEquals("cloud_1_6_16", response.unique_external_id)
+        assertEquals("cloud_1_6_16", savedOnu.captured.externalId)
+        verify(exactly = 1) { smartOltWriteClient.authorize(any()) }
+        verify(exactly = 0) { commandService.authorize(any()) }
     }
 
     @Test

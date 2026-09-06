@@ -22,10 +22,9 @@ class TrafficWebSocketHandshakeInterceptorTest {
     private val objectMapper = ObjectMapper()
 
     @Test
-    fun acceptsValidAccessToken() {
+    fun rejectsUserTokenOnInternalSocket() {
         val interceptor = TrafficWebSocketHandshakeInterceptor(
-            sessionSecret = "test-secret-1234567890",
-            objectMapper = objectMapper,
+            serviceKey = "test-service-key",
         )
         val attributes = mutableMapOf<String, Any>()
         val request = ServletServerHttpRequest(
@@ -44,16 +43,14 @@ class TrafficWebSocketHandshakeInterceptorTest {
             attributes,
         )
 
-        assertTrue(allowed as Boolean)
-        assertEquals(1, attributes[TrafficWebSocketHandshakeInterceptor.SESSION_USER_ID_ATTRIBUTE])
-        assertEquals("ADMIN", attributes[TrafficWebSocketHandshakeInterceptor.SESSION_USER_TYPE_ATTRIBUTE])
+        assertFalse(allowed)
+        assertEquals(HttpStatus.UNAUTHORIZED.value(), servletResponse.status)
     }
 
     @Test
     fun rejectsMissingToken() {
         val interceptor = TrafficWebSocketHandshakeInterceptor(
-            sessionSecret = "test-secret-1234567890",
-            objectMapper = objectMapper,
+            serviceKey = "test-service-key",
         )
         val servletResponse = MockHttpServletResponse()
         val response = ServletServerHttpResponse(servletResponse)
@@ -67,6 +64,13 @@ class TrafficWebSocketHandshakeInterceptorTest {
 
         assertFalse(allowed as Boolean)
         assertEquals(HttpStatus.UNAUTHORIZED.value(), servletResponse.status)
+    }
+
+    @Test
+    fun acceptsServiceKey() {
+        val interceptor=TrafficWebSocketHandshakeInterceptor("test-service-key")
+        val request=MockHttpServletRequest("GET","/ws").apply { addHeader("X-Traffic-Key","test-service-key") }
+        assertTrue(interceptor.beforeHandshake(ServletServerHttpRequest(request),ServletServerHttpResponse(MockHttpServletResponse()),mockk(),mutableMapOf()))
     }
 
     private fun issueToken(secret: String, type: String): String {

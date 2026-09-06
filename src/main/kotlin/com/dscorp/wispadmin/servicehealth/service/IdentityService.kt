@@ -75,6 +75,10 @@ class IdentityService(
     }
 
     @Transactional
+    fun reconcile(id: Int, now: Instant = Instant.now()): Map<String, String> =
+        subscriptions.findById(id).orElse(null)?.let { reconcile(it, now) } ?: emptyMap()
+
+    @Transactional
     fun reconcile(subscription: Subscription, now: Instant = Instant.now()): Map<String, String> {
         val id = subscription.id ?: return emptyMap()
         val verified=subscriptions.lockIdentityOwner(id) ?: return emptyMap()
@@ -97,7 +101,7 @@ class IdentityService(
 
     fun snapshot(s: Subscription): Map<String,String> {
         val id = s.id ?: return emptyMap()
-        val sn = s.fiberOnu?.sn?.uppercase()
+        val sn = s.fiberOnuSn?.uppercase()
         val onu = sn?.let { onuPort.ifAvailable?.findBySn(it) }
         val canonical = s.tr069DeviceId
         return buildMap {
@@ -107,7 +111,6 @@ class IdentityService(
             s.hostDevice?.id?.let { put("ROUTER", it.toString()) }
             s.plan?.id?.let { put("PLAN", it.toString()) }
             s.napBox?.id?.let { put("NAP", it.toString()) }
-            s.fiberOnu?.uniqueExternalId?.let { put("ONU_EXTERNAL_ID", it) }
             if (onu != null && get("ONU") != null) {
                 onu.oltId?.let { put("OLT", it.toString()) }
                 put("PON", "${onu.oltId}:${onu.board}:${onu.port}")

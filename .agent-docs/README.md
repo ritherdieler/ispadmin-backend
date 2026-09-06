@@ -5,11 +5,13 @@
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
+| **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
 | **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
 | **Fix overlay client Gateway + security WAR 2026-09-04** | [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md) |
 | **Diagrama 3 WARs + Redis (SVG / PNG)** | [arquitectura-3-wars.svg](./arquitectura-3-wars.svg) · [arquitectura-3-wars.png](./arquitectura-3-wars.png) |
 | **Diagrama 3 WARs — detalle por rectángulo** | [arquitectura-3-wars-detalle.md](./arquitectura-3-wars-detalle.md) |
 | **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
+| **JDBC cruzado (prohibido en runtime)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md#prohibido) |
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
 | **Diagnóstico técnico convergente — especificación v1.2** | [02-especificacion-diagnostico-tecnico-convergente.md](./02-especificacion-diagnostico-tecnico-convergente.md) |
@@ -21,6 +23,7 @@
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
 | **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
 | **OLT Gateway WAR (staging primero)** | [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) |
+| **Toggle SmartOLT / SSH de escrituras en Gateway** | [gateway-smartolt-write-toggle-2026-09-05.md](./gateway-smartolt-write-toggle-2026-09-05.md) |
 | **Restore prod WAR 2026-09-03 (recreate staging)** | [restore-prod-war-staging-recreate-2026-09-03.md](./restore-prod-war-staging-recreate-2026-09-03.md) |
 | **Staging Tomcat aislado + WAR selectivo** | [staging-tomcat-isolation-war-selectivo.md](./staging-tomcat-isolation-war-selectivo.md) |
 | **Deploy staging Tomcat aislado 2026-09-05** | [deploy-staging-tomcat-isolation-2026-09-05.md](./deploy-staging-tomcat-isolation-2026-09-05.md) |

@@ -52,7 +52,7 @@ class HealthSnapshotIngestService(
     private fun putCpe(event: PlatformEvent) {
         val sn = event.sn ?: return
         val status = json.readTree(event.payloadJson).path("cpeStatus").asText(null) ?: return
-        cpeFlags.ifAvailable?.apply(sn, status)
+        cpeFlags.ifAvailable?.apply(sn, status, event.occurredAt, event.eventId)
     }
 
     private fun putOnu(subscriptionId: Int, event: PlatformEvent) {
@@ -65,6 +65,7 @@ class HealthSnapshotIngestService(
                 runState = node.path("runState").asText(null),
                 rxPowerDbm = node.path("rxPowerDbm").takeIf { it.isNumber }?.asDouble(),
                 observedAt = event.occurredAt,
+                updateKind = if (event.type == PlatformEventTypes.ONU_OPTICAL) "optical" else "state",
             ),
         )
     }

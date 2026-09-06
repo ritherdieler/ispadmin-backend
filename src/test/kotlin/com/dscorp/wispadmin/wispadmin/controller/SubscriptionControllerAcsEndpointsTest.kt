@@ -55,7 +55,7 @@ class SubscriptionControllerAcsEndpointsTest {
     init {
         every { gatewayCpe.ifAvailable } returns gateway
         every { repository.findById(42) } returns Optional.of(
-            Subscription(id = 42, fiberOnu = Onu(sn = "SN1"), equipmentCondition = com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition.values().first()).apply {
+            Subscription(id = 42, fiberOnuSn = "SN1", equipmentCondition = com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition.values().first()).apply {
                 tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
             }
         )

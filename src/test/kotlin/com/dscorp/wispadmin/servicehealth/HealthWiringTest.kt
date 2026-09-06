@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.servicehealth
 import com.dscorp.wispadmin.servicehealth.controller.ServiceHealthController
 import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.servicehealth.repository.HealthCursorRepository
+import com.dscorp.wispadmin.servicehealth.port.SubscriptionDirectoryPort
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.security.ObservabilitySessionTokenService
 import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
@@ -19,7 +20,7 @@ import org.springframework.context.annotation.*
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect","spring.datasource.url=jdbc:h2:mem:wiring;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
     "spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver",
     "service.health.enabled=false","net.diag.enabled=false"])
-@MockBean(classes=[SubscriptionRepository::class, ObservabilitySessionTokenService::class])
+@MockBean(classes=[SubscriptionRepository::class, ObservabilitySessionTokenService::class, SubscriptionDirectoryPort::class])
 class HealthWiringTest {
     @Import(HealthPersistenceTest.Config::class)
     @ComponentScan(basePackages=["com.dscorp.wispadmin.servicehealth"],excludeFilters=[ComponentScan.Filter(type=FilterType.REGEX,pattern=[".*Test.*"])])

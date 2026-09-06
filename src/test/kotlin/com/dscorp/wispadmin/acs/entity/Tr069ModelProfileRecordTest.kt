@@ -1,18 +1,18 @@
-package com.dscorp.wispadmin.wispadmin.data.model
+package com.dscorp.wispadmin.acs.entity
 
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069VlanValueKind
+import com.dscorp.wispadmin.acs.genieacs.Tr069VlanValueKind
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-class Tr069ModelProfileEntityTest {
+class Tr069ModelProfileRecordTest {
 
     private val objectMapper = ObjectMapper()
 
     @Test
     fun `toModelProfile maps client WAN path and vlan parameters`() {
-        val entity = Tr069ModelProfileEntity(
+        val entity = Tr069ModelProfileRecord(
             productClass = "F6600R",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
             clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
@@ -33,7 +33,7 @@ class Tr069ModelProfileEntityTest {
 
     @Test
     fun `toModelProfile does not infer wifiSecurityPrep when json is empty`() {
-        val entity = Tr069ModelProfileEntity(
+        val entity = Tr069ModelProfileRecord(
             productClass = "HG8145X6",
             manufacturer = "Huawei Technologies Co., Ltd",
             wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",

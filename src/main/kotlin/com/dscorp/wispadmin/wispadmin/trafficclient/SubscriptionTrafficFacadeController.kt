@@ -44,10 +44,14 @@ class SubscriptionTrafficFacadeController(
             ResponseEntity.status(upstream.statusCode)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(upstream.body ?: "{}")
+        } catch (ex: org.springframework.web.client.RestClientResponseException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "traffic")
+        } catch (ex: com.dscorp.wispadmin.transport.InvalidSubsystemResponse) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "traffic")
         } catch (ex: RestClientException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "traffic subsystem unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "traffic")
         } catch (ex: IllegalArgumentException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "traffic subsystem unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure("traffic","UPSTREAM_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE)
         }
     }
 }

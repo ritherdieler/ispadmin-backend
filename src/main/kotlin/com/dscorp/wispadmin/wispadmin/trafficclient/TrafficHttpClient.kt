@@ -18,12 +18,12 @@ class TrafficHttpClient(
         val headers = HttpHeaders()
         headers.set(CoreTrafficApiKeyFilter.HEADER, properties.apiKey)
         headers.accept = listOf(MediaType.APPLICATION_JSON)
-        return restTemplate.exchange(
-            "$base$path$suffix",
+        return com.dscorp.wispadmin.transport.InternalJson.validate(restTemplate.exchange(
+            java.net.URI.create("$base$path$suffix"),
             HttpMethod.GET,
             HttpEntity<Void>(headers),
             String::class.java,
-        )
+        ))
     }
 
     fun postJson(path: String): ResponseEntity<String> {
@@ -32,11 +32,11 @@ class TrafficHttpClient(
         val headers = HttpHeaders()
         headers.set(CoreTrafficApiKeyFilter.HEADER, properties.apiKey)
         headers.accept = listOf(MediaType.APPLICATION_JSON)
-        return restTemplate.exchange(
-            "$base$path",
+        return com.dscorp.wispadmin.transport.InternalJson.validate(restTemplate.exchange(
+            java.net.URI.create("$base$path"),
             HttpMethod.POST,
             HttpEntity<Void>(headers),
             String::class.java,
-        )
+        ))
     }
 }

@@ -26,6 +26,7 @@ data class LiveOnuState(
     val runState: String?,
     val rxPowerDbm: Double?,
     val observedAt: Instant,
+    val updateKind: String = "snapshot",
 )
 
 interface LiveTelemetryPort {

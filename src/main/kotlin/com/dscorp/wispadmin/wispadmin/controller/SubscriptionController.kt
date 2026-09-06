@@ -167,7 +167,7 @@ class SubscriptionController(
     fun getSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<SubscriptionAcsDto> {
         val subscription = repository.findById(subscriptionId).orElse(null)
             ?: return ResponseEntity.notFound().build()
-        val sn = subscription.fiberOnu?.sn ?: return ResponseEntity.notFound().build()
+        val sn = subscription.fiberOnuSn ?: return ResponseEntity.notFound().build()
         val telemetry = gatewayCpe.ifAvailable?.telemetry(sn)
         return ResponseEntity.ok(
             SubscriptionAcsDto(
@@ -186,7 +186,7 @@ class SubscriptionController(
 
     @PostMapping("/{subscriptionId}/acs/refresh")
     fun refreshSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
-        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnu?.sn
+        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnuSn
             ?: return ResponseEntity.notFound().build()
         val client = gatewayCpe.ifAvailable
             ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Gateway no disponible"))
@@ -195,7 +195,7 @@ class SubscriptionController(
 
     @PostMapping("/{subscriptionId}/acs/reboot")
     fun rebootSubscriptionAcs(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
-        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnu?.sn
+        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnuSn
             ?: return ResponseEntity.notFound().build()
         val client = gatewayCpe.ifAvailable
             ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Gateway no disponible"))

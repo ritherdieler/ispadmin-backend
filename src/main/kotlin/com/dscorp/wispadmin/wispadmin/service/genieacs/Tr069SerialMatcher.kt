@@ -22,18 +22,7 @@ sealed class Tr069SerialMatch {
 
 object Tr069SerialMatcher {
 
-    private val HEX_SUFFIX = Regex("^[0-9A-F]{6}$")
-
-    fun normalizeSuffix(serial: String?): String? {
-        val cleaned = serial
-            ?.uppercase()
-            ?.filter { it.isLetterOrDigit() }
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        if (cleaned.length < 6) return null
-        val suffix = cleaned.takeLast(6)
-        return suffix.takeIf { HEX_SUFFIX.matches(it) }
-    }
+    fun normalizeSuffix(serial: String?): String? = com.dscorp.wispadmin.transport.SerialSuffix.normalizeSuffix(serial)
 
     fun findUnique(smartOltSn: String?, devices: List<GenieAcsDevice>): Tr069SerialMatch {
         val suffix = normalizeSuffix(smartOltSn) ?: return Tr069SerialMatch.InvalidSerial

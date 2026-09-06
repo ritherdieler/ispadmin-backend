@@ -3,7 +3,6 @@ package com.dscorp.wispadmin.acs.genieacs
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import javax.annotation.PostConstruct
@@ -12,7 +11,6 @@ import javax.annotation.PostConstruct
 class Tr069ModelProfileRegistry(
     private val jdbc: JdbcTemplate,
     private val objectMapper: ObjectMapper,
-    @Value("\${acs.profiles.catalog:}") private val profilesCatalog: String,
 ) {
     private val logger = LoggerFactory.getLogger(Tr069ModelProfileRegistry::class.java)
 
@@ -28,12 +26,8 @@ class Tr069ModelProfileRegistry(
     }
 
     fun reload() {
-        profilesByKey = loadFromCatalog()
-        logger.info(
-            "ACS TR-069 profiles loaded catalog={} count={}",
-            profilesCatalog.ifBlank { "(none)" },
-            profilesByKey.size,
-        )
+        profilesByKey = loadFromLocalSchema()
+        logger.info("ACS TR-069 profiles loaded count={}", profilesByKey.size)
     }
 
     fun hasImportedProfiles(): Boolean = profilesByKey.isNotEmpty()
@@ -56,17 +50,14 @@ class Tr069ModelProfileRegistry(
         }
     }
 
-    private fun loadFromCatalog(): Map<String, Tr069ModelProfile> {
-        val catalog = profilesCatalog.trim()
-        if (catalog.isEmpty()) return emptyMap()
-        require(catalog.matches(CATALOG_SAFE)) { "Invalid acs.profiles.catalog: $catalog" }
+    private fun loadFromLocalSchema(): Map<String, Tr069ModelProfile> {
         return try {
             val sql = """
                 SELECT product_class, wan_connection_device_index, wan_ip_connection_path,
                        client_wan_ip_connection_path, wan_gpon_link_config_path,
                        vlan_parameters_json, client_vlan_parameters_json,
                        wlan24_path, wlan5_path, wifi_security_prep_json, aliases_json
-                FROM `$catalog`.tr069_model_profile
+                FROM tr069_model_profile
                 """.trimIndent()
             val map = linkedMapOf<String, Tr069ModelProfile>()
             jdbc.query(
@@ -96,7 +87,7 @@ class Tr069ModelProfileRegistry(
             )
             map
         } catch (ex: Exception) {
-            logger.warn("Failed loading TR-069 profiles from {}: {}", catalog, ex.message)
+            logger.warn("Failed loading TR-069 profiles from ACS schema: {}", ex.message)
             emptyMap()
         }
     }
@@ -129,9 +120,5 @@ class Tr069ModelProfileRegistry(
                 type = row.getValue("type"),
             )
         }
-    }
-
-    companion object {
-        private val CATALOG_SAFE = Regex("[A-Za-z0-9_]+")
     }
 }

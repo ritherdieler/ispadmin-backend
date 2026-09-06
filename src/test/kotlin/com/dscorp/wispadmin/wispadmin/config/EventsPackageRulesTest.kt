@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.config
 
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
@@ -54,10 +55,10 @@ class EventsPackageRulesTest {
     }
 
     @Test
-    fun coreDoesNotScanGenieAcsOrTr069ProfileAdmin() {
+    fun coreDoesNotScanGenieAcsOrAcsPackageButScansTr069ProfileBff() {
         val core = Files.readString(mainKotlin.resolve("com/dscorp/wispadmin/wispadmin/WispAdminApplication.kt"))
         assertTrue(core.contains("com\\\\.dscorp\\\\.wispadmin\\\\.acs\\\\..*"), core)
         assertTrue(core.contains("wispadmin\\\\.service\\\\.genieacs\\\\..*"), core)
-        assertTrue(core.contains("Tr069ModelProfileController"), core)
+        assertFalse(core.contains("controller\\.Tr069ModelProfileController"), core)
     }
 }

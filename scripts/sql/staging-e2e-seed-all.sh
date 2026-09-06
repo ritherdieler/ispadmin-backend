@@ -34,19 +34,19 @@ ssh_vps "ROOTPW=\$(docker exec $MYSQL_CONTAINER printenv MYSQL_ROOT_PASSWORD)
 docker exec -i -e MYSQL_PWD=\"\$ROOTPW\" $MYSQL_CONTAINER mysql -uroot" < "$CATALOG"
 
 if [[ "$RELOAD_STAGING" == "1" ]]; then
-  echo "== reload ispadmin-staging so Tr069ModelProfileRegistry picks up rows =="
-  ssh_vps "docker exec $TOMCAT_CONTAINER rm -f /usr/local/tomcat/webapps/ispadmin-staging.xml
-docker exec $TOMCAT_CONTAINER touch /usr/local/tomcat/webapps/ispadmin-staging.war"
-  echo "Waiting for /ispadmin-staging/ ..."
+  echo "== reload ispadmin-staging-acs so ACS Tr069ModelProfileRegistry picks up rows =="
+  ssh_vps "docker exec $TOMCAT_CONTAINER rm -f /usr/local/tomcat/webapps/ispadmin-staging-acs.xml
+docker exec $TOMCAT_CONTAINER touch /usr/local/tomcat/webapps/ispadmin-staging-acs.war"
+  echo "Waiting for /ispadmin-staging-acs/ ..."
   for _ in $(seq 1 40); do
-    code="$(ssh_vps "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ispadmin-staging/ 2>/dev/null || true")"
+    code="$(ssh_vps "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ispadmin-staging-acs/ 2>/dev/null || true")"
     if [[ "$code" == "200" ]]; then
-      echo "Staging HTTP 200"
+      echo "ACS staging HTTP 200"
       exit 0
     fi
     sleep 3
   done
-  echo "Staging did not return HTTP 200 after reload" >&2
+  echo "ACS staging did not return HTTP 200 after reload" >&2
   exit 1
 fi
 echo "SEED_OK (reload skipped)"

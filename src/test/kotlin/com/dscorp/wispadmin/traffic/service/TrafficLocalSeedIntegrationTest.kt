@@ -2,7 +2,7 @@ package com.dscorp.wispadmin.traffic.service
 
 import com.dscorp.wispadmin.traffic.entity.SubscriptionTrafficSample
 import com.dscorp.wispadmin.traffic.repository.SubscriptionTrafficSampleRepository
-import com.dscorp.wispadmin.wispadmin.WispAdminApplication
+import com.dscorp.wispadmin.traffic.TrafficApplication
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -15,8 +15,8 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.sin
 
-@SpringBootTest(classes = [WispAdminApplication::class], webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@ActiveProfiles("dev", "local")
+@SpringBootTest(classes = [TrafficApplication::class], webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@ActiveProfiles("traffic", "local")
 @Tag("local-db")
 class TrafficLocalSeedIntegrationTest {
 

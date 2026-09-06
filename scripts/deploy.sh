@@ -262,6 +262,19 @@ run_tests() {
   echo "All backend tests passed. Deployment may continue."
 }
 
+promote_packaged_war() {
+  local name="$1"
+  local nested="$PROJECT_DIR/target/${name%.war}/$name"
+  local flat="$PROJECT_DIR/target/$name"
+  if [[ -f "$nested" ]]; then
+    cp -f "$nested" "$flat"
+  fi
+  if [[ ! -f "$flat" ]]; then
+    echo "Missing $flat" >&2
+    exit 1
+  fi
+}
+
 build_war() {
   if war_selected core; then
     local models_dir="$PROJECT_DIR/src/main/resources/models"
@@ -308,11 +321,7 @@ build_traffic_war() {
   fi
   echo "Building $TRAFFIC_WAR_NAME (Maven profile $TRAFFIC_MAVEN_PROFILE)..."
   (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$TRAFFIC_MAVEN_PROFILE")
-  local traffic_war="$PROJECT_DIR/target/$TRAFFIC_WAR_NAME"
-  if [[ ! -f "$traffic_war" ]]; then
-    echo "Missing $traffic_war" >&2
-    exit 1
-  fi
+  promote_packaged_war "$TRAFFIC_WAR_NAME"
 }
 
 build_oltgateway_war() {
@@ -321,11 +330,7 @@ build_oltgateway_war() {
   fi
   echo "Building $OLTGATEWAY_WAR_NAME (Maven profile $OLTGATEWAY_MAVEN_PROFILE)..."
   (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$OLTGATEWAY_MAVEN_PROFILE")
-  local gateway_war="$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME"
-  if [[ ! -f "$gateway_war" ]]; then
-    echo "Missing $gateway_war" >&2
-    exit 1
-  fi
+  promote_packaged_war "$OLTGATEWAY_WAR_NAME"
 }
 
 build_acs_war() {
@@ -334,11 +339,7 @@ build_acs_war() {
   fi
   echo "Building $ACS_WAR_NAME (Maven profile $ACS_MAVEN_PROFILE)..."
   (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$ACS_MAVEN_PROFILE")
-  local acs_war="$PROJECT_DIR/target/$ACS_WAR_NAME"
-  if [[ ! -f "$acs_war" ]]; then
-    echo "Missing $acs_war" >&2
-    exit 1
-  fi
+  promote_packaged_war "$ACS_WAR_NAME"
 }
 
 upload_tomcat_lib() {

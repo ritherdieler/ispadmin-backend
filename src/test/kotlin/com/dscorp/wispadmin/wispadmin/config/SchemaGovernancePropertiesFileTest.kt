@@ -12,6 +12,13 @@ class SchemaGovernancePropertiesFileTest {
 
     private fun read(relative: String): String = Files.readString(root.resolve(relative))
 
+    private fun migrationFiles(): List<String> =
+        Files.list(root.resolve("src/main/resources/db/migration")).use { paths ->
+            paths.map { it.fileName.toString() }
+                .filter { it.startsWith("V") && it.endsWith(".sql") }
+                .toList()
+        }
+
     @Test
     fun applicationProd_valida_el_esquema_en_vez_de_alterarlo() {
         val prod = read("src/main/resources/application-prod.properties")
@@ -49,14 +56,26 @@ class SchemaGovernancePropertiesFileTest {
 
     @Test
     fun no_hay_dos_migraciones_con_la_misma_version() {
-        val versions = Files.list(root.resolve("src/main/resources/db/migration")).use { paths ->
-            paths.map { it.fileName.toString() }
-                .filter { it.startsWith("V") && it.endsWith(".sql") }
-                .map { it.substringBefore("__") }
-                .toList()
-        }
+        val versions = migrationFiles().map { it.substringBefore("__") }
         val duplicates = versions.groupingBy { it }.eachCount().filter { it.value > 1 }
         assertTrue(duplicates.isEmpty(), "versiones Flyway duplicadas: $duplicates")
+    }
+
+    @Test
+    fun v39_sigue_siendo_netdiag_porque_staging_ya_la_aplico() {
+        val names = migrationFiles()
+        assertTrue(
+            names.contains("V39__netdiag_retention_and_indexes.sql"),
+            "V39 aplicado en staging es netdiag; no reutilizar el número: $names",
+        )
+        assertFalse(
+            names.any { it.startsWith("V39__") && it.contains("onu_unique") },
+            "onu unique no puede reusar V39: $names",
+        )
+        assertTrue(
+            names.any { it.matches(Regex("V4[6-9]__onu_unique_external_id\\.sql")) },
+            "unique_external_id debe ir en una versión posterior a V45: $names",
+        )
     }
 
     @Test

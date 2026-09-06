@@ -9,16 +9,16 @@ import org.springframework.context.annotation.Configuration
 class TrafficConfig
 
 @ConfigurationProperties(prefix = "traffic")
-class TrafficProperties {
+class TrafficProperties(var anomaly: AnomalyProperties = AnomalyProperties()) {
     var poll: PollProperties = PollProperties()
     var retention: RetentionProperties = RetentionProperties()
-    var anomaly: AnomalyProperties = AnomalyProperties()
     var aggregation: AggregationProperties = AggregationProperties()
     var apiKey: String = ""
     var coreBaseUrl: String = ""
     var internalBaseUrl: String = ""
     var clientEnabled: Boolean = false
     var directoryTtlSeconds: Long = 60
+    var directoryMaxStaleSeconds: Long = 300
     var routerSeed: RouterSeedProperties = RouterSeedProperties()
 
     fun isValidApiKey(key: String?): Boolean {
@@ -47,7 +47,7 @@ class TrafficProperties {
         var networkHourDays: Int = 400
     }
 
-    class AnomalyProperties {
+    class AnomalyProperties(var evaluationBatchSize: Int = 250) {
         var enabled: Boolean = true
         var minimumCoveragePct: Double = 80.0
         var saturationPct: Double = 80.0

@@ -21,10 +21,9 @@ class HealthOltOpticalPullService(
     fun pull() {
         if (!properties.enabled || !properties.opticalEnabled) return
         val ingest = ingestProvider.ifAvailable ?: return
-        val now = Instant.now()
         gateway.pullOptical().forEach { ingest.onOptical(it) }
-        gateway.pullStates().forEach { (sn, state, cause) ->
-            ingest.onState(sn, state, cause, now)
+        gateway.pullStateObservations().forEach { observation ->
+            ingest.onState(observation.sn, observation.state, observation.cause, observation.observedAt)
         }
     }
 }
