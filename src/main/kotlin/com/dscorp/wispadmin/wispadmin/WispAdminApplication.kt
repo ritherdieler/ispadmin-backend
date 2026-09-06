@@ -38,7 +38,6 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
         ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.oltgateway\\.OltGatewayApplication"]),
         ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.acs\\..*"]),
         ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.wispadmin\\.service\\.genieacs\\..*"]),
-        ComponentScan.Filter(type = FilterType.REGEX, pattern = ["com\\.dscorp\\.wispadmin\\.wispadmin\\.controller\\.Tr069ModelProfileController"]),
     ]
 )
 @SubsystemEntityScan

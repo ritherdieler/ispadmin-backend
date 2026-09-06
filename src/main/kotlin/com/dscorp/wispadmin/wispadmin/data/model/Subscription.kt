@@ -103,6 +103,11 @@ data class Subscription(
     @JoinColumn(name = "napbox_id")
     var napBox: NapBox? = null,
 
+    @Column(name = "tr069_state_observed_at")
+    var tr069StateObservedAt: java.time.Instant? = null,
+    @Column(name = "tr069_state_event_id", length = 128)
+    var tr069StateEventId: String? = null,
+
     @Column(name = "fiber_onu_sn", length = 32)
     var fiberOnuSn: String? = null,
 

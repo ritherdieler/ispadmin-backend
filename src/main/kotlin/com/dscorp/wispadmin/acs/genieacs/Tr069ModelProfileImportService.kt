@@ -1,10 +1,10 @@
-package com.dscorp.wispadmin.wispadmin.service.genieacs
+package com.dscorp.wispadmin.acs.genieacs
 
-import com.dscorp.wispadmin.wispadmin.data.model.Tr069ModelProfileEntity
-import com.dscorp.wispadmin.wispadmin.dto.Tr069ModelProfileDto
-import com.dscorp.wispadmin.wispadmin.dto.Tr069ModelProfileImportResultDto
-import com.dscorp.wispadmin.wispadmin.dto.Tr069ModelProfilePreviewDto
-import com.dscorp.wispadmin.wispadmin.repository.Tr069ModelProfileRepository
+import com.dscorp.wispadmin.acs.entity.AcsModelProfileDto
+import com.dscorp.wispadmin.acs.entity.AcsModelProfileImportResultDto
+import com.dscorp.wispadmin.acs.entity.AcsModelProfilePreviewDto
+import com.dscorp.wispadmin.acs.entity.Tr069ModelProfileRecord
+import com.dscorp.wispadmin.acs.repository.Tr069ModelProfileRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,11 +15,10 @@ class Tr069ModelProfileImportService(
     private val registry: Tr069ModelProfileRegistry,
     private val objectMapper: ObjectMapper,
 ) {
-
-    fun preview(csvContent: String): Tr069ModelProfilePreviewDto {
+    fun preview(csvContent: String): AcsModelProfilePreviewDto {
         val draft = GenieAcsCsvProfileExtractor.extract(csvContent)
         val dto = draft.toDto()
-        return Tr069ModelProfilePreviewDto(
+        return AcsModelProfilePreviewDto(
             draft = dto,
             readyToImport = draft.wlan24Path != null &&
                 draft.wlan5Path != null &&
@@ -32,10 +31,10 @@ class Tr069ModelProfileImportService(
         csvContent: String,
         importedBy: String?,
         aliases: List<String> = emptyList(),
-    ): Tr069ModelProfileImportResultDto {
+    ): AcsModelProfileImportResultDto {
         val draft = GenieAcsCsvProfileExtractor.extract(csvContent)
         val replacedExisting = repository.existsById(draft.productClass)
-        val entity = Tr069ModelProfileEntity.fromDraft(
+        val entity = Tr069ModelProfileRecord.fromDraft(
             draft = draft,
             importedBy = importedBy,
             objectMapper = objectMapper,
@@ -43,13 +42,13 @@ class Tr069ModelProfileImportService(
         )
         repository.save(entity)
         registry.reload()
-        return Tr069ModelProfileImportResultDto(
+        return AcsModelProfileImportResultDto(
             saved = entity.toDto(objectMapper),
             replacedExisting = replacedExisting,
         )
     }
 
-    fun listAll(): List<Tr069ModelProfileDto> =
+    fun listAll(): List<AcsModelProfileDto> =
         repository.findAll()
             .sortedBy { it.productClass }
             .map { it.toDto(objectMapper) }
@@ -62,7 +61,7 @@ class Tr069ModelProfileImportService(
         return true
     }
 
-    private fun Tr069ProfileDraft.toDto(): Tr069ModelProfileDto = Tr069ModelProfileDto(
+    private fun Tr069ProfileDraft.toDto(): AcsModelProfileDto = AcsModelProfileDto(
         productClass = productClass,
         manufacturer = manufacturer,
         wanConnectionDeviceIndex = wanConnectionDeviceIndex,

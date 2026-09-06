@@ -23,6 +23,8 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrZoneRepository
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
+import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltAuthorizeCommand
+import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltMoveCommand
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -53,6 +55,7 @@ open class OltManagerFacade(
     private val taskRepository: OltMgrTaskRepository,
     private val auditLogRepository: OltMgrAuditLogRepository,
     private val commandService: OltGatewayCommandService,
+    private val writeRouter: OnuWriteRouter,
     private val queryFacade: OltGatewayQueryFacade,
     private val mapper: SmartOltCompatMapper,
     private val properties: OltGatewayProperties
@@ -204,7 +207,7 @@ open class OltManagerFacade(
         )
 
         try {
-            commandService.authorize(
+            val writeResult = writeRouter.authorize(
                 AuthorizeCliRequest(
                     board = board,
                     port = port,
@@ -214,10 +217,27 @@ open class OltManagerFacade(
                     serviceProfileId = properties.writes.defaultServiceProfileId,
                     description = request.name.ifBlank { request.sn },
                     vlan = vlan
+                ),
+                SmartOltAuthorizeCommand(
+                    oltId = request.olt_id.ifBlank { properties.oltId },
+                    ponType = request.pon_type.ifBlank { "gpon" },
+                    board = request.board,
+                    port = request.port,
+                    sn = request.sn,
+                    vlan = request.vlan,
+                    onuType = request.onu_type,
+                    zone = request.zone,
+                    name = request.name,
+                    onuMode = request.onu_mode,
+                    customProfile = request.custom_profile
                 )
             )
+            if (!writeResult.status) {
+                throw IllegalStateException("ONU authorize failed for SN=${request.sn}")
+            }
 
-            val externalId = OnuExternalIdPolicy.canonical(properties.oltId, board, port, nextOntId)
+            val externalId = writeResult.uniqueExternalId?.takeIf { it.isNotBlank() }
+                ?: OnuExternalIdPolicy.canonical(properties.oltId, board, port, nextOntId)
             val onu = onuRepository.save(
                 OltMgrOnu(
                     sn = request.sn,
@@ -286,7 +306,7 @@ open class OltManagerFacade(
             )
         )
         try {
-            commandService.move(
+            val writeResult = writeRouter.move(
                 MoveCliRequest(
                     fromBoard = onu.board,
                     fromPort = onu.port,
@@ -299,8 +319,17 @@ open class OltManagerFacade(
                     serviceProfileId = properties.writes.defaultServiceProfileId,
                     description = onu.name ?: onu.sn,
                     vlan = onu.mainVlanId ?: 0
+                ),
+                sn,
+                SmartOltMoveCommand(
+                    oltId = request.olt_id.ifBlank { properties.oltId },
+                    board = request.board,
+                    port = request.port
                 )
             )
+            if (!writeResult.status) {
+                throw IllegalStateException("ONU move failed for SN=$sn")
+            }
             onu.board = toBoard
             onu.port = toPort
             onu.updatedAt = Instant.now()
@@ -344,7 +373,13 @@ open class OltManagerFacade(
             )
         )
         try {
-            commandService.delete(DeleteCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex))
+            val writeResult = writeRouter.delete(
+                DeleteCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex),
+                externalId
+            )
+            if (!writeResult.status) {
+                throw IllegalStateException("ONU delete failed for externalId=$externalId")
+            }
             onu.sn = tombstoneSn(onu.sn, onu.id)
             onu.deletedAt = Instant.now()
             onu.updatedAt = Instant.now()
@@ -392,7 +427,13 @@ open class OltManagerFacade(
             )
         )
         try {
-            commandService.reboot(RebootCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex))
+            val writeResult = writeRouter.reboot(
+                RebootCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex),
+                externalId
+            )
+            if (!writeResult.status) {
+                throw IllegalStateException("ONU reboot failed for externalId=$externalId")
+            }
             task.status = "success"
             task.finishedAt = Instant.now()
             taskRepository.save(task)

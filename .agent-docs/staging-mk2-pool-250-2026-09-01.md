@@ -29,9 +29,11 @@ Script idempotente: `scripts/genieacs/mk2-staging-pool-250.rsc`.
 | Ping MK2 → `192.168.30.1` | 0% loss (sin regresión) |
 | Ping MK2 → CPE `192.168.250.21` (e2e 2348) | **OK** 4/4, 0% loss, ~4 ms |
 
-## Fuera de alcance
+## Fuera de alcance (histórico)
 
-`wg-olt` en el VPS **sigue sin** `192.168.250.0/24`. El ping e2e (`/rest/ping` desde MK2) no lo necesita. CR/GenieACS desde el VPS a `.250.x` sí.
+Hasta 2026-09-01 `wg-olt` en el VPS **no** llevaba `192.168.250.0/24`. El ping e2e (`/rest/ping` desde MK2) no lo necesitaba.
+
+**Actualizado 2026-09-05:** el CIDR staging ya está en `AllowedIPs` + rutas `wg-olt` (PostUp). Ver [staging-mk2-pool-250-wg-olt-2026-09-05.md](./staging-mk2-pool-250-wg-olt-2026-09-05.md). CR/GenieACS desde el VPS a `.250.x` ya tiene ruta L3 al gateway MK2.
 
 ## Relacionado
 

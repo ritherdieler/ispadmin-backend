@@ -72,7 +72,7 @@ class RemoteActionPersistenceTest {
         val identity=mockk<IdentityService>()
         cpe=mockk(relaxed=true)
         for(id in 1..6) {
-            every { subscriptions.findById(id) } returns Optional.of(Subscription(id=id,fiberOnu=Onu(sn="sn$id"),equipmentCondition=EquipmentCondition.values().first()))
+            every { subscriptions.findById(id) } returns Optional.of(Subscription(id=id,fiberOnuSn = "sn$id",equipmentCondition=EquipmentCondition.values().first()))
             every { identity.resolveOnu("sn$id") } returns id
         }
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
@@ -144,7 +144,7 @@ class RemoteActionPersistenceTest {
     }
     @Test fun `optical refresh confirms when ssh collects`() {
         val port=mockk<HealthLabOpticalPort>()
-        every { port.refreshSubscription(1) } returns HealthLabOpticalRefresh(true)
+        every { port.refreshBySn("sn1") } returns HealthLabOpticalRefresh(true)
         val provider=mockk<ObjectProvider<HealthLabOpticalPort>>()
         every { provider.ifAvailable } returns port
         val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }

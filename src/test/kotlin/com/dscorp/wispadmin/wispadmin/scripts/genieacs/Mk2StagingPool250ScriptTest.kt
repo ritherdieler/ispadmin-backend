@@ -36,4 +36,15 @@ class Mk2StagingPool250ScriptTest {
         assertTrue(text.contains("192.168.22.0/24"), text)
         assertTrue(text.contains("Drop staging 250 to legacy LAN_MK1"), text)
     }
+
+    @Test
+    fun wg_olt_customer_routes_include_staging_250_pool() {
+        val root = root()
+        val routes = root.resolve("scripts/genieacs/wg-olt-customer-routes.sh")
+        val apply = root.resolve("scripts/genieacs/apply-genieacs-wg-customer-routes.sh")
+        assertTrue(Files.exists(routes), "missing $routes")
+        assertTrue(Files.exists(apply), "missing $apply")
+        assertTrue(Files.readString(routes).contains("192.168.250.0/24"), Files.readString(routes))
+        assertTrue(Files.readString(apply).contains("192.168.250.0/24"), Files.readString(apply))
+    }
 }

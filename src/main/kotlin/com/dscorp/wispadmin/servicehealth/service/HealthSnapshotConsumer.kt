@@ -24,45 +24,11 @@ class HealthSnapshotConsumer(
 ) {
     private val logger = LoggerFactory.getLogger(HealthSnapshotConsumer::class.java)
 
-    @PostConstruct
-    fun ensureGroup() {
-        try {
-            redis.execute<String> { connection ->
-                connection.streamCommands().xGroupCreate(
-                    properties.stream.toByteArray(),
-                    properties.consumerGroup,
-                    ReadOffset.from("0-0"),
-                    true,
-                )
-            }
-        } catch (ex: Exception) {
-            logger.info("Redis consumer group ready or already exists: {}", ex.message)
-        }
-    }
+    private val pump = com.dscorp.wispadmin.events.RedisStreamPump(redis, properties, properties.consumerGroup)
 
     @Scheduled(fixedDelayString = "\${gigafiber.redis.consumer-interval-ms:1000}")
     fun poll() {
-        if (!properties.enabled) return
-        try {
-            val records = redis.opsForStream<String, String>().read(
-                Consumer.from(properties.consumerGroup, "core-1"),
-                StreamReadOptions.empty().count(50).block(Duration.ofMillis(200)),
-                StreamOffset.create(properties.stream, ReadOffset.lastConsumed()),
-            ) ?: return
-            for (record in records) {
-                handle(record)
-            }
-        } catch (ex: Exception) {
-            logger.warn("Redis stream consume failed: {}", ex.message)
-        }
+        if (properties.enabled) pump.poll { ingest.apply(PlatformEventCodec.fromFields(it)) }
     }
 
-    private fun handle(record: MapRecord<String, String, String>) {
-        try {
-            ingest.apply(PlatformEventCodec.fromFields(record.value))
-            redis.opsForStream<String, String>().acknowledge(properties.stream, properties.consumerGroup, record.id)
-        } catch (ex: Exception) {
-            logger.warn("Redis stream record failed id={}: {}", record.id, ex.message)
-        }
-    }
 }

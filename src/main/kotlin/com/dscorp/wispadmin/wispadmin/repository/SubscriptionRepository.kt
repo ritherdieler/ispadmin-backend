@@ -158,6 +158,19 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun findForTrafficPolling(): List<Subscription>
 
+    @Query("""
+        SELECT s FROM Subscription s
+        LEFT JOIN FETCH s.hostDevice
+        LEFT JOIN FETCH s.plan
+        WHERE s.id > :after
+        AND s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
+        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND s.hostDevice IS NOT NULL
+        ORDER BY s.id
+    """)
+    fun findTrafficTargetsAfter(@org.springframework.data.repository.query.Param("after") after: Int,
+        pageable: org.springframework.data.domain.Pageable): List<Subscription>
+
     @Query(
         """
         SELECT s FROM Subscription s

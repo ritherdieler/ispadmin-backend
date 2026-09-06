@@ -1,7 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
+import com.dscorp.wispadmin.wispadmin.oltclient.OltGatewayHttpClient
 import org.springframework.beans.factory.ObjectProvider
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionsStaticsRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
@@ -47,7 +48,8 @@ class DashBoardServicePaymentPeriodTest {
         userRepository = mockk(relaxed = true),
         networkDeviceRepository = mockk(relaxed = true),
         napBoxRepository = mockk(relaxed = true),
-        oltInventory = mockk<ObjectProvider<OltInventoryPort>>(relaxed = true),
+        oltGatewayHttp = mockk<ObjectProvider<OltGatewayHttpClient>>(relaxed = true),
+        objectMapper = ObjectMapper(),
         performanceMonitor = performanceMonitor,
         paymentStatisticsService = mockk(relaxed = true),
     )

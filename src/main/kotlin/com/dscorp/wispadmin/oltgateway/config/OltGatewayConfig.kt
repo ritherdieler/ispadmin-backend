@@ -31,6 +31,7 @@ import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
+import com.dscorp.wispadmin.oltgateway.service.OnuWriteRouter
 import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
@@ -272,6 +273,7 @@ class OltGatewayConfig {
         taskRepository: OltMgrTaskRepository,
         auditLogRepository: OltMgrAuditLogRepository,
         commandService: OltGatewayCommandService,
+        writeRouter: OnuWriteRouter,
         queryFacade: OltGatewayQueryFacade,
         mapper: SmartOltCompatMapper,
         properties: OltGatewayProperties
@@ -285,10 +287,20 @@ class OltGatewayConfig {
             taskRepository = taskRepository,
             auditLogRepository = auditLogRepository,
             commandService = commandService,
+            writeRouter = writeRouter,
             queryFacade = queryFacade,
             mapper = mapper,
             properties = properties
         )
+    }
+
+    @Bean
+    fun onuWriteRouter(
+        properties: OnuWriteProviderProperties,
+        commandService: OltGatewayCommandService,
+        smartOlt: com.dscorp.wispadmin.oltgateway.smartolt.SmartOltWriteClient
+    ): OnuWriteRouter {
+        return OnuWriteRouter(properties, commandService, smartOlt)
     }
 
     @Bean
@@ -313,15 +325,29 @@ class OltGatewayConfig {
     }
 
     @Bean
+    fun activationJournal(
+        jdbc: org.springframework.jdbc.core.JdbcTemplate,
+        json: com.fasterxml.jackson.databind.ObjectMapper,
+        @org.springframework.beans.factory.annotation.Value("\${olt.gateway.operation-secret:\${olt.gateway.api-key:}}") secret: String,
+    ): com.dscorp.wispadmin.oltgateway.service.ActivationJournal {
+        org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+            org.springframework.core.io.ClassPathResource("db/oltgateway/V1__activation_operation.sql")
+        ).execute(requireNotNull(jdbc.dataSource))
+        return com.dscorp.wispadmin.oltgateway.service.JdbcActivationJournal(jdbc,json,secret)
+    }
+
+    @Bean
     fun onuActivationService(
         oltManagerFacade: OltManagerFacade,
         acsCpeClient: com.dscorp.wispadmin.oltgateway.client.AcsCpeClient,
         eventBus: EventBusPort,
+        journal: com.dscorp.wispadmin.oltgateway.service.ActivationJournal,
     ): com.dscorp.wispadmin.oltgateway.service.OnuActivationService {
         return com.dscorp.wispadmin.oltgateway.service.OnuActivationService(
             oltManagerFacade,
             acsCpeClient,
             eventBus,
+            journal,
         )
     }
 

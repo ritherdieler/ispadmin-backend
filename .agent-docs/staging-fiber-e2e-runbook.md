@@ -66,7 +66,7 @@ cd ispadmin-backend
 ./scripts/sql/staging-e2e-seed-all.sh
 ```
 
-Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `touch` del WAR staging para recargar `Tr069ModelProfileRegistry`. **No** crear `webapps/ispadmin-staging.xml` vacío (rompe el context). Sin reload, el SQL queda en MySQL pero el alta dice «No hay perfiles TR-069 importados».
+Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `touch` del WAR `ispadmin-staging-acs` para recargar perfiles en `stg_acs`. **No** crear `webapps/ispadmin-staging-acs.xml` vacío (rompe el context). Sin reload, el SQL queda en MySQL pero el alta dice «No hay perfiles TR-069 importados».
 
 `RELOAD_STAGING=0 ./scripts/sql/staging-e2e-seed-all.sh` — solo SQL.
 
@@ -77,7 +77,7 @@ Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `
 | `plan` (FIBER activo, p. ej. `lab-basico`) | prod | paso plan |
 | `network_device` id **8** (MK2) | prod | host + ping |
 | `ip_pool` **`192.168.250.1/24`** → host 8 | seed (no solapa prod `.30`) | IP VLAN 100 + tag `stg` |
-| `tr069_model_profile` | prod: `F6600R`, `HG8145X6`, `V2804AX15T` | ACS; alias `F6600RV9.0.21` → **F6600R** |
+| `tr069_model_profile` | `prod_acs` → `stg_acs`: `F6600R`, `HG8145X6`, `V2804AX15T` | ACS WAR; alias `F6600RV9.0.21` → **F6600R** |
 | Staff `dscorp` | seed de app | login |
 
 Fixtures tabulares: `staging-e2e-fixtures.md`. SQL: `staging-e2e-registration-catalog-2026-09-01.md`.
@@ -133,7 +133,7 @@ El e2e pingeá **desde MK2** (`POST /rest/ping`), no desde el VPS.
 | MySQL pool | `192.168.250.1/24` host 8 | solo BD |
 | MK2 `sfp-sfpplus2` | **`192.168.250.1/24`** + NAT masquerade + drop a `192.168.22.0/24` | aplicado; backup `staging-e2e-250-pre` |
 | Misma iface | `192.168.30.1/24` prod + `192.168.255.1/24` ACS DHCP | no tocar |
-| VPS `wg-olt` | **sin** `192.168.250.0/24` | `ip route get 192.168.250.20` sale por `eth0`; no afecta `/rest/ping` |
+| VPS `wg-olt` | **con** `192.168.250.0/24` (desde 2026-09-05) | Antes salía por `eth0`; ahora vía túnel (CR/diagnóstico). Detalle: `staging-mk2-pool-250-wg-olt-2026-09-05.md` |
 | ACS gestión | `192.168.255.0/24` | Inform TR-069; sí está en `wg-olt` |
 
 Script MK2 idempotente: `scripts/genieacs/mk2-staging-pool-250.rsc`. Doc: `staging-mk2-pool-250-2026-09-01.md`. Catálogo RouterOS: `mikrotik-mk2-comandos-catalogo.md`.

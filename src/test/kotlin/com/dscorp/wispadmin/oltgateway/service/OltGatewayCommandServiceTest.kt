@@ -98,12 +98,31 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
-    fun `delete lanza si ont delete falla en CLI`() {
-        val failing = OltGatewayCommandService(
+    fun `delete es idempotente si ONT ya no existe en OLT`() {
+        val alreadyGone = OltGatewayCommandService(
             runCommand = { cmd ->
                 commands.add(cmd)
                 if (cmd.startsWith("ont delete")) {
                     "  Failure: The ONT does not exist\nMA5608T#"
+                } else {
+                    "Success\nMA5608T#"
+                }
+            },
+            properties = properties,
+        )
+
+        alreadyGone.delete(DeleteCliRequest(board = 1, port = 0, ontId = 5))
+
+        assertTrue(commands.any { it == "ont delete 0 5" })
+    }
+
+    @Test
+    fun `delete lanza si ont delete falla por otra causa`() {
+        val failing = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("ont delete")) {
+                    "  Failure: The ONT is online\nMA5608T#"
                 } else {
                     "Success\nMA5608T#"
                 }

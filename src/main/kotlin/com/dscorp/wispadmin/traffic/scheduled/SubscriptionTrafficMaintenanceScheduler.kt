@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.traffic.scheduled
 
 import com.dscorp.wispadmin.traffic.service.NetworkTrafficRollupService
+import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficRetentionService
 import com.dscorp.wispadmin.traffic.service.TrafficAggregationJobService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -40,7 +41,8 @@ class SubscriptionTrafficAggregationScheduler(
 @ConditionalOnProperty(prefix = "traffic.poll", name = ["enabled"], havingValue = "true", matchIfMissing = true)
 class SubscriptionTrafficMaintenanceScheduler(
     private val aggregationJobService: TrafficAggregationJobService,
-    private val networkRollupService: NetworkTrafficRollupService
+    private val networkRollupService: NetworkTrafficRollupService,
+    private val retentionService: SubscriptionTrafficRetentionService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(SubscriptionTrafficMaintenanceScheduler::class.java)
@@ -51,6 +53,7 @@ class SubscriptionTrafficMaintenanceScheduler(
         try {
             aggregationJobService.catchUpDaily()
             networkRollupService.rollupRecentDays(7)
+            retentionService.purgeExpired()
             logger.info("Traffic maintenance done rollup days=7")
         } catch (ex: Exception) {
             logger.warn("Traffic maintenance failed: {}", ex.message)

@@ -1,9 +1,12 @@
 package com.dscorp.wispadmin.wispadmin.controller
 
+import com.dscorp.wispadmin.wispadmin.oltclient.OltGatewayHttpClient
 import com.dscorp.wispadmin.wispadmin.security.CrmAccessPolicy
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
-import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ModelProfileImportService
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -12,19 +15,22 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.client.RestClientException
 import org.springframework.web.multipart.MultipartFile
 import javax.servlet.http.HttpServletRequest
 
 @RestController
 @RequestMapping("/admin/tr069-profiles")
+@ConditionalOnProperty(prefix = "olt.gateway", name = ["client-enabled"], havingValue = "true")
 class Tr069ModelProfileController(
-    private val importService: Tr069ModelProfileImportService,
+    private val oltGatewayHttpClient: OltGatewayHttpClient,
+    private val objectMapper: ObjectMapper,
 ) {
 
     @GetMapping
     fun list(httpRequest: HttpServletRequest): ResponseEntity<Any> {
         if (!isAdmin(httpRequest)) return forbidden()
-        return ResponseEntity.ok(importService.listAll())
+        return proxy { oltGatewayHttpClient.getJson("/api/olt-gateway/acs/profiles") }
     }
 
     @PostMapping("/preview")
@@ -33,11 +39,11 @@ class Tr069ModelProfileController(
         httpRequest: HttpServletRequest,
     ): ResponseEntity<Any> {
         if (!isAdmin(httpRequest)) return forbidden()
-        return try {
-            ResponseEntity.ok(importService.preview(readCsv(file)))
-        } catch (ex: Exception) {
-            ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(mapOf("error" to (ex.message ?: "No se pudo analizar el CSV de GenieACS")))
+        return proxy {
+            oltGatewayHttpClient.postJsonBody(
+                "/api/olt-gateway/acs/profiles/preview",
+                objectMapper.writeValueAsString(mapOf("csv" to readCsv(file))),
+            )
         }
     }
 
@@ -48,17 +54,18 @@ class Tr069ModelProfileController(
         httpRequest: HttpServletRequest,
     ): ResponseEntity<Any> {
         if (!isAdmin(httpRequest)) return forbidden()
-        return try {
-            val aliasList = aliases?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
-            val result = importService.importCsv(
-                csvContent = readCsv(file),
-                importedBy = resolveUsername(httpRequest),
-                aliases = aliasList,
+        val aliasList = aliases?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        return proxy {
+            oltGatewayHttpClient.postJsonBody(
+                "/api/olt-gateway/acs/profiles/import",
+                objectMapper.writeValueAsString(
+                    mapOf(
+                        "csv" to readCsv(file),
+                        "aliases" to aliasList,
+                        "importedBy" to resolveUsername(httpRequest),
+                    ),
+                ),
             )
-            ResponseEntity.ok(result)
-        } catch (ex: Exception) {
-            ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(mapOf("error" to (ex.message ?: "No se pudo importar el perfil TR-069")))
         }
     }
 
@@ -68,12 +75,38 @@ class Tr069ModelProfileController(
         httpRequest: HttpServletRequest,
     ): ResponseEntity<Any> {
         if (!isAdmin(httpRequest)) return forbidden()
-        val deleted = importService.delete(productClass)
-        return if (deleted) {
-            ResponseEntity.noContent().build()
-        } else {
-            ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(mapOf("error" to "Perfil no encontrado: $productClass"))
+        val encoded = java.net.URLEncoder.encode(productClass, Charsets.UTF_8).replace("+", "%20")
+        return proxy { oltGatewayHttpClient.deleteJson("/api/olt-gateway/acs/profiles/$encoded") }
+    }
+
+    private fun proxy(call: () -> ResponseEntity<String>): ResponseEntity<Any> {
+        return try {
+            val upstream = call()
+            if (upstream.statusCode == HttpStatus.NO_CONTENT) {
+                ResponseEntity.noContent().build()
+            } else {
+                ResponseEntity.status(upstream.statusCode)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(upstream.body ?: "{}")
+            }
+        } catch (ex: org.springframework.web.client.RestClientResponseException) {
+            if (ex.rawStatusCode in 400..499) {
+                ResponseEntity.status(ex.rawStatusCode)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(ex.responseBodyAsString ?: """{"error":"ACS error"}""")
+            } else {
+                throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+            }
+        } catch (ex: com.dscorp.wispadmin.transport.InvalidSubsystemResponse) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: RestClientException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: IllegalArgumentException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure(
+                "olt-gateway",
+                "UPSTREAM_UNAVAILABLE",
+                HttpStatus.SERVICE_UNAVAILABLE,
+            )
         }
     }
 

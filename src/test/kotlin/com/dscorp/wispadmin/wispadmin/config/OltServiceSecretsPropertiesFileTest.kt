@@ -80,4 +80,20 @@ class OltServiceSecretsPropertiesFileTest {
 
         assertTrue(offenders.isEmpty(), "hay api keys compiladas en: $offenders")
     }
+
+    @Test
+    fun applicationOltgateway_toma_la_api_key_y_el_toggle_de_smartolt_del_entorno() {
+        val gateway = read("src/main/resources/application-oltgateway.properties")
+
+        assertTrue(
+            Regex("""^olt\.service\.api-key=\$\{OLT_SERVICE_API_KEY""", RegexOption.MULTILINE)
+                .containsMatchIn(gateway),
+            "application-oltgateway.properties debe leer olt.service.api-key del entorno"
+        )
+        assertTrue(
+            Regex("""^olt\.provider\.authorize=\$\{OLT_PROVIDER_AUTHORIZE:GATEWAY\}""", RegexOption.MULTILINE)
+                .containsMatchIn(gateway),
+            "application-oltgateway.properties debe default authorize=GATEWAY"
+        )
+    }
 }

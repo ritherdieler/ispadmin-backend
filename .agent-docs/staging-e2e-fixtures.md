@@ -12,7 +12,7 @@ Desde `ispadmin-backend/` (usa `scripts/deploy.config.local`):
 ./scripts/sql/staging-e2e-seed-all.sh
 ```
 
-Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `touch` del WAR `ispadmin-staging` para que `Tr069ModelProfileRegistry` recargue al arrancar. Sin reload, el SQL queda en MySQL pero el alta FIBER sigue diciendo «No hay perfiles TR-069 importados». No crear `ispadmin-staging.xml` vacío en `webapps/` (rompe el context).
+Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `touch` del WAR `ispadmin-staging-acs` para que el registry ACS recargue `stg_acs.tr069_model_profile`. Sin reload, el SQL queda en MySQL pero el alta FIBER sigue diciendo «No hay perfiles TR-069 importados». No crear `ispadmin-staging-acs.xml` vacío en `webapps/` (rompe el context). La primera vez, antes de Core Flyway V50: `scripts/sql/copy-tr069-profiles-to-acs.sql`.
 
 SQL suelto en el VPS:
 
@@ -31,7 +31,7 @@ docker exec -i mysql8033 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < staging-e2e-reg
 | `plan` (al menos 1 `FIBER` activo) | `ispadmin.plan` | MySQL staging | paso plan |
 | `network_device` id **8** (MK2) | `ispadmin.network_device` | MySQL staging | host + ping e2e |
 | `ip_pool` `192.168.250.1/24` → host 8 | seed (no solapa prod) | MySQL staging | IP VLAN 100 + tag `stg` |
-| **`tr069_model_profile`** | `ispadmin.tr069_model_profile` | MySQL staging | TR-069 / ACS; sin esto → `MANUAL_REQUIRED` |
+| **`tr069_model_profile`** | `prod_acs.tr069_model_profile` | `stg_acs` (ACS WAR) | TR-069 / ACS; sin esto → `MANUAL_REQUIRED` |
 | Usuario staff `dscorp` | seed de app | MySQL users | login e2e |
 | ONU lab `ZTEGDC47BFFD` | SmartOLT cloud | no es MySQL | `GET /onu/unconfigured_onus` |
 

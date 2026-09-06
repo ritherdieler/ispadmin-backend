@@ -74,7 +74,7 @@ class HealthSnapshotIngestServiceTest {
                 payloadJson = """{"cpeStatus":"COMPLETE","uniqueExternalId":"ext-1"}""",
             )
         )
-        verify { flags.apply("ZTEGDC47BFFD", "COMPLETE") }
+        verify { flags.apply("ZTEGDC47BFFD", "COMPLETE", any(), any()) }
         verify { summaries.reevaluate(42, Instant.parse("2026-09-03T18:10:00Z")) }
     }
 }

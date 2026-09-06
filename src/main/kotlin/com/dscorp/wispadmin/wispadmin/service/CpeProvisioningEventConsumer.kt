@@ -28,37 +28,11 @@ class CpeProvisioningEventConsumer(
     private val logger = LoggerFactory.getLogger(CpeProvisioningEventConsumer::class.java)
     private val group: String get() = properties.cpeConsumerGroup
 
-    @PostConstruct
-    fun ensureGroup() {
-        try {
-            redis.execute<String> { connection ->
-                connection.streamCommands().xGroupCreate(
-                    properties.stream.toByteArray(),
-                    group,
-                    ReadOffset.from("0-0"),
-                    true,
-                )
-            }
-        } catch (ex: Exception) {
-            logger.info("Redis CPE consumer group ready or already exists: {}", ex.message)
-        }
-    }
+    private val pump = com.dscorp.wispadmin.events.RedisStreamPump(redis, properties, properties.cpeConsumerGroup)
 
-    @Scheduled(fixedDelayString = "\${gigafiber.redis.cpe-consumer-interval-ms:1000}")
+    @Scheduled(fixedDelayString = "\${gigafiber.redis.consumer-interval-ms:1000}")
     fun poll() {
-        if (!properties.enabled) return
-        try {
-            val records = redis.opsForStream<String, String>().read(
-                Consumer.from(group, "core-cpe-1"),
-                StreamReadOptions.empty().count(50).block(Duration.ofMillis(200)),
-                StreamOffset.create(properties.stream, ReadOffset.lastConsumed()),
-            ) ?: return
-            for (record in records) {
-                handle(record)
-            }
-        } catch (ex: Exception) {
-            logger.warn("Redis CPE stream consume failed: {}", ex.message)
-        }
+        if (properties.enabled) pump.poll { applyFields(it) }
     }
 
     fun applyFields(fields: Map<String, String>) {
@@ -66,15 +40,7 @@ class CpeProvisioningEventConsumer(
         if (event.type != PlatformEventTypes.CPE_PROVISIONING) return
         val sn = event.sn ?: return
         val status = json.readTree(event.payloadJson).path("cpeStatus").asText(null) ?: return
-        flags.apply(sn, status)
+        flags.apply(sn, status, event.occurredAt, event.eventId)
     }
 
-    private fun handle(record: MapRecord<String, String, String>) {
-        try {
-            applyFields(record.value)
-            redis.opsForStream<String, String>().acknowledge(properties.stream, group, record.id)
-        } catch (ex: Exception) {
-            logger.warn("Redis CPE stream record failed id={}: {}", record.id, ex.message)
-        }
-    }
 }

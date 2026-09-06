@@ -71,6 +71,45 @@ class StagingEnvironmentPropertiesTest {
     }
 
     @Test
+    fun satellite_profiles_use_hibernate_update_not_prod_validate() {
+        val root = Path.of(System.getProperty("user.dir"))
+        listOf(
+            "application-traffic.properties",
+            "application-acs.properties",
+            "application-oltgateway.properties",
+        ).forEach { name ->
+            val text = Files.readString(root.resolve("src/main/resources/$name"))
+            assertTrue(
+                Regex("""^spring\.jpa\.hibernate\.ddl-auto=update\s*$""", RegexOption.MULTILINE)
+                    .containsMatchIn(text),
+                "$name must not inherit prod ddl-auto=validate: $text",
+            )
+        }
+    }
+
+    @Test
+    fun satellite_wars_bake_prod_ddl_auto_update() {
+        val pom = Files.readString(Path.of(System.getProperty("user.dir")).resolve("pom.xml"))
+        val profileIds = listOf(
+            "traffic-war",
+            "traffic-staging-war",
+            "oltgateway-war",
+            "oltgateway-staging-war",
+            "acs-war",
+            "acs-staging-war",
+        )
+        profileIds.forEachIndexed { index, profileId ->
+            val start = "<id>$profileId</id>"
+            val end = profileIds.getOrNull(index + 1)?.let { "<id>$it</id>" } ?: "</profiles>"
+            val slice = pom.substringAfter(start).substringBefore(end)
+            assertTrue(
+                slice.contains("replace=\"spring.jpa.hibernate.ddl-auto=update\""),
+                "$profileId must bake ddl-auto=update into application-prod.properties: $slice",
+            )
+        }
+    }
+
+    @Test
     fun satellite_profiles_override_spatial_dialect() {
         val root = Path.of(System.getProperty("user.dir"))
         val nonSpatial = "org.hibernate.dialect.MySQL57Dialect"
@@ -141,11 +180,40 @@ class StagingEnvironmentPropertiesTest {
     }
 
     @Test
-    fun acs_staging_bakes_profiles_catalog() {
+    fun traffic_security_permits_actuator_health() {
+        val src = Files.readString(
+            Path.of(System.getProperty("user.dir"))
+                .resolve("src/main/kotlin/com/dscorp/wispadmin/traffic/config/TrafficSecurityConfig.kt"),
+        )
+        assertTrue(src.contains("/actuator/health"), src)
+        assertTrue(src.contains("permitAll()"), src)
+    }
+
+    @Test
+    fun satellite_profiles_disable_spring_redis_health() {
+        val root = Path.of(System.getProperty("user.dir"))
+        listOf("application-traffic.properties", "application-oltgateway.properties", "application-acs.properties").forEach { name ->
+            val text = Files.readString(root.resolve("src/main/resources/$name"))
+            assertTrue(
+                Regex("""^management\.health\.redis\.enabled=false\s*$""", RegexOption.MULTILINE).containsMatchIn(text),
+                "$name must not fail actuator because Spring Redis auto-config is unused: $text",
+            )
+        }
+    }
+
+    @Test
+    fun acs_wars_bake_own_flyway_not_core_catalog() {
         val root = Path.of(System.getProperty("user.dir"))
         val pom = Files.readString(root.resolve("pom.xml"))
+        val acsProd = pom.substringAfter("<id>acs-war</id>").substringBefore("<id>acs-staging-war</id>")
         val acsStaging = pom.substringAfter("<id>acs-staging-war</id>")
-        assertTrue(acsStaging.contains("acs.profiles.catalog=ispadmin_staging"), acsStaging)
+        assertTrue(acsProd.contains("spring.flyway.locations=classpath:db/acs"), acsProd)
+        assertTrue(acsStaging.contains("spring.flyway.locations=classpath:db/acs"), acsStaging)
+        assertFalse(pom.contains("acs.profiles.catalog"), pom)
+        assertTrue(
+            acsStaging.contains("gigafiber.redis.namespace=stg"),
+            "ACS staging bake must keep redis namespace: $acsStaging",
+        )
     }
 
     @Test

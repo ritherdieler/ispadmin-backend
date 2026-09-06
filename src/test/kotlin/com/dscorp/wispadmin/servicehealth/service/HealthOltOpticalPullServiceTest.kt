@@ -15,9 +15,7 @@ class HealthOltOpticalPullServiceTest {
         val ingest = mockk<HealthOltIngestPort>(relaxed = true)
         val provider = mockk<ObjectProvider<HealthOltIngestPort>>()
         io.mockk.every { provider.ifAvailable } returns ingest
-        val subscriptions = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository>>()
-        io.mockk.every { subscriptions.ifAvailable } returns null
-        val gateway = HealthOltGatewayHttpClient(baseUrl = "", apiKey = "k", subscriptions = subscriptions)
+        val gateway = HealthOltGatewayHttpClient(baseUrl = "", apiKey = "k")
         val properties = ServiceHealthProperties().apply {
             enabled = true
             opticalEnabled = true

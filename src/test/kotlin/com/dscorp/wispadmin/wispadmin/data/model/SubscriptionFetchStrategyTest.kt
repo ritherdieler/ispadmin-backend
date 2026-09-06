@@ -45,9 +45,11 @@ class SubscriptionFetchStrategyTest {
 
     @Test
     fun `el vinculo de ONU es solo el serial en subscription`() {
-        val column = Subscription::class.java.getDeclaredField("fiberOnuSn")
-            .getAnnotation(javax.persistence.Column::class.java)
+        val field = Subscription::class.java.getDeclaredField("fiberOnuSn")
+        val column = field.getAnnotation(javax.persistence.Column::class.java)
         assertEquals("fiber_onu_sn", column.name)
+        assertNull(field.getAnnotation(javax.persistence.JoinColumn::class.java))
+        assertNull(field.getAnnotation(OneToOne::class.java))
     }
 
     @Test

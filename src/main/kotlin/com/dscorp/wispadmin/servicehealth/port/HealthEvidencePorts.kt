@@ -155,7 +155,7 @@ data class HealthLabOpticalRefresh(
 )
 
 interface HealthLabOpticalPort {
-    fun refreshSubscription(subscriptionId: Int): HealthLabOpticalRefresh
+    fun refreshBySn(sn: String): HealthLabOpticalRefresh
 }
 
 interface HealthLabScopePort {

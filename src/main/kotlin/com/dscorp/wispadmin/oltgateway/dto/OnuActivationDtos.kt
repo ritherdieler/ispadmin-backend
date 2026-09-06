@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.dto
 
 enum class OltActivationStatus {
+    PENDING,
     COMPLETE,
     FAILED,
 }

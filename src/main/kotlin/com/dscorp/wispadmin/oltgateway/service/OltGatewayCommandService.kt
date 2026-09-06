@@ -100,8 +100,14 @@ class OltGatewayCommandService(
         inWriteJob {
             runChecked("undo service-port port 0/${request.board}/${request.port} ont ${request.ontId}")
             runChecked("interface gpon 0/${request.board}")
-            val deleted = runChecked("ont delete ${request.port} ${request.ontId}")
-            requireCliOk(deleted, "ont delete ${request.port} ${request.ontId}")
+            val deleteCmd = "ont delete ${request.port} ${request.ontId}"
+            val deleted = runCommand(deleteCmd)
+            if (!isOntAlreadyAbsent(deleted)) {
+                if (looksLikeCliFailure(deleted)) {
+                    throw IllegalStateException("OLT CLI failed for '$deleteCmd': ${deleted.takeLast(300)}")
+                }
+                requireCliOk(deleted, deleteCmd)
+            }
             runChecked("quit")
         }
     }
@@ -133,6 +139,9 @@ class OltGatewayCommandService(
             throw IllegalStateException("OLT CLI did not confirm delete for '$command': ${output.takeLast(400)}")
         }
     }
+
+    private fun isOntAlreadyAbsent(output: String): Boolean =
+        output.contains(Regex("(?i)The ONT does not exist"))
 
     private fun looksLikeCliFailure(output: String): Boolean {
         return output.contains(Regex("(?i)Failure:")) ||

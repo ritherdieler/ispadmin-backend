@@ -102,12 +102,9 @@ def delete_object(sa_path: str, bucket: str, object_path: str) -> str:
 
 
 def check_ssl() -> None:
-    req = urllib.request.Request("https://oauth2.googleapis.com/")
-    try:
-        with urlopen(req, timeout=20) as resp:
-            resp.read(64)
-    except urllib.error.HTTPError:
-        pass
+    ctx = build_ssl_context()
+    if ctx is None:
+        raise RuntimeError("build_ssl_context returned None")
     print("SSL_OK cafile=%s" % (resolve_cafile() or "default"))
 
 

@@ -66,7 +66,7 @@ class RemoteActionWifiRefreshTest {
             ))
         }
         every { subscriptions.findById(1) } returns Optional.of(
-            Subscription(id = 1, fiberOnu = Onu(sn = "sn1"), equipmentCondition = EquipmentCondition.values().first()),
+            Subscription(id = 1, fiberOnuSn = "sn1", equipmentCondition = EquipmentCondition.values().first()),
         )
         every { subscriptions.findAllIds() } returns listOf(1)
         every { identity.resolveOnu("sn1") } returns 1

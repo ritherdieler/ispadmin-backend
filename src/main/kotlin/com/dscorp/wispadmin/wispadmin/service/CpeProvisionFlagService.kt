@@ -8,10 +8,13 @@ import org.springframework.stereotype.Service
 class CpeProvisionFlagService(
     private val subscriptions: SubscriptionRepository,
 ) {
-    fun apply(sn: String, cpeStatus: String) {
+    @org.springframework.transaction.annotation.Transactional
+    fun apply(sn: String, cpeStatus: String, occurredAt: java.time.Instant? = null, eventId: String? = null) {
         val matches = subscriptions.findByExactOnuSerial(sn)
         if (matches.size != 1) return
-        val subscription = matches.single()
+        val candidate = matches.single()
+        val subscription = if (occurredAt == null) candidate else subscriptions.lockIdentityOwner(requireNotNull(candidate.id)) ?: return
+        if (occurredAt != null && (subscription.tr069StateEventId == eventId && eventId != null || subscription.tr069StateObservedAt?.let { !occurredAt.isAfter(it) } == true)) return
         val mapped = when (cpeStatus.uppercase()) {
             "COMPLETE" -> Tr069ProvisionStatus.COMPLETE
             "PENDING" -> Tr069ProvisionStatus.PENDING
@@ -20,6 +23,10 @@ class CpeProvisionFlagService(
             else -> return
         }
         subscription.tr069ProvisionStatus = mapped
+        if (occurredAt != null) {
+            subscription.tr069StateObservedAt = occurredAt
+            subscription.tr069StateEventId = eventId
+        }
         subscriptions.save(subscription)
     }
 }

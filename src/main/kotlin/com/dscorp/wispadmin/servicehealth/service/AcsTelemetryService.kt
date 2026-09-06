@@ -41,7 +41,7 @@ class AcsTelemetryService(
             try {
                 for (id in collectIds) {
                     if (!scope.collects(id)) continue
-                    val sn = subscriptions.findById(id).orElse(null)?.fiberOnu?.sn ?: continue
+                    val sn = subscriptions.findById(id).orElse(null)?.fiberOnuSn ?: continue
                     val telemetry = port.telemetry(sn)
                     if (telemetry == null) {
                         run.missingCount++

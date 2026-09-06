@@ -223,6 +223,7 @@ class Tr069ProvisioningServiceTest {
             server.enqueue(emptyFaults())
             server.enqueue(deviceClientWanIp("192.168.30.216", connectionStatus = "Disconnected"))
             server.enqueue(deviceClientWanIp("192.168.30.216", connectionStatus = "Disconnected"))
+            server.enqueue(taskAccepted())
         }
 
         val outcome = service.provision(
@@ -615,6 +616,7 @@ class Tr069ProvisioningServiceTest {
             server.enqueue(deviceClientWanIp("192.168.123.4"))
             server.enqueue(deviceWithSsids("wrong24", "wrong5"))
             server.enqueue(deviceWithSsids("wrong24", "wrong5"))
+            server.enqueue(taskAccepted())
         }
 
         val outcome = service.provision(sampleRequest())
@@ -623,6 +625,38 @@ class Tr069ProvisioningServiceTest {
         assertEquals(outcome.message, outcome.error)
         assertTrue(outcome.message!!.contains("SSID", ignoreCase = true))
         assertTrue(outcome.message!!.contains("tiempo de espera", ignoreCase = true))
+    }
+
+    @Test
+    fun `verification timeout includes observed ACS values`() {
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueClientWanAlreadyPresent()
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        repeat(6) {
+            server.enqueue(emptyFaults())
+            server.enqueue(deviceClientWanIp("192.168.250.21", connectionStatus = "Connected"))
+            server.enqueue(deviceClientWanIp("192.168.250.21", connectionStatus = "Connected"))
+            server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-24 - 5G"))
+            server.enqueue(deviceWithSsids("lab-zte-e2e-24", "lab-zte-e2e-24 - 5G"))
+            server.enqueue(taskAccepted())
+        }
+
+        val outcome = service.provision(
+            sampleRequest().copy(
+                ip = "192.168.250.16",
+                ipSegment = "192.168.250.0/24",
+                wifiSsid24 = "lab-zte-e2e-24",
+                wifiSsid5 = "lab-zte-e2e-24 - 5G",
+            ),
+        )
+
+        assertEquals(Tr069ProvisionStatus.PENDING, outcome.status)
+        assertTrue(outcome.message!!.contains("192.168.250.21"), outcome.message)
+        assertTrue(outcome.message!!.contains("Connected"), outcome.message)
+        assertTrue(outcome.message!!.contains("esperado=192.168.250.16"), outcome.message)
     }
 
     @Test
@@ -640,6 +674,7 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceWithSsids("wrong24", "wrong5"))
         server.enqueue(deviceWithSsids("wrong24", "wrong5"))
+        server.enqueue(taskAccepted())
         server.enqueue(emptyFaults())
         server.enqueue(deviceClientWanIp("192.168.123.4"))
         server.enqueue(deviceClientWanIp("192.168.123.4"))

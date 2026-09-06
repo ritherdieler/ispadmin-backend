@@ -63,7 +63,7 @@ class RemoteActionService(
                 return@execute existing to false
             }
             val sub=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción inexistente") }
-            val sn=sub.fiberOnu?.sn ?: throw ResponseStatusException(HttpStatus.CONFLICT,"ONU sin identidad")
+            val sn=sub.fiberOnuSn ?: throw ResponseStatusException(HttpStatus.CONFLICT,"ONU sin identidad")
             if(identity.resolveOnu(sn)!=id) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ONU ambigua")
             val deviceKey="ONU:${sn.uppercase()}"
             if(needsCr && cpe.ifAvailable==null) throw ResponseStatusException(HttpStatus.CONFLICT,"Identidad ACS no resuelta")
@@ -107,7 +107,7 @@ class RemoteActionService(
         val (action, created) = reserve(id, actor, key, "REBOOT_ONU", digest("REBOOT_ONU:$id"), false)
         if (!created) return result(action)
         return try {
-            val sn = subscriptions.findById(id).orElse(null)?.fiberOnu?.sn
+            val sn = subscriptions.findById(id).orElse(null)?.fiberOnuSn
             val port = cpe.ifAvailable
             if (sn != null && port != null) {
                 val ack = port.reboot(sn)
@@ -127,7 +127,9 @@ class RemoteActionService(
         val (action, created) = reserve(id, actor, key, "OPTICAL_REFRESH", digest("OPTICAL_REFRESH:$id"), false)
         if (!created) return result(action)
         return try {
-            val refresh = port.refreshSubscription(id)
+            val sn = subscriptions.findById(id).orElse(null)?.fiberOnuSn
+                ?: return result(finish(action.id!!, "FAILED", error = "missing_sn"))
+            val refresh = port.refreshBySn(sn)
             when {
                 refresh.collected -> result(finish(action.id!!, "CONFIRMED"))
                 refresh.unmapped -> result(finish(action.id!!, "FAILED", error = "ONU_UNMAPPED"))
@@ -140,7 +142,7 @@ class RemoteActionService(
 
     fun refresh(id: Int,actor: HealthActor,key: String): ActionResult {
         replay(id,actor,key,"WIFI_REFRESH",digest("WIFI_REFRESH:$id"))?.let { return it }
-        val sn = subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción inexistente") }.fiberOnu?.sn
+        val sn = subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción inexistente") }.fiberOnuSn
             ?: throw ResponseStatusException(HttpStatus.CONFLICT,"ONU sin identidad")
         val port = cpe.ifAvailable ?: throw ResponseStatusException(HttpStatus.CONFLICT,"Gateway CPE no disponible")
         val (action,created)=reserve(id,actor,key,"WIFI_REFRESH",digest("WIFI_REFRESH:$id"),true)
@@ -166,13 +168,13 @@ class RemoteActionService(
             if(!scope.collects(a.subscriptionId)) continue
             if(a.createdAt<Instant.now().minusSeconds(21600)) { finish(a.id!!,"UNVERIFIED",error="CONFIRMATION_TIMEOUT"); continue }
             val currentSub=subscriptions.findById(a.subscriptionId).orElse(null)
-            if(currentSub?.fiberOnu?.sn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey) {
+            if(currentSub?.fiberOnuSn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey) {
                 finish(a.id!!,"UNVERIFIED",error="IDENTITY_CHANGED"); continue
             }
             if(a.action=="WIFI_REFRESH") {
                 if(wifi.findById(a.subscriptionId).orElse(null)?.takeIf { it.qualityStatus==Quality.FRESH }?.observedAt?.isAfter(a.createdAt)==true) finish(a.id!!,"CONFIRMED")
             } else if(a.action in setOf("REBOOT_ACS","REBOOT_ONU")) {
-                val sn = currentSub?.fiberOnu?.sn ?: continue
+                val sn = currentSub?.fiberOnuSn ?: continue
                 val inform = cpe.ifAvailable?.telemetry(sn)?.lastInformAt
                 if(inform!=null && inform>a.createdAt && inform<=Instant.now()) finish(a.id!!,"CONFIRMED")
             }

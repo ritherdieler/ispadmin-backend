@@ -30,10 +30,14 @@ class SubscriptionVlanRulesTest {
     }
 
     @Test
-    fun `assertPoolAligned VLAN 100 exige 192_168_30`() {
+    fun `assertPoolAligned VLAN 100 exige pool prod 30 o 31`() {
         SubscriptionVlanRules.assertPoolAligned("100", "192.168.30.0/24")
+        SubscriptionVlanRules.assertPoolAligned("100", "192.168.31.1/24")
         assertThrows(IllegalArgumentException::class.java) {
             SubscriptionVlanRules.assertPoolAligned("100", "192.168.123.0/24")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SubscriptionVlanRules.assertPoolAligned("100", "192.168.32.1/24")
         }
     }
 
@@ -49,11 +53,14 @@ class SubscriptionVlanRulesTest {
     }
 
     @Test
-    fun `assertPoolAligned VLAN 1 rechaza pool 30`() {
+    fun `assertPoolAligned VLAN 1 rechaza pools VLAN100 prod`() {
         SubscriptionVlanRules.assertPoolAligned("1", "192.168.255.0/24")
         SubscriptionVlanRules.assertPoolAligned("1", "192.168.123.0/24")
         assertThrows(IllegalArgumentException::class.java) {
             SubscriptionVlanRules.assertPoolAligned("1", "192.168.30.0/24")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SubscriptionVlanRules.assertPoolAligned("1", "192.168.31.1/24")
         }
     }
 

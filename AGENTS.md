@@ -26,6 +26,10 @@ Ejemplo correcto: `OLT_WRITE_LIVE=true ./mvnw -Dtest=OltGatewayDeleteLiveSmokeTe
 
 Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
+### Pruebas largas: notificación de fin (obligatorio)
+
+Smoke VPS, live OLT, cleanup duro, suites Maven largas o cualquier script >~1–2 min: lanzar en background, **cerrar el turno** y continuar solo cuando Cursor notifique que el job terminó. No bloquear con `AwaitShell`/polling. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».
+
 ## Desacople de subsistemas (obligatorio)
 
 El **core** y todos los subsistemas (OLT Gateway, NetDiag, traffic, service-health, observability, CRM WhatsApp, …) deben permanecer **lo más desacoplados posible**.
@@ -35,6 +39,8 @@ Todos los **clientes externos** (backoffice, app Android, scripts operativos, in
 Entre core ↔ subsistemas y entre subsistemas se conectan por **REST/HTTP JSON**, **WebSocket** (incl. STOMP donde ya exista) o **Redis Streams interno** (`gigafiber.events`, no expuesto a clientes). Detalle: `.agent-docs/subsistemas-desacople-transporte.md`.
 
 No exponer a clientes externos endpoints, sockets o contratos de un subsistema por conveniencia. Si un cliente necesita datos o acciones de un subsistema, debe consumirlos a través del core.
+
+**JDBC cruzado (prohibido en runtime):** cada WAR habla solo con **su** schema MySQL (`ispadmin*` Core, `stg_acs`/`prod_acs` ACS, `stg_oltgateway`/`prod_oltgateway` Gateway, `stg_traffic`/`prod_traffic` Traffic). Prohibido `schema.tabla` de otro WAR, `` `$catalog`.tabla ``, `acs.profiles.catalog` o un segundo datasource hacia el schema de un hermano. Entre WARs: HTTP/WS/Redis Streams. Copias one-shot viven en `scripts/sql/` (no en el arranque de la app). Test: `CrossSchemaJdbcForbiddenTest`. Detalle: `.agent-docs/subsistemas-desacople-transporte.md`.
 
 Prohibido reacoplar por JDBC cruzado, inyección de facades/repos de otro paquete/WAR o imports de dominio ajeno. Detalle y vocabulario (core ≠ CRM): `.agent-docs/subsistemas-desacople-transporte.md`.
 

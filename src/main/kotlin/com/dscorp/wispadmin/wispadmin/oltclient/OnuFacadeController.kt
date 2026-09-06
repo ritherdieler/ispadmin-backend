@@ -69,10 +69,14 @@ class OnuFacadeController(
             ResponseEntity.status(upstream.statusCode)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(upstream.body ?: "{}")
+        } catch (ex: org.springframework.web.client.RestClientResponseException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: com.dscorp.wispadmin.transport.InvalidSubsystemResponse) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
         } catch (ex: RestClientException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "olt gateway unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
         } catch (ex: IllegalArgumentException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "olt gateway unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure("olt-gateway","UPSTREAM_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE)
         }
     }
 
@@ -82,10 +86,14 @@ class OnuFacadeController(
             ResponseEntity.status(upstream.statusCode)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(upstream.body ?: "{}")
+        } catch (ex: org.springframework.web.client.RestClientResponseException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: com.dscorp.wispadmin.transport.InvalidSubsystemResponse) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
         } catch (ex: RestClientException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "olt gateway unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
         } catch (ex: IllegalArgumentException) {
-            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "olt gateway unavailable")
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure("olt-gateway","UPSTREAM_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE)
         }
     }
 }

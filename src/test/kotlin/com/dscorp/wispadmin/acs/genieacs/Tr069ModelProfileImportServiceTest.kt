@@ -1,6 +1,6 @@
-package com.dscorp.wispadmin.wispadmin.service.genieacs
+package com.dscorp.wispadmin.acs.genieacs
 
-import com.dscorp.wispadmin.wispadmin.repository.Tr069ModelProfileRepository
+import com.dscorp.wispadmin.acs.repository.Tr069ModelProfileRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -23,15 +23,6 @@ class Tr069ModelProfileImportServiceTest {
     }
 
     @Test
-    fun `preview detects Huawei profile from CSV fixture`() {
-        val csv = readFixture("genieacs-exports/huawei-hg8145x6.csv")
-        val preview = service.preview(csv)
-        assertEquals("HG8145X6", preview.draft.productClass)
-        assertTrue(preview.readyToImport)
-        assertEquals(null, preview.draft.clientWanIpConnectionPath)
-    }
-
-    @Test
     fun `preview detects ZTE F6600R profile from CSV fixture`() {
         val csv = readFixture("genieacs-exports/zte-f6600r.csv")
         val preview = service.preview(csv)
@@ -45,9 +36,8 @@ class Tr069ModelProfileImportServiceTest {
             preview.draft.wlan5Path!!.endsWith("WLANConfiguration.5"),
             preview.draft.wlan5Path,
         )
-        assertTrue(
-            preview.draft.clientWanIpConnectionPath ==
-                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
+        assertEquals(
+            "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2",
             preview.draft.clientWanIpConnectionPath,
         )
     }

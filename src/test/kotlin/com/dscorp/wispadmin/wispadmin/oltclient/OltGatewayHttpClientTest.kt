@@ -34,4 +34,28 @@ class OltGatewayHttpClientTest {
         assertEquals(true, body?.contains("\"totalElements\":0"))
         server.verify()
     }
+
+    @Test
+    fun `postForm llama gateway WAR con form-urlencoded y X-Olt-Gateway-Key`() {
+        val restTemplate = RestTemplate()
+        val server = MockRestServiceServer.createServer(restTemplate)
+        server.expect(requestTo("http://127.0.0.1:8080/ispadmin-staging-oltgateway/api/olt-gateway/onu/authorize_onu"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header(OltGatewayHttpClient.HEADER, "dev-olt-gateway-key"))
+            .andRespond(withSuccess("""{"status":true,"unique_external_id":"ext-1"}""", MediaType.APPLICATION_JSON))
+
+        val client = OltGatewayHttpClient(
+            OltGatewayClientProperties().apply {
+                apiKey = "dev-olt-gateway-key"
+                internalBaseUrl = "http://127.0.0.1:8080/ispadmin-staging-oltgateway"
+            },
+            restTemplate,
+        )
+        val form = org.springframework.util.LinkedMultiValueMap<String, String>()
+        form.add("sn", "ZTEGDC47BFFD")
+
+        val body = client.postForm("/api/olt-gateway/onu/authorize_onu", form).body
+        assertEquals(true, body?.contains("\"unique_external_id\":\"ext-1\""))
+        server.verify()
+    }
 }
