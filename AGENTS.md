@@ -26,6 +26,17 @@ Ejemplo correcto: `OLT_WRITE_LIVE=true ./mvnw -Dtest=OltGatewayDeleteLiveSmokeTe
 
 Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
+### Pruebas locales Gateway / ACS / MK2 / ONU lab (obligatorio)
+
+Al probar authorize/activate/delete o TR-069 vía Gateway desde la Mac:
+
+1. **ACS = VPS** (WAR staging `ispadmin-staging-acs` por túnel). No levantar ACS local por defecto.
+2. **GenieACS = VPS** (túnel NBI `7557`).
+3. **MikroTik = MK2** (`network_device` id **8**, `Mikrotik CCR 2`, VLAN 100). Se asume ya en BD local; no usar MK1 ni `mikrotik_test`.
+4. **Solo ONUs con tag GenieACS `lab`**. Canónica: `ZTEGDC47BFFD` (`_tags: ["lab"]`).
+
+Detalle: `.agent-docs/pruebas-local-gateway-acs-lab.md`. Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
+
 ### Pruebas largas: notificación de fin (obligatorio)
 
 Smoke VPS, live OLT, cleanup duro, suites Maven largas o cualquier script >~1–2 min: lanzar en background, **cerrar el turno** y continuar solo cuando Cursor notifique que el job terminó. No bloquear con `AwaitShell`/polling. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».

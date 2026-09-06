@@ -3,6 +3,7 @@
 | Tema | Archivo |
 |------|---------|
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
+| **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
 | **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
@@ -24,6 +25,7 @@
 | **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
 | **OLT Gateway WAR (staging primero)** | [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) |
 | **Toggle SmartOLT / SSH de escrituras en Gateway** | [gateway-smartolt-write-toggle-2026-09-05.md](./gateway-smartolt-write-toggle-2026-09-05.md) |
+| **Fix SSH authorize ≈ SmartOLT (profiles 6/13)** | [fix-ssh-authorize-profiles-smartolt-2026-09-06.md](./fix-ssh-authorize-profiles-smartolt-2026-09-06.md) |
 | **Restore prod WAR 2026-09-03 (recreate staging)** | [restore-prod-war-staging-recreate-2026-09-03.md](./restore-prod-war-staging-recreate-2026-09-03.md) |
 | **Staging Tomcat aislado + WAR selectivo** | [staging-tomcat-isolation-war-selectivo.md](./staging-tomcat-isolation-war-selectivo.md) |
 | **Deploy staging Tomcat aislado 2026-09-05** | [deploy-staging-tomcat-isolation-2026-09-05.md](./deploy-staging-tomcat-isolation-2026-09-05.md) |
