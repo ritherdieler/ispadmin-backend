@@ -28,14 +28,17 @@ Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
 ### Pruebas locales Gateway / ACS / MK2 / ONU lab (obligatorio)
 
-Al probar authorize/activate/delete o TR-069 vía Gateway desde la Mac:
+Cuando el usuario pida **pruebas en local** (alta FIBER, authorize/activate/delete, TR-069): seguir el runbook numerado de `.agent-docs/pruebas-local-gateway-acs-lab.md`. No improvisar otro stack.
 
-1. **ACS = VPS** (WAR staging `ispadmin-staging-acs` por túnel). No levantar ACS local por defecto.
-2. **GenieACS = VPS** (túnel NBI `7557`).
-3. **MikroTik = MK2** (`network_device` id **8**, `Mikrotik CCR 2`, VLAN 100). Se asume ya en BD local; no usar MK1 ni `mikrotik_test`.
-4. **Solo ONUs con tag GenieACS `lab`**. Canónica: `ZTEGDC47BFFD` (`_tags: ["lab"]`).
+1. **WARs locales** = Core `:8082` + Gateway `:8080`. Cliente → **solo Core**.
+2. **ACS = VPS** (WAR staging `ispadmin-staging-acs` por túnel `:8091`). **No** levantar `AcsApplication` local.
+3. **GenieACS = VPS** (túnel NBI `7557`).
+4. **MikroTik = MK2** (`network_device` id **8**, VLAN 100). No MK1 ni `mikrotik_test`.
+5. **Solo ONUs con tag GenieACS `lab`**. Canónica: `ZTEGDC47BFFD`.
+6. Usuario e2e local: `scripts/local-e2e-ensure-catalog.sh` (`dscorp` / `nohacker`, ADMIN, `verified=1`, hash compatible con SHA-384 de la app). Place `9 de octubre`, NAP `NO-001`, plan FIBER, MK2 id 8. Core: `olt.service.mock.enabled=false` (si no, `/onu/unconfigured_onus` devuelve `ALCL*`).
+7. Alta: `POST /subscription` en el Core (VLAN 100, NAP 42, `hostDeviceId` 8, WiFi passphrase **≥ 8**). Poll `registration-progress` hasta `tr069ProvisionStatus=COMPLETE` y entregar SSID **y** password.
 
-Detalle: `.agent-docs/pruebas-local-gateway-acs-lab.md`. Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
+Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
 
 ### Pruebas largas: notificación de fin (obligatorio)
 
