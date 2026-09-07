@@ -54,7 +54,35 @@ class OltGatewayCommandServiceTest {
         assertTrue(commands.any { it.contains("ont-lineprofile-id 10") })
         assertTrue(commands.any { it.contains("ont-srvprofile-id 10") })
         assertTrue(commands.any { it.startsWith("service-port vlan 100 gpon 0/0/2 ont 5") })
+        assertTrue(commands.any { it.contains("inbound traffic-table index 8") })
+        assertTrue(commands.any { it.contains("outbound traffic-table index 9") })
         assertTrue(commands.any { it == "quit" })
+    }
+
+    @Test
+    fun `authorize con perfiles Generic_1_V100 emite line 6 srv 13 y traffic tables`() {
+        val result = service.authorize(
+            AuthorizeCliRequest(
+                board = 1,
+                port = 6,
+                ontId = 16,
+                sn = "ZTEGDC47BFFD",
+                lineProfileId = 6,
+                serviceProfileId = 13,
+                description = "HOMOLOG-GW-TEST_zone_Zone 1_authd_20260902",
+                vlan = 100
+            )
+        )
+
+        assertEquals(16, result.ontId)
+        assertTrue(commands.any { it.contains("ont-lineprofile-id 6") })
+        assertTrue(commands.any { it.contains("ont-srvprofile-id 13") })
+        assertTrue(
+            commands.any {
+                it == "service-port vlan 100 gpon 0/1/6 ont 16 gemport 1 multi-service user-vlan 100 " +
+                    "tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+            }
+        )
     }
 
     @Test

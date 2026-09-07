@@ -233,12 +233,13 @@ class OltManagerFacadeTest {
         every { onuRepository.findBySn("4857544311E70E9A") } returns Optional.empty()
         every { zoneRepository.findByName("ZonaA") } returns Optional.of(OltMgrZone(id = 2L, name = "ZonaA"))
         every { onuTypeRepository.findByName("HG8245H") } returns Optional.of(OltMgrOnuType(id = 3L, name = "HG8245H"))
-        every { commandService.authorize(any()) } returns AuthorizeCliResult(ontId = 7, commands = emptyList())
         val savedOnu = slot<OltMgrOnu>()
         every { onuRepository.save(capture(savedOnu)) } answers {
             firstArg<OltMgrOnu>().also { it.id = 20L }
         }
         every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6
+        val cli = slot<AuthorizeCliRequest>()
+        every { commandService.authorize(capture(cli)) } returns AuthorizeCliResult(ontId = 7, commands = emptyList())
 
         val response = facade.authorizeOnu(
             AuthorizeOnuFormDto(
@@ -261,6 +262,9 @@ class OltManagerFacadeTest {
         assertEquals(olt, savedOnu.captured.olt)
         assertEquals(2L, savedOnu.captured.zone?.id)
         assertEquals(3L, savedOnu.captured.onuType?.id)
+        assertEquals(6, cli.captured.lineProfileId)
+        assertEquals(13, cli.captured.serviceProfileId)
+        assertTrue(cli.captured.description.contains("nuevo_zone_ZonaA_authd_"))
         verify { commandService.authorize(any()) }
         verify { taskRepository.save(match { it.type == "authorize" && it.status == "success" }) }
         verify { auditLogRepository.save(match { it.action == "authorize_onu" && it.onu?.id == 20L }) }

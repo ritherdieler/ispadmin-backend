@@ -58,7 +58,8 @@ open class OltManagerFacade(
     private val writeRouter: OnuWriteRouter,
     private val queryFacade: OltGatewayQueryFacade,
     private val mapper: SmartOltCompatMapper,
-    private val properties: OltGatewayProperties
+    private val properties: OltGatewayProperties,
+    private val profileResolver: SmartOltAuthorizeProfileResolver = SmartOltAuthorizeProfileResolver(properties),
 ) {
 
     @Transactional(readOnly = true)
@@ -67,7 +68,10 @@ open class OltManagerFacade(
             val sn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
             sn.isNotBlank() && onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isEmpty
         }
-        return mapper.toUnconfirmedOnuResponse(pending, properties.oltId)
+        return mapper.toUnconfirmedOnuResponse(
+            pending,
+            properties.smartoltOltId.ifBlank { properties.oltId },
+        )
     }
 
     @Transactional
@@ -121,15 +125,22 @@ open class OltManagerFacade(
         val existing = onuRepository.findBySnAndDeletedAtIsNull(request.sn)
         val ontId = existing.map { it.onuIndex }
             .orElseGet { onuRepository.findMaxOnuIndex(olt.id!!, board, port) + 1 }
+        val profiles = profileResolver.resolve(
+            customProfile = request.custom_profile,
+            vlan = vlan,
+            name = request.name,
+            zone = request.zone,
+            sn = request.sn,
+        )
         val commands = commandService.planAuthorize(
             AuthorizeCliRequest(
                 board = board,
                 port = port,
                 ontId = ontId,
                 sn = request.sn,
-                lineProfileId = properties.writes.defaultLineProfileId,
-                serviceProfileId = properties.writes.defaultServiceProfileId,
-                description = request.name.ifBlank { request.sn },
+                lineProfileId = profiles.lineProfileId,
+                serviceProfileId = profiles.serviceProfileId,
+                description = profiles.description,
                 vlan = vlan
             )
         )
@@ -207,15 +218,22 @@ open class OltManagerFacade(
         )
 
         try {
+            val profiles = profileResolver.resolve(
+                customProfile = request.custom_profile,
+                vlan = vlan,
+                name = request.name,
+                zone = request.zone,
+                sn = request.sn,
+            )
             val writeResult = writeRouter.authorize(
                 AuthorizeCliRequest(
                     board = board,
                     port = port,
                     ontId = nextOntId,
                     sn = request.sn,
-                    lineProfileId = properties.writes.defaultLineProfileId,
-                    serviceProfileId = properties.writes.defaultServiceProfileId,
-                    description = request.name.ifBlank { request.sn },
+                    lineProfileId = profiles.lineProfileId,
+                    serviceProfileId = profiles.serviceProfileId,
+                    description = profiles.description,
                     vlan = vlan
                 ),
                 SmartOltAuthorizeCommand(
@@ -306,6 +324,14 @@ open class OltManagerFacade(
             )
         )
         try {
+            val vlan = onu.mainVlanId ?: 0
+            val profiles = profileResolver.resolve(
+                customProfile = onu.customProfile.orEmpty().ifBlank { "Generic_1" },
+                vlan = vlan,
+                name = onu.name.orEmpty(),
+                zone = onu.zoneName.orEmpty(),
+                sn = onu.sn,
+            )
             val writeResult = writeRouter.move(
                 MoveCliRequest(
                     fromBoard = onu.board,
@@ -315,10 +341,10 @@ open class OltManagerFacade(
                     toPort = toPort,
                     toOntId = onu.onuIndex,
                     sn = onu.sn,
-                    lineProfileId = properties.writes.defaultLineProfileId,
-                    serviceProfileId = properties.writes.defaultServiceProfileId,
-                    description = onu.name ?: onu.sn,
-                    vlan = onu.mainVlanId ?: 0
+                    lineProfileId = profiles.lineProfileId,
+                    serviceProfileId = profiles.serviceProfileId,
+                    description = profiles.description,
+                    vlan = vlan
                 ),
                 sn,
                 SmartOltMoveCommand(

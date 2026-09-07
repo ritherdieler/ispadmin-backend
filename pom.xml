@@ -23,7 +23,7 @@
         <warName>ispadmin</warName>
         <kotlin.main.source>${project.basedir}/src/main/kotlin</kotlin.main.source>
         <kotlin.test.source>${project.basedir}/src/test/kotlin</kotlin.test.source>
-        <start-class>com.dscorp.wispadmin.wispadmin.WispAdminApplication</start-class>
+        <start-class>com.dscorp.wispadmin.wispadmin.WispAdminApplicationKt</start-class>
         <subsystem.excludes>WEB-INF/classes/__no_subsystem_exclude__/**</subsystem.excludes>
         <subsystem.with></subsystem.with>
         <lib.excludes>WEB-INF/lib/__no_lib_exclude__/**</lib.excludes>

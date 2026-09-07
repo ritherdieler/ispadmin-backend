@@ -74,4 +74,27 @@ class CpeFacadeServiceTest {
         assertEquals(true, result.accepted)
         assertEquals(CpeStatus.PENDING, result.status)
     }
+
+    @Test
+    fun `telemetry enriches lastInformAt from GenieACS and persists it`() {
+        val records = mockk<CpeRecordRepository>(relaxed = true)
+        val record = CpeRecord(sn = "ZTEGDC47BFFD", deviceId = "5872C9-F6600R-ZTEGDC47BFFD", status = CpeStatus.COMPLETE)
+        every { records.findById("ZTEGDC47BFFD") } returns Optional.of(record)
+        every { records.save(any()) } answers { firstArg() }
+        val client = mockk<GenieAcsClient>()
+        every { client.findDeviceBySerialSuffix("47BFFD") } returns listOf(
+            com.dscorp.wispadmin.acs.genieacs.GenieAcsDevice(
+                id = "5872C9-F6600R-ZTEGDC47BFFD",
+                serialNumber = "ZTEGDC47BFFD",
+                lastInform = "2026-09-06T17:57:11.717Z",
+            )
+        )
+        val service = CpeFacadeService(records, mockk(relaxed = true), client, GenieAcsProperties().apply { enabled = true })
+
+        val result = service.telemetry("ZTEGDC47BFFD")
+
+        assertEquals("2026-09-06T17:57:11.717Z", result.lastInformAt)
+        assertEquals(java.time.Instant.parse("2026-09-06T17:57:11.717Z"), record.lastInformAt)
+        verify(exactly = 1) { records.save(record) }
+    }
 }

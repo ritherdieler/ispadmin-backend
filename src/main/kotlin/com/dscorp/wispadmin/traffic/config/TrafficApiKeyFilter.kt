@@ -15,8 +15,10 @@ class TrafficApiKeyFilter(
 ) : OncePerRequestFilter() {
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
+        if ("OPTIONS".equals(request.method, ignoreCase = true)) return true
         val path = gatewayPath(request)
-        return path == "/actuator/health" || path.startsWith("/actuator/health/")
+        if (path == "/actuator/health" || path.startsWith("/actuator/health/")) return true
+        return !path.startsWith("/api/traffic")
     }
 
     override fun doFilterInternal(

@@ -69,11 +69,12 @@ class CpeFacadeService(
     fun telemetry(sn: String): CpeTelemetryResult {
         val record = records.findById(sn).orElse(null)
             ?: return CpeTelemetryResult(sn = sn, cpeStatus = CpeStatus.NA)
+        val lastInformAt = refreshLastInform(record)
         return CpeTelemetryResult(
             sn = record.sn,
             uniqueExternalId = record.uniqueExternalId,
             cpeStatus = record.status,
-            lastInformAt = record.lastInformAt?.toString(),
+            lastInformAt = lastInformAt?.toString(),
             productClass = record.productClass,
             wanIp = record.wanIp,
             ssid24 = record.ssid24,
@@ -82,6 +83,24 @@ class CpeFacadeService(
             deviceId = record.deviceId,
             message = record.message,
         )
+    }
+
+    private fun refreshLastInform(record: CpeRecord): Instant? {
+        if (!properties.enabled) return record.lastInformAt
+        val suffix = com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher.normalizeSuffix(record.sn) ?: return record.lastInformAt
+        val fromGenie = runCatching {
+            client.findDeviceBySerialSuffix(suffix)
+                .firstOrNull { it.id == record.deviceId || record.deviceId.isNullOrBlank() }
+                ?.lastInform
+                ?.takeIf { it.isNotBlank() }
+                ?.let { Instant.parse(it) }
+        }.getOrNull()
+        if (fromGenie != null && fromGenie != record.lastInformAt) {
+            record.lastInformAt = fromGenie
+            record.updatedAt = Instant.now()
+            records.save(record)
+        }
+        return fromGenie ?: record.lastInformAt
     }
 
     fun reboot(sn: String): CpeCommandResult {

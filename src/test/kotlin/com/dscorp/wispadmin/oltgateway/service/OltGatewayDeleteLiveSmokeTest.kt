@@ -38,8 +38,10 @@ class OltGatewayDeleteLiveSmokeTest {
             ssh.legacyAlgorithms = true
             commandTimeoutMs = 120_000
             writes.enabled = true
-            writes.defaultLineProfileId = 10
-            writes.defaultServiceProfileId = 10
+            writes.defaultLineProfileId = 6
+            writes.defaultServiceProfileId = 13
+            writes.inboundTrafficTableIndex = 8
+            writes.outboundTrafficTableIndex = 9
             session.keepaliveEnabled = false
             session.poolSize = 1
         }

@@ -31,6 +31,7 @@ class PlatformAuthFilter(
         val path = (request.servletPath ?: request.requestURI ?: "").trimEnd('/')
         if (path.startsWith("/observability") || path.contains("/observability/")) return true
         if (path.startsWith("/api/olt-gateway") || path.contains("/api/olt-gateway/")) return true
+        if (path.startsWith("/api/acs") || path.contains("/api/acs/")) return true
         if (path.startsWith("/api/netdiag") || path.contains("/api/netdiag/")) return true
         if (path.startsWith("/internal/traffic") || path.contains("/internal/traffic/")) return true
         if (path.contains("/ws")) return true

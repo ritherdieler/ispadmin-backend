@@ -51,9 +51,13 @@ class AcsTelemetryService(
                     val status=current.findById(id).orElse(WifiCurrent(subscriptionId=id))
                     status.deviceId = telemetry.uniqueExternalId ?: sn
                     status.model = telemetry.productClass
-                    status.informAt = telemetry.lastInformAt
+                    if (telemetry.lastInformAt != null && !telemetry.lastInformAt.isAfter(now.plusSeconds(60))) {
+                        status.informAt = telemetry.lastInformAt
+                        status.qualityStatus = Quality.FRESH
+                    } else if (status.informAt == null) {
+                        status.qualityStatus = Quality.MISSING
+                    }
                     status.observedAt = now
-                    status.qualityStatus = if (telemetry.lastInformAt != null) Quality.FRESH else Quality.MISSING
                     current.save(status)
                     run.writtenCount++
                 }

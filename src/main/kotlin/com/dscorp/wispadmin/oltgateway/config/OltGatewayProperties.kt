@@ -19,6 +19,8 @@ class OltGatewayProperties {
 
     var oltId: String = "gigafiber-ma5608t"
 
+    var smartoltOltId: String = ""
+
     var modelCode: String = "MA5608T"
 
     var commandTimeoutMs: Long = 30000
@@ -109,6 +111,9 @@ class OltGatewayProperties {
         var enabled: Boolean = false
         var defaultLineProfileId: Int = 10
         var defaultServiceProfileId: Int = 10
+        var customProfileBindings: String = "Generic_1:1=3:2,Generic_1:100=6:13"
+        var inboundTrafficTableIndex: Int = 8
+        var outboundTrafficTableIndex: Int = 9
     }
 
     class SyncProperties {

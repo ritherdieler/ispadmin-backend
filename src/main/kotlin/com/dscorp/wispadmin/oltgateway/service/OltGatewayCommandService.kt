@@ -57,8 +57,7 @@ class OltGatewayCommandService(
             "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} " +
             "desc ${sanitizeDesc(request.description)}",
         "quit",
-        "service-port vlan ${request.vlan} gpon 0/${request.board}/${request.port} ont ${request.ontId} " +
-            "gemport 1 multi-service user-vlan ${request.vlan} tag-transform translate"
+        servicePortCommand(request.vlan, request.board, request.port, request.ontId),
     )
 
     fun authorize(request: AuthorizeCliRequest): AuthorizeCliResult {
@@ -88,11 +87,16 @@ class OltGatewayCommandService(
                     "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} desc $desc"
             )
             runCommand("quit")
-            runCommand(
-                "service-port vlan ${request.vlan} gpon 0/${request.toBoard}/${request.toPort} ont ${request.toOntId} " +
-                    "gemport 1 multi-service user-vlan ${request.vlan} tag-transform translate"
-            )
+            runCommand(servicePortCommand(request.vlan, request.toBoard, request.toPort, request.toOntId))
         }
+    }
+
+    private fun servicePortCommand(vlan: Int, board: Int, port: Int, ontId: Int): String {
+        val inbound = properties.writes.inboundTrafficTableIndex
+        val outbound = properties.writes.outboundTrafficTableIndex
+        return "service-port vlan $vlan gpon 0/$board/$port ont $ontId " +
+            "gemport 1 multi-service user-vlan $vlan tag-transform translate " +
+            "inbound traffic-table index $inbound outbound traffic-table index $outbound"
     }
 
     fun delete(request: DeleteCliRequest) {

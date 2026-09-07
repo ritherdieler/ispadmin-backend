@@ -77,7 +77,8 @@ class HealthEvidenceReader(
         val model=telemetry?.productClass ?: w?.model
         model?.let { ids["CPE_MODEL"]=it }
         telemetry?.uniqueExternalId?.let { ids["CPE_EXTERNAL_ID"]=it }
-        val lastInform=telemetry?.lastInformAt ?: w?.informAt
+        val liveInform=telemetry?.lastInformAt?.takeUnless { it.isAfter(now.plusSeconds(60)) }
+        val lastInform=liveInform ?: w?.informAt
         sources+=Evidence("ACS","last_inform",lastInform,lastInform,qualityAt(lastInform,now,properties.periodicInformSeconds*2),ids["ACS"])
         val wifiSupported=WifiTelemetry.radios(model ?: "").isNotEmpty()
         val wifiQuality=when {
