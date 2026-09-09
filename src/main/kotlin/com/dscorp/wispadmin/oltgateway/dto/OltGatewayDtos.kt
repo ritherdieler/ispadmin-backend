@@ -88,7 +88,13 @@ data class SyncResultDto(
 data class SignalPollResultDto(
     val slotsPolled: Int,
     val portsPolled: Int,
+    val portsFailed: Int = 0,
     val onusUpdated: Int,
+    val polledAtRefreshed: Int = 0,
+    val incompleteDiscarded: Int = 0,
+    val unchangedSkipped: Int = 0,
+    val unmatchedRows: Int = 0,
+    val rowsMatched: Int = 0,
     val durationMs: Long,
     val skippedReason: String? = null,
     val error: String? = null

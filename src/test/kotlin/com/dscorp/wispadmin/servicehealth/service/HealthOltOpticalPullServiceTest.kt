@@ -19,6 +19,7 @@ class HealthOltOpticalPullServiceTest {
         val properties = ServiceHealthProperties().apply {
             enabled = true
             opticalEnabled = true
+            opticalPullEnabled = true
         }
         HealthOltOpticalPullService(properties, gateway, provider).pull()
         verify(exactly = 0) { ingest.onOptical(any()) }
@@ -34,8 +35,24 @@ class HealthOltOpticalPullServiceTest {
         val properties = ServiceHealthProperties().apply {
             enabled = false
             opticalEnabled = true
+            opticalPullEnabled = true
         }
         HealthOltOpticalPullService(properties, gateway, provider).pull()
         verify(exactly = 0) { gateway.pullOptical() }
+    }
+
+    @Test
+    fun `cutover A optical pull disabled by default skips gateway`() {
+        val ingest = mockk<HealthOltIngestPort>(relaxed = true)
+        val provider = mockk<ObjectProvider<HealthOltIngestPort>>()
+        io.mockk.every { provider.ifAvailable } returns ingest
+        val gateway = mockk<HealthOltGatewayHttpClient>(relaxed = true)
+        val properties = ServiceHealthProperties().apply {
+            enabled = true
+            opticalEnabled = true
+        }
+        HealthOltOpticalPullService(properties, gateway, provider).pull()
+        verify(exactly = 0) { gateway.pullOptical() }
+        verify(exactly = 0) { ingest.onOptical(any()) }
     }
 }

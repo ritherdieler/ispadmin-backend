@@ -77,7 +77,10 @@ class RemoteActionWifiRefreshTest {
             stationHmacKey = "k".repeat(32)
             periodicInformSeconds = 3600
         }
-        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), subscriptions)
+        val acs = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
+        every { acs.isLab(any()) } returns false
+        every { acs.labSubscriptionIds() } returns emptyList()
+        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), subscriptions, acs)
         val cpeProvider = mockk<ObjectProvider<HealthCpePort>>()
         every { cpeProvider.ifAvailable } returns cpe
         remote = RemoteActionService(

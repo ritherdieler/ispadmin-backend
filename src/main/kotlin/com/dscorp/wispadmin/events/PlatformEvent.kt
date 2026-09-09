@@ -20,8 +20,10 @@ object PlatformEventTypes {
     const val TRAFFIC_ANOMALY_OPENED = "traffic.anomaly-opened"
     const val TRAFFIC_ANOMALY_CLEARED = "traffic.anomaly-cleared"
     const val ONU_OPTICAL = "onu.optical"
+    const val ONU_OPTICAL_BATCH = "onu.optical-batch"
     const val ONU_STATE = "onu.state"
     const val CPE_PROVISIONING = "cpe.provisioning"
+    const val CPE_INFORM = "cpe.inform"
 }
 
 object PlatformEventCodec {

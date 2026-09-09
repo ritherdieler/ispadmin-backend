@@ -47,6 +47,24 @@ class CpeRecord(
     @Column(name = "last_inform_at")
     var lastInformAt: Instant? = null,
 
+    @Column(name = "wifi_snapshot_json", columnDefinition = "TEXT")
+    var wifiSnapshotJson: String? = null,
+
+    @Column(name = "wifi_associated_2g")
+    var wifiAssociated2g: Int? = null,
+
+    @Column(name = "wifi_associated_5g")
+    var wifiAssociated5g: Int? = null,
+
+    @Column(name = "wifi_associated_total")
+    var wifiAssociatedTotal: Int? = null,
+
+    @Column(name = "wifi_observed_at")
+    var wifiObservedAt: Instant? = null,
+
+    @Column(name = "wifi_quality_status", length = 32)
+    var wifiQualityStatus: String? = null,
+
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
 )

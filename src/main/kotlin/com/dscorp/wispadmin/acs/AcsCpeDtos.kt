@@ -45,4 +45,14 @@ data class CpeTelemetryResult(
     val softwareVersion: String? = null,
     val deviceId: String? = null,
     val message: String? = null,
+    val wifiAssociated2g: Int? = null,
+    val wifiAssociated5g: Int? = null,
+    val wifiAssociatedTotal: Int? = null,
+    val wifiObservedAt: String? = null,
+    val wifiQualityStatus: String? = null,
+)
+
+data class CpeInformNotifyRequest(
+    val deviceId: String? = null,
+    val serial: String? = null,
 )

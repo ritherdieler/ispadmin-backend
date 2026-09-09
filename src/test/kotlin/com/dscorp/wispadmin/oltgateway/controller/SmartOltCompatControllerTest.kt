@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayExceptionHandler
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
+import com.dscorp.wispadmin.oltgateway.service.OnuActivationService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -22,9 +23,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 class SmartOltCompatControllerTest {
 
     private val facade = mockk<OltManagerFacade>()
+    private val activation = mockk<OnuActivationService>(relaxed = true)
 
     private val mockMvc: MockMvc = MockMvcBuilders
-        .standaloneSetup(SmartOltCompatController(facade))
+        .standaloneSetup(SmartOltCompatController(facade, activation))
         .setControllerAdvice(OltGatewayExceptionHandler())
         .build()
 
@@ -79,6 +81,7 @@ class SmartOltCompatControllerTest {
     @Test
     fun `move delete reboot aliases`() {
         every { facade.moveOnu(any(), any()) } returns SmartOltActionResponseDto(status = true)
+        every { facade.findSnByExternalId("gigafiber-ma5608t_1_0_5") } returns "ZTEGDC47BFFD"
         every { facade.deleteOnu(any()) } returns SmartOltActionResponseDto(status = true)
         every { facade.rebootOnu(any()) } returns SmartOltActionResponseDto(status = true)
 
@@ -91,6 +94,8 @@ class SmartOltCompatControllerTest {
 
         mockMvc.perform(post("/api/olt-gateway/onu/delete/gigafiber-ma5608t_1_0_5"))
             .andExpect(status().isOk)
+
+        verify { activation.clearJournal("ZTEGDC47BFFD") }
 
         mockMvc.perform(post("/api/olt-gateway/onu/reboot/gigafiber-ma5608t_1_0_5"))
             .andExpect(status().isOk)

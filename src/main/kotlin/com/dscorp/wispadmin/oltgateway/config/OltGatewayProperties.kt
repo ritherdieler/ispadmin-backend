@@ -64,7 +64,7 @@ class OltGatewayProperties {
         var enabled: Boolean = false
         var port: Int = 161
         var roCommunity: String = ""
-        var timeoutMs: Long = 5000
+        var timeoutMs: Long = 15000
         var retries: Int = 1
         var maxRepetitions: Int = 25
         /** Small pacing interval between GETBULK pages; protects constrained OLT agents. */
@@ -89,6 +89,10 @@ class OltGatewayProperties {
         var opticalOnlineOnly: Boolean = true
         /** How long to wait for this OLT's SNMP bus permit before failing. */
         var acquireTimeoutMs: Long = 300_000
+        var pollLockEnabled: Boolean = true
+        var pollLockKey: String = "olt-snmp-poll"
+        var pollLockTtlMs: Long = 1_200_000
+        var pollLockShared: Boolean = true
         val trap: TrapProperties = TrapProperties()
     }
 
@@ -163,8 +167,17 @@ class OltGatewayProperties {
         var apiKey: String = ""
     }
 
+    var acsToGatewayApiKey: String = ""
+
     fun isValidApiKey(key: String?): Boolean {
         if (key.isNullOrBlank() || apiKey.isBlank()) return false
         return apiKey == key
+    }
+
+    fun isValidIngestApiKey(key: String?): Boolean {
+        if (key.isNullOrBlank()) return false
+        if (apiKey.isNotBlank() && apiKey == key) return true
+        if (acsToGatewayApiKey.isNotBlank() && acsToGatewayApiKey == key) return true
+        return false
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit, reversible pilot deployment. Default is a local dry run; no CPE tasks."""
+"""Explicit, reversible Inform-channel pilot. Default is a local dry run; no CPE tasks."""
 import argparse
 import json
 import os
@@ -36,7 +36,7 @@ def precondition(device_ids):
 def preset(device_ids):
     if not device_ids:
         raise ValueError("At least one explicit pilot device ID is required")
-    return {"weight": 20, "channel": NAME, "events": {"2 PERIODIC": True},
+    return {"weight": 20, "channel": "inform", "events": {},
             "precondition": precondition(device_ids),
             "configurations": [{"type": "provision", "name": NAME, "args": []}]}
 

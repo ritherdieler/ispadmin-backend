@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.oltgateway.snmp
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
+import com.dscorp.wispadmin.oltgateway.ssh.LocalCliBusPressure
 import org.slf4j.LoggerFactory
 import org.snmp4j.CommunityTarget
 import org.snmp4j.PDU
@@ -24,7 +25,8 @@ import java.util.concurrent.Executors
 @Suppress("UNCHECKED_CAST")
 class Snmp4jOltSnmpClient(
     private val properties: OltGatewayProperties,
-    private val busRegistry: OltSnmpBusRegistry? = null
+    private val busRegistry: OltSnmpBusRegistry? = null,
+    private val localCliBusPressure: () -> LocalCliBusPressure = { LocalCliBusPressure.snapshot(null) }
 ) : OltSnmpClient {
 
     companion object {
@@ -103,12 +105,26 @@ class Snmp4jOltSnmpClient(
     }
 
     private fun fetchOpticalForPorts(ports: List<GponFsp>): List<SnmpOntOptical> {
-        return OpticalPortWalkRunner.runAll(
+        val batch = OpticalPortWalkRunner.runAll(
             ports = ports,
             parallelism = properties.snmp.opticalParallelPorts,
+            pressureSnapshot = localCliBusPressure,
             fetch = { port -> fetchOpticalForPort(port) }
         )
+        lastPortsFailed = batch.portsFailed
+        lastPortsAttempted = batch.portsAttempted
+        return batch.items
     }
+
+    @Volatile
+    private var lastPortsFailed: Int = 0
+
+    @Volatile
+    private var lastPortsAttempted: Int = 0
+
+    override fun lastOpticalWalkPortsFailed(): Int = lastPortsFailed
+
+    override fun lastOpticalWalkPortsAttempted(): Int = lastPortsAttempted
 
     private fun fetchOpticalForPort(port: GponFsp): List<SnmpOntOptical> {
         val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(port.slot, port.port)
@@ -147,6 +163,8 @@ class Snmp4jOltSnmpClient(
     }
 
     private fun fetchOpticalColumns(label: String): List<SnmpOntOptical> {
+        lastPortsFailed = 0
+        lastPortsAttempted = 0
         val rx = { safeDoubleColumn("rx") {
             walkColumn(HuaweiGponSnmpOids.ONT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
                 HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())

@@ -12,6 +12,9 @@
 | **Diagrama 3 WARs + Redis (SVG / PNG)** | [arquitectura-3-wars.svg](./arquitectura-3-wars.svg) · [arquitectura-3-wars.png](./arquitectura-3-wars.png) |
 | **Diagrama 3 WARs — detalle por rectángulo** | [arquitectura-3-wars-detalle.md](./arquitectura-3-wars-detalle.md) |
 | **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
+| **WiFi-on-Inform — flujo ACS → Gateway → Core (canónico)** | [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md) |
+| **Óptica SNMP push — Gateway → Redis → Core (canónico)** | [optical-push-gateway-core.md](./optical-push-gateway-core.md) |
+| **Contención SNMP óptica (lock Redis + timeout 15s)** | [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md) |
 | **JDBC cruzado (prohibido en runtime)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md#prohibido) |
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |

@@ -26,7 +26,13 @@ class AcsApiKeyFilter(
         filterChain: FilterChain,
     ) {
         val key = request.getHeader(HEADER)
-        if (!properties.isValidApiKey(key)) {
+        val path = gatewayPath(request)
+        val valid = if (path.endsWith("/api/acs/v1/cpe/inform-notify")) {
+            properties.isValidNotifyApiKey(key)
+        } else {
+            properties.isValidApiKey(key)
+        }
+        if (!valid) {
             response.status = HttpStatus.UNAUTHORIZED.value()
             response.contentType = MediaType.APPLICATION_JSON_VALUE
             response.writer.write(

@@ -29,4 +29,10 @@ interface OltSnmpClient {
 
     /** Full-table walk when [ports] is null; per-port subtree walks when set (faster with parallel ports). */
     fun listOptical(ports: Collection<GponFsp>? = null): List<SnmpOntOptical>
+
+    /** Ports attempted in the last per-port [listOptical] call (0 for full-table). */
+    fun lastOpticalWalkPortsAttempted(): Int = 0
+
+    /** Ports that failed in the last per-port [listOptical] call (0 for full-table). */
+    fun lastOpticalWalkPortsFailed(): Int = 0
 }

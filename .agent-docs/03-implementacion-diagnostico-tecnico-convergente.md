@@ -115,7 +115,7 @@ Primero revisar el preset sin enviar cambios:
 python3 scripts/genieacs/apply-wifi-telemetry.py --device-id '<deviceId-piloto>'
 ```
 
-Solo durante el despliegue autorizado, añadir `--apply` y configurar `GENIEACS_NBI_URL`. El preset tiene evento `2 PERIODIC`, canal propio, peso 20 y filtro explícito de IDs/modelos. No dispara CR. Reversión del preset: `--disable --apply`.
+Solo durante el despliegue autorizado, añadir `--apply` y configurar `GENIEACS_NBI_URL`. El preset usa canal **`inform`**, `events: {}` (cada Inform), peso 20, `Date.now()` y filtro explícito de IDs/modelos (piloto VSOL lab: ver [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md)). Push ACS→Gateway→Core: [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md). No dispara CR por sí mismo. Reversión del preset: `--disable --apply`.
 
 ## Límites deliberados y validación pendiente
 

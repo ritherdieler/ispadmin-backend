@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.events.EventBusPort
 import com.dscorp.wispadmin.events.NoOpEventBus
+import com.dscorp.wispadmin.events.OnuOpticalBatchItem
+import com.dscorp.wispadmin.events.OnuOpticalBatchPayload
 import com.dscorp.wispadmin.events.PlatformEvent
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
@@ -20,12 +22,18 @@ import com.dscorp.wispadmin.oltgateway.service.inventory.GponSlotInfo
 import com.dscorp.wispadmin.oltgateway.service.inventory.OltGponTopologyDiscovery
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker
+import com.dscorp.wispadmin.oltgateway.snmp.NoOpOltSnmpPollLock
 import com.dscorp.wispadmin.oltgateway.snmp.OpticalPollScope
 import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntOptical
 import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliSession
+import com.dscorp.wispadmin.oltgateway.ssh.LocalCliBusPressure
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -47,6 +55,11 @@ open class OltSignalPollService(
     snmpClient: OltSnmpClient? = null,
     eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
     private val eventBus: EventBusPort = NoOpEventBus(),
+    private val objectMapper: ObjectMapper = ObjectMapper()
+        .registerModule(JavaTimeModule())
+        .findAndRegisterModules()
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS),
+    pollLock: OltSnmpPollLocker = NoOpOltSnmpPollLock(),
 ) {
 
     companion object {
@@ -65,6 +78,7 @@ open class OltSignalPollService(
         private val signalCategoryCalculatorRef = AtomicReference<SignalCategoryCalculator?>(null)
         private val cliBusRef = AtomicReference<OltCliBus?>(null)
         private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
+        private val pollLockRef = AtomicReference<OltSnmpPollLocker>(NoOpOltSnmpPollLock())
     }
 
     init {
@@ -79,6 +93,7 @@ open class OltSignalPollService(
         signalCategoryCalculatorRef.set(signalCategoryCalculator)
         cliBusRef.set(cliBus)
         snmpClientRef.set(snmpClient)
+        pollLockRef.set(pollLock)
     }
 
     private fun props(): OltGatewayProperties {
@@ -110,6 +125,8 @@ open class OltSignalPollService(
     private fun cliBus(): OltCliBus? = cliBusRef.get()
 
     private fun snmpClient(): OltSnmpClient? = snmpClientRef.get()
+
+    private fun pollLock(): OltSnmpPollLocker = pollLockRef.get() ?: NoOpOltSnmpPollLock()
 
     fun isRunning(): Boolean = running.get()
 
@@ -164,6 +181,10 @@ open class OltSignalPollService(
         }
         val startedAt = Instant.now()
         lastStartedAtRef.set(startedAt)
+        val logPressure = source == SignalSource.SNMP
+        if (logPressure) {
+            logLocalCliBusPressure("start")
+        }
         try {
             val properties = props()
             if (properties.sync.skipWhenWriteRunning && taskRepository().existsByStatus("running")) {
@@ -172,26 +193,49 @@ open class OltSignalPollService(
             val olt = oltRepository().findByName(properties.oltId)
                 .orElseThrow { IllegalStateException("OLT seed missing for ${properties.oltId}") }
 
-            val capture = when (source) {
-                SignalSource.SNMP -> captureViaSnmp(properties, olt.id!!)
-                SignalSource.SSH -> captureViaSshDeprecated()
-            } ?: return finish(SignalPollResult(skippedReason = lastSkipReason), startedAt)
+            return pollLock().withLock {
+                val capture = when (source) {
+                    SignalSource.SNMP -> captureViaSnmp(properties, olt.id!!)
+                    SignalSource.SSH -> captureViaSshDeprecated()
+                } ?: return@withLock finish(SignalPollResult(skippedReason = lastSkipReason), startedAt)
 
-            val onusUpdated = applyOpticalUpdates(olt.id!!, capture.rows)
-            return finish(
-                SignalPollResult(
-                    slotsPolled = capture.slotsPolled,
-                    portsPolled = capture.portsPolled,
-                    onusUpdated = onusUpdated
-                ),
-                startedAt
-            )
+                val apply = applyOpticalUpdatesByPort(olt.id!!, capture.rows)
+                finish(
+                    SignalPollResult(
+                        slotsPolled = capture.slotsPolled,
+                        portsPolled = capture.portsPolled,
+                        portsFailed = capture.portsFailed,
+                        onusUpdated = apply.onusUpdated,
+                        polledAtRefreshed = apply.polledAtRefreshed,
+                        incompleteDiscarded = apply.incompleteDiscarded,
+                        unchangedSkipped = apply.unchangedSkipped,
+                        unmatchedRows = apply.unmatchedRows,
+                        rowsMatched = apply.rowsMatched,
+                    ),
+                    startedAt
+                )
+            }
         } catch (ex: Exception) {
             logger.warn("Signal poll failed (source={}): {}", source, ex.message)
             return finish(SignalPollResult(error = ex.message), startedAt)
         } finally {
+            if (logPressure) {
+                logLocalCliBusPressure("end")
+            }
             running.set(false)
         }
+    }
+
+    private fun logLocalCliBusPressure(phase: String) {
+        val pressure = LocalCliBusPressure.snapshot(cliBus())
+        logger.info(
+            "SNMP_OPTICAL_SSH_PRESSURE phase={} localCliBus=true localQueueDepth={} localBusyJobType={} sshActive={} sshMax={}",
+            phase,
+            pressure.localQueueDepth,
+            pressure.localBusyJobType,
+            LocalCliBusPressure.SSH_ACTIVE_NA,
+            LocalCliBusPressure.SSH_MAX_NA
+        )
     }
 
     @Volatile
@@ -231,8 +275,18 @@ open class OltSignalPollService(
         }
         val rows = optical.map { it.toOpticalRow() }
         val slots = rows.map { it.slot }.toSet().size
-        val portsPolled = rows.map { it.slot to it.port }.toSet().size
-        return PollCapture(slotsPolled = slots, portsPolled = portsPolled, rows = rows)
+        val portsPolled = if (properties.snmp.opticalPerPortWalks) {
+            client.lastOpticalWalkPortsAttempted().coerceAtLeast(rows.map { it.slot to it.port }.toSet().size)
+        } else {
+            rows.map { it.slot to it.port }.toSet().size
+        }
+        val portsFailed = if (properties.snmp.opticalPerPortWalks) client.lastOpticalWalkPortsFailed() else 0
+        return PollCapture(
+            slotsPolled = slots,
+            portsPolled = portsPolled,
+            portsFailed = portsFailed,
+            rows = rows,
+        )
     }
 
     private fun SnmpOntOptical.toOpticalRow(): OpticalRow {
@@ -302,6 +356,7 @@ open class OltSignalPollService(
         return PollCapture(
             slotsPolled = topology.size,
             portsPolled = portsPolled,
+            portsFailed = 0,
             rows = rows
         )
     }
@@ -373,45 +428,132 @@ open class OltSignalPollService(
     }
 
     @Transactional
-    open fun applyOpticalUpdates(oltId: Long, rows: List<OpticalRow>): Int {
+    open fun applyOpticalUpdatesByPort(oltId: Long, rows: List<OpticalRow>): OpticalApplyStats {
         if (rows.isEmpty()) {
-            return 0
+            return OpticalApplyStats()
+        }
+        var aggregate = OpticalApplyStats()
+        val byPort = rows.groupBy { it.slot to it.port }
+        for (key in byPort.keys.sortedWith(compareBy({ it.first }, { it.second }))) {
+            aggregate = aggregate.plus(applyOpticalUpdates(oltId, byPort.getValue(key)))
+        }
+        return aggregate
+    }
+
+    @Transactional
+    open fun applyOpticalUpdates(oltId: Long, rows: List<OpticalRow>): OpticalApplyStats {
+        if (rows.isEmpty()) {
+            return OpticalApplyStats()
         }
         telemetryPublisher.get()?.publishEvent(OltOpticalObservation(oltId, Instant.now(), rows))
         val onus = onuRepository().findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }
         val byKey = onus.associateBy { Triple(it.board, it.port, it.onuIndex) }
         val now = Instant.now()
         val pendingStatuses = linkedSetOf<OltMgrOnuStatusCurrent>()
+        val batchItems = mutableListOf<OnuOpticalBatchItem>()
         var updated = 0
+        var refreshed = 0
+        var incomplete = 0
+        var unmatched = 0
+        var matched = 0
+        var slot = rows.first().slot
+        var port = rows.first().port
         for (row in rows) {
-            val onu = byKey[Triple(row.slot, row.port, row.optical.ontId)] ?: continue
-            if (upsertOptical(onu, row.optical, now, pendingStatuses)) {
-                updated++
-                eventBus.publish(
-                    PlatformEvent(
-                        type = PlatformEventTypes.ONU_OPTICAL,
-                        sn = onu.sn,
-                        occurredAt = now,
-                        payloadJson = """{"rxPowerDbm":${row.optical.rxPowerDbm},"runState":"${onu.status?.runState ?: ""}"}""",
-                    )
-                )
-                val runState = onu.status?.runState
-                if (!runState.isNullOrBlank()) {
-                    eventBus.publish(
-                        PlatformEvent(
-                            type = PlatformEventTypes.ONU_STATE,
-                            sn = onu.sn,
-                            occurredAt = now,
-                            payloadJson = """{"runState":"$runState"}""",
-                        )
-                    )
+            slot = row.slot
+            port = row.port
+            val onu = byKey[Triple(row.slot, row.port, row.optical.ontId)]
+            if (onu == null) {
+                unmatched++
+                continue
+            }
+            matched++
+            when (upsertOptical(onu, row.optical, now, pendingStatuses)) {
+                OpticalUpsertOutcome.VALUES_UPDATED -> {
+                    updated++
+                    val rx = row.optical.rxPowerDbm
+                    val tx = row.optical.txPowerDbm
+                    val oltRx = row.optical.oltRxPowerDbm
+                    if (rx != null && tx != null && oltRx != null) {
+                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now)
+                    }
                 }
+                OpticalUpsertOutcome.POLLED_AT_REFRESHED -> {
+                    refreshed++
+                    val rx = row.optical.rxPowerDbm
+                    val tx = row.optical.txPowerDbm
+                    val oltRx = row.optical.oltRxPowerDbm
+                    if (rx != null && tx != null && oltRx != null) {
+                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now)
+                    }
+                }
+                OpticalUpsertOutcome.INCOMPLETE_DISCARDED -> incomplete++
             }
         }
         if (pendingStatuses.isNotEmpty()) {
             statusRepository().saveAll(pendingStatuses)
         }
-        return updated
+        if (batchItems.isNotEmpty()) {
+            publishOpticalBatch(oltId, slot, port, now, batchItems)
+        }
+        return OpticalApplyStats(
+            onusUpdated = updated,
+            polledAtRefreshed = refreshed,
+            incompleteDiscarded = incomplete,
+            unmatchedRows = unmatched,
+            rowsMatched = matched,
+        )
+    }
+
+    private fun toBatchItem(
+        onu: OltMgrOnu,
+        onuRxDbm: Double,
+        onuTxDbm: Double,
+        oltRxDbm: Double,
+        optical: ParsedOpticalInfo,
+        polledAt: Instant,
+    ): OnuOpticalBatchItem {
+        return OnuOpticalBatchItem(
+            sn = onu.sn,
+            onuExternalId = onu.externalId,
+            onuRxDbm = onuRxDbm,
+            onuTxDbm = onuTxDbm,
+            oltRxDbm = oltRxDbm,
+            polledAt = polledAt,
+            temperatureC = optical.temperatureC,
+            distanceM = optical.distanceM,
+            biasCurrentMa = optical.biasCurrentMa,
+            runState = onu.status?.runState,
+        )
+    }
+
+    private fun publishOpticalBatch(
+        oltId: Long,
+        slot: Int,
+        port: Int,
+        polledAt: Instant,
+        items: List<OnuOpticalBatchItem>,
+    ) {
+        val payload = OnuOpticalBatchPayload(
+            oltId = oltId,
+            slot = slot,
+            port = port,
+            polledAt = polledAt,
+            onus = items,
+        )
+        eventBus.publish(
+            PlatformEvent(
+                type = PlatformEventTypes.ONU_OPTICAL_BATCH,
+                occurredAt = polledAt,
+                payloadJson = objectMapper.writeValueAsString(payload),
+                producer = "oltgateway",
+            )
+        )
+    }
+
+    private enum class OpticalUpsertOutcome {
+        VALUES_UPDATED,
+        POLLED_AT_REFRESHED,
+        INCOMPLETE_DISCARDED,
     }
 
     private fun upsertOptical(
@@ -419,35 +561,47 @@ open class OltSignalPollService(
         optical: ParsedOpticalInfo,
         now: Instant,
         pending: MutableSet<OltMgrOnuStatusCurrent>
-    ): Boolean {
+    ): OpticalUpsertOutcome {
         val onuRx = toDecimal(optical.rxPowerDbm)
         val onuTx = toDecimal(optical.txPowerDbm)
         val oltRx = toDecimal(optical.oltRxPowerDbm)
+        if (onuRx == null || onuTx == null || oltRx == null) {
+            logger.info(
+                "SNMP_OPTICAL_INCOMPLETE_DISCARD sn={} slot={} port={} ontId={} rx={} tx={} oltRx={}",
+                onu.sn,
+                onu.board,
+                onu.port,
+                optical.ontId,
+                optical.rxPowerDbm,
+                optical.txPowerDbm,
+                optical.oltRxPowerDbm
+            )
+            return OpticalUpsertOutcome.INCOMPLETE_DISCARDED
+        }
         val temperature = optical.temperatureC?.toInt()
         val distanceM = optical.distanceM
         val status = onu.status
         if (status != null) {
-            val nextRx = onuRx ?: status.onuRxDbm
-            val nextTx = onuTx ?: status.onuTxDbm
-            val nextOltRx = oltRx ?: status.oltRxDbm
             val nextTemp = temperature ?: status.temperatureC
             val nextDistance = distanceM ?: status.distanceM
-            val nextCategory = signalCategoryCalculator().fromOnuRxDbm(nextRx?.toDouble())?.value
+            val nextCategory = signalCategoryCalculator().fromOnuRxDbm(onuRx.toDouble())?.value
                 ?: status.signalCategory
-            if (!opticalChanged(status, nextRx, nextTx, nextOltRx, nextTemp, nextDistance, nextCategory)) {
-                return false
-            }
-            status.onuRxDbm = nextRx
-            status.onuTxDbm = nextTx
-            status.oltRxDbm = nextOltRx
+            val valuesChanged = opticalChanged(status, onuRx, onuTx, oltRx, nextTemp, nextDistance, nextCategory)
+            status.onuRxDbm = onuRx
+            status.onuTxDbm = onuTx
+            status.oltRxDbm = oltRx
             status.temperatureC = nextTemp
             status.distanceM = nextDistance
             status.signalCategory = nextCategory
             status.polledAt = now
             pending += status
-            return true
+            return if (valuesChanged) {
+                OpticalUpsertOutcome.VALUES_UPDATED
+            } else {
+                OpticalUpsertOutcome.POLLED_AT_REFRESHED
+            }
         }
-        val category = signalCategoryCalculator().fromOnuRxDbm(optical.rxPowerDbm)?.value
+        val category = signalCategoryCalculator().fromOnuRxDbm(onuRx.toDouble())?.value
         val created = OltMgrOnuStatusCurrent(
             onu = onu,
             runState = "offline",
@@ -461,7 +615,7 @@ open class OltSignalPollService(
         )
         onu.status = created
         pending += created
-        return true
+        return OpticalUpsertOutcome.VALUES_UPDATED
     }
 
     private fun opticalChanged(
@@ -494,7 +648,12 @@ open class OltSignalPollService(
 
     private fun finish(result: SignalPollResult, startedAt: Instant): SignalPollResult {
         val finished = Instant.now()
-        val withDuration = result.copy(durationMs = finished.toEpochMilli() - startedAt.toEpochMilli())
+        val pressure = LocalCliBusPressure.snapshot(cliBus())
+        val withDuration = result.copy(
+            durationMs = finished.toEpochMilli() - startedAt.toEpochMilli(),
+            localQueueDepth = pressure.localQueueDepth,
+            localBusyJobType = pressure.localBusyJobType
+        )
         lastResultRef.set(withDuration)
         if (telemetryPublisher.get() != null && (result.error != null || result.skippedReason != null)) {
             val oltId = oltRepository().findByName(props().oltId).orElse(null)?.id
@@ -508,7 +667,13 @@ open class OltSignalPollService(
         return SignalPollResultDto(
             slotsPolled = slotsPolled,
             portsPolled = portsPolled,
+            portsFailed = portsFailed,
             onusUpdated = onusUpdated,
+            polledAtRefreshed = polledAtRefreshed,
+            incompleteDiscarded = incompleteDiscarded,
+            unchangedSkipped = unchangedSkipped,
+            unmatchedRows = unmatchedRows,
+            rowsMatched = rowsMatched,
             durationMs = durationMs,
             skippedReason = skippedReason,
             error = error
@@ -524,6 +689,7 @@ open class OltSignalPollService(
     data class PollCapture(
         val slotsPolled: Int,
         val portsPolled: Int,
+        val portsFailed: Int = 0,
         val rows: List<OpticalRow>
     )
 }

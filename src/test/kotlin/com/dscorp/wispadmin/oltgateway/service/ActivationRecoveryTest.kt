@@ -90,12 +90,35 @@ class ActivationRecoveryTest {
     }
 
     @Test
-    fun `a colliding request cannot steal an existing serial`() {
+    fun `a colliding request supersedes an incomplete activation for the same serial`() {
         val journal = MemoryActivationJournal()
         journal.acquire(request)
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
-            journal.acquire(request.copy(vlan = "200"))
-        }
+        val second = journal.acquire(request.copy(vlan = "200", wifiSsid24 = "stagingcore"))
+        assertEquals(true, second.second)
+        assertEquals("OLT", second.first.stage)
+        assertEquals("200", second.first.request.vlan)
+        assertEquals("stagingcore", second.first.request.wifiSsid24)
+    }
+
+    @Test
+    fun `clear removes journal so a later activate can authorize again`() {
+        val facade = mockk<OltManagerFacade>()
+        every { facade.authorizeOnu(any()) } returnsMany listOf(
+            SmartOltActionResponseDto(status = true, unique_external_id = "ext-1"),
+            SmartOltActionResponseDto(status = true, unique_external_id = "ext-2"),
+        )
+        val acs = mockk<AcsCpeClient>()
+        every { acs.provision(any()) } returns AcsCpeProvisionResponse("SN1", CpeProvisionStatus.PENDING)
+        val journal = MemoryActivationJournal()
+        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, Executor { it.run() })
+        service.activate(request)
+        assertEquals(OltActivationStatus.COMPLETE, service.statusBySn("SN1")!!.oltStatus)
+        journal.clear("SN1")
+        assertEquals(null, service.statusBySn("SN1"))
+        val again = service.activate(request.copy(wifiSsid24 = "newssid"))
+        assertEquals(OltActivationStatus.COMPLETE, again.oltStatus)
+        assertEquals("ext-2", again.uniqueExternalId)
+        verify(exactly = 2) { facade.authorizeOnu(any()) }
     }
 
     @Test

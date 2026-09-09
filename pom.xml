@@ -647,13 +647,7 @@
                                                        match="^traffic\.router-seed\.source-schema=.*"
                                                        replace="traffic.router-seed.source-schema=ispadmin_staging"
                                                        byline="true"/>
-                                        <echo append="true" file="${project.build.outputDirectory}/application-traffic.properties">
-gigafiber.redis.enabled=true
-gigafiber.redis.host=redis
-</echo>
-                                        <echo append="true" file="${project.build.outputDirectory}/application-traffic.properties">
-gigafiber.redis.namespace=stg
-</echo>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-traffic.properties" message="${line.separator}gigafiber.redis.enabled=true${line.separator}gigafiber.redis.host=redis${line.separator}gigafiber.redis.namespace=stg${line.separator}"/>
                                     </target>
                                 </configuration>
                             </execution>
@@ -854,13 +848,7 @@ gigafiber.redis.namespace=stg
                                                        match="^olt\.gateway\.writes\.enabled=.*"
                                                        replace="olt.gateway.writes.enabled=true"
                                                        byline="true"/>
-                                        <echo append="true" file="${project.build.outputDirectory}/application-oltgateway.properties">
-gigafiber.redis.enabled=true
-gigafiber.redis.host=redis
-</echo>
-                                        <echo append="true" file="${project.build.outputDirectory}/application-oltgateway.properties">
-gigafiber.redis.namespace=stg
-</echo>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-oltgateway.properties" message="${line.separator}gigafiber.redis.enabled=true${line.separator}gigafiber.redis.host=redis${line.separator}gigafiber.redis.namespace=stg${line.separator}"/>
                                     </target>
                                 </configuration>
                             </execution>
@@ -1040,6 +1028,10 @@ gigafiber.redis.namespace=stg
                                         <replaceregexp file="${project.build.outputDirectory}/application-acs.properties"
                                                        match="prod_acs"
                                                        replace="stg_acs"
+                                                       byline="true"/>
+                                        <replaceregexp file="${project.build.outputDirectory}/application-acs.properties"
+                                                       match="^acs\.gateway\.internal-base-url=.*"
+                                                       replace="acs.gateway.internal-base-url=${ACS_GATEWAY_BASE_URL:http://127.0.0.1:8080/ispadmin-staging-oltgateway}"
                                                        byline="true"/>
                                         <echo append="true" file="${project.build.outputDirectory}/application-acs.properties" message="${line.separator}gigafiber.redis.namespace=stg${line.separator}"/>
                                     </target>

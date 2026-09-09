@@ -18,4 +18,13 @@ class GenieAcsConfig {
         }
         return RestTemplate(factory)
     }
+
+    @Bean("acsGatewayRestTemplate")
+    fun acsGatewayRestTemplate(): RestTemplate {
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(2_000)
+            setReadTimeout(3_000)
+        }
+        return RestTemplate(factory)
+    }
 }

@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.config
 
 import com.dscorp.wispadmin.events.EventBusPort
+import com.dscorp.wispadmin.events.GigafiberRedisProperties
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrAuditLogRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuAutofindRepository
@@ -41,9 +42,14 @@ import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltCatalogClient
 import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpBusRegistry
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLock
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker
+import com.dscorp.wispadmin.oltgateway.snmp.NoOpOltSnmpPollLock
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpTrapReceiver
 import com.dscorp.wispadmin.oltgateway.snmp.RecentOltSnmpTrapBuffer
+import com.dscorp.wispadmin.oltgateway.snmp.RedisOltSnmpPollLockStore
 import com.dscorp.wispadmin.oltgateway.snmp.Snmp4jOltSnmpClient
+import com.dscorp.wispadmin.oltgateway.ssh.LocalCliBusPressure
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import com.dscorp.wispadmin.oltgateway.ssh.OltCommandExecutor
 import com.dscorp.wispadmin.oltgateway.ssh.OltSshClient
@@ -55,13 +61,15 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.time.Duration
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 @Configuration
-@EnableConfigurationProperties(OltGatewayProperties::class)
+@EnableConfigurationProperties(OltGatewayProperties::class, GigafiberRedisProperties::class)
 @ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltGatewayConfig {
 
@@ -361,9 +369,16 @@ class OltGatewayConfig {
     @ConditionalOnProperty(prefix = "olt.gateway.snmp", name = ["enabled"], havingValue = "true")
     fun oltSnmpClient(
         properties: OltGatewayProperties,
-        oltSnmpBusRegistry: OltSnmpBusRegistry
+        oltSnmpBusRegistry: OltSnmpBusRegistry,
+        cliBus: ObjectProvider<OltCliBus>
     ): OltSnmpClient {
-        return Snmp4jOltSnmpClient(properties, oltSnmpBusRegistry)
+        return Snmp4jOltSnmpClient(
+            properties = properties,
+            busRegistry = oltSnmpBusRegistry,
+            localCliBusPressure = {
+                LocalCliBusPressure.snapshot(cliBus.ifAvailable)
+            }
+        )
     }
 
     @Bean
@@ -428,6 +443,29 @@ class OltGatewayConfig {
     }
 
     @Bean
+    fun oltSnmpPollLock(
+        redis: ObjectProvider<StringRedisTemplate>,
+        redisProperties: GigafiberRedisProperties,
+        properties: OltGatewayProperties,
+    ): OltSnmpPollLocker {
+        val template = redis.ifAvailable
+        if (!properties.snmp.pollLockEnabled || template == null) {
+            return NoOpOltSnmpPollLock()
+        }
+        val key = OltSnmpPollLock.resolveKey(
+            configured = properties.snmp.pollLockKey,
+            namespace = redisProperties.namespace,
+            shared = properties.snmp.pollLockShared,
+        )
+        return OltSnmpPollLock(
+            store = RedisOltSnmpPollLockStore(template),
+            key = key,
+            ttl = Duration.ofMillis(properties.snmp.pollLockTtlMs),
+            waitSlice = Duration.ofMillis(properties.sync.signalIntervalMs),
+        )
+    }
+
+    @Bean
     fun oltSignalPollService(
         oltRepository: OltMgrOltRepository,
         onuRepository: OltMgrOnuRepository,
@@ -441,6 +479,7 @@ class OltGatewayConfig {
         snmpClient: ObjectProvider<OltSnmpClient>,
         eventPublisher: org.springframework.context.ApplicationEventPublisher,
         eventBus: EventBusPort,
+        pollLock: OltSnmpPollLocker,
     ): OltSignalPollService {
         return OltSignalPollService(
             oltRepository = oltRepository,
@@ -455,6 +494,7 @@ class OltGatewayConfig {
             snmpClient = snmpClient.ifAvailable,
             eventPublisher = eventPublisher,
             eventBus = eventBus,
+            pollLock = pollLock,
         )
     }
 

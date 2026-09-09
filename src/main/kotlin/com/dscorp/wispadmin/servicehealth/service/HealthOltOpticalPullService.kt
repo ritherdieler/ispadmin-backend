@@ -19,7 +19,7 @@ class HealthOltOpticalPullService(
         initialDelayString = "\${service.health.optical-pull-initial-delay-ms:90000}",
     )
     fun pull() {
-        if (!properties.enabled || !properties.opticalEnabled) return
+        if (!properties.enabled || !properties.opticalEnabled || !properties.opticalPullEnabled) return
         val ingest = ingestProvider.ifAvailable ?: return
         gateway.pullOptical().forEach { ingest.onOptical(it) }
         gateway.pullStateObservations().forEach { observation ->

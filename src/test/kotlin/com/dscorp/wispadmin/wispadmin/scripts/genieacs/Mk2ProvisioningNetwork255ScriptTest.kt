@@ -13,12 +13,13 @@ class Mk2ProvisioningNetwork255ScriptTest {
         val script = root.resolve("scripts/genieacs/mk2-provisioning-network-255.rsc")
         assertTrue(Files.exists(script), "missing $script")
         val text = Files.readString(script)
-        assertTrue(text.contains("192.168.255.1/24"), text)
+        assertTrue(text.contains("192.168.255.1/22"), text)
+        assertTrue(text.contains("192.168.252.0/22"), text)
         assertTrue(text.contains("provisioning-255"), text)
-        assertTrue(text.contains("192.168.255.100-192.168.255.250"), text)
+        assertTrue(text.contains("192.168.252.2-192.168.255.254"), text)
         assertTrue(text.contains("8.8.8.8,8.8.4.4"), text)
         assertTrue(text.contains("dst-port=7547"), text)
-        assertTrue(text.contains("NAT staging TR-069 255"), text)
+        assertTrue(text.contains("NAT staging TR-069 252/22"), text)
         assertTrue(text.contains(":local iface \"sfp-sfpplus2\""), text)
         assertTrue(text.contains("VLAN 100"), text)
     }
@@ -33,15 +34,17 @@ class Mk2ProvisioningNetwork255ScriptTest {
             "must clean residual gateway/DHCP on LAN_MK1: $text"
         )
         assertTrue(text.contains("remove"), text)
-        assertTrue(text.contains("192.168.255.1/24"), text)
+        assertTrue(text.contains("192.168.255.1/22"), text)
     }
 
     @Test
-    fun wg_olt_routes_include_255_subnet() {
+    fun wg_olt_routes_include_252_subnet() {
         val root = Path.of(System.getProperty("user.dir"))
         val routes = root.resolve("scripts/genieacs/wg-olt-customer-routes.sh")
         val allowed = root.resolve("scripts/genieacs/wg-olt-genieacs-allowedips.example")
-        assertTrue(Files.readString(routes).contains("192.168.255.0/24"))
-        assertTrue(Files.readString(allowed).contains("192.168.255.0/24"))
+        assertTrue(Files.readString(routes).contains("192.168.252.0/22"))
+        assertTrue(Files.readString(allowed).contains("192.168.252.0/22"))
+        assertTrue(!Files.readString(routes).contains("192.168.255.0/24"))
+        assertTrue(!Files.readString(allowed).contains("192.168.255.0/24"))
     }
 }

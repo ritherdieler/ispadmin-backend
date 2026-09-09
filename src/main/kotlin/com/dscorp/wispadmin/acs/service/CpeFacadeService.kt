@@ -82,6 +82,11 @@ class CpeFacadeService(
             softwareVersion = record.softwareVersion,
             deviceId = record.deviceId,
             message = record.message,
+            wifiAssociated2g = record.wifiAssociated2g,
+            wifiAssociated5g = record.wifiAssociated5g,
+            wifiAssociatedTotal = record.wifiAssociatedTotal,
+            wifiObservedAt = record.wifiObservedAt?.toString(),
+            wifiQualityStatus = record.wifiQualityStatus,
         )
     }
 

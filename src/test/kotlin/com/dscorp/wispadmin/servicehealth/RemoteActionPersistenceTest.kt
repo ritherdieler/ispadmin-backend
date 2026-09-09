@@ -45,6 +45,7 @@ class RemoteActionPersistenceTest {
     private lateinit var remote: RemoteActionService
     private lateinit var cpe: HealthCpePort
     private lateinit var subscriptions: SubscriptionRepository
+    private val acs = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
     private val actor=HealthActor(1,"TECHNICIAN")
 
     private fun cpeProvider(port: HealthCpePort): ObjectProvider<HealthCpePort> {
@@ -58,7 +59,9 @@ class RemoteActionPersistenceTest {
         identity: IdentityService,
         optical: ObjectProvider<HealthLabOpticalPort>? = null,
     ): RemoteActionService {
-        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), subscriptions)
+        every { acs.isLab(any()) } returns false
+        every { acs.labSubscriptionIds() } returns emptyList()
+        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), subscriptions, acs)
         return RemoteActionService(
             properties, scope, actions, cursors, subscriptions, wifi, identity, cpeProvider(cpe),
             TransactionTemplate(manager), ObjectMapper(), null, optical,

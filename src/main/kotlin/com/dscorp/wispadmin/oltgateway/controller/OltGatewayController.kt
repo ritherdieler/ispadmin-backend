@@ -348,7 +348,13 @@ class OltGatewayController(
         return SignalPollResultDto(
             slotsPolled = result.slotsPolled,
             portsPolled = result.portsPolled,
+            portsFailed = result.portsFailed,
             onusUpdated = result.onusUpdated,
+            polledAtRefreshed = result.polledAtRefreshed,
+            incompleteDiscarded = result.incompleteDiscarded,
+            unchangedSkipped = result.unchangedSkipped,
+            unmatchedRows = result.unmatchedRows,
+            rowsMatched = result.rowsMatched,
             durationMs = result.durationMs,
             skippedReason = result.skippedReason,
             error = result.error

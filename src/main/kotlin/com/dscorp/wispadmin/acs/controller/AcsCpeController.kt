@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/acs/v1")
 class AcsCpeController(
     private val facade: CpeFacadeService,
+    private val wifiInformNotify: com.dscorp.wispadmin.acs.service.WifiInformNotifyService,
 ) {
     @GetMapping("/health")
     fun health(): Map<String, String> = mapOf("status" to "UP")
@@ -34,4 +35,8 @@ class AcsCpeController(
 
     @PostMapping("/cpe/{sn}/wifi-refresh")
     fun wifiRefresh(@PathVariable sn: String): CpeCommandResult = facade.wifiRefresh(sn)
+
+    @PostMapping("/cpe/inform-notify")
+    fun informNotify(@RequestBody body: com.dscorp.wispadmin.acs.CpeInformNotifyRequest): CpeCommandResult =
+        wifiInformNotify.notify(deviceId = body.deviceId, serial = body.serial)
 }

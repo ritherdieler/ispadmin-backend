@@ -76,6 +76,10 @@ class OnuActivationService(
     fun statusBySn(sn: String): OnuActivationStatusDto? = journal.bySn(sn.trim().uppercase())?.status
     fun statusByExternalId(externalId: String): OnuActivationStatusDto? = journal.byExternalId(externalId)?.status
 
+    fun clearJournal(sn: String) {
+        journal.clear(sn.trim().uppercase())
+    }
+
     @org.springframework.scheduling.annotation.Scheduled(fixedDelayString="\${olt.gateway.activation-recovery-ms:30000}")
     fun recover() {
         journal.pending().forEach { operation ->

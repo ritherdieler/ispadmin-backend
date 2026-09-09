@@ -24,6 +24,9 @@ import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliSession
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -33,7 +36,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import java.time.Instant
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -109,7 +114,8 @@ class OltSignalPollServiceTest {
     }
 
     @Test
-    fun `optical sin cambios no persiste status`() {
+    fun `optical sin cambios refresca polledAt y publica batch`() {
+        val previousPolledAt = Instant.parse("2026-09-01T10:00:00Z")
         val onu = OltMgrOnu(
             id = 10L,
             sn = "SNOPT001",
@@ -128,7 +134,8 @@ class OltSignalPollServiceTest {
             onuTxDbm = BigDecimal("2.20"),
             oltRxDbm = BigDecimal("-24.82"),
             temperatureC = 57,
-            signalCategory = "good"
+            signalCategory = "good",
+            polledAt = previousPolledAt
         )
         onu.status = status
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu)
@@ -150,11 +157,21 @@ class OltSignalPollServiceTest {
             )
         )
 
-        assertEquals(0, updated)
+        assertEquals(0, updated.onusUpdated)
+        assertEquals(1, updated.polledAtRefreshed)
+        assertEquals(0, updated.incompleteDiscarded)
+        assertEquals(0, updated.unchangedSkipped)
+        assertEquals(1, updated.rowsMatched)
+        assertEquals(0, updated.unmatchedRows)
+        assertTrue(status.polledAt.isAfter(previousPolledAt))
         verify { publisher.publishEvent(match<OltOpticalObservation> { it.rows.single().optical.rxPowerDbm == -18.54 }) }
-        verify(exactly = 0) { statusRepository.save(any()) }
-        verify(exactly = 0) { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) }
-        verify(exactly = 0) { statusRepository.findById(any()) }
+        verify { statusRepository.saveAll(match<Iterable<OltMgrOnuStatusCurrent>> { it.single() === status }) }
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL })
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE })
+        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH })
+        val batch = platformBus.published.single { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH }
+        assertTrue(batch.payloadJson.contains("SNOPT001"))
+        assertTrue(batch.payloadJson.contains("gigafiber-ma5608t_0_0_1"))
     }
 
     @Test
@@ -196,16 +213,22 @@ class OltSignalPollServiceTest {
             )
         )
 
-        assertEquals(1, updated)
+        assertEquals(1, updated.onusUpdated)
         assertEquals(0, BigDecimal("-20.00").compareTo(status.onuRxDbm))
         verify(exactly = 0) { statusRepository.findById(any()) }
         verify { statusRepository.saveAll(match<Iterable<OltMgrOnuStatusCurrent>> { it.single() === status }) }
-        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL && it.sn == "SNOPT001" })
-        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE && it.sn == "SNOPT001" })
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL })
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE })
+        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH })
+        val batch = platformBus.published.single { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH }
+        assertTrue(batch.payloadJson.contains("SNOPT001"))
+        assertTrue(batch.payloadJson.contains("\"slot\":0"))
+        assertTrue(batch.payloadJson.contains("\"port\":0"))
     }
 
     @Test
-    fun `optical null no pisa oltRx previo cuando columna SNMP falla`() {
+    fun `optical incompleta con potencia null descarta sin coalesce ni persistir`() {
+        val previousPolledAt = Instant.parse("2026-09-01T10:00:00Z")
         val onu = OltMgrOnu(
             id = 10L,
             sn = "SNOPT001",
@@ -224,7 +247,8 @@ class OltSignalPollServiceTest {
             onuTxDbm = BigDecimal("2.20"),
             oltRxDbm = BigDecimal("-24.82"),
             temperatureC = 57,
-            signalCategory = "good"
+            signalCategory = "good",
+            polledAt = previousPolledAt
         )
         onu.status = status
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu)
@@ -246,16 +270,113 @@ class OltSignalPollServiceTest {
             )
         )
 
-        assertEquals(1, updated)
-        assertEquals(0, BigDecimal("-19.00").compareTo(status.onuRxDbm))
+        assertEquals(0, updated.onusUpdated)
+        assertEquals(0, updated.polledAtRefreshed)
+        assertEquals(1, updated.incompleteDiscarded)
+        assertEquals(0, BigDecimal("-18.54").compareTo(status.onuRxDbm))
         assertEquals(0, BigDecimal("2.20").compareTo(status.onuTxDbm))
         assertEquals(0, BigDecimal("-24.82").compareTo(status.oltRxDbm))
         assertEquals(57, status.temperatureC)
-        assertEquals("good", status.signalCategory)
+        assertEquals(previousPolledAt, status.polledAt)
+        verify(exactly = 0) { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) }
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL })
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH })
     }
 
     @Test
-    fun `optical todo null no persiste ni borra potencias previas`() {
+    fun `apply by port publishes one optical batch per gpon port and omits incomplete`() {
+        val onuA = OltMgrOnu(
+            id = 10L,
+            sn = "SNA",
+            externalId = "gigafiber-ma5608t_0_0_1",
+            olt = olt,
+            board = 0,
+            port = 0,
+            onuIndex = 1,
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onuId = 10L,
+                onu = it,
+                runState = "online",
+                onuRxDbm = BigDecimal("-18.00"),
+                onuTxDbm = BigDecimal("2.00"),
+                oltRxDbm = BigDecimal("-24.00"),
+                signalCategory = "good",
+            )
+        }
+        val onuB = OltMgrOnu(
+            id = 11L,
+            sn = "SNB",
+            externalId = "gigafiber-ma5608t_0_1_1",
+            olt = olt,
+            board = 0,
+            port = 1,
+            onuIndex = 1,
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onuId = 11L,
+                onu = it,
+                runState = "online",
+                onuRxDbm = BigDecimal("-19.00"),
+                onuTxDbm = BigDecimal("2.10"),
+                oltRxDbm = BigDecimal("-25.00"),
+                temperatureC = 51,
+                signalCategory = "good",
+            )
+        }
+        val onuIncomplete = OltMgrOnu(
+            id = 12L,
+            sn = "SNC",
+            externalId = "gigafiber-ma5608t_0_0_2",
+            olt = olt,
+            board = 0,
+            port = 0,
+            onuIndex = 2,
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(
+                onuId = 12L,
+                onu = it,
+                runState = "online",
+                onuRxDbm = BigDecimal("-17.00"),
+                onuTxDbm = BigDecimal("2.00"),
+                oltRxDbm = BigDecimal("-23.00"),
+                signalCategory = "good",
+            )
+        }
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onuA, onuB, onuIncomplete)
+
+        val stats = service.applyOpticalUpdatesByPort(
+            oltId = 1L,
+            rows = listOf(
+                OltSignalPollService.OpticalRow(
+                    0, 0,
+                    ParsedOpticalInfo(1, -18.50, 2.00, -24.00, temperatureC = 50.0),
+                ),
+                OltSignalPollService.OpticalRow(
+                    0, 0,
+                    ParsedOpticalInfo(2, -17.00, 2.00, null, temperatureC = 50.0),
+                ),
+                OltSignalPollService.OpticalRow(
+                    0, 1,
+                    ParsedOpticalInfo(1, -19.00, 2.10, -25.00, temperatureC = 51.0),
+                ),
+            ),
+        )
+
+        assertEquals(1, stats.onusUpdated)
+        assertEquals(1, stats.polledAtRefreshed)
+        assertEquals(1, stats.incompleteDiscarded)
+        val batches = platformBus.published.filter { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH }
+        assertEquals(2, batches.size)
+        assertTrue(batches[0].payloadJson.contains("\"port\":0"))
+        assertTrue(batches[0].payloadJson.contains("SNA"))
+        assertFalse(batches[0].payloadJson.contains("SNC"))
+        assertTrue(batches[1].payloadJson.contains("\"port\":1"))
+        assertTrue(batches[1].payloadJson.contains("SNB"))
+    }
+
+    @Test
+    fun `optical todo null descarta sin borrar potencias previas`() {
         val onu = OltMgrOnu(
             id = 10L,
             sn = "SNOPT001",
@@ -295,7 +416,9 @@ class OltSignalPollServiceTest {
             )
         )
 
-        assertEquals(0, updated)
+        assertEquals(0, updated.onusUpdated)
+        assertEquals(0, updated.polledAtRefreshed)
+        assertEquals(1, updated.incompleteDiscarded)
         assertEquals(0, BigDecimal("-24.82").compareTo(status.oltRxDbm))
         verify(exactly = 0) { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) }
     }
@@ -562,10 +685,10 @@ class OltSignalPollServiceTest {
             ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
         )
         every { opticalInfoParser.parseAll("opt-0") } returns listOf(
-            ParsedOpticalInfo(ontId = 1, rxPowerDbm = -18.0, oltRxPowerDbm = -24.0)
+            ParsedOpticalInfo(ontId = 1, rxPowerDbm = -18.0, txPowerDbm = 2.0, oltRxPowerDbm = -24.0)
         )
         every { opticalInfoParser.parseAll("opt-2") } returns listOf(
-            ParsedOpticalInfo(ontId = 2, rxPowerDbm = -19.0, oltRxPowerDbm = -25.0)
+            ParsedOpticalInfo(ontId = 2, rxPowerDbm = -19.0, txPowerDbm = 2.1, oltRxPowerDbm = -25.0)
         )
         every { opticalInfoParser.parseAll("ok") } returns emptyList()
 
@@ -732,6 +855,48 @@ class OltSignalPollServiceTest {
     }
 
     @Test
+    fun `pollSignals SNMP registra SSH pressure local al inicio y fin`() {
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        properties.snmp.allowSshSignalFallback = false
+        every { cliBus.queueDepth() } returns 4
+        every { cliBus.busyJobType() } returns CliJobType.WRITE
+        every { snmpClient.listOptical(null) } returns emptyList()
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
+
+        val messages = captureLogs(OltSignalPollService::class.java.name) {
+            val result = service.pollSignals()
+            assertEquals(4, result.localQueueDepth)
+            assertEquals("WRITE", result.localBusyJobType)
+        }
+
+        val pressure = messages.filter { it.contains("SNMP_OPTICAL_SSH_PRESSURE") }
+        assertEquals(2, pressure.size)
+        assertTrue(pressure.any { it.contains("phase=start") })
+        assertTrue(pressure.any { it.contains("phase=end") })
+        pressure.forEach { line ->
+            assertTrue(line.contains("localCliBus=true"))
+            assertTrue(line.contains("localQueueDepth=4"))
+            assertTrue(line.contains("localBusyJobType=WRITE"))
+            assertTrue(line.contains("sshActive=n/a"))
+            assertTrue(line.contains("sshMax=n/a"))
+        }
+    }
+
+    private fun captureLogs(loggerName: String, block: () -> Unit): List<String> {
+        val logger = LoggerFactory.getLogger(loggerName) as Logger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            block()
+            return appender.list.map { it.formattedMessage }
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
+    @Test
     fun `pollSignals SNMP full-table no pasa lista de puertos`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
@@ -816,6 +981,47 @@ class OltSignalPollServiceTest {
         assertEquals("snmp_required", result.skippedReason)
         verify(exactly = 0) { snmpClient.listOptical(any()) }
         verify(exactly = 0) { cliBus.execute(any(), any<(HuaweiCliSession) -> Any>()) }
+    }
+
+    @Test
+    fun `pollSignals SNMP adquiere lock y lo libera`() {
+        val held = AtomicInteger(0)
+        val locker = object : com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker {
+            override fun <T> withLock(block: () -> T): T {
+                held.incrementAndGet()
+                return try {
+                    block()
+                } finally {
+                    held.decrementAndGet()
+                }
+            }
+        }
+        service = OltSignalPollService(
+            oltRepository = oltRepository,
+            onuRepository = onuRepository,
+            statusRepository = statusRepository,
+            taskRepository = taskRepository,
+            boardParser = boardParser,
+            opticalInfoParser = opticalInfoParser,
+            signalCategoryCalculator = signalCategoryCalculator,
+            properties = properties,
+            cliBus = cliBus,
+            snmpClient = snmpClient,
+            eventPublisher = publisher,
+            eventBus = platformBus,
+            pollLock = locker,
+        )
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        properties.snmp.allowSshSignalFallback = false
+        every { snmpClient.listOptical(null) } returns emptyList()
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
+
+        val result = service.pollSignals()
+
+        assertNull(result.skippedReason)
+        assertEquals(0, held.get())
+        verify(exactly = 1) { snmpClient.listOptical(null) }
     }
 
     private fun stubSignalPollExecute(session: HuaweiCliSession) {

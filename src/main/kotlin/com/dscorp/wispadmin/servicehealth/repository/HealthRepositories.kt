@@ -13,6 +13,8 @@ import javax.persistence.LockModeType
 
 interface OpticalSampleRepository : JpaRepository<OpticalSample, Long> {
     fun findTopBySubscriptionIdOrderByObservedAtDesc(id: Int): OpticalSample?
+    fun findTopByOnuIdOrderByObservedAtDesc(onuId: Long): OpticalSample?
+    fun findByOnuIdAndObservedAt(onuId: Long, observedAt: Instant): OpticalSample?
 
     @Query(
         value = """

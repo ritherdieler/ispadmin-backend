@@ -66,4 +66,9 @@ data class CpeTelemetryDto(
     val ssid24: String? = null,
     val ssid5: String? = null,
     val softwareVersion: String? = null,
+    val wifiAssociated2g: Int? = null,
+    val wifiAssociated5g: Int? = null,
+    val wifiAssociatedTotal: Int? = null,
+    val wifiObservedAt: String? = null,
+    val wifiQualityStatus: String? = null,
 )

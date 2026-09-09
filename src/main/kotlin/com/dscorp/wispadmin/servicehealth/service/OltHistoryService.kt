@@ -48,6 +48,10 @@ class OltHistoryService(
             if (subId == null) { run.unmappedCount++; return@forEach }
             if (!scope.collects(subId)) return@forEach
             val hasValue = listOf(row.rxPowerDbm,row.txPowerDbm,row.oltRxPowerDbm,row.temperatureC,row.biasCurrentMa,row.distanceM).any { it != null }
+            val last = optical.findTopByOnuIdOrderByObservedAtDesc(onu.id)
+            if (last != null && !observation.observedAt.isAfter(last.observedAt)) {
+                return@forEach
+            }
             optical.save(OpticalSample(subscriptionId=subId, onuId=onu.id, onuSn=onu.sn, oltId=observation.oltId,
                 board=onu.board,port=onu.port,onuIndex=onu.onuIndex,observedAt=observation.observedAt,collectedAt=now,
                 onuRxDbm=row.rxPowerDbm,onuTxDbm=row.txPowerDbm,oltRxDbm=row.oltRxPowerDbm,temperatureC=row.temperatureC,

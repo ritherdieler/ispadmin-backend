@@ -36,8 +36,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$E2E_ENV" in
-  prod) MYSQL_SCHEMA="ispadmin" ;;
-  staging) MYSQL_SCHEMA="ispadmin_staging" ;;
+  prod)
+    MYSQL_SCHEMA="ispadmin"
+    OLT_GATEWAY_MYSQL_SCHEMA="prod_oltgateway"
+    ;;
+  staging)
+    MYSQL_SCHEMA="ispadmin_staging"
+    OLT_GATEWAY_MYSQL_SCHEMA="stg_oltgateway"
+    ;;
   *) echo "Invalid --env $E2E_ENV (prod|staging)" >&2; exit 2 ;;
 esac
 
@@ -128,7 +134,17 @@ USER=\$(echo \"\${ROW[0]}\" | awk '{print \$2}')
 PASS=\$(echo \"\${ROW[0]}\" | cut -f3)
 export MKIP USER PASS IP='$SUB_IP'
 python3 - <<'PY'
-import json, os, urllib.request, ssl, base64
+import json, os, urllib.request, ssl, base64, sys
+from pathlib import Path
+sys.path.insert(0, str(Path('/opt/gigafiber/scripts/lib') if Path('/opt/gigafiber/scripts/lib').exists() else Path('.')))
+# fallback: inline exact match (no substring) if helper missing on VPS
+def queue_targets_host(target):
+    hosts=[]
+    for part in str(target or '').replace(' ','').split(','):
+        if part: hosts.append(part.split('/',1)[0])
+    return hosts
+def queue_matches_ip(queue, ip):
+    return bool(ip) and ip in queue_targets_host(str(queue.get('target','')))
 mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; ip=os.environ['IP']
 ctx=ssl._create_unverified_context()
 cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
@@ -138,14 +154,16 @@ def call(method, path):
   with urllib.request.urlopen(req, context=ctx, timeout=45) as r:
     return r.status, r.read()
 st, body = call('GET', '/rest/queue/simple')
-matches=[q for q in json.loads(body) if ip in str(q.get('target','')) or ip in str(q.get('name',''))]
+matches=[q for q in json.loads(body) if queue_matches_ip(q, ip)]
 print('queue_matches', len(matches))
 for q in matches:
   print('deleting', q.get('.id'), q.get('name'))
   call('DELETE', f\"/rest/queue/simple/{q['.id']}\")
 st, body = call('GET', '/rest/ip/firewall/address-list')
 for a in json.loads(body):
-  if a.get('list')=='deudores' and ip in str(a.get('address','')):
+  addr=str(a.get('address',''))
+  host=addr.split('/',1)[0]
+  if a.get('list')=='deudores' and host==ip:
     call('DELETE', f\"/rest/ip/firewall/address-list/{a['.id']}\")
     print('deudores_removed')
 print('MK_DONE')
@@ -154,6 +172,8 @@ fi
 
 if [[ -n "$SUB_SN" ]]; then
   if [[ "$E2E_ENV" == "staging" ]]; then
+    echo "== clear Gateway activation journal $SUB_SN =="
+    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || true
     echo "== OLT Gateway delete $SUB_SN (ispadmin-staging-oltgateway) =="
     ssh_vps "bash -s" <<EOF
 set -euo pipefail
@@ -186,6 +206,8 @@ elif isinstance(d,dict):
     break
   fi
 done
+ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
+docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
 if [[ -z "\$EXT" ]]; then
   echo "ONU not authorized in OLT Gateway (ok)"
   exit 0
@@ -194,6 +216,7 @@ echo "external_id=\$EXT"
 resp=\$(curl -sS -w "\\nHTTP:%{http_code}" -X POST "\${hdr[@]}" "\$GW/api/olt-gateway/onu/delete/\$EXT" || true)
 echo "\$resp"
 code=\$(echo "\$resp" | sed -n 's/^HTTP://p' | tail -1)
+docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
 if [[ "\$code" != "200" ]]; then
   echo "Gateway delete returned HTTP \$code" >&2
   exit 1
@@ -201,6 +224,8 @@ fi
 echo "ONU was deleted"
 EOF
   else
+    echo "== clear Gateway activation journal $SUB_SN (prod) =="
+    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\" 2>/dev/null" || true
     echo "== SmartOLT delete $SUB_SN =="
     SMARTOLT_KEY="${SMARTOLT_API_KEY:-}"
     if [[ -z "$SMARTOLT_KEY" ]]; then

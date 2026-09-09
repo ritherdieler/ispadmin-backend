@@ -39,8 +39,12 @@ class DeployEnvScriptTest {
         assertTrue(script.contains("subsystems.sh"))
         assertTrue(script.contains("verify-war.sh"))
         assertTrue(script.contains("run_tests()"), "deploy must define a mandatory test gate")
-        assertTrue(script.contains("sh mvnw clean test"), "deploy must execute the complete Maven test suite")
-        listOf("full)", "war-only)", "deploy)").forEach { mode ->
+        assertTrue(script.contains("sh mvnw test"), "deploy must execute the Maven test suite without wiping WARs")
+        assertFalse(script.contains("sh mvnw clean test"), "deploy must not clean target/ before package (incremental WARs)")
+        assertTrue(script.contains("deploy-war-needs-rebuild.sh"), "deploy must skip unchanged WAR packages")
+        assertTrue(script.contains("war_needs_rebuild"), script)
+        assertTrue(script.contains("Skipping core WAR package (sources unchanged)"), script)
+        listOf("full)", "deploy)").forEach { mode ->
             val modeBlock = script.substringAfter("  $mode").substringBefore("    ;;")
             assertTrue(modeBlock.contains("run_tests"), "$mode must run tests before deploying")
             val firstRemoteMutation = listOf("setup_djl", "init_ssh", "build_war")
@@ -61,6 +65,21 @@ class DeployEnvScriptTest {
                 "$mode must deploy ACS WAR before restoring host wars"
             )
         }
+        val warOnlyBlock = script.substringAfter("  war-only)").substringBefore("    ;;")
+        assertFalse(warOnlyBlock.contains("run_tests"), "war-only must not clean/rebuild via run_tests")
+        assertFalse(warOnlyBlock.contains("build_war"), "war-only must not regenerate WARs")
+        assertTrue(warOnlyBlock.contains("require_existing_wars"), "war-only must require packaged WARs in target/")
+        val warOnlyRestoreIdx = warOnlyBlock.indexOf("restore_host_wars")
+        val warOnlyOltIdx = warOnlyBlock.indexOf("deploy_oltgateway_war")
+        val warOnlyAcsIdx = warOnlyBlock.indexOf("deploy_acs_war")
+        assertTrue(
+            warOnlyOltIdx >= 0 && warOnlyRestoreIdx > warOnlyOltIdx,
+            "war-only must restore host wars after sibling WARs"
+        )
+        assertTrue(
+            warOnlyAcsIdx >= 0 && warOnlyRestoreIdx > warOnlyAcsIdx,
+            "war-only must deploy ACS WAR before restoring host wars"
+        )
         assertFalse(
             script.contains("rm -rf \$CATALINA/webapps/ispadmin \$CATALINA/webapps/\$WAR"),
             "prod exploded dir must not be removed when deploying staging"
@@ -124,9 +143,16 @@ class DeployEnvScriptTest {
         val mysqlCalls = Regex("""mysql -uroot \S+""").findAll(script).map { it.value }.toList()
         assertTrue(mysqlCalls.isNotEmpty(), "cleanup must invoke mysql")
         assertTrue(
-            mysqlCalls.all { it.contains("\$MYSQL_SCHEMA") || it.contains("\"\$MYSQL_SCHEMA\"") },
-            "every mysql invocation must use MYSQL_SCHEMA, found $mysqlCalls"
+            mysqlCalls.all {
+                it.contains("\$MYSQL_SCHEMA") ||
+                    it.contains("\"\$MYSQL_SCHEMA\"") ||
+                    it.contains("\$OLT_GATEWAY_MYSQL_SCHEMA") ||
+                    it.contains("\"\$OLT_GATEWAY_MYSQL_SCHEMA\"")
+            },
+            "every mysql invocation must use MYSQL_SCHEMA or OLT_GATEWAY_MYSQL_SCHEMA, found $mysqlCalls"
         )
+        assertTrue(script.contains("OLT_GATEWAY_MYSQL_SCHEMA=\"stg_oltgateway\""))
+        assertTrue(script.contains("OLT_GATEWAY_MYSQL_SCHEMA=\"prod_oltgateway\""))
     }
 
     @Test

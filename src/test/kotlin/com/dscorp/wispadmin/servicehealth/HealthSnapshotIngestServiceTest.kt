@@ -20,7 +20,7 @@ class HealthSnapshotIngestServiceTest {
     private val summaries = mockk<HealthSummaryQueryService>(relaxed = true)
     private val live = mockk<LiveTelemetryPort>(relaxed = true)
     private val liveProvider = mockk<ObjectProvider<LiveTelemetryPort>>()
-    private val service = HealthSnapshotIngestService(identity, summaries, liveProvider, ObjectMapper(), mockk(relaxed = true))
+    private val service = HealthSnapshotIngestService(identity, summaries, liveProvider, ObjectMapper(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
 
     init {
         every { liveProvider.ifUnique } returns live
@@ -65,7 +65,7 @@ class HealthSnapshotIngestServiceTest {
         val flags = mockk<com.dscorp.wispadmin.wispadmin.service.CpeProvisionFlagService>(relaxed = true)
         val flagsProvider = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.service.CpeProvisionFlagService>>()
         every { flagsProvider.ifAvailable } returns flags
-        val ingest = HealthSnapshotIngestService(identity, summaries, liveProvider, ObjectMapper(), flagsProvider)
+        val ingest = HealthSnapshotIngestService(identity, summaries, liveProvider, ObjectMapper(), flagsProvider, mockk(relaxed = true), mockk(relaxed = true))
         ingest.apply(
             PlatformEvent(
                 type = PlatformEventTypes.CPE_PROVISIONING,
@@ -76,5 +76,26 @@ class HealthSnapshotIngestServiceTest {
         )
         verify { flags.apply("ZTEGDC47BFFD", "COMPLETE", any(), any()) }
         verify { summaries.reevaluate(42, Instant.parse("2026-09-03T18:10:00Z")) }
+    }
+
+    @Test
+    fun `optical batch event persists and reevaluates each subscription`() {
+        val batch = mockk<com.dscorp.wispadmin.servicehealth.service.OpticalBatchPersistService>(relaxed = true)
+        val batchProvider = mockk<ObjectProvider<com.dscorp.wispadmin.servicehealth.service.OpticalBatchPersistService>>()
+        every { batchProvider.ifAvailable } returns batch
+        every { batch.persistFromEventJson(any()) } returns listOf(42, 99)
+        val ingest = HealthSnapshotIngestService(
+            identity, summaries, liveProvider, ObjectMapper(), mockk(relaxed = true), mockk(relaxed = true), batchProvider,
+        )
+        ingest.apply(
+            PlatformEvent(
+                type = PlatformEventTypes.ONU_OPTICAL_BATCH,
+                occurredAt = Instant.parse("2026-09-08T20:00:00Z"),
+                payloadJson = """{"oltId":2,"slot":1,"port":6,"polledAt":"2026-09-08T20:00:00Z","onus":[]}""",
+            )
+        )
+        verify { batch.persistFromEventJson(any()) }
+        verify { summaries.reevaluate(42, Instant.parse("2026-09-08T20:00:00Z")) }
+        verify { summaries.reevaluate(99, Instant.parse("2026-09-08T20:00:00Z")) }
     }
 }

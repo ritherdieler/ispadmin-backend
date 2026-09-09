@@ -77,6 +77,13 @@ class HealthOltGatewayHttpClient(
             ssid24 = node.path("ssid24").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
             ssid5 = node.path("ssid5").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
             softwareVersion = node.path("softwareVersion").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            wifiAssociated2g = node.path("wifiAssociated2g").takeIf { it.isNumber }?.asInt(),
+            wifiAssociated5g = node.path("wifiAssociated5g").takeIf { it.isNumber }?.asInt(),
+            wifiAssociatedTotal = node.path("wifiAssociatedTotal").takeIf { it.isNumber }?.asInt(),
+            wifiObservedAt = node.path("wifiObservedAt").asText(null)?.takeIf { it.isNotBlank() && it != "null" }?.let {
+                runCatching { Instant.parse(it) }.getOrNull()
+            },
+            wifiQualityStatus = node.path("wifiQualityStatus").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 

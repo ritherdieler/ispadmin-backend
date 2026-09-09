@@ -18,7 +18,7 @@ Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|stag
 
   --setup     Upload DJL libs and face models, patch Docker image/compose, rebuild Tomcat (once)
   --full      --setup then deploy WAR
-  --war-only  Deploy existing target WAR only
+  --war-only  Upload existing target/*.war only (no Maven clean/test, no rebuild)
   --deploy    Build, verify, deploy WAR (default)
   --env       prod (default): ispadmin.war → /ispadmin on tomcat9027
               staging: ispadmin-staging*.war → tomcat-staging :8081 (does not touch tomcat9027 or ispadmin.war)
@@ -26,8 +26,10 @@ Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|stag
               Default staging: none. `traffic`, `oltgateway` and `acs` enable HTTP clients; those classes always ship in sibling WARs.
   --only      Staging: deploy only these WARs (core,oltgateway,traffic,acs). Wins over git mapping.
 
-All deploy modes run the complete Maven test suite before building or connecting to the VPS.
-Any failing test aborts the deployment.
+Modes --deploy and --full run the Maven test suite (mvnw test, no clean) before packaging or connecting to the VPS.
+Packaging skips a selected WAR when target/*.war is newer than that WAR's sources (see deploy-war-needs-rebuild.sh).
+FORCE_WAR_REBUILD=1 forces package. --war-only never packages.
+Any failing test aborts --deploy/--full.
 
 Environment:
   DEPLOY_SSH_PASSWORD   Optional; if omitted and no SSH key works, password is prompted once
@@ -258,8 +260,45 @@ run_rsync() {
 
 run_tests() {
   echo "Running complete backend test suite before deployment..."
-  (cd "$PROJECT_DIR" && sh mvnw clean test)
+  (cd "$PROJECT_DIR" && sh mvnw test)
   echo "All backend tests passed. Deployment may continue."
+}
+
+require_existing_wars() {
+  local missing=0
+  local name=""
+  if war_selected core; then
+    promote_packaged_war "$WAR_NAME"
+    if [[ ! -f "$PROJECT_DIR/target/$WAR_NAME" ]]; then
+      echo "Missing $PROJECT_DIR/target/$WAR_NAME (build with --deploy first)" >&2
+      missing=1
+    fi
+  fi
+  if war_selected traffic && [[ -n "${TRAFFIC_WAR_NAME:-}" ]]; then
+    promote_packaged_war "$TRAFFIC_WAR_NAME"
+    if [[ ! -f "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME" ]]; then
+      echo "Missing $PROJECT_DIR/target/$TRAFFIC_WAR_NAME (build with --deploy first)" >&2
+      missing=1
+    fi
+  fi
+  if war_selected oltgateway && [[ -n "${OLTGATEWAY_WAR_NAME:-}" ]]; then
+    promote_packaged_war "$OLTGATEWAY_WAR_NAME"
+    if [[ ! -f "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME" ]]; then
+      echo "Missing $PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME (build with --deploy first)" >&2
+      missing=1
+    fi
+  fi
+  if war_selected acs && [[ -n "${ACS_WAR_NAME:-}" ]]; then
+    promote_packaged_war "$ACS_WAR_NAME"
+    if [[ ! -f "$PROJECT_DIR/target/$ACS_WAR_NAME" ]]; then
+      echo "Missing $PROJECT_DIR/target/$ACS_WAR_NAME (build with --deploy first)" >&2
+      missing=1
+    fi
+  fi
+  if [[ "$missing" -ne 0 ]]; then
+    exit 1
+  fi
+  echo "Using existing WARs in target/ (no rebuild): $SELECTED_WARS"
 }
 
 promote_packaged_war() {
@@ -275,6 +314,13 @@ promote_packaged_war() {
   fi
 }
 
+war_needs_rebuild() {
+  local key="$1"
+  local war_file="$2"
+  WAR_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" \
+    bash "$SCRIPT_DIR/deploy-war-needs-rebuild.sh" "$key" "$war_file" "$PROJECT_DIR"
+}
+
 build_war() {
   if war_selected core; then
     local models_dir="$PROJECT_DIR/src/main/resources/models"
@@ -284,20 +330,27 @@ build_war() {
         exit 1
       fi
     done
-    echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
-    local maven_args=(package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
-    if [[ "$DEPLOY_ENV" == "staging" ]]; then
-      mkdir -p "$PROJECT_DIR/target"
-      bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
-      local excludes
-      excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
-      maven_args+=("-Dsubsystem.excludes=$excludes")
-      maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
-    fi
-    (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
-    VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
-    if [[ "$DEPLOY_ENV" == "staging" ]]; then
-      VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
+    promote_packaged_war_if_present "$WAR_NAME"
+    if ! war_needs_rebuild core "$PROJECT_DIR/target/$WAR_NAME"; then
+      echo "Skipping core WAR package (sources unchanged): $WAR_NAME"
+    else
+      echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
+      local maven_args=(package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
+      if [[ "$DEPLOY_ENV" == "staging" ]]; then
+        mkdir -p "$PROJECT_DIR/target"
+        bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
+        local excludes
+        excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
+        maven_args+=("-Dsubsystem.excludes=$excludes")
+        maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
+      fi
+      (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
+      promote_packaged_war "$WAR_NAME"
+      VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
+      if [[ "$DEPLOY_ENV" == "staging" ]]; then
+        VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
+        printf '%s' "$WITH_SUBSYSTEMS" > "$PROJECT_DIR/target/$WAR_NAME.with"
+      fi
     fi
   else
     echo "Skipping core WAR package (not in $SELECTED_WARS)"
@@ -315,8 +368,22 @@ build_war() {
   fi
 }
 
+promote_packaged_war_if_present() {
+  local name="$1"
+  local nested="$PROJECT_DIR/target/${name%.war}/$name"
+  local flat="$PROJECT_DIR/target/$name"
+  if [[ -f "$nested" && ( ! -f "$flat" || "$nested" -nt "$flat" ) ]]; then
+    cp -f "$nested" "$flat"
+  fi
+}
+
 build_traffic_war() {
   if [[ -z "${TRAFFIC_MAVEN_PROFILE:-}" ]]; then
+    return 0
+  fi
+  promote_packaged_war_if_present "$TRAFFIC_WAR_NAME"
+  if ! war_needs_rebuild traffic "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME"; then
+    echo "Skipping traffic WAR package (sources unchanged): $TRAFFIC_WAR_NAME"
     return 0
   fi
   echo "Building $TRAFFIC_WAR_NAME (Maven profile $TRAFFIC_MAVEN_PROFILE)..."
@@ -328,6 +395,11 @@ build_oltgateway_war() {
   if [[ -z "${OLTGATEWAY_MAVEN_PROFILE:-}" ]]; then
     return 0
   fi
+  promote_packaged_war_if_present "$OLTGATEWAY_WAR_NAME"
+  if ! war_needs_rebuild oltgateway "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME"; then
+    echo "Skipping oltgateway WAR package (sources unchanged): $OLTGATEWAY_WAR_NAME"
+    return 0
+  fi
   echo "Building $OLTGATEWAY_WAR_NAME (Maven profile $OLTGATEWAY_MAVEN_PROFILE)..."
   (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$OLTGATEWAY_MAVEN_PROFILE")
   promote_packaged_war "$OLTGATEWAY_WAR_NAME"
@@ -335,6 +407,11 @@ build_oltgateway_war() {
 
 build_acs_war() {
   if [[ -z "${ACS_MAVEN_PROFILE:-}" ]]; then
+    return 0
+  fi
+  promote_packaged_war_if_present "$ACS_WAR_NAME"
+  if ! war_needs_rebuild acs "$PROJECT_DIR/target/$ACS_WAR_NAME"; then
+    echo "Skipping acs WAR package (sources unchanged): $ACS_WAR_NAME"
     return 0
   fi
   echo "Building $ACS_WAR_NAME (Maven profile $ACS_MAVEN_PROFILE)..."
@@ -1107,7 +1184,7 @@ case "$MODE" in
   war-only)
     load_release_version
     check_version_not_registered
-    run_tests
+    require_existing_wars
     init_ssh
     ensure_tomcat_staging
     prepare_prod_war_on_host_if_splitting

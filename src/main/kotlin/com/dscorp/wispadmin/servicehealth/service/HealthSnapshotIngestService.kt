@@ -2,14 +2,12 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.events.LiveOnuState
 import com.dscorp.wispadmin.events.LiveTelemetryPort
-import com.dscorp.wispadmin.events.LiveTrafficSample
 import com.dscorp.wispadmin.events.PlatformEvent
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 @Service
 class HealthSnapshotIngestService(
@@ -18,10 +16,26 @@ class HealthSnapshotIngestService(
     private val liveTelemetry: ObjectProvider<LiveTelemetryPort>,
     private val json: ObjectMapper,
     private val cpeFlags: ObjectProvider<com.dscorp.wispadmin.wispadmin.service.CpeProvisionFlagService>,
+    private val cpeInform: ObjectProvider<CpeInformPersistService>,
+    private val opticalBatch: ObjectProvider<OpticalBatchPersistService>,
 ) {
     private val logger = LoggerFactory.getLogger(HealthSnapshotIngestService::class.java)
 
     fun apply(event: PlatformEvent) {
+        if (event.type == PlatformEventTypes.CPE_INFORM) {
+            putCpeInform(event)
+            val subscriptionId = event.subscriptionId ?: event.sn?.let { identity.resolveOnu(it) } ?: return
+            try {
+                summaries.reevaluate(subscriptionId, event.occurredAt)
+            } catch (ex: Exception) {
+                logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
+            }
+            return
+        }
+        if (event.type == PlatformEventTypes.ONU_OPTICAL_BATCH) {
+            putOpticalBatch(event)
+            return
+        }
         val subscriptionId = event.subscriptionId ?: event.sn?.let { identity.resolveOnu(it) } ?: return
         when (event.type) {
             PlatformEventTypes.TRAFFIC_LATEST -> putTraffic(subscriptionId, event)
@@ -35,11 +49,37 @@ class HealthSnapshotIngestService(
         }
     }
 
+    private fun putOpticalBatch(event: PlatformEvent) {
+        val persist = opticalBatch.ifAvailable ?: return
+        val subscriptionIds = try {
+            persist.persistFromEventJson(event.payloadJson)
+        } catch (ex: Exception) {
+            logger.warn("onu.optical-batch persist failed: {}", ex.message)
+            return
+        }
+        for (subscriptionId in subscriptionIds) {
+            try {
+                summaries.reevaluate(subscriptionId, event.occurredAt)
+            } catch (ex: Exception) {
+                logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
+            }
+        }
+    }
+
+    private fun putCpeInform(event: PlatformEvent) {
+        val persist = cpeInform.ifAvailable ?: return
+        try {
+            persist.persistFromEventJson(event.payloadJson)
+        } catch (ex: Exception) {
+            logger.warn("cpe.inform persist failed sn={}: {}", event.sn, ex.message)
+        }
+    }
+
     private fun putTraffic(subscriptionId: Int, event: PlatformEvent) {
         val node = json.readTree(event.payloadJson)
         liveTelemetry.ifUnique?.putTraffic(
             subscriptionId,
-            LiveTrafficSample(
+            com.dscorp.wispadmin.events.LiveTrafficSample(
                 avgMbpsDown = node.path("mbpsDown").takeIf { it.isNumber }?.asDouble(),
                 avgMbpsUp = node.path("mbpsUp").takeIf { it.isNumber }?.asDouble(),
                 collectedAt = event.occurredAt,

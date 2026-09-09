@@ -24,6 +24,7 @@ data class ActivationOperation(
 interface ActivationJournal {
     fun acquire(request: OnuActivateRequestDto): Pair<ActivationOperation,Boolean>
     fun save(operation: ActivationOperation)
+    fun clear(sn: String)
     fun bySn(sn: String): ActivationOperation?
     fun byExternalId(id: String): ActivationOperation?
     fun pending(): List<ActivationOperation>
@@ -37,21 +38,20 @@ class MemoryActivationJournal : ActivationJournal {
     private val delivered=mutableSetOf<String>()
     @Synchronized override fun acquire(request: OnuActivateRequestDto): Pair<ActivationOperation,Boolean> {
         val old=rows[request.sn]
-        if(old!=null && old.stage=="DONE") {
-            if(old.request==request) return old to false
-            rows.remove(request.sn)
-        } else if(old!=null) {
-            require(old.request==request) { "Activation request conflicts with the existing operation" }
+        if(old!=null && old.request==request) {
+            if(old.stage=="DONE") return old to false
             val acquired=old.leaseUntil < System.currentTimeMillis()
             if(acquired) old.leaseUntil=System.currentTimeMillis()+600_000
             return old to acquired
         }
+        if(old!=null) rows.remove(request.sn)
         val row=ActivationOperation(request).also { rows[request.sn]=it }
         row.leaseUntil=System.currentTimeMillis()+600_000
         return row to true
     }
     @Synchronized override fun save(operation: ActivationOperation) { rows[operation.request.sn]=operation }
-    @Synchronized override fun bySn(sn: String)=rows[sn]
+    @Synchronized override fun clear(sn: String) { rows.remove(sn.trim().uppercase()); rows.remove(sn) }
+    @Synchronized override fun bySn(sn: String)=rows[sn.trim().uppercase()] ?: rows[sn]
     @Synchronized override fun byExternalId(id: String)=rows.values.firstOrNull { it.status.uniqueExternalId==id }
     @Synchronized override fun pending()=rows.values.filter { it.stage!="DONE" && it.leaseUntil < System.currentTimeMillis() }.toList()
     @Synchronized override fun unpublished()=rows.values.filter { it.stage=="DONE" && it.operationId !in delivered }.toList()
@@ -66,9 +66,15 @@ class JdbcActivationJournal(private val jdbc: JdbcTemplate,private val json: Obj
         val candidate=ActivationOperation(request)
         val fingerprint=hash(json.writeValueAsBytes(request))
         val existing=bySn(request.sn)
-        if(existing!=null && existing.stage=="DONE") {
+        if(existing!=null) {
             val previousFingerprint=hash(json.writeValueAsBytes(existing.request))
-            if(previousFingerprint==fingerprint) return existing to false
+            if(previousFingerprint==fingerprint) {
+                if(existing.stage=="DONE") return existing to false
+                val now=System.currentTimeMillis()
+                val acquired=jdbc.update("UPDATE olt_activation_operation SET lease_until=? WHERE sn=? AND lease_until<? AND stage<>'DONE'",now+600_000,request.sn,now)==1
+                if(acquired) existing.leaseUntil=now+600_000
+                return existing to acquired
+            }
             jdbc.update("DELETE FROM olt_activation_operation WHERE sn=?",request.sn)
         }
         try {
@@ -86,7 +92,12 @@ class JdbcActivationJournal(private val jdbc: JdbcTemplate,private val json: Obj
         jdbc.update("UPDATE olt_activation_operation SET status_json=?,external_id=?,stage=?,lease_until=?,attempt_count=? WHERE operation_id=?",
             json.writeValueAsString(operation.status),operation.status.uniqueExternalId,operation.stage,operation.leaseUntil,operation.attempts,operation.operationId)
     }
-    override fun bySn(sn: String)=query("WHERE sn=?",sn).firstOrNull()
+    override fun clear(sn: String) {
+        val normalized=sn.trim().uppercase()
+        jdbc.update("DELETE FROM olt_activation_operation WHERE sn=? OR sn=?",normalized,sn.trim())
+    }
+    override fun bySn(sn: String)=query("WHERE sn=?",sn.trim().uppercase()).firstOrNull()
+        ?: query("WHERE sn=?",sn.trim()).firstOrNull()
     override fun byExternalId(id: String)=query("WHERE external_id=?",id).singleOrNull()
     override fun pending()=query("WHERE stage<>'DONE' AND lease_until<? ORDER BY sn LIMIT 50",System.currentTimeMillis())
     override fun unpublished()=query("WHERE stage='DONE' AND event_published=false ORDER BY sn LIMIT 50")

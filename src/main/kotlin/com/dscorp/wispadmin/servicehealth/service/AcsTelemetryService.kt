@@ -30,7 +30,7 @@ class AcsTelemetryService(
 ) {
     @Scheduled(fixedDelayString="\${service.health.acs-interval-ms:120000}",initialDelayString="\${service.health.acs-initial-delay-ms:45000}")
     fun poll() {
-        if(!properties.enabled || !properties.acsEnabled) return
+        if(!properties.enabled || !properties.acsEnabled || !properties.acsPollEnabled) return
         val port = cpe.ifAvailable ?: return
         val collectIds=scope.collectionSubscriptionIds()
         if(collectIds.isEmpty()) return
@@ -57,7 +57,15 @@ class AcsTelemetryService(
                     } else if (status.informAt == null) {
                         status.qualityStatus = Quality.MISSING
                     }
-                    status.observedAt = now
+                    if (telemetry.wifiAssociatedTotal != null && telemetry.wifiObservedAt != null) {
+                        status.associatedDeviceCount = telemetry.wifiAssociatedTotal
+                        status.observedAt = telemetry.wifiObservedAt
+                        status.qualityStatus = runCatching {
+                            Quality.valueOf(telemetry.wifiQualityStatus ?: "FRESH")
+                        }.getOrDefault(Quality.FRESH)
+                    } else {
+                        status.observedAt = now
+                    }
                     current.save(status)
                     run.writtenCount++
                 }

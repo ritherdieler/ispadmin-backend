@@ -19,6 +19,7 @@ class OltGatewayApiKeyFilter(
     companion object {
         const val HEADER = "X-Olt-Gateway-Key"
         const val SMARTOLT_TOKEN_HEADER = "X-Token"
+        const val ACS_TO_GATEWAY_HEADER = "X-Acs-To-Gateway-Key"
 
         internal fun gatewayPath(request: HttpServletRequest): String {
             val servletPath = request.servletPath?.takeIf { it.isNotBlank() }
@@ -48,8 +49,16 @@ class OltGatewayApiKeyFilter(
         response: HttpServletResponse,
         filterChain: FilterChain
     ) {
-        val key = request.getHeader(HEADER) ?: request.getHeader(SMARTOLT_TOKEN_HEADER)
-        if (!properties.isValidApiKey(key)) {
+        val path = gatewayPath(request)
+        val key = request.getHeader(HEADER)
+            ?: request.getHeader(SMARTOLT_TOKEN_HEADER)
+            ?: request.getHeader(ACS_TO_GATEWAY_HEADER)
+        val valid = if (path.endsWith("/api/olt-gateway/acs/cpe-inform")) {
+            properties.isValidIngestApiKey(key)
+        } else {
+            properties.isValidApiKey(key)
+        }
+        if (!valid) {
             response.status = HttpStatus.UNAUTHORIZED.value()
             response.contentType = MediaType.APPLICATION_JSON_VALUE
             val body = mapOf(

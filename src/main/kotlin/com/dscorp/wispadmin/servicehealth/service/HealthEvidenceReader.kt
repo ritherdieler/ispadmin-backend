@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.repository.*
@@ -38,7 +39,8 @@ class HealthEvidenceReader(
     private val liveTelemetry: ObjectProvider<LiveTelemetryPort>,
     private val trafficEvidence: TrafficEvidenceRepository,
     private val runs: TelemetryRunRepository, private val netDiagPort: ObjectProvider<HealthNetDiagPort>,
-    private val properties: ServiceHealthProperties, private val json: ObjectMapper
+    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope,
+    private val json: ObjectMapper
 ) {
     fun requireExists(id: Int) {
         if(!subscriptions.existsById(id)) throw NoSuchElementException("Suscripción inexistente")
@@ -47,7 +49,7 @@ class HealthEvidenceReader(
     fun read(id: Int, now: Instant = Instant.now()): HealthInputs {
         val sub=subscriptions.findById(id).orElseThrow { NoSuchElementException("Suscripción $id no encontrada") }
         val ids=identity.snapshot(sub).toMutableMap()
-        ids["lab"] = if (id in properties.labSubscriptionIds) "true" else "false"
+        ids["lab"] = if (scope.lab(id)) "true" else "false"
         val from=now.minusSeconds(86400)
         val trafficIdentitySince=identity.currentLinks(id).filter { it.kind in setOf("IP","ROUTER","QUEUE","PLAN","ONU") }.maxOfOrNull { it.validFrom }
         val sources=mutableListOf<Evidence>()
@@ -81,13 +83,17 @@ class HealthEvidenceReader(
         val lastInform=liveInform ?: w?.informAt
         sources+=Evidence("ACS","last_inform",lastInform,lastInform,qualityAt(lastInform,now,properties.periodicInformSeconds*2),ids["ACS"])
         val wifiSupported=WifiTelemetry.radios(model ?: "").isNotEmpty()
+        val associatedCount = w?.associatedDeviceCount ?: telemetry?.wifiAssociatedTotal
+        val wifiObserved = w?.observedAt ?: telemetry?.wifiObservedAt
         val wifiQuality=when {
             !wifiSupported -> Quality.UNSUPPORTED
-            w==null -> Quality.MISSING
-            w.qualityStatus!=Quality.FRESH -> w.qualityStatus
-            else -> qualityAt(w.observedAt,now,properties.wifiSampleFreshSeconds())
+            associatedCount == null && w == null && telemetry?.wifiQualityStatus == null -> Quality.MISSING
+            w != null && w.qualityStatus != Quality.FRESH -> w.qualityStatus
+            telemetry?.wifiQualityStatus != null && w == null ->
+                runCatching { Quality.valueOf(telemetry.wifiQualityStatus) }.getOrDefault(Quality.MISSING)
+            else -> qualityAt(wifiObserved, now, properties.wifiSampleFreshSeconds())
         }
-        sources+=Evidence("ACS","associated_device_count",w?.observedAt,w?.associatedDeviceCount,wifiQuality,w?.countSampleId?.toString())
+        sources+=Evidence("ACS","associated_device_count",wifiObserved,associatedCount,wifiQuality,w?.countSampleId?.toString())
         val acsRun=runs.findTopBySourceAndEquipmentKeyOrderByStartedAtDesc("ACS","gateway-cpe")
         sources+=Evidence("ACS","collector",acsRun?.completedAt,acsRun?.qualityStatus?.name,
             if(acsRun?.qualityStatus==Quality.ERROR) Quality.ERROR else qualityAt(acsRun?.completedAt,now,300),acsRun?.id?.toString())

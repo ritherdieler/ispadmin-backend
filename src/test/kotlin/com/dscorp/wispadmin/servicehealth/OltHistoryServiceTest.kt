@@ -115,4 +115,111 @@ class OltHistoryServiceTest {
 
         verify(exactly = 0) { optical.save(any()) }
     }
+
+    @Test
+    fun `skips optical sample when observedAt equals last sample for onu`() {
+        every { onuProvider.ifAvailable } returns onuPort
+        every { onuPort.findByOlt(2L) } returns listOf(
+            HealthOnuRef(7627L, "VSOL0031C0B6", "gigafiber-ma5608t_1_6_10", 2L, "gigafiber-ma5608t", 1, 6, 10),
+        )
+        every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2329
+        every { scope.collects(2329) } returns true
+        every { runs.save(any()) } answers { firstArg<TelemetryRun>().also { if (it.id == null) it.id = 1L } }
+        every { optical.findTopByOnuIdOrderByObservedAtDesc(7627L) } returns OpticalSample(
+            subscriptionId = 2329,
+            onuId = 7627L,
+            onuSn = "VSOL0031C0B6",
+            oltId = 2L,
+            board = 1,
+            port = 6,
+            onuIndex = 10,
+            observedAt = now,
+            collectedAt = now,
+            onuRxDbm = -21.0,
+            qualityStatus = Quality.FRESH,
+        )
+
+        service.onOptical(
+            HealthOpticalObservation(
+                oltId = 2L,
+                observedAt = now,
+                rows = listOf(HealthOpticalRow(1, 6, 10, -21.0, -2.0, -27.0, null, null, null)),
+            ),
+        )
+
+        verify(exactly = 0) { optical.save(any()) }
+    }
+
+    @Test
+    fun `skips optical sample when observedAt is older than last sample for onu`() {
+        every { onuProvider.ifAvailable } returns onuPort
+        every { onuPort.findByOlt(2L) } returns listOf(
+            HealthOnuRef(7627L, "VSOL0031C0B6", "gigafiber-ma5608t_1_6_10", 2L, "gigafiber-ma5608t", 1, 6, 10),
+        )
+        every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2329
+        every { scope.collects(2329) } returns true
+        every { runs.save(any()) } answers { firstArg<TelemetryRun>().also { if (it.id == null) it.id = 1L } }
+        every { optical.findTopByOnuIdOrderByObservedAtDesc(7627L) } returns OpticalSample(
+            subscriptionId = 2329,
+            onuId = 7627L,
+            onuSn = "VSOL0031C0B6",
+            oltId = 2L,
+            board = 1,
+            port = 6,
+            onuIndex = 10,
+            observedAt = now.plusSeconds(60),
+            collectedAt = now,
+            onuRxDbm = -21.0,
+            qualityStatus = Quality.FRESH,
+        )
+
+        service.onOptical(
+            HealthOpticalObservation(
+                oltId = 2L,
+                observedAt = now,
+                rows = listOf(HealthOpticalRow(1, 6, 10, -20.0, null, null, null, null, null)),
+            ),
+        )
+
+        verify(exactly = 0) { optical.save(any()) }
+    }
+
+    @Test
+    fun `persists optical sample when observedAt is strictly after last sample for onu`() {
+        every { onuProvider.ifAvailable } returns onuPort
+        every { onuPort.findByOlt(2L) } returns listOf(
+            HealthOnuRef(7627L, "VSOL0031C0B6", "gigafiber-ma5608t_1_6_10", 2L, "gigafiber-ma5608t", 1, 6, 10),
+        )
+        every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2329
+        every { scope.collects(2329) } returns true
+        every { runs.save(any()) } answers { firstArg<TelemetryRun>().also { if (it.id == null) it.id = 1L } }
+        every { optical.findTopByOnuIdOrderByObservedAtDesc(7627L) } returns OpticalSample(
+            subscriptionId = 2329,
+            onuId = 7627L,
+            onuSn = "VSOL0031C0B6",
+            oltId = 2L,
+            board = 1,
+            port = 6,
+            onuIndex = 10,
+            observedAt = now.minusSeconds(300),
+            collectedAt = now.minusSeconds(300),
+            onuRxDbm = -22.0,
+            qualityStatus = Quality.FRESH,
+        )
+        val saved = slot<OpticalSample>()
+        every { optical.save(capture(saved)) } answers { firstArg() }
+
+        service.onOptical(
+            HealthOpticalObservation(
+                oltId = 2L,
+                observedAt = now,
+                rows = listOf(HealthOpticalRow(1, 6, 10, -21.0, -2.0, -27.0, null, null, null)),
+            ),
+        )
+
+        assertEquals(2329, saved.captured.subscriptionId)
+        assertEquals(now, saved.captured.observedAt)
+        assertEquals(-21.0, saved.captured.onuRxDbm)
+        verify(exactly = 1) { optical.save(any()) }
+    }
 }

@@ -173,6 +173,11 @@ data class HealthCpeTelemetry(
     val ssid24: String? = null,
     val ssid5: String? = null,
     val softwareVersion: String? = null,
+    val wifiAssociated2g: Int? = null,
+    val wifiAssociated5g: Int? = null,
+    val wifiAssociatedTotal: Int? = null,
+    val wifiObservedAt: Instant? = null,
+    val wifiQualityStatus: String? = null,
 )
 
 data class HealthCpeCommand(

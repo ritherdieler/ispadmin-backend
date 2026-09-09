@@ -61,6 +61,20 @@ OBS_API_KEY=
 # REDIS_PASSWORD=   # openssl rand -hex 16; no commitear el valor
 # REDIS_PORT=6379
 
+# OLT Gateway SNMP (timeout/lock óptico; no commitear community). Defaults en el WAR.
+# OLT_GATEWAY_SNMP_TIMEOUT_MS=
+# OLT_GATEWAY_SNMP_RETRIES=
+# OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS=
+# OLT_GATEWAY_SNMP_OPTICAL_PER_PORT=
+# OLT_GATEWAY_SNMP_POLL_LOCK_ENABLED=
+# OLT_GATEWAY_SNMP_POLL_LOCK_KEY=
+# OLT_GATEWAY_SNMP_POLL_LOCK_TTL_MS=
+# OLT_GATEWAY_SNMP_POLL_LOCK_SHARED=
+
+# GenieACS TR-069: loguea cada POST NBI como curl en logs Tomcat (grep '[GenieACS curl]').
+
+# GenieACS TR-069: loguea cada POST NBI como curl en logs Tomcat (grep '[GenieACS curl]').
+
 # GenieACS TR-069: loguea cada POST NBI como curl en logs Tomcat (grep '[GenieACS curl]').
 # Activar solo durante pruebas; incluye claves WiFi en texto plano.
 # DEPLOY_GENIEACS_LOG_CURL=true ./scripts/deploy.sh --deploy

@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
+import com.dscorp.wispadmin.oltgateway.service.OnuActivationService
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayOpenApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -25,7 +26,8 @@ import org.springframework.web.bind.annotation.RestController
 @Tag(name = "OLT Gateway SmartOLT Compat", description = "Aliases HTTP compatibles con SmartOLT (6 ops)")
 @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
 class SmartOltCompatController(
-    private val oltManagerFacade: OltManagerFacade
+    private val oltManagerFacade: OltManagerFacade,
+    private val onuActivationService: OnuActivationService,
 ) {
 
     @GetMapping("/onu/unconfigured_onus")
@@ -88,8 +90,12 @@ class SmartOltCompatController(
 
     @PostMapping("/onu/delete/{externalId}")
     @Operation(summary = "Delete ONU (SmartOLT alias)")
-    fun deleteOnu(@PathVariable externalId: String): SmartOltActionResponseDto =
-        oltManagerFacade.deleteOnu(externalId)
+    fun deleteOnu(@PathVariable externalId: String): SmartOltActionResponseDto {
+        val sn = oltManagerFacade.findSnByExternalId(externalId)
+        val result = oltManagerFacade.deleteOnu(externalId)
+        sn?.let { onuActivationService.clearJournal(it) }
+        return result
+    }
 
     @PostMapping("/onu/reboot/{externalId}")
     @Operation(summary = "Reboot ONU (SmartOLT alias)")
