@@ -18,6 +18,10 @@ class GenieAcsVirtualParametersTest {
         "GfReboot",
         "GfInternetStatus",
         "GfWifiStatus",
+        "GfPppoeUsername",
+        "GfPppoePassword",
+        "GfPppoeVlanId",
+        "GfPppoeConnectionName",
     )
 
     private val files = listOf(
@@ -27,6 +31,10 @@ class GenieAcsVirtualParametersTest {
         "gf-reboot.js",
         "gf-internet-status.js",
         "gf-wifi-status.js",
+        "gf-pppoe-username.js",
+        "gf-pppoe-password.js",
+        "gf-pppoe-vlan-id.js",
+        "gf-pppoe-connection-name.js",
     )
 
     @Test
@@ -73,6 +81,31 @@ class GenieAcsVirtualParametersTest {
         assertTrue(core.contains("WLANConfiguration.5"), core)
         assertTrue(core.contains("WLANConfiguration.1"), core)
         assertTrue(core.contains("10.20."), core)
+    }
+
+    @Test
+    fun pppoe_provision_maps_vsol_to_wcd2_and_f6600_to_ppp2() {
+        val src = read("scripts/genieacs/provisions/gf-pppoe-wan2-poc.js")
+        assertTrue(src.contains("V2804AX15T"), src)
+        assertTrue(src.contains("VSOLVA74"), src)
+        assertTrue(src.contains("F6600R"), src)
+        assertTrue(src.contains("WANConnectionDevice.2.WANPPPConnection.1"), src)
+        assertTrue(src.contains("WANConnectionDevice.2.WANIPConnection.1"), src)
+        assertTrue(src.contains("WANConnectionDevice.1.WANPPPConnection.2"), src)
+        assertTrue(src.contains("wcdPath"), src)
+        assertTrue(src.contains("wcdParent"), src)
+        assertTrue(src.contains("X_CT-COM_WANGponLinkConfig.VLANIDMark"), src)
+        assertTrue(src.contains("unsupported productClass"), src)
+        assertTrue(src.contains("function ensureInternetWcd"), src)
+        assertTrue(src.contains("function deleteInternetIpWan"), src)
+        assertTrue(src.contains("function ensureInternetPpp"), src)
+        assertTrue(src.contains("function setInternetPppLeaves"), src)
+        assertTrue(src.contains("function enableInternetPpp"), src)
+        assertTrue(src.contains("function setWifi"), src)
+        assertTrue(src.contains("WLANConfiguration.1"), src)
+        assertTrue(src.contains("WLANConfiguration.5"), src)
+        assertTrue(src.contains("KeyPassphrase"), src)
+        assertTrue(src.contains("11111111"), src)
     }
 
     private fun read(relative: String): String {

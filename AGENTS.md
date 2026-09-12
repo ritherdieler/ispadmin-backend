@@ -136,6 +136,10 @@ Placeholders permitidos: vacío, `openssl rand …`, `dev-*-key`, comentario “
 
 Tarea con secretos nuevos o renombrados **no cerrada** si el nombre no aparece en el catálogo y en la plantilla `.example` correspondiente.
 
+## Scripts GenieACS — clean code
+
+Al **crear o editar** JavaScript en `scripts/genieacs/` (provisions, virtual-parameters): seguir `.agent-docs/genieacs-scripts-cleancode.md`. Layout por modelo es dato; el flujo es una secuencia de funciones con un trabajo. El sandbox de GenieACS no autoriza un `declare`/`commit` lineal. Listo cuando el top-level se lee como llamadas nombradas (`ensureInternetWcd`, `ensureInternetPpp`, …).
+
 ## E2E TR-069 — entregar WiFi al cerrar
 
 Si un e2e de alta FIBER/TR-069 termina en **`tr069ProvisionStatus=COMPLETE`** (GPV ACS de IP de pool + SSIDs), en el **mismo mensaje de cierre** y **antes** de la limpieza dura, entregar al usuario las credenciales WiFi del `POST /subscription`:

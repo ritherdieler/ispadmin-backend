@@ -43,12 +43,13 @@ No saltar al POST hasta health + tag `lab` + autofind + perfiles ACS. No deploy.
 
 ### 1. Túneles Mac → VPS
 
+Un solo proceso. Siempre cierra túneles previos en `7557`/`8091` (listeners y `ssh -L` colgados) y abre uno nuevo. Credenciales: `ispadmin-backend/scripts/deploy.config.local` (`VPS_HOST`, `DEPLOY_SSH_PASSWORD`). No commitear el valor.
+
 ```bash
-# GenieACS NBI
-ssh -f -N -L 7557:127.0.0.1:7557 root@<VPS>
-# Tomcat staging (ACS WAR)
-ssh -f -N -L 8091:127.0.0.1:8081 root@<VPS>
+/Users/sergiocarrillo/gigafiber/start-genieacs-tunnel.sh
 ```
+
+Forwards: `127.0.0.1:7557` → GenieACS NBI; `127.0.0.1:8091` → Tomcat staging `:8081` (ACS WAR). `start` y el default hacen lo mismo: cerrar y abrir. `stop` / `status` también.
 
 Comprobar:
 

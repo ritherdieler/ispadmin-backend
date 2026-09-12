@@ -22,7 +22,7 @@ Content-Type: application/json
 ```
 
 - `timeout` va en milisegundos (mismo query param que el resto de tasks).
-- HTTP 200: la sesión CWMP terminó el task. HTTP 202: encolado; con `connection_request` también significa que no llegó a commit.
+- HTTP 200: la sesión CWMP terminó el task. HTTP 202: encolado; con `connection_request` también significa que no llegó a commit. 200 **no** significa que el CPE aplicó SPV/AddObject: en VSOL `31C0B6` (2026-09-12 19:46 UTC) el task 200 terminó con GPN 9005 y **cero** writes porque faltaba `WCD.2`. Cómo leer el access log: sección «Ver logs» en `genieacs-provisions-f6600r-hallazgos.md`.
 - El array plano del foro (`["script", arg, arg]`) no encola. En este NBI el POST no responde (timeout del cliente) y no queda task. No usar esa forma.
 - PUT del script: `PUT /provisions/{id}` con el JavaScript en el body (`text/plain`), no `{ "script": "..." }`. Así está en la API reference 1.2 y así lo hace `scripts/genieacs/apply-provisions-via-nbi.sh`. GET `/provisions/{id}` responde 405; el documento vive en `GET /provisions/`.
 
@@ -43,6 +43,6 @@ Script: `scripts/genieacs/provisions/gf-wifi24-ssid-poc.js`. F6600R: SSID y `Key
 
 `gf-pppoe-poc` se borró del NBI y del repo (2026-09-12): no se usa. `PUT /provisions/gf-wifi24-ssid-poc` HTTP 200, body `text/plain`. Task: `provisions: [["gf-wifi24-ssid-poc", "<ssid>"]]`. El SSID actual de la lab es `lab-zte-e2e-24`; restaurarlo al terminar.
 
-## POC PPPoE F6600R (cerrado)
+## POC PPPoE F6600R / VSOL
 
-El alias `[Username:…]` / `[Name:…]` y el `declare` de `WANPPPConnection.2` con `{path:1}` no sirven. Secuencia que sí funcionó, errores y script: `.agent-docs/genieacs-provisions-f6600r-hallazgos.md`.
+El alias `[Username:…]` / `[Name:…]` y el `declare` de `WANPPPConnection.2` con `{path:1}` no sirven. El mismo script ramifica F6600R (`WCD.1` PPP `.2`) y VSOL (`WCD.2` PPP `.1`; no tocar `WCD.1`). Secuencia, errores y script: `.agent-docs/genieacs-provisions-f6600r-hallazgos.md`.

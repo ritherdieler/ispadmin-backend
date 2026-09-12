@@ -9,7 +9,8 @@
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
 | **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
-| **GenieACS provisions F6600R: `commit()`, AddObject, errores de POC** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |
+| **GenieACS provisions F6600R/VSOL: `commit()`, AddObject, layouts, errores de POC, ver logs** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |
+| **Scripts GenieACS — clean code** (provisions / virtual-parameters) | [genieacs-scripts-cleancode.md](./genieacs-scripts-cleancode.md) |
 | **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
 | **Fix overlay client Gateway + security WAR 2026-09-04** | [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md) |
 | **Diagrama 3 WARs + Redis (SVG / PNG)** | [arquitectura-3-wars.svg](./arquitectura-3-wars.svg) · [arquitectura-3-wars.png](./arquitectura-3-wars.png) |
@@ -20,6 +21,8 @@
 | **Óptica diaria — roll-up y retención (raw 90d / daily 730d)** | [optical-daily-rollup-retention.md](./optical-daily-rollup-retention.md) |
 | **Contención SNMP óptica (lock Redis + timeout 15s)** | [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md) |
 | **MySQL binlog OFF (VPS 2026-09-09)** | [mysql-binlog-expire-24h-2026-09-09.md](./mysql-binlog-expire-24h-2026-09-09.md) |
+| **Backups VPS → Google Drive (cron)** | [vps-backups-gdrive.md](./vps-backups-gdrive.md) |
+| **Cron MySQL diario 3:30 Lima (2026-09-12)** | [mysql-backup-cron-diario-0330-2026-09-12.md](./mysql-backup-cron-diario-0330-2026-09-12.md) |
 | **JDBC cruzado (prohibido en runtime)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md#prohibido) |
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
