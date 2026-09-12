@@ -7,9 +7,12 @@ import com.dscorp.wispadmin.events.OnuOpticalBatchPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.OpticalSample
+import com.dscorp.wispadmin.servicehealth.domain.Quality
+import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
 import com.dscorp.wispadmin.servicehealth.repository.OpticalSampleRepository
+import com.dscorp.wispadmin.servicehealth.repository.TelemetryRunRepository
 import com.dscorp.wispadmin.servicehealth.service.IdentityService
 import com.dscorp.wispadmin.servicehealth.service.OpticalBatchPersistService
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -20,6 +23,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import java.time.Instant
@@ -34,12 +38,13 @@ class OpticalBatchPersistServiceTest {
     private val onuPort = mockk<HealthOnuPort>()
     private val onuProvider = mockk<ObjectProvider<HealthOnuPort>>()
     private val optical = mockk<OpticalSampleRepository>(relaxed = true)
+    private val runs = mockk<TelemetryRunRepository>(relaxed = true)
     private val live = mockk<LiveTelemetryPort>(relaxed = true)
     private val liveProvider = mockk<ObjectProvider<LiveTelemetryPort>>()
     private val json = ObjectMapper().registerModule(JavaTimeModule()).findAndRegisterModules()
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
     private val service = OpticalBatchPersistService(
-        properties, scope, identity, onuProvider, optical, liveProvider, json,
+        properties, scope, identity, onuProvider, optical, runs, liveProvider, json,
     )
     private val polledAt = Instant.parse("2026-09-08T20:00:00Z")
     private val onu = HealthOnuRef(
@@ -59,6 +64,7 @@ class OpticalBatchPersistServiceTest {
         every { onuPort.findByExternalId("gigafiber-ma5608t_1_6_10") } returns onu
         every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2389
         every { scope.collects(2389) } returns true
+        every { runs.save(any()) } answers { firstArg() }
     }
 
     @Test
@@ -96,6 +102,15 @@ class OpticalBatchPersistServiceTest {
                 match<LiveOnuState> { it.rxPowerDbm == -19.46 && it.runState == "online" },
             )
         }
+        val run = slot<TelemetryRun>()
+        verify { runs.save(capture(run)) }
+        assertEquals("OLT_OPTICAL", run.captured.source)
+        assertEquals("2", run.captured.equipmentKey)
+        assertEquals(polledAt, run.captured.startedAt)
+        assertEquals(1, run.captured.readCount)
+        assertEquals(1, run.captured.writtenCount)
+        assertEquals(Quality.FRESH, run.captured.qualityStatus)
+        assertNotNull(run.captured.completedAt)
     }
 
     @Test
@@ -127,5 +142,10 @@ class OpticalBatchPersistServiceTest {
         )
 
         verify(exactly = 0) { optical.save(any()) }
+        val run = slot<TelemetryRun>()
+        verify { runs.save(capture(run)) }
+        assertEquals("OLT_OPTICAL", run.captured.source)
+        assertEquals(1, run.captured.readCount)
+        assertEquals(0, run.captured.writtenCount)
     }
 }

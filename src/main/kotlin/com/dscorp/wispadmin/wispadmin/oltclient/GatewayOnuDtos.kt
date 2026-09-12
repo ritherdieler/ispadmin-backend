@@ -18,6 +18,8 @@ data class GatewayOnuActivateRequest(
     val wifiPassword24: String? = null,
     val wifiSsid5: String? = null,
     val wifiPassword5: String? = null,
+    val pppoeUsername: String? = null,
+    val pppoePassword: String? = null,
 )
 
 data class GatewayOnuActivateResponse(
@@ -44,4 +46,16 @@ data class GatewayCpeTelemetry(
     val ssid24: String? = null,
     val ssid5: String? = null,
     val softwareVersion: String? = null,
+)
+
+data class GatewayServicePortsDto(
+    val sn: String = "",
+    val board: Int = 0,
+    val port: Int = 0,
+    val ontId: Int = 0,
+    val vlans: Set<Int> = emptySet(),
+)
+
+data class GatewayRemoveServicePortRequest(
+    val vlan: Int,
 )

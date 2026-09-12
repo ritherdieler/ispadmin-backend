@@ -19,6 +19,14 @@ data class SnmpOntOptical(
     val matchState: String? = null
 )
 
+/** Inventory + optical read in the same per-port GETBULK pass. */
+data class OltSnmpFusedSnapshot(
+    val onus: List<ParsedOnuSummary>,
+    val optical: List<SnmpOntOptical>,
+    val portsAttempted: Int,
+    val portsFailed: Int
+)
+
 interface OltSnmpClient {
     fun probeSysObjectId(): String?
 
@@ -35,4 +43,15 @@ interface OltSnmpClient {
 
     /** Ports that failed in the last per-port [listOptical] call (0 for full-table). */
     fun lastOpticalWalkPortsFailed(): Int = 0
+
+    /** Inventory + optical for [ports] in one pass. Default composes the two separate passes. */
+    fun listInventoryAndOptical(ports: Collection<GponFsp>): OltSnmpFusedSnapshot {
+        val optical = listOptical(ports)
+        return OltSnmpFusedSnapshot(
+            onus = listConfiguredOnus(),
+            optical = optical,
+            portsAttempted = lastOpticalWalkPortsAttempted(),
+            portsFailed = lastOpticalWalkPortsFailed()
+        )
+    }
 }

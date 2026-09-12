@@ -17,6 +17,7 @@ data class Tr069ModelProfile(
     val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
     val clientWanIpConnectionPath: String? = null,
     val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
+    val clientWanPppConnectionPath: String? = null,
     val writeWanAlias: Boolean = false,
 ) {
     fun withWanConnectionIndex(index: Int): Tr069ModelProfile {
@@ -47,15 +48,96 @@ data class Tr069ModelProfile(
         )
     }
 
+    fun supportsPppoe(): Boolean = !clientWanPppConnectionPath.isNullOrBlank()
+
+    fun forClientPppoeWanOrNull(): Tr069ModelProfile? {
+        val pppPath = clientWanPppConnectionPath?.takeIf { it.isNotBlank() } ?: return null
+        return copy(
+            wanConnectionDeviceIndex = wcdIndexFromPath(pppPath),
+            wanIpConnectionPath = pppPath,
+            wanGponLinkConfigPath = null,
+            vlanParameters = pppoeVlanParameters(pppPath),
+        )
+    }
+
+    /**
+     * Modelos como el V2804AX15T no declaran VLAN de abonado aparte: el alta de IP
+     * estatica reusa la del modelo reindexada al slot cliente. En PPPoE hay que hacer
+     * lo mismo y ademas cambiar el segmento WANIPConnection por WANPPPConnection.
+     */
+    private fun pppoeVlanParameters(pppPath: String): List<Tr069VlanParameterSpec> {
+        if (clientVlanParameters.isNotEmpty()) return clientVlanParameters
+        val slot = wcdIndexFromPath(pppPath)
+        val pppSegment = pppPath.substringAfter(".WANConnectionDevice.$slot", "")
+        return vlanParameters.map { spec ->
+            val reindexed = rewriteWanIndex(spec.path, slot)
+            val connection = Regex("""\.WAN(?:IP|PPP)Connection\.\d+""").find(reindexed)
+            val rewritten = if (connection == null || pppSegment.isBlank()) {
+                reindexed
+            } else {
+                reindexed.replaceRange(connection.range, pppSegment)
+            }
+            spec.copy(path = rewritten)
+        }
+    }
+
+    fun forClientPppoeWan(): Tr069ModelProfile =
+        forClientPppoeWanOrNull()
+            ?: error("El modelo $productClass no declara WANPPPConnection de abonado")
+
+    fun connectionStatusPath(): String = "$wanIpConnectionPath.ConnectionStatus"
+
+    fun buildClientPppoeWanParameterValues(
+        username: String,
+        password: String,
+        vlanId: Int,
+        connectionName: String,
+        replacedWanIpPath: String? = null,
+    ): List<Tr069ParameterValue> {
+        val values = mutableListOf<Tr069ParameterValue>()
+        replacedWanIpPath?.takeIf { it.isNotBlank() }?.let { replaced ->
+            values += param("$replaced.Enable", "false", "xsd:boolean")
+        }
+        values += listOf(
+            param("$wanIpConnectionPath.Enable", "true", "xsd:boolean"),
+            param("$wanIpConnectionPath.ConnectionType", "IP_Routed", "xsd:string"),
+        )
+        values += connectionNameParameterValues(connectionName)
+        values += param("$wanIpConnectionPath.ConnectionTrigger", "AlwaysOn", "xsd:string")
+        if (usesHuaweiWanExtensions()) {
+            values += param("$wanIpConnectionPath.X_HW_SERVICELIST", "INTERNET", "xsd:string")
+            values += param("$wanIpConnectionPath.X_HW_IPv4Enable", "true", "xsd:boolean")
+        } else {
+            if (includesCtComServiceList()) {
+                values += param("$wanIpConnectionPath.X_CT-COM_ServiceList", "INTERNET", "xsd:string")
+            }
+            values += param("$wanIpConnectionPath.X_ZTE-COM_ServiceList", "INTERNET", "xsd:string")
+        }
+        values += param("$wanIpConnectionPath.NATEnabled", "true", "xsd:boolean")
+        values += param("$wanIpConnectionPath.Username", username, "xsd:string")
+        values += param("$wanIpConnectionPath.Password", password, "xsd:string")
+        values += vlanParameterValues(vlanId)
+        values += buildLanBindParameterValues()
+        return values
+    }
+
     fun wcdParentPath(): String {
-        val wcdInstance = wanIpConnectionPath.substringBefore(".WANIPConnection")
+        val wcdInstance = wanIpConnectionPath
+            .substringBefore(".WANIPConnection")
+            .substringBefore(".WANPPPConnection")
         return wcdInstance.substringBeforeLast('.')
     }
 
     fun clientWanSlotIndex(): Int = wcdIndexFromPath(wanIpConnectionPath)
 
+    fun wanConnectionSegment(): String =
+        if (wanIpConnectionPath.contains(".WANPPPConnection")) "WANPPPConnection" else "WANIPConnection"
+
+    fun wanConnectionInstanceParentPath(): String =
+        "${wcdParentPath()}.${clientWanSlotIndex()}.${wanConnectionSegment()}"
+
     fun wanIpInstanceIndex(): Int =
-        Regex("""\.WANIPConnection\.(\d+)$""")
+        Regex("""\.WAN(?:IP|PPP)Connection\.(\d+)$""")
             .find(wanIpConnectionPath)
             ?.groupValues
             ?.get(1)
@@ -319,4 +401,13 @@ object Tr069ModelProfiles {
         val sorted = existingIndices.filter { it in 1..16 }.sorted()
         return sorted.firstOrNull() ?: DEFAULT_WAN_INDEX
     }
+}
+
+object Tr069WanVerification {
+
+    fun ipSatisfied(expectedIp: String, observedIp: String?, pppoe: Boolean): Boolean =
+        if (pppoe) !observedIp.isNullOrBlank() else observedIp == expectedIp
+
+    fun wanUp(observedStatus: String?): Boolean =
+        observedStatus.equals("Connected", ignoreCase = true)
 }

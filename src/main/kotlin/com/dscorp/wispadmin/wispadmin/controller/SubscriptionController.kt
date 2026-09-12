@@ -57,6 +57,7 @@ class SubscriptionController(
     private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
     private val subscriptionProvisionService: SubscriptionProvisionService,
     private val gatewayCpe: ObjectProvider<GatewayOnuActivationClient>,
+    private val accessMigrationService: com.dscorp.wispadmin.wispadmin.service.subscription.AccessMigrationService? = null,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
 ) {
 
@@ -148,12 +149,48 @@ class SubscriptionController(
     fun getSubscription(@PathVariable subscriptionId: Int): ResponseEntity<SubscriptionDto> {
         val subscription = repository.findById(subscriptionId).orElse(null)
         return if (subscription != null) {
-            ResponseEntity.ok(subscription.toDto())
+            val dto = subscription.toDto()
+            val progress = accessMigrationService?.progress(subscriptionId)
+            ResponseEntity.ok(
+                dto.copy(
+                    accessMigrationStage = progress?.stage,
+                    accessMigration = progress,
+                )
+            )
         } else {
             ResponseEntity.notFound().build()
         }
     }
 
+
+    @GetMapping("/access-migration/eligible")
+    fun listEligibleAccessMigrations(): ResponseEntity<AccessMigrationEligiblePageDto> {
+        val service = accessMigrationService
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build()
+        return ResponseEntity.ok(AccessMigrationEligiblePageDto(service.listEligible()))
+    }
+
+    @PostMapping("/{subscriptionId}/access-migration")
+    fun startAccessMigration(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
+        val service = accessMigrationService
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Migración PPPoE no disponible"))
+        return try {
+            ResponseEntity.ok(service.start(subscriptionId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        } catch (ex: IllegalArgumentException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        }
+    }
+
+    @GetMapping("/{subscriptionId}/access-migration")
+    fun getAccessMigration(@PathVariable subscriptionId: Int): ResponseEntity<AccessMigrationProgressDto> {
+        val progress = accessMigrationService?.progress(subscriptionId)
+            ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(progress)
+    }
 
     @GetMapping("/{subscriptionId}/registration-progress")
     fun getRegistrationProgress(@PathVariable subscriptionId: Int): ResponseEntity<RegistrationProgressDto> {
@@ -833,7 +870,7 @@ class SubscriptionController(
             row.createCell(1).setCellValue(data.first.firstName)
             row.createCell(2).setCellValue(data.first.lastName)
             row.createCell(3).setCellValue(data.second.toString())
-            row.createCell(4).setCellValue(data.first.ip)
+            row.createCell(4).setCellValue(data.first.ip ?: "")
             row.createCell(5).setCellValue(data.first.phone)
 
             row.createCell(6).setCellValue("${data.first.place?.name} - ${data.first.address}")

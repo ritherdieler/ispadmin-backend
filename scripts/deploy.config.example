@@ -44,7 +44,10 @@ OBS_API_KEY=
 # OLT_GATEWAY_INTERNAL_BASE_URL and OLT_GATEWAY_DATASOURCE_URL are baked into the WAR
 # (staging WARs inside tomcat-staging talk on :8080; host→staging is :8081).
 # Do not put them in /opt/gigafiber/.env.
-# ACS_API_KEY=   # openssl rand -hex 16; misma key Gateway ↔ ACS WAR (X-Acs-Key)
+# ACS_API_KEY=   # openssl rand -hex 16; misma key Gateway ↔ ACS WAR y ahora también Core → ACS (X-Acs-Key)
+# ACS_CLIENT_ENABLED=   # Core HTTP client hacia ACS WAR; staging lo hornea en true
+# ACS_INTERNAL_BASE_URL=   # no en .env compartido; staging Core hornea http://127.0.0.1:8080/ispadmin-staging-acs
+# PPPOE_MIGRATION_QUARANTINE_DAYS=7  # no es secreto; default 7
 # OLT_GATEWAY_ACS_BASE_URL is baked (staging: http://127.0.0.1:8080/ispadmin-staging-acs)
 # Staging deploy must keep embedded modules in Core and enable HTTP clients:
 # --with observability,netdiag,servicehealth,oltgateway,traffic,acs
@@ -64,8 +67,15 @@ OBS_API_KEY=
 # OLT Gateway SNMP (timeout/lock óptico; no commitear community). Defaults en el WAR.
 # OLT_GATEWAY_SNMP_TIMEOUT_MS=
 # OLT_GATEWAY_SNMP_RETRIES=
+# OLT_GATEWAY_SNMP_MAX_REPETITIONS=
+# OLT_GATEWAY_SNMP_REQUEST_INTERVAL_MS=
+# OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_COLUMNS=
 # OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS=
 # OLT_GATEWAY_SNMP_OPTICAL_PER_PORT=
+# OLT_GATEWAY_SNMP_FUSED_INVENTORY_OPTICAL=
+# OLT_GATEWAY_SNMP_FUSED_SNAPSHOT_MAX_AGE_MS=
+# OLT_GATEWAY_SNMP_INVENTORY_TIMEOUT_MS=
+# OLT_GATEWAY_SNMP_INVENTORY_RETRIES=
 # OLT_GATEWAY_SNMP_POLL_LOCK_ENABLED=
 # OLT_GATEWAY_SNMP_POLL_LOCK_KEY=
 # OLT_GATEWAY_SNMP_POLL_LOCK_TTL_MS=

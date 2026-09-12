@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.wispadmin.config.PppoeProperties
 import com.dscorp.wispadmin.wispadmin.observability.ObservabilityReporter
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
@@ -12,11 +14,14 @@ import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.repository.IpPoolRepository
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
+import com.dscorp.wispadmin.wispadmin.repository.PaymentRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlaceRepository
 import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
+import com.dscorp.wispadmin.wispadmin.repository.SubscriptionLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.IInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -24,6 +29,7 @@ import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -41,6 +47,10 @@ class SubscriptionServiceTest {
     private val installationStrategyFactory = mockk<InstallationStrategyFactory>()
     private val installationStrategy = mockk<IInstallationStrategy>()
     private val mikrotikService = mockk<IMikroTikService>(relaxed = true)
+    private val pppoeAccessService = mockk<PppoeAccessService>(relaxed = true)
+    private val paymentRepository = mockk<PaymentRepository>(relaxed = true)
+    private val subscriptionLogRepository = mockk<SubscriptionLogRepository>(relaxed = true)
+    private val borneManagementService = mockk<BorneManagementService>(relaxed = true)
     private val ipAllocationService = IpAllocationService(
         ipPoolRepository = ipPoolRepository,
         subscriptionRepository = repository,
@@ -58,22 +68,25 @@ class SubscriptionServiceTest {
         onuService = mockk(relaxed = true),
         installationOrderRepository = mockk(relaxed = true),
         notificationService = mockk(relaxed = true),
-        subscriptionLogRepository = mockk(relaxed = true),
+        subscriptionLogRepository = subscriptionLogRepository,
         errorLogRepository = mockk(relaxed = true),
-        borneManagementService = mockk(relaxed = true),
+        borneManagementService = borneManagementService,
         mikrotikService = mikrotikService,
         queueManager = mockk(relaxed = true),
         addressListManager = mockk(relaxed = true),
         serviceCutManager = mockk(relaxed = true),
         serviceReactivationManager = mockk(relaxed = true),
         subscriptionValidator = subscriptionValidator,
-        paymentRepository = mockk(relaxed = true),
+        paymentRepository = paymentRepository,
         installationStrategyFactory = installationStrategyFactory,
         fiberInstallationStrategy = mockk(relaxed = true),
         applicationEventPublisher = mockk<ApplicationEventPublisher>(relaxed = true),
         cancelledOnuReuseService = mockk(relaxed = true),
         subscriptionProvisionService = mockk(relaxed = true),
         ipAllocationService = ipAllocationService,
+        pppoeProperties = PppoeProperties(),
+        pppoeSecretCipher = mockk(relaxed = true),
+        pppoeAccessService = pppoeAccessService,
     )
 
     @BeforeEach
@@ -249,6 +262,69 @@ class SubscriptionServiceTest {
         )
 
         assertEquals("192.168.30.10", result.ip)
+    }
+
+    @Test
+    fun `cancelService without IP cuts PPPoE instead of address list`() {
+        val host = NetworkDevice(
+            id = 8,
+            name = "MK8",
+            ipAddress = "38.224.231.4",
+            networkDeviceType = NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER,
+            vlanId = 100
+        )
+        val subscription = Subscription(
+            id = 77,
+            firstName = "PPPoE",
+            lastName = "Cliente",
+            equipmentCondition = EquipmentCondition.LOAN,
+            serviceStatus = ServiceStatus.ACTIVE,
+        ).apply {
+            accessMode = AccessMode.PPPOE_DYNAMIC
+            pppoeUsername = "gf77"
+            ip = null
+            hostDevice = host
+        }
+        every { repository.findById(77) } returns Optional.of(subscription)
+        every { repository.cancelService(77, any()) } returns Unit
+        every { repository.save(subscription) } returns subscription
+        every { pppoeAccessService.cut(subscription, host) } returns true
+
+        service.cancelService(77) { }
+
+        verify(exactly = 1) { pppoeAccessService.cut(subscription, host) }
+        verify(exactly = 0) { mikrotikService.addIpToDebtorsListIfNotExists(any(), any(), any()) }
+    }
+
+    @Test
+    fun `restoreInternetConnection restores PPPoE profile for a cut subscriber`() {
+        val host = NetworkDevice(
+            id = 8,
+            name = "MK8",
+            ipAddress = "38.224.231.4",
+            networkDeviceType = NetworkDevice.NetworkDeviceType.CLOUD_CORE_ROUTER,
+            vlanId = 100
+        )
+        val subscription = Subscription(
+            id = 88,
+            firstName = "PPPoE",
+            lastName = "Cliente",
+            equipmentCondition = EquipmentCondition.LOAN,
+        ).apply {
+            accessMode = AccessMode.PPPOE_DYNAMIC
+            pppoeUsername = "gf88"
+            hostDevice = host
+            plan = Plan(id = 54, name = "f200", downloadSpeed = 200, uploadSpeed = 200)
+        }
+        every { paymentRepository.findPendingPaymentsBySubscriptionId(88) } returns 0
+        every { repository.findById(88) } returns Optional.of(subscription)
+        every { subscriptionLogRepository.save(any()) } answers { firstArg() }
+        every { repository.save(subscription) } returns subscription
+        every { pppoeAccessService.restore(subscription, host) } returns true
+
+        service.restoreInternetConnection(88, responsibleId = 1)
+
+        verify(exactly = 1) { pppoeAccessService.restore(subscription, host) }
     }
 
     private fun poolWithOctets(octets: Iterable<Int>): IpPool {

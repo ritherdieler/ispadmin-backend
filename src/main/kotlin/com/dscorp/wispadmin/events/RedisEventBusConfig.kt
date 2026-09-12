@@ -201,22 +201,13 @@ class RedisLiveTelemetry(
 
     override fun putOnu(subscriptionId: Int, state: LiveOnuState) {
         try {
-            val hash = mutableMapOf(
-                "sn" to state.sn,
-                "observedAt" to state.observedAt.toString(),
+            replaceSnapshot(
+                onuKey(subscriptionId),
+                RedisOnuHashFields.forPut(state),
+                state.observedAt,
+                900,
+                "_timestamp:${state.updateKind}",
             )
-            state.runState?.let { hash["runState"] = it }
-            state.rxPowerDbm?.let { hash["rxPowerDbm"] = it.toString() }
-            if (state.updateKind == "optical") {
-                hash.remove("runState")
-                hash.remove("observedAt")
-                hash["opticalObservedAt"] = state.observedAt.toString()
-                hash.putIfAbsent("rxPowerDbm", "")
-            } else if (state.updateKind == "state") {
-                hash.remove("rxPowerDbm")
-                hash.putIfAbsent("runState", "")
-            } else listOf("runState","rxPowerDbm").forEach { hash.putIfAbsent(it, "") }
-            replaceSnapshot(onuKey(subscriptionId),hash,state.observedAt,900,"_timestamp:${state.updateKind}")
         } catch (ex: Exception) {
             logger.warn("Redis live onu put failed id={}: {}", subscriptionId, ex.message)
         }

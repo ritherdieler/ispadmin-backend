@@ -127,7 +127,8 @@ class OnuActivationService(
             val outcome=acsCpeClient.provision(AcsCpeProvisionRequest(
                 sn=request.sn,uniqueExternalId=externalId,onuType=request.onuType,ip=request.ip,ipSegment=request.ipSegment,
                 wanVlanId=request.vlan.toIntOrNull() ?: 1,wifiSsid24=request.wifiSsid24,wifiPassword24=request.wifiPassword24,
-                wifiSsid5=request.wifiSsid5,wifiPassword5=request.wifiPassword5))
+                wifiSsid5=request.wifiSsid5,wifiPassword5=request.wifiPassword5,
+                pppoeUsername=request.pppoeUsername,pppoePassword=request.pppoePassword))
             operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,updatedAtEpochMs=Instant.now().toEpochMilli())
             operation.stage=if(outcome.status==CpeProvisionStatus.PENDING) "ACS_STATUS" else "DONE"
             operation.leaseUntil=System.currentTimeMillis()+30_000

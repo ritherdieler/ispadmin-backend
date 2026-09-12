@@ -15,4 +15,22 @@ object OpticalPollScope {
             .map { GponFsp(frame = 0, slot = it.board, port = it.port) }
             .toSet()
     }
+
+    /**
+     * Scope for the fused inventory+optical pass: every port of every board that holds ONUs.
+     * Board-derived, not port-derived, so an ONT on a port with no DB rows is still discovered;
+     * run state is ignored because the inventory needs offline ONTs too.
+     */
+    fun fusedScanPorts(onus: Collection<OltMgrOnu>, portsPerBoard: Int): Set<GponFsp> {
+        val ports = portsPerBoard.coerceAtLeast(1)
+        return onus
+            .asSequence()
+            .filter { it.deletedAt == null }
+            .filter { it.board >= 0 }
+            .map { it.board }
+            .distinct()
+            .sorted()
+            .flatMap { board -> (0 until ports).asSequence().map { GponFsp(frame = 0, slot = board, port = it) } }
+            .toSet()
+    }
 }

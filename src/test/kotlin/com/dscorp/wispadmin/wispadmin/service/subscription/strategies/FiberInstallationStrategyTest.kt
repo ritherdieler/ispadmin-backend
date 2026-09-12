@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
 import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.IpPool
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
@@ -14,12 +15,15 @@ import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateResponse
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeSecretResult
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -33,16 +37,30 @@ class FiberInstallationStrategyTest {
 
     private lateinit var environment: GigafiberEnvironmentProperties
 
+    private lateinit var pppoeAccessService: PppoeAccessService
+
     @BeforeEach
     fun setUp() {
         environment = GigafiberEnvironmentProperties()
-        strategy = FiberInstallationStrategy(
+        pppoeAccessService = mockk(relaxed = true)
+        strategy = buildStrategy(
             mock(CancelledOnuReuseService::class.java),
             mockk(relaxed = true),
-            environment,
             noGateway(),
         )
     }
+
+    private fun buildStrategy(
+        onuReuse: CancelledOnuReuseService,
+        queueProvisioner: SimpleQueueProvisioner,
+        gateway: ObjectProvider<GatewayOnuActivationClient>,
+    ) = FiberInstallationStrategy(
+        onuReuse,
+        queueProvisioner,
+        environment,
+        gateway,
+        pppoeAccessService,
+    )
 
     @Test
     fun `resolveVlan devuelve 100 desde subscription vlan`() {
@@ -134,7 +152,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation does not throw when MikroTik TLS handshake fails`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
+        strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -166,7 +184,7 @@ class FiberInstallationStrategyTest {
     fun `processInstallation uses offline client ip as simple queue target`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
+        strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -191,6 +209,63 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
+    fun `processInstallation con PPPOE_DYNAMIC crea el secret y no crea simple queue`() {
+        val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            accessMode = AccessMode.PPPOE_DYNAMIC
+            pppoeUsername = "gf4321"
+            plan = Plan(id = 54, name = "f200", downloadSpeed = 200, uploadSpeed = 200)
+            place = Place(id = 4, name = "Huacho")
+        }
+        every { pppoeAccessService.ensureSecret(subscription, host) } returns
+            PppoeSecretResult(created = true, profile = "GF-200-200")
+
+        val result = strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest(),
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!
+        )
+
+        assertTrue(result.queueAdded)
+        assertNull(result.mikrotikError)
+        verify(exactly = 0) { queueProvisioner.ensureQueue(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processInstallation con PPPOE_DYNAMIC propaga el error del secret sin lanzar`() {
+        val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            accessMode = AccessMode.PPPOE_DYNAMIC
+            pppoeUsername = "gf4321"
+            plan = Plan(id = 54, name = "f200", downloadSpeed = 200, uploadSpeed = 200)
+            place = Place(id = 4, name = "Huacho")
+        }
+        every { pppoeAccessService.ensureSecret(subscription, host) } returns
+            PppoeSecretResult(error = "Remote host terminated the handshake")
+
+        val result = strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest(),
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!
+        )
+
+        assertFalse(result.queueAdded)
+        assertEquals("Remote host terminated the handshake", result.mikrotikError)
+    }
+
+    @Test
     fun `processInstallation uses gateway activate and returns partial CPE`() {
         val gateway = mockk<GatewayOnuActivationClient>()
         val provider = mockk<ObjectProvider<GatewayOnuActivationClient>>()
@@ -204,7 +279,7 @@ class FiberInstallationStrategyTest {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
         every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, provider)
+        strategy = buildStrategy(onuReuse, queueProvisioner, provider)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
@@ -229,11 +304,70 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
+    fun `processInstallation PPPoE envia usuario y password al Gateway sin IP`() {
+        val gateway = mockk<GatewayOnuActivationClient>()
+        val provider = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+        every { provider.ifAvailable } returns gateway
+        every { gateway.activate(any()) } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "gigafiber-ma5608t_1_6_116",
+            sn = "VSOL0031C0B6",
+            oltStatus = "COMPLETE",
+            cpeStatus = "PENDING",
+        )
+        every { pppoeAccessService.decryptedPassword(any()) } returns "secreto123"
+        every { pppoeAccessService.ensureSecret(any(), any()) } returns
+            PppoeSecretResult(created = true, profile = "GF-200-200")
+        strategy = buildStrategy(mockk(relaxed = true), mockk(relaxed = true), provider)
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            ip = null
+            ipPool = null
+            accessMode = AccessMode.PPPOE_DYNAMIC
+            pppoeUsername = "gf2397"
+            pppoePasswordEnc = "enc:v1:cifrado"
+            plan = Plan(id = 1, name = "basico", downloadSpeed = 200, uploadSpeed = 200)
+            place = Place(id = 1, name = "9 de octubre")
+            fiberOnuSn = "VSOL0031C0B6"
+        }
+
+        strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest().apply {
+                onu = OnuDto(
+                    sn = "VSOL0031C0B6",
+                    board = "1",
+                    olt_id = "gigafiber-ma5608t",
+                    onu = "",
+                    onu_type_id = "",
+                    onu_type_name = "V2804AX15T",
+                    pon_type = "gpon",
+                    port = "6",
+                )
+            },
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!,
+        )
+
+        verify {
+            gateway.activate(
+                match<GatewayOnuActivateRequest> {
+                    it.sn == "VSOL0031C0B6" &&
+                        it.ip == null &&
+                        it.pppoeUsername == "gf2397" &&
+                        it.pppoePassword == "secreto123"
+                }
+            )
+        }
+    }
+
+    @Test
     fun `processInstallation falls back to SmartOLT when gateway client unavailable`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
         every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
-        strategy = FiberInstallationStrategy(onuReuse, queueProvisioner, environment, noGateway())
+        strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"

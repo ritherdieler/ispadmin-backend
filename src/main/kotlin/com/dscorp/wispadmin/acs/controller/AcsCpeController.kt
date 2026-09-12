@@ -30,6 +30,9 @@ class AcsCpeController(
     @GetMapping("/cpe/{sn}/telemetry")
     fun telemetry(@PathVariable sn: String): CpeTelemetryResult = facade.telemetry(sn)
 
+    @GetMapping("/cpe/{sn}/access-layout")
+    fun accessLayout(@PathVariable sn: String): com.dscorp.wispadmin.acs.CpeAccessLayout = facade.accessLayout(sn)
+
     @PostMapping("/cpe/{sn}/reboot")
     fun reboot(@PathVariable sn: String): CpeCommandResult = facade.reboot(sn)
 

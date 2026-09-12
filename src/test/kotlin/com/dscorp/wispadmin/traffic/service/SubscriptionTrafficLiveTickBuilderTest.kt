@@ -19,6 +19,15 @@ class SubscriptionTrafficLiveTickBuilderTest {
     }
 
     @Test
+    fun `findQueueRow matches dynamic pppoe queue by username without IP`() {
+        val queues = listOf(
+            mapOf("name" to "<pppoe-gf77>", "target" to "10.64.0.25/32", "bytes" to "100/200", "rate" to "0/0")
+        )
+        val row = SubscriptionTrafficLiveTickBuilder.findQueueRow(queues, ip = "", pppoeUsername = "gf77")
+        assertEquals("<pppoe-gf77>", row?.get("name"))
+    }
+
+    @Test
     fun `buildFromQueueRow returns queueFound false when row missing`() {
         val result = SubscriptionTrafficLiveTickBuilder.buildFromQueueRow(
             subscriptionId = 1,

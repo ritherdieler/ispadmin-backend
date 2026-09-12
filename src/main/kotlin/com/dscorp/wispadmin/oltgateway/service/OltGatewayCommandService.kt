@@ -11,7 +11,9 @@ data class AuthorizeCliRequest(
     val lineProfileId: Int,
     val serviceProfileId: Int,
     val description: String,
-    val vlan: Int
+    val vlan: Int,
+    val mgmtVlan: Int? = null,
+    val mgmtGemport: Int = 2,
 )
 
 data class AuthorizeCliResult(
@@ -51,14 +53,27 @@ class OltGatewayCommandService(
     private val inWriteJob: (() -> Unit) -> Unit = { it() }
 ) {
 
-    fun planAuthorize(request: AuthorizeCliRequest): List<String> = listOf(
-        "interface gpon 0/${request.board}",
-        "ont add ${request.port} ${request.ontId} sn-auth ${request.sn} omci " +
-            "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} " +
-            "desc ${sanitizeDesc(request.description)}",
-        "quit",
-        servicePortCommand(request.vlan, request.board, request.port, request.ontId),
-    )
+    fun planAuthorize(request: AuthorizeCliRequest): List<String> {
+        val commands = mutableListOf(
+            "interface gpon 0/${request.board}",
+            "ont add ${request.port} ${request.ontId} sn-auth ${request.sn} omci " +
+                "ont-lineprofile-id ${request.lineProfileId} ont-srvprofile-id ${request.serviceProfileId} " +
+                "desc ${sanitizeDesc(request.description)}",
+            "quit",
+            servicePortCommand(request.vlan, request.board, request.port, request.ontId, gemport = 1),
+        )
+        val mgmtVlan = request.mgmtVlan
+        if (mgmtVlan != null && mgmtVlan > 0 && mgmtVlan != request.vlan) {
+            commands += servicePortCommand(
+                vlan = mgmtVlan,
+                board = request.board,
+                port = request.port,
+                ontId = request.ontId,
+                gemport = request.mgmtGemport,
+            )
+        }
+        return commands
+    }
 
     fun authorize(request: AuthorizeCliRequest): AuthorizeCliResult {
         ensureWritesEnabled()
@@ -91,11 +106,11 @@ class OltGatewayCommandService(
         }
     }
 
-    private fun servicePortCommand(vlan: Int, board: Int, port: Int, ontId: Int): String {
+    private fun servicePortCommand(vlan: Int, board: Int, port: Int, ontId: Int, gemport: Int = 1): String {
         val inbound = properties.writes.inboundTrafficTableIndex
         val outbound = properties.writes.outboundTrafficTableIndex
         return "service-port vlan $vlan gpon 0/$board/$port ont $ontId " +
-            "gemport 1 multi-service user-vlan $vlan tag-transform translate " +
+            "gemport $gemport multi-service user-vlan $vlan tag-transform translate " +
             "inbound traffic-table index $inbound outbound traffic-table index $outbound"
     }
 
@@ -124,6 +139,19 @@ class OltGatewayCommandService(
             runCommand("quit")
         }
     }
+
+    fun displayServicePorts(board: Int, port: Int, ontId: Int): String =
+        runCommand("display service-port port 0/$board/$port ont $ontId")
+
+    fun removeServicePort(board: Int, port: Int, ontId: Int, vlan: Int) {
+        ensureWritesEnabled()
+        inWriteJob {
+            runChecked("undo service-port vlan $vlan gpon 0/$board/$port ont $ontId")
+        }
+    }
+
+    fun parseServicePortVlans(output: String): Set<Int> =
+        VLAN_PATTERN.findAll(output).mapNotNull { it.groupValues[1].toIntOrNull() }.toSet()
 
     private fun runChecked(command: String): String {
         val output = runCommand(command)
@@ -162,5 +190,9 @@ class OltGatewayCommandService(
     private fun sanitizeDesc(description: String): String {
         val cleaned = description.replace("\"", "").trim().ifBlank { "onu" }
         return "\"$cleaned\""
+    }
+
+    companion object {
+        private val VLAN_PATTERN = Regex("""(?i)vlan\s+(\d+)""")
     }
 }

@@ -203,6 +203,33 @@ class BandwidthIntelligenceServiceTest {
     }
 
     @Test
+    fun `subscriptions search matches pppoe username when ip is empty`() {
+        val customerFrom = LocalDateTime.of(2026, 8, 29, 10, 0)
+        val customerTo = LocalDateTime.of(2026, 8, 31, 10, 0)
+        every { directory.list() } returns listOf(
+            TrafficDirectoryTarget(
+                subscriptionId = 77,
+                ip = "",
+                routerHint = 1,
+                planId = 1,
+                planName = "P1",
+                planDownloadMbps = 100,
+                planUploadMbps = 50,
+                displayName = "Ana",
+                pppoeUsername = "gf77",
+            )
+        )
+        every {
+            fiveMinuteRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(77, customerFrom, customerTo)
+        } returns emptyList()
+
+        val page = service.subscriptions(customerFrom, customerTo, null, null, "gf77", "consumption", 0, 25)
+
+        assertEquals(1, page.total)
+        assertEquals(77, page.items.first().subscriptionId)
+    }
+
+    @Test
     fun `anomalyPage no usa findAll`() {
         every {
             anomalyRepository.findFiltered(null, null, null, null)

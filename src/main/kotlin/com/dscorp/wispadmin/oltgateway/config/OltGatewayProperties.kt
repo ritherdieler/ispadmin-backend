@@ -64,8 +64,9 @@ class OltGatewayProperties {
         var enabled: Boolean = false
         var port: Int = 161
         var roCommunity: String = ""
-        var timeoutMs: Long = 15000
-        var retries: Int = 1
+        /** 20 s + [retries] = 2: the MA5608T drops ~2-8% of GETBULK pages with no error PDU. */
+        var timeoutMs: Long = 20000
+        var retries: Int = 2
         var maxRepetitions: Int = 25
         /** Small pacing interval between GETBULK pages; protects constrained OLT agents. */
         var requestIntervalMs: Long = 100
@@ -79,14 +80,27 @@ class OltGatewayProperties {
          * Default false — signal poll is SNMP-only.
          */
         var allowSshSignalFallback: Boolean = false
-        /** Walk Rx/Tx/OLT-Rx columns concurrently on full-table optical poll. */
-        var opticalParallelColumns: Boolean = true
-        /** Max concurrent per-port optical walks when [opticalPerPortWalks] is true. */
-        var opticalParallelPorts: Int = 3
-        /** If true, GETBULK per GPON port (slower on MA5608T). Default false = full-table. */
-        var opticalPerPortWalks: Boolean = false
+        /** No-op since columns share one multi-varbind GETBULK page; kept for rollback of env overrides. */
+        var opticalParallelColumns: Boolean = false
+        /** Max concurrent per-port optical walks; >1 only queues and induces drops on MA5608T. */
+        var opticalParallelPorts: Int = 1
+        /** If true, GETBULK per GPON port: same wall-clock as full-table but a drop costs one port. */
+        var opticalPerPortWalks: Boolean = true
         /** With per-port walks: only ports that have online ONUs in DB. */
         var opticalOnlineOnly: Boolean = true
+        /**
+         * Reads inventory and optical in the same per-port GETBULK (13 unique columns).
+         * Measured on the MA5608T: +3% per ONT, so the inventory pass becomes free.
+         */
+        var fusedInventoryOptical: Boolean = true
+        /** How long the inventory half of a fused pass may wait for the inventory sync tick. */
+        var fusedSnapshotMaxAgeMs: Long = 900_000
+        /**
+         * Config tables (43/46) answer in ~100 ms, so a dropped page must not cost the DDM
+         * timeout. Only applies to the inventory/autofind walks, never to the fused/optical one.
+         */
+        var inventoryTimeoutMs: Long = 5000
+        var inventoryRetries: Int = 4
         /** How long to wait for this OLT's SNMP bus permit before failing. */
         var acquireTimeoutMs: Long = 300_000
         var pollLockEnabled: Boolean = true
@@ -118,6 +132,10 @@ class OltGatewayProperties {
         var customProfileBindings: String = "Generic_1:1=3:2,Generic_1:100=6:13"
         var inboundTrafficTableIndex: Int = 8
         var outboundTrafficTableIndex: Int = 9
+        var labAcsSnSuffixes: String = "0031C0B6,12345B4641531C0B6"
+        var labAcsLineProfileId: Int = 12
+        var labAcsMgmtVlan: Int = 1000
+        var labAcsMgmtGemport: Int = 2
     }
 
     class SyncProperties {

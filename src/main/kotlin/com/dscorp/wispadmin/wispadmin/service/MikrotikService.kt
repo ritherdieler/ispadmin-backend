@@ -39,7 +39,7 @@ class MikrotikService(
         repository.save(payment)
         payment.subscription?.let {
             if (isEligibleForReactivation(payment.subscription!!)) {
-                mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(payment.subscription!!.toDto())
+                mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(payment.subscription!!)
             }
         }
 

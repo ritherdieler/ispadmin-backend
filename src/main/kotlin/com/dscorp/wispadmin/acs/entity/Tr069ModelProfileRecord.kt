@@ -32,6 +32,9 @@ class Tr069ModelProfileRecord(
     @Column(name = "client_wan_ip_connection_path", length = 512)
     var clientWanIpConnectionPath: String? = null,
 
+    @Column(name = "client_wan_ppp_connection_path", length = 512)
+    var clientWanPppConnectionPath: String? = null,
+
     @Column(name = "wan_gpon_link_config_path", length = 512)
     var wanGponLinkConfigPath: String? = null,
 
@@ -79,6 +82,7 @@ class Tr069ModelProfileRecord(
         wifiSecurityPrep = decodeWifi(objectMapper, wifiSecurityPrepJson),
         clientWanIpConnectionPath = clientWanIpConnectionPath,
         clientVlanParameters = decodeVlan(objectMapper, clientVlanParametersJson ?: "[]"),
+        clientWanPppConnectionPath = clientWanPppConnectionPath,
     )
 
     fun toDto(objectMapper: ObjectMapper): AcsModelProfileDto = AcsModelProfileDto(
@@ -93,6 +97,7 @@ class Tr069ModelProfileRecord(
         wifiSecurityPrep = decodeWifi(objectMapper, wifiSecurityPrepJson),
         clientWanIpConnectionPath = clientWanIpConnectionPath,
         clientVlanParameters = decodeVlan(objectMapper, clientVlanParametersJson ?: "[]"),
+        clientWanPppConnectionPath = clientWanPppConnectionPath,
         aliases = decodeStrings(objectMapper, aliasesJson),
         sourceDeviceId = sourceDeviceId,
         sourceSerial = sourceSerial,
@@ -115,6 +120,7 @@ class Tr069ModelProfileRecord(
             wanConnectionDeviceIndex = draft.wanConnectionDeviceIndex,
             wanIpConnectionPath = draft.wanIpConnectionPath,
             clientWanIpConnectionPath = draft.clientWanIpConnectionPath,
+            clientWanPppConnectionPath = draft.clientWanPppConnectionPath,
             wanGponLinkConfigPath = draft.wanGponLinkConfigPath,
             vlanParametersJson = encodeVlan(objectMapper, draft.vlanParameters),
             clientVlanParametersJson = encodeVlan(objectMapper, draft.clientVlanParameters),
@@ -183,6 +189,7 @@ data class AcsModelProfileDto(
     val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
     val clientWanIpConnectionPath: String? = null,
     val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
+    val clientWanPppConnectionPath: String? = null,
     val aliases: List<String> = emptyList(),
     val sourceDeviceId: String? = null,
     val sourceSerial: String? = null,

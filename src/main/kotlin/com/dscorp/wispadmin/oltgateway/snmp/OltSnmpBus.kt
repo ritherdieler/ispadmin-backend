@@ -10,7 +10,8 @@ enum class SnmpJobType {
     PROBE,
     INVENTORY,
     AUTOFIND,
-    OPTICAL
+    OPTICAL,
+    FUSED
 }
 
 /**

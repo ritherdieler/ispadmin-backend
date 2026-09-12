@@ -20,8 +20,10 @@ class Mk2ReconcileQueuesScriptTest {
         assertTrue(Files.exists(runbook), "missing $runbook")
         val libText = Files.readString(lib)
         assertTrue(libText.contains("id:%d, usuario:%s %s, lugar:%s, nap:%s, plan:%s, tipo:%s"))
+        assertTrue(libText.contains("CANCELLED_SQL"))
         val cliText = Files.readString(cli)
         assertTrue(cliText.contains("/rest/queue/simple/print"))
         assertTrue(cliText.contains("--dry-run"))
+        assertTrue(cliText.contains("--delete-cancelled"))
     }
 }

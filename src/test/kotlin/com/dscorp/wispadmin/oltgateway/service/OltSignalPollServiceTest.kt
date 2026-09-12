@@ -13,11 +13,13 @@ import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.FixtureLoader
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedBoard
+import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOpticalInfo
 import com.dscorp.wispadmin.oltgateway.exception.OltCommandTimeoutException
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpFusedSnapshot
 import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntKey
 import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntOptical
 import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
@@ -63,6 +65,9 @@ class OltSignalPollServiceTest {
         // Legacy tests exercise deprecated SSH optical path
         snmp.enabled = false
         snmp.allowSshSignalFallback = true
+        // Full-table SNMP path; per-port / fused tests opt in explicitly.
+        snmp.opticalPerPortWalks = false
+        snmp.fusedInventoryOptical = false
     }
 
     private lateinit var service: OltSignalPollService
@@ -901,6 +906,7 @@ class OltSignalPollServiceTest {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
         properties.snmp.opticalPerPortWalks = false
+        properties.snmp.fusedInventoryOptical = false
         every { snmpClient.listOptical(null) } returns emptyList()
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
 
@@ -917,6 +923,7 @@ class OltSignalPollServiceTest {
         properties.snmp.roCommunity = "test-ro"
         properties.snmp.opticalPerPortWalks = true
         properties.snmp.opticalOnlineOnly = true
+        properties.snmp.fusedInventoryOptical = false
         val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(slot = 0, port = 1)
         every { snmpClient.listOptical(any()) } returns listOf(
             SnmpOntOptical(
@@ -1022,6 +1029,112 @@ class OltSignalPollServiceTest {
         assertNull(result.skippedReason)
         assertEquals(0, held.get())
         verify(exactly = 1) { snmpClient.listOptical(null) }
+    }
+
+    @Test
+    fun `fused batch prefers snmp runState over stale status_current`() {
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "VSOL0086F6E9",
+            externalId = "gigafiber-ma5608t_0_1_3",
+            olt = olt,
+            board = 0,
+            port = 1,
+            onuIndex = 3,
+        ).also {
+            it.status = OltMgrOnuStatusCurrent(onu = it, runState = "offline")
+        }
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu)
+        every { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) } answers {
+            firstArg<Iterable<OltMgrOnuStatusCurrent>>().toList()
+        }
+
+        val stats = service.applyOpticalUpdates(
+            oltId = 1L,
+            rows = listOf(
+                OltSignalPollService.OpticalRow(
+                    slot = 0,
+                    port = 1,
+                    optical = ParsedOpticalInfo(
+                        ontId = 3,
+                        rxPowerDbm = -18.5,
+                        txPowerDbm = 2.1,
+                        oltRxPowerDbm = -27.45,
+                    ),
+                ),
+            ),
+            runStateByOnt = mapOf(Triple(0, 1, 3) to "online"),
+        )
+
+        assertEquals(1, stats.rowsMatched)
+        assertEquals(setOf("VSOL0086F6E9"), stats.publishedOpticalSns)
+        val batch = platformBus.published.single { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH }
+        assertTrue(batch.payloadJson.contains("\"runState\":\"online\""))
+        assertEquals(0, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE })
+    }
+
+    @Test
+    fun `fused poll publishes onu state for ont without optical powers`() {
+        val online = OltMgrOnu(
+            id = 30L,
+            sn = "VSOL0086F6E9",
+            externalId = "gigafiber-ma5608t_0_1_3",
+            olt = olt,
+            board = 0,
+            port = 1,
+            onuIndex = 3,
+        ).also { it.status = OltMgrOnuStatusCurrent(onu = it, runState = "online") }
+        val offline = OltMgrOnu(
+            id = 31L,
+            sn = "ZTEGDC47BFFD",
+            externalId = "gigafiber-ma5608t_0_1_4",
+            olt = olt,
+            board = 0,
+            port = 1,
+            onuIndex = 4,
+        ).also { it.status = OltMgrOnuStatusCurrent(onu = it, runState = "offline") }
+        every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
+        every { taskRepository.existsByStatus("running") } returns false
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(online, offline)
+        every { statusRepository.saveAll(any<Iterable<OltMgrOnuStatusCurrent>>()) } answers {
+            firstArg<Iterable<OltMgrOnuStatusCurrent>>().toList()
+        }
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        properties.snmp.allowSshSignalFallback = false
+        properties.snmp.opticalPerPortWalks = true
+        properties.snmp.fusedInventoryOptical = true
+        properties.inventory.defaultPortsPerGponBoard = 2
+        val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(slot = 0, port = 1)
+        every { snmpClient.listInventoryAndOptical(any()) } returns OltSnmpFusedSnapshot(
+            onus = listOf(
+                ParsedOnuSummary(
+                    frame = 0, slot = 0, port = 1, ontId = 3, sn = "VSOL0086F6E9", runState = "online",
+                ),
+                ParsedOnuSummary(
+                    frame = 0, slot = 0, port = 1, ontId = 4, sn = "ZTEGDC47BFFD", runState = "offline",
+                ),
+            ),
+            optical = listOf(
+                SnmpOntOptical(
+                    key = SnmpOntKey(ifIndex = ifIndex, ontId = 3),
+                    onuRxDbm = -18.5,
+                    onuTxDbm = 2.1,
+                    oltRxDbm = -27.45,
+                ),
+            ),
+            portsAttempted = 2,
+            portsFailed = 0,
+        )
+
+        val result = service.pollSignals()
+
+        assertNull(result.skippedReason)
+        assertEquals(1, platformBus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_OPTICAL_BATCH })
+        val states = platformBus.published.filter { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.ONU_STATE }
+        assertEquals(1, states.size)
+        assertEquals("ZTEGDC47BFFD", states.single().sn)
+        assertTrue(states.single().payloadJson.contains("\"runState\":\"offline\""))
     }
 
     private fun stubSignalPollExecute(session: HuaweiCliSession) {

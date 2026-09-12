@@ -59,6 +59,9 @@ class ServiceHealthPropertiesTest {
         assertEquals(7L, p.stationSeriesRawMaxDays)
         assertEquals(90L, p.stationHourlyRetentionDays)
         assertEquals(14L, p.stationRetentionDays)
+        assertEquals(90L, p.opticalRetentionDays)
+        assertEquals(730L, p.opticalDailyRetentionDays)
+        assertEquals(90L, p.opticalSeriesRawMaxDays)
     }
 
     @Test

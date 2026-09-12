@@ -125,6 +125,32 @@ data class Subscription(
     var vlan: String? = null,
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "access_mode", length = 16, nullable = false)
+    var accessMode: AccessMode = AccessMode.STATIC_IP,
+
+    @Column(name = "pppoe_username", length = 64, unique = true)
+    var pppoeUsername: String? = null,
+
+    @Column(name = "pppoe_password_enc", length = 512)
+    var pppoePasswordEnc: String? = null,
+
+    @Column(name = "pppoe_profile", length = 64)
+    var pppoeProfile: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pppoe_provision_status", length = 24)
+    var pppoeProvisionStatus: PppoeProvisionStatus? = null,
+
+    @Column(name = "pppoe_last_ip", length = 45)
+    var pppoeLastIp: String? = null,
+
+    @Column(name = "management_ip", length = 45)
+    var managementIp: String? = null,
+
+    @Column(name = "management_mac", length = 32)
+    var managementMac: String? = null,
+
+    @Enumerated(EnumType.STRING)
     var serviceStatus: ServiceStatus = ServiceStatus.ACTIVE,
 
     var price: Double? = null,
@@ -270,6 +296,8 @@ data class Subscription(
         tr069Message = tr069MessageForDto(),
         wifiSsid24 = wifiSsid24,
         wifiSsid5 = wifiSsid5,
+        accessMode = accessMode,
+        pppoeUsername = pppoeUsername,
     )
 
     private fun tr069MessageForDto(): String? = when (tr069ProvisionStatus) {

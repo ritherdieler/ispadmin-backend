@@ -3,9 +3,11 @@ package com.dscorp.wispadmin.servicehealth.service
 import com.dscorp.wispadmin.events.CpeInformPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.Quality
+import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
 import com.dscorp.wispadmin.servicehealth.domain.WifiStationSample
+import com.dscorp.wispadmin.servicehealth.repository.TelemetryRunRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCountSampleRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCurrentRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiStationSampleRepository
@@ -21,6 +23,7 @@ class CpeInformPersistService(
     private val counts: WifiCountSampleRepository,
     private val stations: WifiStationSampleRepository,
     private val current: WifiCurrentRepository,
+    private val runs: TelemetryRunRepository,
     private val properties: ServiceHealthProperties,
     private val objectMapper: ObjectMapper,
 ) {
@@ -106,6 +109,17 @@ class CpeInformPersistService(
         status.qualityStatus = runCatching { Quality.valueOf(payload.qualityStatus) }.getOrDefault(Quality.FRESH)
         status.updatedAt = now
         current.save(status)
+        runs.save(
+            TelemetryRun(
+                source = "ACS",
+                equipmentKey = "gateway-cpe",
+                startedAt = payload.informAt,
+                completedAt = now,
+                qualityStatus = Quality.FRESH,
+                readCount = 1,
+                writtenCount = 1,
+            )
+        )
     }
 
     @Transactional

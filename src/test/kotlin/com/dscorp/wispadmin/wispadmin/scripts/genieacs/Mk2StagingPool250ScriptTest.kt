@@ -34,7 +34,7 @@ class Mk2StagingPool250ScriptTest {
         val text = scriptText()
         assertTrue(text.contains("staging-e2e-250"), text)
         assertTrue(text.contains("192.168.22.0/24"), text)
-        assertTrue(text.contains("Drop staging 250 to legacy LAN_MK1"), text)
+        assertTrue(text.contains("Drop staging 250 to LAN-VLAN1"), text)
     }
 
     @Test

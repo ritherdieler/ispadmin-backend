@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.traffic.port.TrafficDirectoryPort
 import com.dscorp.wispadmin.traffic.repository.TrafficRouterRepository
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickBuilder
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickState
+import com.dscorp.wispadmin.traffic.service.TrafficTargetKey
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.messaging.handler.annotation.MessageMapping
@@ -34,6 +35,7 @@ class SubscriptionTrafficWebSocket(
     private data class SubscriptionMonitorTarget(
         val subscriptionId: Int,
         val ip: String,
+        val pppoeUsername: String?,
         val deviceId: Int,
     )
 
@@ -66,14 +68,15 @@ class SubscriptionTrafficWebSocket(
             null
         }
         val ip = target?.ip?.trim().orEmpty()
-        if (ip.isEmpty()) {
-            logger.warn("Subscription {} missing ip for live traffic", subscriptionId)
+        val pppoeUsername = target?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        if (TrafficTargetKey.of(ip, pppoeUsername) == null) {
+            logger.warn("Subscription {} missing ip and pppoe username for live traffic", subscriptionId)
             return
         }
         val deviceId = target?.routerHint ?: routerRepository.findByEnabledTrue().firstOrNull()?.id ?: return
         activeSessions.computeIfAbsent(subscriptionId) { mutableSetOf() }.add(sessionId)
         sessionActivity[sessionId] = System.currentTimeMillis()
-        subscriptionTargets[subscriptionId] = SubscriptionMonitorTarget(subscriptionId, ip, deviceId)
+        subscriptionTargets[subscriptionId] = SubscriptionMonitorTarget(subscriptionId, ip, pppoeUsername, deviceId)
         deviceSubscriptions.computeIfAbsent(deviceId) { mutableSetOf() }.add(subscriptionId)
         if (deviceSubscriptions[deviceId]?.size == 1) {
             val router = routerRepository.findById(deviceId).orElse(null) ?: return
@@ -126,7 +129,11 @@ class SubscriptionTrafficWebSocket(
         val subscriptionIds = deviceSubscriptions[deviceId]?.toList().orEmpty()
         subscriptionIds.forEach { subscriptionId ->
             val target = subscriptionTargets[subscriptionId] ?: return@forEach
-            val queueRow = SubscriptionTrafficLiveTickBuilder.findQueueRowForIp(queueRows, target.ip)
+            val queueRow = SubscriptionTrafficLiveTickBuilder.findQueueRow(
+                queueRows,
+                target.ip,
+                target.pppoeUsername,
+            )
             val previous = tickStates[subscriptionId] ?: SubscriptionTrafficLiveTickState()
             val result = SubscriptionTrafficLiveTickBuilder.buildFromQueueRow(
                 subscriptionId = subscriptionId,

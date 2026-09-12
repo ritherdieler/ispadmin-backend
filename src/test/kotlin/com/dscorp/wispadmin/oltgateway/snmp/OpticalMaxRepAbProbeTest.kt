@@ -29,6 +29,25 @@ class OpticalMaxRepAbProbeTest {
     }
 
     @Test
+    fun `walk compara cursores como OID numerico no como texto`() {
+        val responses = ArrayDeque(
+            listOf(
+                GetBulkPageResponse(oids = listOf("1.1.7", "1.1.8"), timedOut = false),
+                GetBulkPageResponse(oids = listOf("1.1.9", "1.1.23"), timedOut = false),
+                GetBulkPageResponse(oids = listOf("1.2.0"), timedOut = false),
+            )
+        )
+        val probe = OpticalMaxRepAbProbe { _, _ -> responses.removeFirst() }
+
+        val report = probe.walk(rootOid = "1.1", maxRepetitions = 15)
+
+        assertEquals(4, report.rowCount)
+        assertEquals(2, report.pagesOk)
+        assertEquals(0, report.pagesTimedOut)
+        assertTrue(report.pages.none { it.error?.contains("non-advancing") == true }, "${report.pages}")
+    }
+
+    @Test
     fun `walk records timeout page and stops`() {
         var calls = 0
         val probe = OpticalMaxRepAbProbe { _, _ ->

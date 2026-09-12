@@ -18,6 +18,8 @@ data class CpeProvisionCommand(
     val wifiPassword24: String? = null,
     val wifiSsid5: String? = null,
     val wifiPassword5: String? = null,
+    val pppoeUsername: String? = null,
+    val pppoePassword: String? = null,
 )
 
 data class CpeProvisionResult(
@@ -55,4 +57,15 @@ data class CpeTelemetryResult(
 data class CpeInformNotifyRequest(
     val deviceId: String? = null,
     val serial: String? = null,
+)
+
+data class CpeAccessLayout(
+    val sn: String,
+    val productClass: String? = null,
+    val connectionRequestUrl: String? = null,
+    val lastInformAt: String? = null,
+    val wanIpPath: String? = null,
+    val wanPppPath: String? = null,
+    val hasPppPath: Boolean = false,
+    val wanIpSharesPppSlot: Boolean = false,
 )

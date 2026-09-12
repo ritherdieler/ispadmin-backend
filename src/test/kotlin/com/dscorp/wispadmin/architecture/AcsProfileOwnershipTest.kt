@@ -49,6 +49,83 @@ class AcsProfileOwnershipTest {
     }
 
     @Test
+    fun coreMigrationsAfterTheMoveNeverTouchTheProfileTable() {
+        val offenders = Files.list(root.resolve("src/main/resources/db/migration")).use { paths ->
+            paths.filter { it.fileName.toString().endsWith(".sql") }
+                .filter { versionOf(it.fileName.toString()) > 50 }
+                .filter { Files.readString(it).contains("tr069_model_profile") }
+                .map { it.fileName.toString() }
+                .toList()
+        }
+        assertTrue(
+            offenders.isEmpty(),
+            "tr069_model_profile belongs to the ACS schema and V50 dropped it from the core; " +
+                "these core migrations would fail on a clean staging: $offenders",
+        )
+    }
+
+    @Test
+    fun acsFlywayOwnsThePppoeWanPath() {
+        val acsMigrations = Files.list(root.resolve("src/main/resources/db/acs")).use { paths ->
+            paths.filter { it.fileName.toString().endsWith(".sql") }
+                .map { Files.readString(it) }
+                .toList()
+        }
+        assertTrue(
+            acsMigrations.any { it.contains("client_wan_ppp_connection_path") },
+            "the PPPoE WAN path column must be added by an ACS migration, not by the core",
+        )
+    }
+
+    @Test
+    fun thePppoeWanPathMigrationToleratesAnAlreadyPatchedSchema() {
+        val sql = Files.readString(root.resolve("src/main/resources/db/acs/V3__tr069_client_wan_ppp_path.sql"))
+        assertTrue(
+            sql.contains("information_schema.COLUMNS"),
+            "stg_acs already got the column by hand, so the migration must check before adding it: $sql",
+        )
+        assertTrue(sql.contains("client_wan_ppp_connection_path"), sql)
+    }
+
+    @Test
+    fun acsFlywayOwnsKnownPppoeWanPaths() {
+        val sql = Files.readString(root.resolve("src/main/resources/db/acs/V4__tr069_client_wan_ppp_paths.sql"))
+        assertTrue(sql.contains("V2804AX15T"), sql)
+        assertTrue(
+            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1"),
+            sql,
+        )
+        assertTrue(sql.contains("F6600R"), sql)
+        assertTrue(
+            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2"),
+            sql,
+        )
+        assertFalse(sql.contains("stg_acs."), sql)
+        assertFalse(sql.contains("ispadmin"), sql)
+    }
+
+    @Test
+    fun stagingOneShotSqlPopulatesPppoeWanPathsWithoutTouchingCore() {
+        val sql = Files.readString(root.resolve("scripts/sql/stg-acs-pppoe-wan-paths.sql"))
+        assertTrue(sql.contains("stg_acs.tr069_model_profile"), sql)
+        assertTrue(sql.contains("V2804AX15T"), sql)
+        assertTrue(
+            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1"),
+            sql,
+        )
+        assertTrue(sql.contains("F6600R"), sql)
+        assertTrue(
+            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2"),
+            sql,
+        )
+        assertFalse(sql.contains("ispadmin."), sql)
+        assertFalse(sql.contains("ispadmin_staging"), sql)
+    }
+
+    private fun versionOf(fileName: String): Int =
+        fileName.removePrefix("V").substringBefore("__").toIntOrNull() ?: 0
+
+    @Test
     fun coreFlywayDropsMovedProfileTable() {
         val sql = Files.readString(root.resolve("src/main/resources/db/migration/V50__drop_tr069_model_profile.sql"))
         assertTrue(sql.contains("DROP TABLE IF EXISTS tr069_model_profile"), sql)

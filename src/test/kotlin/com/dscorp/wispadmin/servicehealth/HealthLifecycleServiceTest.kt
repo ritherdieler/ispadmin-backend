@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.servicehealth.domain.WifiAggregationWatermark
 import com.dscorp.wispadmin.servicehealth.repository.HealthCursorRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiAggregationWatermarkRepository
 import com.dscorp.wispadmin.servicehealth.service.HealthLifecycleService
+import com.dscorp.wispadmin.servicehealth.service.OpticalDailyRollupService
 import com.dscorp.wispadmin.servicehealth.service.WifiStationRollupService
 import io.mockk.every
 import io.mockk.mockk
@@ -21,9 +22,10 @@ class HealthLifecycleServiceTest {
     private val em = mockk<EntityManager>(relaxed = true)
     private val watermarks = mockk<WifiAggregationWatermarkRepository>()
     private val rollup = mockk<WifiStationRollupService>(relaxed = true)
+    private val opticalRollup = mockk<OpticalDailyRollupService>(relaxed = true)
     private val query = mockk<Query>(relaxed = true)
     private val properties = ServiceHealthProperties().apply { enabled = true }
-    private val service = HealthLifecycleService(properties, cursors, em, watermarks, rollup)
+    private val service = HealthLifecycleService(properties, cursors, em, watermarks, rollup, opticalRollup)
 
     @Test
     fun `purge does not delete raw stations without hourly watermark`() {
@@ -33,8 +35,10 @@ class HealthLifecycleServiceTest {
         service.purge()
 
         verify { rollup.catchUp(any()) }
+        verify { opticalRollup.catchUp(any()) }
         verify(exactly = 0) { em.createQuery(match<String> { it.contains("WifiStationSample") }) }
         verify { em.createQuery(match<String> { it.contains("WifiStationHourly") }) }
+        verify { em.createQuery(match<String> { it.contains("OpticalDailySample") }) }
     }
 
     @Test

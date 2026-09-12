@@ -6,9 +6,11 @@ import com.dscorp.wispadmin.events.PlatformEvent
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.Quality
+import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
 import com.dscorp.wispadmin.servicehealth.domain.WifiCountSample
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
 import com.dscorp.wispadmin.servicehealth.domain.WifiStationSample
+import com.dscorp.wispadmin.servicehealth.repository.TelemetryRunRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCountSampleRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCurrentRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiStationSampleRepository
@@ -21,7 +23,10 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import java.time.Instant
@@ -36,11 +41,12 @@ class CpeInformPersistServiceTest {
     private val counts = mockk<WifiCountSampleRepository>(relaxed = true)
     private val stations = mockk<WifiStationSampleRepository>(relaxed = true)
     private val current = mockk<WifiCurrentRepository>(relaxed = true)
+    private val runs = mockk<TelemetryRunRepository>(relaxed = true)
     private val properties = ServiceHealthProperties().apply {
         stationHmacKey = "test-only-key-of-at-least-32-bytes-long"
     }
     private val json = informMapper()
-    private val service = CpeInformPersistService(identity, counts, stations, current, properties, json)
+    private val service = CpeInformPersistService(identity, counts, stations, current, runs, properties, json)
 
     private val informAt = Instant.parse("2026-09-08T18:00:00Z")
     private val observedAt = Instant.parse("2026-09-08T17:59:50Z")
@@ -61,6 +67,7 @@ class CpeInformPersistServiceTest {
         )
         verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { current.save(any()) }
+        verify(exactly = 0) { runs.save(any()) }
     }
 
     @Test
@@ -87,6 +94,7 @@ class CpeInformPersistServiceTest {
         )
         verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { stations.save(any()) }
+        verify(exactly = 0) { runs.save(any()) }
     }
 
     @Test
@@ -102,6 +110,7 @@ class CpeInformPersistServiceTest {
         } returns 11L
         every { current.findById(42) } returns Optional.of(WifiCurrent(subscriptionId = 42))
         every { current.save(any()) } answers { firstArg() }
+        every { runs.save(any()) } answers { firstArg() }
         service.persist(
             CpeInformPayload(
                 sn = "12345B4641531C0B6",
@@ -135,6 +144,13 @@ class CpeInformPersistServiceTest {
         }
         verify(exactly = 0) { stations.save(any()) }
         verify { current.save(match { it.associatedDeviceCount == 0 && it.qualityStatus == Quality.FRESH }) }
+        val run = slot<TelemetryRun>()
+        verify { runs.save(capture(run)) }
+        assertEquals("ACS", run.captured.source)
+        assertEquals("gateway-cpe", run.captured.equipmentKey)
+        assertEquals(informAt, run.captured.startedAt)
+        assertEquals(Quality.FRESH, run.captured.qualityStatus)
+        assertNotNull(run.captured.completedAt)
     }
 
     @Test
@@ -161,6 +177,7 @@ class CpeInformPersistServiceTest {
         every { current.findById(2389) } returns Optional.of(WifiCurrent(subscriptionId = 2389))
         every { current.save(any()) } answers { firstArg() }
         every { stations.save(any()) } answers { firstArg() }
+        every { runs.save(any()) } answers { firstArg() }
 
         service.persist(
             CpeInformPayload(
@@ -199,6 +216,7 @@ class CpeInformPersistServiceTest {
                 }
             )
         }
+        verify { runs.save(match { it.source == "ACS" && it.equipmentKey == "gateway-cpe" }) }
     }
 
     @Test
@@ -213,6 +231,7 @@ class CpeInformPersistServiceTest {
         every { current.findById(2389) } returns Optional.empty()
         every { current.save(any()) } answers { firstArg() }
         every { stations.save(any()) } answers { firstArg() }
+        every { runs.save(any()) } answers { firstArg() }
 
         service.persist(
             CpeInformPayload(

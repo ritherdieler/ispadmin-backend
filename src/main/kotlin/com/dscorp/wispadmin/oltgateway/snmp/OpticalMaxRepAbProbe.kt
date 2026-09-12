@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.snmp
 
+import org.snmp4j.smi.OID
+
 data class GetBulkPageResponse(
     val oids: List<String>,
     val timedOut: Boolean = false,
@@ -67,7 +69,7 @@ class OpticalMaxRepAbProbe(
                 bindings = inSubtree.size,
             )
             val last = inSubtree.last()
-            if (last <= cursor) {
+            if (OID(last).compareTo(OID(cursor)) <= 0) {
                 pages += GetBulkPageRecord(
                     pageIndex = pageIndex + 1,
                     ok = false,

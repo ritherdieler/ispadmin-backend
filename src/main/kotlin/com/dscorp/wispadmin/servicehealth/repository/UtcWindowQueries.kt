@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.servicehealth.repository
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.domain.HealthEvent
 import com.dscorp.wispadmin.servicehealth.domain.OnuStateEvent
+import com.dscorp.wispadmin.servicehealth.domain.OpticalDailySample
 import com.dscorp.wispadmin.servicehealth.domain.OpticalSample
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
 import com.dscorp.wispadmin.servicehealth.domain.WifiCountSample
@@ -17,6 +18,12 @@ fun OpticalSampleRepository.listBySubscriptionInUtcWindow(id: Int, from: Instant
 
 fun OpticalSampleRepository.listByOnuInUtcWindow(id: Long, from: Instant, to: Instant): List<OpticalSample> =
     findOpticalByOnuUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))
+
+fun OpticalDailySampleRepository.listBySubscriptionInUtcWindow(id: Int, from: Instant, to: Instant): List<OpticalDailySample> =
+    findDailyBySubscriptionUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))
+
+fun OpticalDailySampleRepository.listByOnuInUtcWindow(id: Long, from: Instant, to: Instant): List<OpticalDailySample> =
+    findDailyByOnuUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))
 
 fun OnuStateEventRepository.listBySubscriptionInUtcWindow(id: Int, from: Instant, to: Instant): List<OnuStateEvent> =
     findStateBySubscriptionUtcRange(id, UtcInstantText.format(from), UtcInstantText.format(to))

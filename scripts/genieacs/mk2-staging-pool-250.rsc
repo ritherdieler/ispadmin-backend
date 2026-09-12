@@ -22,8 +22,11 @@
     comment="Staging e2e pool"
 }
 
-:if ([:len [/ip firewall filter find where comment="Drop staging 250 to legacy LAN_MK1"]] = 0) do={
+:if ([:len [/ip firewall filter find where comment~"Drop staging 250 to"]] = 0) do={
   /ip firewall filter add chain=forward action=drop \
     src-address-list=staging-e2e-250 dst-address=192.168.22.0/24 \
-    comment="Drop staging 250 to legacy LAN_MK1"
+    comment="Drop staging 250 to LAN-VLAN1"
+} else={
+  /ip firewall filter set [find where comment~"Drop staging 250 to"] \
+    comment="Drop staging 250 to LAN-VLAN1"
 }

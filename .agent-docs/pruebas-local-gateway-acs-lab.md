@@ -14,7 +14,7 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
 | **OLT** | Real `10.11.104.2` (SSH desde Gateway) | No saturar VTY con SSH extra (health del Gateway basta). |
 | **MikroTik** | **MK2** `network_device.id=8`, VLAN **100** | No MK1 ni `mikrotik_test`. |
-| **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`** | Prohibido writes a ONUs de clientes. |
+| **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`**. VSOL lab **`VSOL0031C0B6`** | Prohibido writes a ONUs de clientes. La VSOL lab **siempre** lleva VLAN **1000** (WCD.1 → ACS, `10.20.0.0/22`) más VLAN **100** (internet). Un alta que deje solo VLAN 100 corta el ACS. |
 
 Cliente (curl, app, script) habla **solo con el Core**. El Core orquesta Gateway (OLT + ACS) y MK2.
 

@@ -195,3 +195,34 @@ class WifiAggregationWatermark(
     @Column(name="consolidated_through") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var consolidatedThrough: Instant? = null,
     @Column(name="updated_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var updatedAt: Instant = Instant.now()
 )
+
+@Entity
+@Table(
+    name = "olt_mgr_onu_optical_daily",
+    uniqueConstraints = [UniqueConstraint(name = "uk_sh_optical_daily", columnNames = ["onu_id", "bucket_start"])],
+    indexes = [
+        Index(name = "idx_sh_optical_daily_sub_time", columnList = "subscription_id,bucket_start"),
+        Index(name = "idx_sh_optical_daily_onu_time", columnList = "onu_id,bucket_start"),
+    ],
+)
+class OpticalDailySample(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) @Column(name = "id") var id: Long? = null,
+    @Column(name = "subscription_id") var subscriptionId: Int? = null,
+    @Column(name = "onu_id") var onuId: Long = 0,
+    @Column(name = "onu_sn") var onuSn: String = "",
+    @Column(name = "olt_id") var oltId: Long = 0,
+    @Column(name = "board") var board: Int = 0,
+    @Column(name = "port") var port: Int = 0,
+    @Column(name = "onu_index") var onuIndex: Int = 0,
+    @Column(name = "bucket_start") @org.hibernate.annotations.Type(type = "com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var bucketStart: Instant = Instant.now(),
+    @Column(name = "onu_rx_min") var onuRxMin: Double? = null,
+    @Column(name = "onu_rx_avg") var onuRxAvg: Double? = null,
+    @Column(name = "onu_rx_max") var onuRxMax: Double? = null,
+    @Column(name = "onu_tx_min") var onuTxMin: Double? = null,
+    @Column(name = "onu_tx_avg") var onuTxAvg: Double? = null,
+    @Column(name = "onu_tx_max") var onuTxMax: Double? = null,
+    @Column(name = "olt_rx_min") var oltRxMin: Double? = null,
+    @Column(name = "olt_rx_avg") var oltRxAvg: Double? = null,
+    @Column(name = "olt_rx_max") var oltRxMax: Double? = null,
+    @Column(name = "sample_count") var sampleCount: Int = 0,
+)

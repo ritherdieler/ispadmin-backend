@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
+import com.dscorp.wispadmin.wispadmin.config.PppoeProperties
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.GeoLocation
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
@@ -91,6 +92,9 @@ class SubscriptionServiceIdempotencyTest {
             mikrotikService = mockk(relaxed = true),
             observabilityReporter = mockk(relaxed = true)
         ),
+        pppoeProperties = PppoeProperties(),
+        pppoeSecretCipher = mockk(relaxed = true),
+        pppoeAccessService = mockk(relaxed = true),
         )
     }
 

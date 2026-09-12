@@ -20,7 +20,7 @@ class Mk2ProblematicRoutingScriptTest {
         assertTrue(Files.exists(disableMk1), "missing $disableMk1")
 
         val routingText = Files.readString(routing)
-        assertTrue(routingText.contains("LAN_MK1"), "mangle must use LAN_MK1")
+        assertTrue(routingText.contains("LAN-VLAN1"), "mangle must use LAN-VLAN1")
         assertTrue(routingText.contains("toTarazona"), "must define toTarazona")
         assertTrue(routingText.contains("8.243.126.161"), "SNAT target must be 8.243.126.161")
         assertTrue(routingText.contains("WAN-VLAN SFP-SFPPLUS1"), "WAN iface name for MK2")

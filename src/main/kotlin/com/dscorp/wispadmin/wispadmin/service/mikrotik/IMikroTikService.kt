@@ -11,13 +11,19 @@ interface IMikroTikService {
     
     fun addIpToDebtorsListIfNotExists(session: MikrotikSession, ip: String, comment: String)
     
+    fun addIpToCutList(session: MikrotikSession, list: CutList, ip: String, comment: String)
+    
+    fun removeIpFromCutList(session: MikrotikSession, list: CutList, ip: String)
+    
+    fun removeIpFromAllCutLists(session: MikrotikSession, ip: String)
+    
+    fun createCutDropRule(session: MikrotikSession, list: CutList)
+    
     fun removeFirewallRulesByComment(session: MikrotikSession, commentPattern: String)
     
     fun createFirewallDropRule(session: MikrotikSession)
     
     fun clearAddressList(session: MikrotikSession, listName: String): Int
-    
-    fun clearFirewallRules(session: MikrotikSession): Int
     
     fun findAndRemoveQueueByIp(session: MikrotikSession, ip: String)
     

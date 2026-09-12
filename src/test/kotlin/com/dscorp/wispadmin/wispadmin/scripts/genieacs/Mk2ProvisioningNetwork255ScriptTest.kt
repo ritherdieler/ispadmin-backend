@@ -30,8 +30,8 @@ class Mk2ProvisioningNetwork255ScriptTest {
         val script = root.resolve("scripts/genieacs/mk2-provisioning-network-255.rsc")
         val text = Files.readString(script)
         assertTrue(
-            text.contains("interface=\"LAN_MK1\"") || text.contains("interface=LAN_MK1"),
-            "must clean residual gateway/DHCP on LAN_MK1: $text"
+            text.contains("LAN-VLAN1") && text.contains("LAN_MK1"),
+            "must clean residual gateway/DHCP on LAN-VLAN1 and old LAN_MK1: $text"
         )
         assertTrue(text.contains("remove"), text)
         assertTrue(text.contains("192.168.255.1/22"), text)

@@ -17,5 +17,7 @@ data class TrafficCounterState(
     var lastRxBytes: Long = 0,
     var lastTxBytes: Long = 0,
     var lastRouterUptimeSeconds: Long? = null,
+    @Column(name = "last_client_address", length = 45)
+    var lastClientAddress: String? = null,
     var lastPolledAt: LocalDateTime? = null,
 )

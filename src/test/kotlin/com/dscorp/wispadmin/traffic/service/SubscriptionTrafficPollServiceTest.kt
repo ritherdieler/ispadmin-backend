@@ -240,6 +240,102 @@ class SubscriptionTrafficPollServiceTest {
         verify { sampleRepository.save(match { it.clientIp == "10.10.10.20" }) }
     }
 
+    @Test
+    fun `pollTraffic identifica la cola dinamica PPPoE por username y no por IP`() {
+        every { routerRepository.findByEnabledTrue() } returns listOf(router)
+        every { directory.list() } returns listOf(
+            TrafficDirectoryTarget(77, "", routerHint = 9, pppoeUsername = "gf77"),
+        )
+        every { counterStateRepository.findById("pppoe:gf77") } returns Optional.empty()
+        every { sampleRepository.findByClientIpAndBucketStart(any(), any()) } returns null
+        every { sampleRepository.save(any()) } answers { firstArg() }
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
+        val stateSlot = slot<TrafficCounterState>()
+        every { counterStateRepository.save(capture(stateSlot)) } answers { firstArg() }
+        stubSession(
+            mapOf(
+                "name" to "<pppoe-gf77>",
+                "target" to "10.64.3.7/32",
+                "bytes" to "1000/2000",
+                "max-limit" to "200M/200M",
+            ),
+        )
+
+        val result = service.pollTraffic()
+
+        assertEquals(1, result.subscriptionsMatched)
+        assertEquals("pppoe:gf77", stateSlot.captured.clientIp)
+        assertEquals("10.64.3.7", stateSlot.captured.lastClientAddress)
+        assertEquals(77, stateSlot.captured.subscriptionId)
+        verify {
+            sampleRepository.save(match { it.clientIp == "pppoe:gf77" && it.subscriptionId == 77 })
+        }
+    }
+
+    @Test
+    fun `pollTraffic marca RESET cuando el cliente PPPoE reconecta con otra IP`() {
+        every { routerRepository.findByEnabledTrue() } returns listOf(router)
+        every { directory.list() } returns listOf(
+            TrafficDirectoryTarget(77, "", routerHint = 9, pppoeUsername = "gf77"),
+        )
+        every { counterStateRepository.findById("pppoe:gf77") } returns Optional.of(
+            TrafficCounterState(
+                clientIp = "pppoe:gf77",
+                subscriptionId = 77,
+                hostDeviceId = 9,
+                lastRxBytes = 2000,
+                lastTxBytes = 1000,
+                lastRouterUptimeSeconds = 90000,
+                lastClientAddress = "10.64.3.7",
+            ),
+        )
+        every { sampleRepository.findByClientIpAndBucketStart(any(), any()) } returns null
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
+        val sampleSlot = slot<SubscriptionTrafficSample>()
+        every { sampleRepository.save(capture(sampleSlot)) } answers { firstArg() }
+        every { counterStateRepository.save(any()) } answers { firstArg() }
+        stubSession(
+            mapOf("name" to "<pppoe-gf77>", "target" to "10.64.9.90/32", "bytes" to "1500/3500"),
+        )
+
+        service.pollTraffic()
+
+        assertEquals("RESET", sampleSlot.captured.sampleStatus.name)
+        assertNull(sampleSlot.captured.rxBytesDelta)
+    }
+
+    @Test
+    fun `pollTraffic no marca RESET cuando el cliente PPPoE conserva su IP`() {
+        every { routerRepository.findByEnabledTrue() } returns listOf(router)
+        every { directory.list() } returns listOf(
+            TrafficDirectoryTarget(77, "", routerHint = 9, pppoeUsername = "gf77"),
+        )
+        every { counterStateRepository.findById("pppoe:gf77") } returns Optional.of(
+            TrafficCounterState(
+                clientIp = "pppoe:gf77",
+                subscriptionId = 77,
+                hostDeviceId = 9,
+                lastRxBytes = 2000,
+                lastTxBytes = 1000,
+                lastRouterUptimeSeconds = 90000,
+                lastClientAddress = "10.64.3.7",
+            ),
+        )
+        every { sampleRepository.findByClientIpAndBucketStart(any(), any()) } returns null
+        every { sourceRunRepository.save(any()) } answers { firstArg() }
+        val sampleSlot = slot<SubscriptionTrafficSample>()
+        every { sampleRepository.save(capture(sampleSlot)) } answers { firstArg() }
+        every { counterStateRepository.save(any()) } answers { firstArg() }
+        stubSession(
+            mapOf("name" to "<pppoe-gf77>", "target" to "10.64.3.7/32", "bytes" to "1500/3500"),
+        )
+
+        service.pollTraffic()
+
+        assertEquals("OK", sampleSlot.captured.sampleStatus.name)
+        assertEquals(1500L, sampleSlot.captured.rxBytesDelta)
+    }
+
     private fun stubSession(queue: Map<String, String>) {
         val session = mockk<MikrotikSession>()
         every { session.print("/queue/simple", any(), any()) } returns listOf(queue)

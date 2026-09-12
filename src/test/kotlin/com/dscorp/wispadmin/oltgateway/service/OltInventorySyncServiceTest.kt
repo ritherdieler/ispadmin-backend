@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.Optional
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class OltInventorySyncServiceTest {
@@ -184,6 +185,52 @@ class OltInventorySyncServiceTest {
         assertEquals(1, result.inserted)
         verify(exactly = 1) { snmpClient.listConfiguredOnus() }
         verify(exactly = 0) { queryFacade.listOnusParsed() }
+    }
+
+    @Test
+    fun `syncInventory SNMP corre dentro del lock compartido del poll`() {
+        val held = AtomicInteger(0)
+        val heldDuringSnmp = AtomicInteger(-1)
+        val acquisitions = AtomicInteger(0)
+        val locker = object : com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker {
+            override fun <T> withLock(block: () -> T): T {
+                acquisitions.incrementAndGet()
+                held.incrementAndGet()
+                return try {
+                    block()
+                } finally {
+                    held.decrementAndGet()
+                }
+            }
+        }
+        service = OltInventorySyncService(
+            queryFacade = queryFacade,
+            oltRepository = oltRepository,
+            onuRepository = onuRepository,
+            statusRepository = statusRepository,
+            auditLogRepository = auditLogRepository,
+            syncRunRepository = syncRunRepository,
+            taskRepository = taskRepository,
+            properties = properties,
+            cliBus = cliBus,
+            snmpClient = snmpClient,
+            onuTypeRepository = onuTypeRepository,
+            pollLock = locker
+        )
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        properties.snmp.allowSshInventoryFallback = false
+        every { snmpClient.listConfiguredOnus() } answers {
+            heldDuringSnmp.set(held.get())
+            listOf(summary(sn = "SNLOCK0001", slot = 0, port = 3, ontId = 1, runState = "online"))
+        }
+
+        val result = service.syncInventory()
+
+        assertEquals(1, result.inserted)
+        assertEquals(1, acquisitions.get())
+        assertEquals(1, heldDuringSnmp.get(), "SNMP inventory walk must run inside the poll lock")
+        assertEquals(0, held.get(), "poll lock must be released")
     }
 
     @Test

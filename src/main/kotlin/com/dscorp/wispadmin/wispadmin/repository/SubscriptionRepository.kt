@@ -149,10 +149,26 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query(
         """
         SELECT DISTINCT s FROM Subscription s
+        LEFT JOIN FETCH s.plan
+        LEFT JOIN FETCH s.hostDevice
+        WHERE s.installationType = com.dscorp.wispadmin.wispadmin.data.model.InstallationType.FIBER
+          AND s.accessMode = com.dscorp.wispadmin.wispadmin.data.model.AccessMode.STATIC_IP
+          AND s.serviceStatus = com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus.ACTIVE
+          AND s.fiberOnuSn IS NOT NULL
+        """
+    )
+    fun findAccessMigrationCandidates(): List<Subscription>
+
+    @Query(
+        """
+        SELECT DISTINCT s FROM Subscription s
         LEFT JOIN FETCH s.hostDevice
         LEFT JOIN FETCH s.plan
         WHERE s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
-        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND (
+            (s.ip IS NOT NULL AND s.ip <> '')
+            OR (s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> '')
+        )
         AND s.hostDevice IS NOT NULL
         """
     )
@@ -164,7 +180,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH s.plan
         WHERE s.id > :after
         AND s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
-        AND s.ip IS NOT NULL AND s.ip <> ''
+        AND (
+            (s.ip IS NOT NULL AND s.ip <> '')
+            OR (s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> '')
+        )
         AND s.hostDevice IS NOT NULL
         ORDER BY s.id
     """)

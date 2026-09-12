@@ -29,6 +29,33 @@ data class LiveOnuState(
     val updateKind: String = "snapshot",
 )
 
+object RedisOnuHashFields {
+    fun forPut(state: LiveOnuState): Map<String, String> {
+        val hash = mutableMapOf(
+            "sn" to state.sn,
+            "observedAt" to state.observedAt.toString(),
+        )
+        state.runState?.let { hash["runState"] = it }
+        state.rxPowerDbm?.let { hash["rxPowerDbm"] = it.toString() }
+        when (state.updateKind) {
+            "optical" -> {
+                if (state.runState == null) {
+                    hash.remove("runState")
+                    hash.remove("observedAt")
+                }
+                hash["opticalObservedAt"] = state.observedAt.toString()
+                hash.putIfAbsent("rxPowerDbm", "")
+            }
+            "state" -> {
+                hash.remove("rxPowerDbm")
+                hash.putIfAbsent("runState", "")
+            }
+            else -> listOf("runState", "rxPowerDbm").forEach { hash.putIfAbsent(it, "") }
+        }
+        return hash
+    }
+}
+
 interface LiveTelemetryPort {
     fun traffic(subscriptionId: Int): LiveTrafficSample?
     fun putTraffic(subscriptionId: Int, sample: LiveTrafficSample)

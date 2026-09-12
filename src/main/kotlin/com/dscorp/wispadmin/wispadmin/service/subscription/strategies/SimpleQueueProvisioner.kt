@@ -10,8 +10,10 @@ import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionManager
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.wispadmin.data.model.usesSimpleQueue
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.SimpleQueueNameParser
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.SimpleQueueTarget
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
@@ -46,7 +48,15 @@ class SimpleQueueProvisioner(
             return QueueEnsureResult(added = true)
         }
 
-        val target = subscription.ip.orEmpty()
+        if (!subscription.accessMode.usesSimpleQueue()) {
+            return QueueEnsureResult(added = false)
+        }
+
+        val target = SimpleQueueTarget.of(subscription)
+            ?: return QueueEnsureResult(
+                added = false,
+                error = "La suscripción ${subscription.id} no tiene IP válida para crear su queue"
+            )
         var result = QueueEnsureResult(added = false)
         return try {
             device.executeCommand { session ->

@@ -31,6 +31,8 @@ data class OnuActivateRequestDto(
     val wifiPassword24: String? = null,
     val wifiSsid5: String? = null,
     val wifiPassword5: String? = null,
+    val pppoeUsername: String? = null,
+    val pppoePassword: String? = null,
 )
 
 data class OnuActivateResponseDto(

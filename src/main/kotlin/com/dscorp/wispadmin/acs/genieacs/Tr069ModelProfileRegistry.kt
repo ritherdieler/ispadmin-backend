@@ -54,7 +54,8 @@ class Tr069ModelProfileRegistry(
         return try {
             val sql = """
                 SELECT product_class, wan_connection_device_index, wan_ip_connection_path,
-                       client_wan_ip_connection_path, wan_gpon_link_config_path,
+                       client_wan_ip_connection_path, client_wan_ppp_connection_path,
+                       wan_gpon_link_config_path,
                        vlan_parameters_json, client_vlan_parameters_json,
                        wlan24_path, wlan5_path, wifi_security_prep_json, aliases_json
                 FROM tr069_model_profile
@@ -76,6 +77,7 @@ class Tr069ModelProfileRegistry(
                             wifiSecurityPrep = decodeWifi(rs.getString("wifi_security_prep_json")),
                             clientWanIpConnectionPath = rs.getString("client_wan_ip_connection_path"),
                             clientVlanParameters = decodeVlan(rs.getString("client_vlan_parameters_json")),
+                            clientWanPppConnectionPath = rs.getString("client_wan_ppp_connection_path"),
                         )
                         map[productClass.uppercase()] = profile
                         decodeAliases(rs.getString("aliases_json")).forEach { alias ->

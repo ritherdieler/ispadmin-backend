@@ -48,7 +48,48 @@ interface OpticalSampleRepository : JpaRepository<OpticalSample, Long> {
         @Param("toText") toText: String
     ): List<OpticalSample>
 
+    fun findTopByOrderByObservedAtAsc(): OpticalSample?
 
+    @Query("select s from OpticalSample s where s.observedAt >= :from and s.observedAt < :to")
+    fun findByObservedAtRange(@Param("from") from: Instant, @Param("to") to: Instant): List<OpticalSample>
+}
+
+interface OpticalDailySampleRepository : JpaRepository<OpticalDailySample, Long> {
+    @Modifying(clearAutomatically = true)
+    @Query("delete from OpticalDailySample d where d.bucketStart >= :from and d.bucketStart < :to")
+    fun deleteByBucketStartRange(@Param("from") from: Instant, @Param("to") to: Instant): Int
+
+    @Query(
+        value = """
+        select * from olt_mgr_onu_optical_daily
+        where subscription_id = :id
+          and bucket_start >= :fromText
+          and bucket_start <= :toText
+        order by bucket_start asc
+        """,
+        nativeQuery = true
+    )
+    fun findDailyBySubscriptionUtcRange(
+        @Param("id") id: Int,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<OpticalDailySample>
+
+    @Query(
+        value = """
+        select * from olt_mgr_onu_optical_daily
+        where onu_id = :id
+          and bucket_start >= :fromText
+          and bucket_start <= :toText
+        order by bucket_start asc
+        """,
+        nativeQuery = true
+    )
+    fun findDailyByOnuUtcRange(
+        @Param("id") id: Long,
+        @Param("fromText") fromText: String,
+        @Param("toText") toText: String
+    ): List<OpticalDailySample>
 }
 
 interface OnuStateEventRepository : JpaRepository<OnuStateEvent, Long> {

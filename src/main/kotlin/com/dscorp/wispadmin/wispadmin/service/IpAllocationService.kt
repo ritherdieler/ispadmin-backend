@@ -47,8 +47,8 @@ class IpAllocationService(
                 preferred.startsWith(pool.ipSegment.getBaseIpFromRange())
             }
             if (preferredPool != null) {
-                val queues = loadQueueOccupancy(preferredPool.hostDevice)
-                val collision = collisionOf(preferred, activeIps, queues, preferredPool.hostDevice?.id)
+                val occupancy = loadDeviceOccupancy(preferredPool.hostDevice)
+                val collision = collisionOf(preferred, activeIps, occupancy, preferredPool.hostDevice?.id)
                 if (collision == null) {
                     return preferred to preferredPool
                 }
@@ -58,7 +58,7 @@ class IpAllocationService(
 
         for (ipPool in ipPools) {
             val base = ipPool.ipSegment.getBaseIpFromRange()
-            val queues = loadQueueOccupancy(ipPool.hostDevice)
+            val occupancy = loadDeviceOccupancy(ipPool.hostDevice)
             val occupiedOctets = activeIps
                 .filter { it.startsWith(base) }
                 .mapNotNull { it.substringAfterLast('.').toIntOrNull() }
@@ -68,7 +68,7 @@ class IpAllocationService(
             for (octet in ordered) {
                 val ip = base + octet
                 if (ip in activeIps) continue
-                val collision = unexpectedCollision(ip, queues, ipPool.hostDevice?.id)
+                val collision = unexpectedCollision(ip, occupancy, ipPool.hostDevice?.id)
                 if (collision != null) {
                     reportCollision(collision)
                     continue
@@ -106,7 +106,7 @@ class IpAllocationService(
 
     private fun unexpectedCollision(
         ip: String,
-        queues: Map<String, QueueOccupancy>,
+        occupancy: DeviceOccupancy,
         hostDeviceId: Int?
     ): IpCollision? {
         if (subscriptionRepository.existsByIpAndServiceStatus(ip, ServiceStatus.ACTIVE)) {
@@ -119,23 +119,35 @@ class IpAllocationService(
                 reason = REASON_ACTIVE_SUBSCRIPTION,
                 hostDeviceId = hostDeviceId,
                 conflictingSubscriptionId = conflictingId,
-                queueName = queues[ip]?.name
+                queueName = occupancy.queues[ip]?.name
             )
         }
-        val queue = queues[ip] ?: return null
-        return IpCollision(
-            ip = ip,
-            reason = REASON_MIKROTIK_QUEUE,
-            hostDeviceId = hostDeviceId,
-            conflictingSubscriptionId = SimpleQueueNameParser.subscriptionId(queue.name),
-            queueName = queue.name
-        )
+        occupancy.queues[ip]?.let { queue ->
+            return IpCollision(
+                ip = ip,
+                reason = REASON_MIKROTIK_QUEUE,
+                hostDeviceId = hostDeviceId,
+                conflictingSubscriptionId = SimpleQueueNameParser.subscriptionId(queue.name),
+                queueName = queue.name
+            )
+        }
+        occupancy.pppoeSecrets[ip]?.let { username ->
+            return IpCollision(
+                ip = ip,
+                reason = REASON_PPPOE_SECRET,
+                hostDeviceId = hostDeviceId,
+                conflictingSubscriptionId = null,
+                queueName = null,
+                pppoeUsername = username
+            )
+        }
+        return null
     }
 
     private fun collisionOf(
         ip: String,
         activeIps: Set<String>,
-        queues: Map<String, QueueOccupancy>,
+        occupancy: DeviceOccupancy,
         hostDeviceId: Int?
     ): IpCollision? {
         if (ip in activeIps) {
@@ -148,31 +160,51 @@ class IpAllocationService(
                 reason = REASON_ACTIVE_SUBSCRIPTION,
                 hostDeviceId = hostDeviceId,
                 conflictingSubscriptionId = conflictingId,
-                queueName = queues[ip]?.name
+                queueName = occupancy.queues[ip]?.name
             )
         }
-        return unexpectedCollision(ip, queues, hostDeviceId)
+        return unexpectedCollision(ip, occupancy, hostDeviceId)
     }
 
-    private fun loadQueueOccupancy(hostDevice: NetworkDevice?): Map<String, QueueOccupancy> {
-        if (hostDevice == null) return emptyMap()
-        return runCatching {
-            val rows = mutableListOf<Map<String, String>>()
+    private fun loadDeviceOccupancy(hostDevice: NetworkDevice?): DeviceOccupancy {
+        if (hostDevice == null) return DeviceOccupancy()
+        val queueRows = mutableListOf<Map<String, String>>()
+        val secretRows = mutableListOf<Map<String, String>>()
+
+        runCatching {
             mikrotikService.executeOnDevice(hostDevice) { session ->
-                rows.addAll(session.print("/queue/simple", emptyMap()))
+                queueRows.addAll(session.print("/queue/simple", emptyMap()))
+                runCatching {
+                    secretRows.addAll(session.print("/ppp/secret", emptyMap()))
+                }.onFailure { error ->
+                    logger.warn(
+                        "No se pudieron leer ppp secrets del host {}: {}",
+                        hostDevice.id,
+                        error.message
+                    )
+                }
             }
-            val occupancy = linkedMapOf<String, QueueOccupancy>()
-            rows.forEach { row ->
-                val target = row["target"] ?: return@forEach
-                val ip = target.substringBefore("/").trim()
-                if (ip.isEmpty()) return@forEach
-                occupancy[ip] = QueueOccupancy(ip = ip, name = row["name"].orEmpty())
-            }
-            occupancy
-        }.getOrElse { error ->
+        }.onFailure { error ->
             logger.warn("No se pudieron leer simple queues del host {}: {}", hostDevice.id, error.message)
-            emptyMap()
+            return DeviceOccupancy()
         }
+
+        val queues = linkedMapOf<String, QueueOccupancy>()
+        queueRows.forEach { row ->
+            val target = row["target"] ?: return@forEach
+            val ip = target.substringBefore("/").trim()
+            if (ip.isEmpty()) return@forEach
+            queues[ip] = QueueOccupancy(ip = ip, name = row["name"].orEmpty())
+        }
+
+        val secrets = linkedMapOf<String, String>()
+        secretRows.forEach { row ->
+            val ip = row["remote-address"]?.substringBefore("/")?.trim().orEmpty()
+            if (ip.isEmpty()) return@forEach
+            secrets[ip] = row["name"].orEmpty()
+        }
+
+        return DeviceOccupancy(queues = queues, pppoeSecrets = secrets)
     }
 
     private fun reportCollision(collision: IpCollision) {
@@ -191,6 +223,7 @@ class IpAllocationService(
                         "reason" to collision.reason,
                         "conflictingSubscriptionId" to collision.conflictingSubscriptionId,
                         "queueName" to collision.queueName,
+                        "pppoeUsername" to collision.pppoeUsername,
                         "source" to SOURCE_AUTO
                     )
                 )
@@ -205,12 +238,18 @@ class IpAllocationService(
         val name: String
     )
 
+    private data class DeviceOccupancy(
+        val queues: Map<String, QueueOccupancy> = emptyMap(),
+        val pppoeSecrets: Map<String, String> = emptyMap()
+    )
+
     private data class IpCollision(
         val ip: String,
         val reason: String,
         val hostDeviceId: Int?,
         val conflictingSubscriptionId: Int?,
-        val queueName: String?
+        val queueName: String?,
+        val pppoeUsername: String? = null
     )
 
     companion object {
@@ -219,6 +258,7 @@ class IpAllocationService(
         const val ERROR_TYPE = "IpCollision"
         const val REASON_ACTIVE_SUBSCRIPTION = "active_subscription"
         const val REASON_MIKROTIK_QUEUE = "mikrotik_queue"
+        const val REASON_PPPOE_SECRET = "pppoe_secret"
         const val SOURCE_AUTO = "auto"
     }
 }

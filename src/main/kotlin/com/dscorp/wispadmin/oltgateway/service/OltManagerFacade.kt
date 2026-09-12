@@ -141,7 +141,9 @@ open class OltManagerFacade(
                 lineProfileId = profiles.lineProfileId,
                 serviceProfileId = profiles.serviceProfileId,
                 description = profiles.description,
-                vlan = vlan
+                vlan = vlan,
+                mgmtVlan = profiles.mgmtVlan,
+                mgmtGemport = profiles.mgmtGemport,
             )
         )
         return AuthorizePlan(
@@ -234,7 +236,9 @@ open class OltManagerFacade(
                     lineProfileId = profiles.lineProfileId,
                     serviceProfileId = profiles.serviceProfileId,
                     description = profiles.description,
-                    vlan = vlan
+                    vlan = vlan,
+                    mgmtVlan = profiles.mgmtVlan,
+                    mgmtGemport = profiles.mgmtGemport,
                 ),
                 SmartOltAuthorizeCommand(
                     oltId = request.olt_id.ifBlank { properties.oltId },

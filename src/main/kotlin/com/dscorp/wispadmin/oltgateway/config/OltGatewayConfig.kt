@@ -30,6 +30,7 @@ import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryService
 import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshPollService
 import com.dscorp.wispadmin.oltgateway.service.LabOpticalSshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncScheduler
+import com.dscorp.wispadmin.oltgateway.service.OltFusedInventoryCache
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OnuWriteRouter
@@ -411,7 +412,9 @@ class OltGatewayConfig {
         cliBus: ObjectProvider<OltCliBus>,
         snmpClient: ObjectProvider<OltSnmpClient>,
         transactionManager: PlatformTransactionManager,
-        eventPublisher: org.springframework.context.ApplicationEventPublisher
+        eventPublisher: org.springframework.context.ApplicationEventPublisher,
+        pollLock: OltSnmpPollLocker,
+        fusedInventoryCache: OltFusedInventoryCache
     ): OltInventorySyncService {
         return OltInventorySyncService(
             queryFacade = queryFacade,
@@ -427,9 +430,14 @@ class OltGatewayConfig {
             transactionTemplate = TransactionTemplate(transactionManager),
             zoneRepository = zoneRepository,
             onuTypeRepository = onuTypeRepository,
-            eventPublisher = eventPublisher
+            eventPublisher = eventPublisher,
+            pollLock = pollLock,
+            fusedInventoryCache = fusedInventoryCache
         )
     }
+
+    @Bean
+    fun oltFusedInventoryCache(): OltFusedInventoryCache = OltFusedInventoryCache()
 
     @Bean
     @ConditionalOnProperty(
@@ -480,6 +488,7 @@ class OltGatewayConfig {
         eventPublisher: org.springframework.context.ApplicationEventPublisher,
         eventBus: EventBusPort,
         pollLock: OltSnmpPollLocker,
+        fusedInventoryCache: OltFusedInventoryCache,
     ): OltSignalPollService {
         return OltSignalPollService(
             oltRepository = oltRepository,
@@ -495,6 +504,7 @@ class OltGatewayConfig {
             eventPublisher = eventPublisher,
             eventBus = eventBus,
             pollLock = pollLock,
+            fusedInventoryCache = fusedInventoryCache,
         )
     }
 

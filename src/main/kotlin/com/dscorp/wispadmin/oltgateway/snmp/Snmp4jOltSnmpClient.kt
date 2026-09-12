@@ -15,53 +15,165 @@ import org.snmp4j.smi.Address
 import org.snmp4j.smi.GenericAddress
 import org.snmp4j.smi.OID
 import org.snmp4j.smi.OctetString
+import org.snmp4j.smi.SMIConstants
 import org.snmp4j.smi.UdpAddress
 import org.snmp4j.smi.VariableBinding
 import org.snmp4j.transport.DefaultUdpTransportMapping
 import java.io.IOException
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
 
 @Suppress("UNCHECKED_CAST")
 class Snmp4jOltSnmpClient(
     private val properties: OltGatewayProperties,
     private val busRegistry: OltSnmpBusRegistry? = null,
-    private val localCliBusPressure: () -> LocalCliBusPressure = { LocalCliBusPressure.snapshot(null) }
+    private val localCliBusPressure: () -> LocalCliBusPressure = { LocalCliBusPressure.snapshot(null) },
+    private val pageSender: SnmpGetBulkPageSender? = null
 ) : OltSnmpClient {
 
     companion object {
         private val logger = LoggerFactory.getLogger(Snmp4jOltSnmpClient::class.java)
+
+        private val INVENTORY_COLUMNS = listOf(
+            HuaweiGponSnmpOids.ONT_SN,
+            HuaweiGponSnmpOids.ONT_RUN_STATUS,
+            HuaweiGponSnmpOids.ONT_MATCH_STATUS,
+            HuaweiGponSnmpOids.ONT_RANGING,
+            HuaweiGponSnmpOids.ONT_LAST_DOWN_CAUSE,
+            HuaweiGponSnmpOids.ONT_DESCRIPTION,
+            HuaweiGponSnmpOids.ONT_LINE_PROF_NAME,
+            HuaweiGponSnmpOids.ONT_SERVICE_PROF_NAME
+        )
+
+        private val OPTICAL_COLUMNS = listOf(
+            HuaweiGponSnmpOids.ONT_RX_POWER,
+            HuaweiGponSnmpOids.ONT_TX_POWER,
+            HuaweiGponSnmpOids.OLT_RX_POWER,
+            HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE,
+            HuaweiGponSnmpOids.ONT_OPTICAL_BIAS,
+            HuaweiGponSnmpOids.ONT_RANGING,
+            HuaweiGponSnmpOids.ONT_MATCH_STATUS
+        )
+
+        /**
+         * Inventory + optical minus the two columns both sets share (ranging, match state):
+         * 8 + 7 - 2 = 13 unique columns. Measured on the MA5608T: the 8 config columns ride
+         * inside the DDM page for +3% (280.8 vs 290.0 ms per ONT, interleaved A/B).
+         */
+        private val FUSED_COLUMNS = INVENTORY_COLUMNS + listOf(
+            HuaweiGponSnmpOids.ONT_RX_POWER,
+            HuaweiGponSnmpOids.ONT_TX_POWER,
+            HuaweiGponSnmpOids.OLT_RX_POWER,
+            HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE,
+            HuaweiGponSnmpOids.ONT_OPTICAL_BIAS
+        )
+
+        private const val INVENTORY_MATCH_STATUS = 2
+        private const val INVENTORY_RANGING = 3
+        private const val FUSED_RX = 8
+        private const val FUSED_TX = 9
+        private const val FUSED_OLT_RX = 10
+        private const val FUSED_TEMPERATURE = 11
+        private const val FUSED_BIAS = 12
     }
+
+    private data class PortFused(
+        val onus: List<ParsedOnuSummary>,
+        val optical: List<SnmpOntOptical>
+    )
 
     override fun probeSysObjectId(): String? {
         return getOid(OID("1.3.6.1.2.1.1.2.0"))?.toString()
     }
 
     override fun listConfiguredOnus(): List<ParsedOnuSummary> {
-        val snByKey = walkColumn(HuaweiGponSnmpOids.ONT_SN, SnmpJobType.INVENTORY) { vb ->
-            decodeSn(vb)
+        return decodeInventory(walkColumns(INVENTORY_COLUMNS, SnmpJobType.INVENTORY))
+    }
+
+    override fun listInventoryAndOptical(ports: Collection<GponFsp>): OltSnmpFusedSnapshot {
+        val portList = ports.distinct()
+        if (portList.isEmpty()) {
+            lastPortsFailed = 0
+            lastPortsAttempted = 0
+            return OltSnmpFusedSnapshot(emptyList(), emptyList(), 0, 0)
         }
-        val statusByKey = walkColumn(HuaweiGponSnmpOids.ONT_RUN_STATUS, SnmpJobType.INVENTORY) { vb ->
-            HuaweiGponSnmpCodec.decodeRunState(vb.variable.toInt())
+        val batch = OpticalPortWalkRunner.runAll(
+            ports = portList,
+            parallelism = 1,
+            pressureSnapshot = localCliBusPressure,
+            fetch = { port -> listOf(fetchFusedForPort(port)) }
+        )
+        lastPortsFailed = batch.portsFailed
+        lastPortsAttempted = batch.portsAttempted
+        return OltSnmpFusedSnapshot(
+            onus = batch.items.flatMap { it.onus }
+                .sortedWith(compareBy({ it.slot }, { it.port }, { it.ontId })),
+            optical = batch.items.flatMap { it.optical },
+            portsAttempted = batch.portsAttempted,
+            portsFailed = batch.portsFailed
+        )
+    }
+
+    private fun fetchFusedForPort(port: GponFsp): PortFused {
+        val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(port.slot, port.port)
+        return withPageSender(SnmpJobType.FUSED) { send ->
+            if (!portHasOnts(send, ifIndex)) {
+                logger.debug("SNMP fused skip empty port {}/{}", port.slot, port.port)
+                return@withPageSender PortFused(emptyList(), emptyList())
+            }
+            val columns = walkColumnsWith(send, FUSED_COLUMNS, SnmpJobType.FUSED, ifIndex)
+            PortFused(
+                onus = decodeInventory(columns),
+                optical = mergeOptical(
+                    listOf(
+                        columns[FUSED_RX],
+                        columns[FUSED_TX],
+                        columns[FUSED_OLT_RX],
+                        columns[FUSED_TEMPERATURE],
+                        columns[FUSED_BIAS],
+                        columns[INVENTORY_RANGING],
+                        columns[INVENTORY_MATCH_STATUS]
+                    )
+                )
+            )
         }
-        val matchByKey = walkColumn(HuaweiGponSnmpOids.ONT_MATCH_STATUS, SnmpJobType.INVENTORY) { vb ->
-            HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
+    }
+
+    /**
+     * One page on a config-table column: an empty GPON port answers in ~50 ms there, while the
+     * same probe inside the 13-column DDM page costs ~2.8 s (measured over the 10 empty ports).
+     */
+    private fun portHasOnts(send: (List<OID>, String) -> List<VariableBinding>, ifIndex: Long): Boolean {
+        val root = OID("${HuaweiGponSnmpOids.ONT_RUN_STATUS}.$ifIndex")
+        val bindings = send(listOf(root), "fused/probe/$ifIndex")
+        if (bindings.isEmpty()) {
+            throw IOException("SNMP fused probe empty PDU for ifIndex=$ifIndex")
         }
-        val distanceByKey = walkColumn(HuaweiGponSnmpOids.ONT_RANGING, SnmpJobType.INVENTORY) { vb ->
-            HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
+        val hasOnts = bindings.any { binding ->
+            val oid = binding.oid
+            oid != null && !binding.variable.isException && oid.startsWith(root)
         }
-        val lastDownByKey = walkColumn(HuaweiGponSnmpOids.ONT_LAST_DOWN_CAUSE, SnmpJobType.INVENTORY) { vb ->
-            HuaweiGponSnmpCodec.decodeLastDownCause(vb.variable.toInt())
+        if (hasOnts) {
+            return true
         }
-        val descriptionByKey = walkColumn(HuaweiGponSnmpOids.ONT_DESCRIPTION, SnmpJobType.INVENTORY) { vb ->
-            decodeDisplayString(vb)
+        val agentSaidEmpty = bindings.any { binding ->
+            val oid = binding.oid
+            binding.variable.syntax == SMIConstants.EXCEPTION_END_OF_MIB_VIEW ||
+                (oid != null && !oid.startsWith(root))
         }
-        val lineProfByKey = walkColumn(HuaweiGponSnmpOids.ONT_LINE_PROF_NAME, SnmpJobType.INVENTORY) { vb ->
-            decodeDisplayString(vb)
+        if (agentSaidEmpty) {
+            return false
         }
-        val srvProfByKey = walkColumn(HuaweiGponSnmpOids.ONT_SERVICE_PROF_NAME, SnmpJobType.INVENTORY) { vb ->
-            decodeDisplayString(vb)
-        }
+        throw IOException("SNMP fused probe inconclusive for ifIndex=$ifIndex")
+    }
+
+    private fun decodeInventory(columns: List<Map<SnmpOntKey, VariableBinding>>): List<ParsedOnuSummary> {
+        val snByKey = columns[0].decode { decodeSn(it) }
+        val statusByKey = columns[1].decode { HuaweiGponSnmpCodec.decodeRunState(it.variable.toInt()) }
+        val matchByKey = columns[2].decode { HuaweiGponSnmpCodec.decodeMatchState(it.variable.toInt()) }
+        val distanceByKey = columns[3].decode { HuaweiGponSnmpCodec.decodeRangingMeters(it.variable.toInt()) }
+        val lastDownByKey = columns[4].decode { HuaweiGponSnmpCodec.decodeLastDownCause(it.variable.toInt()) }
+        val descriptionByKey = columns[5].decode { decodeDisplayString(it) }
+        val lineProfByKey = columns[6].decode { decodeDisplayString(it) }
+        val srvProfByKey = columns[7].decode { decodeDisplayString(it) }
         return snByKey.mapNotNull { (key, sn) ->
             val fsp = HuaweiGponSnmpCodec.decodeIfIndex(key.ifIndex)
             ParsedOnuSummary(
@@ -82,7 +194,8 @@ class Snmp4jOltSnmpClient(
     }
 
     override fun listAutofind(): List<ParsedAutofindOnt> {
-        return walkColumn(HuaweiGponSnmpOids.AUTOFIND_SN, SnmpJobType.AUTOFIND) { vb -> decodeSn(vb) }
+        return walkColumns(listOf(HuaweiGponSnmpOids.AUTOFIND_SN), SnmpJobType.AUTOFIND)[0]
+            .decode { decodeSn(it) }
             .map { (key, sn) ->
                 val fsp = HuaweiGponSnmpCodec.decodeIfIndex(key.ifIndex)
                 ParsedAutofindOnt(
@@ -128,36 +241,7 @@ class Snmp4jOltSnmpClient(
 
     private fun fetchOpticalForPort(port: GponFsp): List<SnmpOntOptical> {
         val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(port.slot, port.port)
-        val rx = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_RX_POWER, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-        }
-        val tx = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_TX_POWER, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-        }
-        val oltRx = walkColumnForIfIndex(HuaweiGponSnmpOids.OLT_RX_POWER, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeOltRxPowerDbm(vb.variable.toInt())
-        }
-        val temperatureC = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeTemperatureC(vb.variable.toInt())
-        }
-        val biasCurrentMa = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_OPTICAL_BIAS, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeBiasCurrentMa(vb.variable.toInt())
-        }
-        val distanceM = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_RANGING, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
-        }
-        val matchState = walkColumnForIfIndex(HuaweiGponSnmpOids.ONT_MATCH_STATUS, ifIndex, SnmpJobType.OPTICAL) { vb ->
-            HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
-        }
-        val merged = SnmpOpticalMerger.merge(
-            rx = rx,
-            tx = tx,
-            oltRx = oltRx,
-            temperatureC = temperatureC,
-            biasCurrentMa = biasCurrentMa,
-            distanceM = distanceM,
-            matchState = matchState
-        )
+        val merged = mergeOptical(walkColumns(OPTICAL_COLUMNS, SnmpJobType.OPTICAL, ifIndex))
         logger.debug("SNMP optical merged scope={}/{} rows={}", port.slot, port.port, merged.size)
         return merged
     }
@@ -165,79 +249,7 @@ class Snmp4jOltSnmpClient(
     private fun fetchOpticalColumns(label: String): List<SnmpOntOptical> {
         lastPortsFailed = 0
         lastPortsAttempted = 0
-        val rx = { safeDoubleColumn("rx") {
-            walkColumn(HuaweiGponSnmpOids.ONT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-            }
-        } }
-        val tx = { safeDoubleColumn("tx") {
-            walkColumn(HuaweiGponSnmpOids.ONT_TX_POWER, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeOntPowerDbm(vb.variable.toInt())
-            }
-        } }
-        val oltRx = { safeDoubleColumn("oltRx") {
-            walkColumn(HuaweiGponSnmpOids.OLT_RX_POWER, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeOltRxPowerDbm(vb.variable.toInt())
-            }
-        } }
-        val temperatureC = { safeDoubleColumn("temperatureC") {
-            walkColumn(HuaweiGponSnmpOids.ONT_OPTICAL_TEMPERATURE, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeTemperatureC(vb.variable.toInt())
-            }
-        } }
-        val biasCurrentMa = { safeDoubleColumn("biasCurrentMa") {
-            walkColumn(HuaweiGponSnmpOids.ONT_OPTICAL_BIAS, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeBiasCurrentMa(vb.variable.toInt())
-            }
-        } }
-        val distanceM = { safeIntColumn("distanceM") {
-            walkColumn(HuaweiGponSnmpOids.ONT_RANGING, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeRangingMeters(vb.variable.toInt())
-            }
-        } }
-        val matchState = { safeStringColumn("matchState") {
-            walkColumn(HuaweiGponSnmpOids.ONT_MATCH_STATUS, SnmpJobType.OPTICAL) { vb ->
-                HuaweiGponSnmpCodec.decodeMatchState(vb.variable.toInt())
-            }
-        } }
-
-        val merged = if (!properties.snmp.opticalParallelColumns) {
-            SnmpOpticalMerger.merge(
-                rx = rx(),
-                tx = tx(),
-                oltRx = oltRx(),
-                temperatureC = temperatureC(),
-                biasCurrentMa = biasCurrentMa(),
-                distanceM = distanceM(),
-                matchState = matchState()
-            )
-        } else {
-            val executor = Executors.newFixedThreadPool(7)
-            try {
-                val rxFuture = executor.submit<Map<SnmpOntKey, Double?>> { rx() }
-                val txFuture = executor.submit<Map<SnmpOntKey, Double?>> { tx() }
-                val oltFuture = executor.submit<Map<SnmpOntKey, Double?>> { oltRx() }
-                val tempFuture = executor.submit<Map<SnmpOntKey, Double?>> { temperatureC() }
-                val biasFuture = executor.submit<Map<SnmpOntKey, Double?>> { biasCurrentMa() }
-                val distFuture = executor.submit<Map<SnmpOntKey, Int?>> { distanceM() }
-                val matchFuture = executor.submit<Map<SnmpOntKey, String?>> { matchState() }
-                SnmpOpticalMerger.merge(
-                    rx = rxFuture.get(),
-                    tx = txFuture.get(),
-                    oltRx = oltFuture.get(),
-                    temperatureC = tempFuture.get(),
-                    biasCurrentMa = biasFuture.get(),
-                    distanceM = distFuture.get(),
-                    matchState = matchFuture.get()
-                )
-            } catch (ex: ExecutionException) {
-                val cause = ex.cause
-                if (cause is IOException) throw cause
-                throw IOException("SNMP optical column walk failed: ${cause?.message}", cause)
-            } finally {
-                executor.shutdown()
-            }
-        }
+        val merged = mergeOptical(walkColumns(OPTICAL_COLUMNS, SnmpJobType.OPTICAL))
         if (merged.isEmpty()) {
             throw IOException("SNMP optical $label: all columns empty")
         }
@@ -245,40 +257,16 @@ class Snmp4jOltSnmpClient(
         return merged
     }
 
-    private fun safeDoubleColumn(
-        name: String,
-        walk: () -> Map<SnmpOntKey, Double?>
-    ): Map<SnmpOntKey, Double?> {
-        return try {
-            walk()
-        } catch (ex: Exception) {
-            logger.warn("SNMP optical column {} failed: {}", name, ex.message)
-            emptyMap()
-        }
-    }
-
-    private fun safeIntColumn(
-        name: String,
-        walk: () -> Map<SnmpOntKey, Int?>
-    ): Map<SnmpOntKey, Int?> {
-        return try {
-            walk()
-        } catch (ex: Exception) {
-            logger.warn("SNMP optical column {} failed: {}", name, ex.message)
-            emptyMap()
-        }
-    }
-
-    private fun safeStringColumn(
-        name: String,
-        walk: () -> Map<SnmpOntKey, String?>
-    ): Map<SnmpOntKey, String?> {
-        return try {
-            walk()
-        } catch (ex: Exception) {
-            logger.warn("SNMP optical column {} failed: {}", name, ex.message)
-            emptyMap()
-        }
+    private fun mergeOptical(columns: List<Map<SnmpOntKey, VariableBinding>>): List<SnmpOntOptical> {
+        return SnmpOpticalMerger.merge(
+            rx = columns[0].decode { HuaweiGponSnmpCodec.decodeOntPowerDbm(it.variable.toInt()) },
+            tx = columns[1].decode { HuaweiGponSnmpCodec.decodeOntPowerDbm(it.variable.toInt()) },
+            oltRx = columns[2].decode { HuaweiGponSnmpCodec.decodeOltRxPowerDbm(it.variable.toInt()) },
+            temperatureC = columns[3].decode { HuaweiGponSnmpCodec.decodeTemperatureC(it.variable.toInt()) },
+            biasCurrentMa = columns[4].decode { HuaweiGponSnmpCodec.decodeBiasCurrentMa(it.variable.toInt()) },
+            distanceM = columns[5].decode { HuaweiGponSnmpCodec.decodeRangingMeters(it.variable.toInt()) },
+            matchState = columns[6].decode { HuaweiGponSnmpCodec.decodeMatchState(it.variable.toInt()) }
+        )
     }
 
     private fun decodeSn(vb: VariableBinding): String? {
@@ -300,99 +288,111 @@ class Snmp4jOltSnmpClient(
         return text.takeIf { it.isNotEmpty() && it != "NULL" }
     }
 
-    private fun <T> walkColumn(
-        columnOid: String,
-        type: SnmpJobType,
-        map: (VariableBinding) -> T?
-    ): Map<SnmpOntKey, T> {
-        return walkColumn(
-            root = OID(columnOid),
-            label = columnOid,
-            type = type,
-            keyFromOid = ::parseOntKey,
-            map = map
-        )
-    }
-
-    private fun <T> walkColumnForIfIndex(
-        columnOid: String,
-        ifIndex: Long,
-        type: SnmpJobType,
-        map: (VariableBinding) -> T?
-    ): Map<SnmpOntKey, T> {
-        val root = OID("$columnOid.$ifIndex")
-        return walkColumn(
-            root = root,
-            label = "$columnOid.$ifIndex",
-            type = type,
-            keyFromOid = { columnRoot, oid -> parseOntKeyForPort(columnRoot, oid, ifIndex) },
-            map = map
-        )
-    }
-
     /**
-     * Uses bounded GETBULK requests instead of [TreeUtils]. Some Huawei OLTs
-     * drop a page intermittently; TreeUtils then waits indefinitely and holds
-     * the per-OLT SNMP bus. Each page here is governed by the target timeout
-     * and retry policy, so a loss is reported as a recoverable poll failure.
+     * One bounded multi-varbind GETBULK per page instead of [TreeUtils] and instead of one
+     * walk per column: on the MA5608T the agent bills one OMCI read per ONT and serves every
+     * column from it, so 7-8 columns in the same PDU cost the same as one. Bounded pages also
+     * keep an intermittently dropped response from parking the per-OLT SNMP bus forever.
      */
-    private fun <T> walkColumn(
-        root: OID,
-        label: String,
+    private fun walkColumns(
+        columnOids: List<String>,
         type: SnmpJobType,
-        keyFromOid: (OID, OID) -> SnmpOntKey?,
-        map: (VariableBinding) -> T?
-    ): Map<SnmpOntKey, T> {
-        val result = linkedMapOf<SnmpOntKey, T>()
-        withSnmp(type) { snmp, target ->
-            var cursor = root
-            var completed = false
-            while (!completed) {
-                val request = PDU().apply {
-                    this.type = PDU.GETBULK
-                    nonRepeaters = 0
-                    maxRepetitions = properties.snmp.maxRepetitions
-                    add(VariableBinding(cursor))
-                }
-                val response = snmp.send(request, target).response
-                    ?: throw IOException("SNMP walk error on $label: request timed out")
-                if (response.errorStatus != PDU.noError) {
-                    throw IOException("SNMP walk error on $label: ${response.errorStatusText}")
-                }
-                if (response.size() == 0) {
-                    throw IOException("SNMP walk error on $label: empty response")
-                }
-                for (index in 0 until response.size()) {
-                    val binding = response.get(index) ?: continue
-                    val oid = binding.oid
-                    if (oid == null) {
-                        completed = true
-                        break
-                    }
-                    if (binding.variable.isException || !oid.startsWith(root)) {
-                        completed = true
-                        break
-                    }
-                    if (oid.compareTo(cursor) <= 0) {
-                        throw IOException("SNMP walk error on $label: non-advancing response")
-                    }
-                    cursor = oid
-                    val key = keyFromOid(root, oid) ?: continue
-                    val mapped = map(binding) ?: continue
-                    result[key] = mapped
-                }
-                if (!completed && properties.snmp.requestIntervalMs > 0) {
-                    try {
-                        Thread.sleep(properties.snmp.requestIntervalMs)
-                    } catch (ex: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        throw IOException("SNMP walk error on $label: interrupted", ex)
-                    }
-                }
+        ifIndex: Long? = null
+    ): List<Map<SnmpOntKey, VariableBinding>> {
+        return withPageSender(type) { send -> walkColumnsWith(send, columnOids, type, ifIndex) }
+    }
+
+    private fun walkColumnsWith(
+        send: (List<OID>, String) -> List<VariableBinding>,
+        columnOids: List<String>,
+        type: SnmpJobType,
+        ifIndex: Long?
+    ): List<Map<SnmpOntKey, VariableBinding>> {
+        val roots = columnOids.map { OID(if (ifIndex == null) it else "$it.$ifIndex") }
+        val scope = ifIndex?.toString() ?: "full"
+        val label = "${type.name.lowercase()}/${columnOids.size}col/$scope"
+        val columns = SnmpMultiColumnWalk(
+            sendPage = { cursors -> send(cursors, label) },
+            betweenPages = ::pacePages
+        ).walk(roots, label)
+        val rowsByColumn = columns.mapIndexed { index, bindings ->
+            val root = roots[index]
+            val rows = linkedMapOf<SnmpOntKey, VariableBinding>()
+            for (binding in bindings) {
+                val key = if (ifIndex == null) {
+                    parseOntKey(root, binding.oid)
+                } else {
+                    parseOntKeyForPort(root, binding.oid, ifIndex)
+                } ?: continue
+                rows[key] = binding
             }
+            rows
         }
-        logger.debug("SNMP walk {} rows={}", label, result.size)
-        return result
+        logger.debug("SNMP walk {} rows={}", label, rowsByColumn.sumOf { it.size })
+        return rowsByColumn
+    }
+
+    private fun <T> Map<SnmpOntKey, VariableBinding>.decode(map: (VariableBinding) -> T?): Map<SnmpOntKey, T> {
+        val decoded = linkedMapOf<SnmpOntKey, T>()
+        for ((key, binding) in this) {
+            val value = map(binding) ?: continue
+            decoded[key] = value
+        }
+        return decoded
+    }
+
+    private fun pacePages() {
+        val interval = properties.snmp.requestIntervalMs
+        if (interval <= 0) return
+        try {
+            Thread.sleep(interval)
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("SNMP walk interrupted between pages", ex)
+        }
+    }
+
+    private fun <T> withPageSender(
+        type: SnmpJobType,
+        block: (send: (List<OID>, String) -> List<VariableBinding>) -> T
+    ): T {
+        val injected = pageSender
+        if (injected != null) {
+            return block { cursors, _ -> injected.send(type, cursors, properties.snmp.maxRepetitions) }
+        }
+        return withSnmp(type) { snmp, target ->
+            block { cursors, label -> sendGetBulkPage(snmp, target, cursors, label) }
+        }
+    }
+
+    private fun <T> withSnmp(type: SnmpJobType, block: (Snmp, CommunityTarget) -> T): T {
+        val bus = busRegistry?.forOlt(properties.oltId, properties.modelCode)
+        val budget = OltSnmpJobTimeouts.forJob(type, properties.snmp)
+        return if (bus != null) {
+            bus.acquire(type) { openSnmpSession(budget, block) }
+        } else {
+            openSnmpSession(budget, block)
+        }
+    }
+
+    private fun sendGetBulkPage(
+        snmp: Snmp,
+        target: CommunityTarget,
+        cursors: List<OID>,
+        label: String
+    ): List<VariableBinding> {
+        val request = PDU().apply {
+            this.type = PDU.GETBULK
+            nonRepeaters = 0
+            maxRepetitions = properties.snmp.maxRepetitions
+            cursors.forEach { add(VariableBinding(it)) }
+        }
+        val response = snmp.send(request, target).response
+            ?: throw IOException("SNMP walk error on $label: request timed out")
+        if (response.errorStatus != PDU.noError) {
+            throw IOException("SNMP walk error on $label: ${response.errorStatusText}")
+        }
+        return (0 until response.size()).mapNotNull { response.get(it) }
     }
 
     private fun parseOntKeyForPort(columnRoot: OID, oid: OID, ifIndex: Long): SnmpOntKey? {
@@ -422,16 +422,10 @@ class Snmp4jOltSnmpClient(
         }
     }
 
-    private fun <T> withSnmp(type: SnmpJobType, block: (Snmp, CommunityTarget) -> T): T {
-        val bus = busRegistry?.forOlt(properties.oltId, properties.modelCode)
-        return if (bus != null) {
-            bus.acquire(type) { openSnmpSession(block) }
-        } else {
-            openSnmpSession(block)
-        }
-    }
-
-    private fun <T> openSnmpSession(block: (Snmp, CommunityTarget) -> T): T {
+    private fun <T> openSnmpSession(
+        budget: OltSnmpJobTimeouts.Budget,
+        block: (Snmp, CommunityTarget) -> T
+    ): T {
         val snmpProps = properties.snmp
         require(snmpProps.roCommunity.isNotBlank()) { "olt.gateway.snmp.ro-community is blank" }
         val address = GenericAddress.parse("udp:${properties.host}/${snmpProps.port}") as Address
@@ -443,8 +437,8 @@ class Snmp4jOltSnmpClient(
             target.community = OctetString(snmpProps.roCommunity)
             target.address = address
             target.version = SnmpConstants.version2c
-            target.timeout = snmpProps.timeoutMs
-            target.retries = snmpProps.retries
+            target.timeout = budget.timeoutMs
+            target.retries = budget.retries
             return block(snmp, target)
         } finally {
             try {

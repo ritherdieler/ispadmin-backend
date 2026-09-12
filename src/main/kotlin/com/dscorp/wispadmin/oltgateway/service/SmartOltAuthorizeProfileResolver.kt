@@ -10,6 +10,8 @@ data class ResolvedAuthorizeProfiles(
     val lineProfileId: Int,
     val serviceProfileId: Int,
     val description: String,
+    val mgmtVlan: Int? = null,
+    val mgmtGemport: Int = 2,
 )
 
 class SmartOltAuthorizeProfileResolver(
@@ -26,7 +28,12 @@ class SmartOltAuthorizeProfileResolver(
         at: Instant = clock.instant(),
     ): ResolvedAuthorizeProfiles {
         val binding = bindings()["${customProfile.trim()}:$vlan"]
-        val line = binding?.first ?: properties.writes.defaultLineProfileId
+        val dualClientAndMgmt = vlan == 100
+        val line = if (dualClientAndMgmt) {
+            properties.writes.labAcsLineProfileId
+        } else {
+            binding?.first ?: properties.writes.defaultLineProfileId
+        }
         val srv = binding?.second ?: properties.writes.defaultServiceProfileId
         val baseName = name.trim().ifBlank { sn.trim() }.ifBlank { "onu" }
         val zonePart = zone.trim().ifBlank { "Zone" }
@@ -37,6 +44,8 @@ class SmartOltAuthorizeProfileResolver(
             lineProfileId = line,
             serviceProfileId = srv,
             description = "${baseName}_zone_${zonePart}_authd_$day",
+            mgmtVlan = if (dualClientAndMgmt) properties.writes.labAcsMgmtVlan else null,
+            mgmtGemport = properties.writes.labAcsMgmtGemport,
         )
     }
 
@@ -58,4 +67,16 @@ class SmartOltAuthorizeProfileResolver(
             }
             .toMap()
     }
+
+    fun matchesLabAcs(sn: String): Boolean {
+        val normalized = sn.filter { it.isLetterOrDigit() }.uppercase()
+        if (normalized.isEmpty()) return false
+        return labAcsSuffixes().any { suffix -> suffix.isNotEmpty() && normalized.endsWith(suffix) }
+    }
+
+    private fun labAcsSuffixes(): List<String> =
+        properties.writes.labAcsSnSuffixes
+            .split(',')
+            .map { it.filter { ch -> ch.isLetterOrDigit() }.uppercase() }
+            .filter { it.isNotEmpty() }
 }

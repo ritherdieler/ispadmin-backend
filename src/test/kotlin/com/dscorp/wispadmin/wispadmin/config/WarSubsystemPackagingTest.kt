@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipFile
+import kotlin.streams.asSequence
 
 class WarSubsystemPackagingTest {
 
@@ -117,6 +118,31 @@ class WarSubsystemPackagingTest {
         assertTrue(baked.contains("net.diag.enabled=true"), baked)
         assertTrue(baked.contains("net.diag.snmp.trap.udp-enabled=false"), baked)
         assertTrue(baked.contains("net.diag.syslog.udp-enabled=false"), baked)
+    }
+
+    @Test
+    fun subsystemsScriptBakesHttpClientsWhenOltgatewayAndAcsKept() {
+        val root = Path.of(System.getProperty("user.dir"))
+        val writeDir = Files.createTempDirectory("subsystem-clients")
+        val script = root.resolve("scripts/subsystems.sh").toFile()
+        val process = ProcessBuilder(
+            "bash",
+            script.absolutePath,
+            "--with",
+            "oltgateway,acs",
+            "--write-dir",
+            writeDir.toString(),
+        )
+            .directory(root.toFile())
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        assertTrue(process.waitFor() == 0, output)
+        val baked = Files.readString(writeDir.resolve("subsystem-enabled.properties"))
+        assertTrue(baked.contains("olt.gateway.client-enabled=true"), baked)
+        assertTrue(baked.contains("acs.client-enabled=true"), baked)
+        assertTrue(baked.contains("olt.gateway.enabled=false"), baked)
+        assertTrue(!baked.contains("gigafiber.scheduling.enabled=true"), baked)
     }
 
     @Test
@@ -246,6 +272,73 @@ class WarSubsystemPackagingTest {
         assertTrue(
             !stagingSlice.contains("concat destfile=\"\${project.build.outputDirectory}/application-staging.properties\""),
             stagingSlice,
+        )
+    }
+
+    @Test
+    fun compiledSharedTelemetryDoesNotKeepMovedAdapters() {
+        val dir = root().resolve("target/classes/com/dscorp/wispadmin/shared/telemetry")
+        if (!Files.isDirectory(dir)) return
+        val leftovers = Files.list(dir).use { paths ->
+            paths.asSequence()
+                .map { it.fileName.toString() }
+                .filter {
+                    it.startsWith("NetDiagTelemetryRetentionAdapter") ||
+                        it.startsWith("ObservabilityTelemetryRetentionAdapter")
+                }
+                .toList()
+        }
+        assertTrue(
+            leftovers.isEmpty(),
+            "Kotlin incremental compile does not delete classes removed from a source file; " +
+                "stale adapters under shared/ crash staging when netdiag is excluded: $leftovers",
+        )
+    }
+
+    @Test
+    fun telemetryRetentionAdaptersLiveInTheirSubsystemPackage() {
+        val sourceRoot = root().resolve("src/main/kotlin/com/dscorp/wispadmin")
+        val netdiag = Files.walk(sourceRoot.resolve("netdiag")).use { paths ->
+            paths.asSequence().any { it.fileName.toString() == "NetDiagTelemetryRetentionAdapter.kt" }
+        }
+        val observability = Files.walk(sourceRoot.resolve("observability")).use { paths ->
+            paths.asSequence().any { it.fileName.toString() == "ObservabilityTelemetryRetentionAdapter.kt" }
+        }
+        assertTrue(
+            netdiag,
+            "NetDiagTelemetryRetentionAdapter must live under netdiag/ so excluding that package from the staging WAR does not ClassNotFound the Core",
+        )
+        assertTrue(
+            observability,
+            "ObservabilityTelemetryRetentionAdapter must live under observability/ so excluding that package from the staging WAR does not ClassNotFound the Core",
+        )
+    }
+
+    @Test
+    fun objectProviderOnOptionalSubsystemsIsGuardedByConditionalOnClass() {
+        val optional = listOf("observability", "oltgateway", "netdiag", "traffic", "servicehealth", "acs")
+        val sourceRoot = root().resolve("src/main/kotlin/com/dscorp/wispadmin")
+        val offenders = mutableListOf<String>()
+        Files.walk(sourceRoot).use { paths ->
+            paths.filter { it.toString().endsWith(".kt") }
+                .filter { path ->
+                    val relative = sourceRoot.relativize(path).toString()
+                    optional.none { relative.startsWith("$it/") }
+                }
+                .forEach { path ->
+                    val source = Files.readString(path)
+                    val referenced = optional.filter { subsystem ->
+                        source.contains("ObjectProvider<com.dscorp.wispadmin.$subsystem.")
+                    }
+                    if (referenced.isNotEmpty() && !source.contains("@ConditionalOnClass")) {
+                        offenders += "${sourceRoot.relativize(path)} -> $referenced"
+                    }
+                }
+        }
+        assertTrue(
+            offenders.isEmpty(),
+            "ObjectProvider does not survive a WAR that excludes the subsystem: Spring still resolves the " +
+                "generic type and throws ClassNotFoundException. Guard the bean with @ConditionalOnClass: $offenders",
         )
     }
 

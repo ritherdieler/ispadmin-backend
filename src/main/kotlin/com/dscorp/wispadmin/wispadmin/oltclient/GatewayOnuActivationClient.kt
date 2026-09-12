@@ -39,4 +39,19 @@ class GatewayOnuActivationClient(
             null
         }
     }
+
+    fun servicePorts(sn: String): GatewayServicePortsDto {
+        val response = http.getJson("/api/olt-gateway/onus/$sn/service-ports")
+        val body = response.body ?: throw IllegalStateException("Empty service-ports response")
+        return objectMapper.readValue(body, GatewayServicePortsDto::class.java)
+    }
+
+    fun removeServicePort(sn: String, vlan: Int): GatewayServicePortsDto {
+        val response = http.postJsonBody(
+            "/api/olt-gateway/onus/$sn/service-port/remove",
+            objectMapper.writeValueAsString(GatewayRemoveServicePortRequest(vlan)),
+        )
+        val body = response.body ?: throw IllegalStateException("Empty remove service-port response")
+        return objectMapper.readValue(body, GatewayServicePortsDto::class.java)
+    }
 }

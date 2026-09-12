@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription
 
 import com.dscorp.wispadmin.wispadmin.controller.toErrorLog
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
@@ -11,7 +12,11 @@ import com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
 import com.dscorp.wispadmin.wispadmin.service.WhatsAppServiceCutNoticeService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.CutList
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.CutLists
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeProfileCatalog
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.search.application.SubscriptionChangedEvent
 import org.slf4j.LoggerFactory
@@ -29,15 +34,11 @@ class ServiceCutManagerService(
     private val errorLogRepository: ErrorLogRepository,
     private val scheduledTaskLogService: ScheduledTaskLogService,
     private val eventPublisher: ApplicationEventPublisher,
-    private val whatsAppServiceCutNoticeService: WhatsAppServiceCutNoticeService
+    private val whatsAppServiceCutNoticeService: WhatsAppServiceCutNoticeService,
+    private val pppoeAccessService: PppoeAccessService
 ) : IServiceCutManager {
     
     private val logger = LoggerFactory.getLogger(ServiceCutManagerService::class.java)
-    
-    companion object {
-        private const val DEBTORS_LIST = "deudores"
-        private const val FIREWALL_DROP_RULE_COMMENT = "CORTADO POR DEUDA - LISTA DE DEUDORES"
-    }
     
     @Transactional
     override fun cutInternetService(): CutServiceSummaryDto {
@@ -50,19 +51,7 @@ class ServiceCutManagerService(
         clearAddressListAndFirewallRule()
         
         val debtorsResult = processAndLogDebtors(debtors)
-//        val cancelledResult = processAndLogCancelledSubscriptions(cancelledSubscriptions)
-        val cancelledResult = CutServiceResultDto(
-            processedCount = 0,
-            createdCount = 0,
-            deletedCount = 0,
-            alreadyExistsCount = 0,
-            errorCount = 0,
-            message = "",
-            debtorsCount = 0,
-            cancelledCount = 0,
-            omittedByTvCable = 0
-        )
-
+        val cancelledResult = processAndLogCancelledSubscriptions(cancelledSubscriptions)
 
         createFirewallDropRule()
 
@@ -99,9 +88,13 @@ class ServiceCutManagerService(
         )
     }
     
-    private enum class SubscriptionCutType(val prefix: String, val displayName: String) {
-        DEBTOR("DEUDOR", "Deudores"),
-        CANCELLED("CANCELADO", "Cancelados")
+    private enum class SubscriptionCutType(
+        val prefix: String,
+        val displayName: String,
+        val list: CutList
+    ) {
+        DEBTOR("DEUDOR", "Deudores", CutLists.DEBTORS),
+        CANCELLED("CANCELADO", "Cancelados", CutLists.CANCELLED)
     }
     
     private fun processSubscriptionsForCut(
@@ -110,8 +103,11 @@ class ServiceCutManagerService(
         isDebtorType: Boolean
     ): CutServiceResultDto {
         val allSubscriptions = subscriptions
-        val subscriptionsToProcess = allSubscriptions.filter { it.installationType != InstallationType.ONLY_TV_FIBER }
-        val omittedByTvCable = allSubscriptions.size - subscriptionsToProcess.size
+        val internetSubscriptions = allSubscriptions.filter { it.installationType != InstallationType.ONLY_TV_FIBER }
+        val omittedByTvCable = allSubscriptions.size - internetSubscriptions.size
+
+        val (pppoeSubscriptions, subscriptionsToProcess) =
+            internetSubscriptions.partition { it.accessMode == AccessMode.PPPOE_DYNAMIC }
 
         val subscriptionsDto = subscriptionsToProcess.map { it.toCutDto() }
 
@@ -121,6 +117,11 @@ class ServiceCutManagerService(
         val failedItems = mutableListOf<String>()
         val notProcessedItems = mutableListOf<String>()
         val alreadyExistingItems = mutableListOf<String>()
+
+        val pppoeResult = cutPppoeSubscriptions(pppoeSubscriptions, cutType)
+        createdCount += pppoeResult.cut
+        errorCount += pppoeResult.failed.size
+        failedItems.addAll(pppoeResult.failed)
 
         try {
             subscriptionsDto.firstOrNull()?.hostDevice?.executeCommand { apiConnection ->
@@ -137,7 +138,12 @@ class ServiceCutManagerService(
                         errorCount++
                     } else {
                         try {
-                            mikrotikService.addIpToDebtorsList(apiConnection, subscription.ip!!, "${cutType.prefix}: ${subscription.name}")
+                            mikrotikService.addIpToCutList(
+                                apiConnection,
+                                cutType.list,
+                                subscription.ip!!,
+                                "${cutType.prefix}: ${subscription.name}"
+                            )
                           val updatedSubscription= subscriptionRepository.findById(subscription.id!!).get().apply {
                                isServiceCutOff = true
                                lastCutOffDate = LocalDate.now()
@@ -181,7 +187,7 @@ class ServiceCutManagerService(
         }
 
         return CutServiceResultDto(
-            processedCount = subscriptionsToProcess.size,
+            processedCount = internetSubscriptions.size,
             createdCount = createdCount,
             deletedCount = 0,
             alreadyExistsCount = alreadyExistsCount,
@@ -196,6 +202,44 @@ class ServiceCutManagerService(
         )
     }
     
+    private data class PppoeCutOutcome(val cut: Int, val failed: List<String>)
+
+    private fun cutPppoeSubscriptions(
+        subscriptions: List<Subscription>,
+        cutType: SubscriptionCutType
+    ): PppoeCutOutcome {
+        if (subscriptions.isEmpty()) return PppoeCutOutcome(0, emptyList())
+
+        var cut = 0
+        val failed = mutableListOf<String>()
+        subscriptions.forEach { subscription ->
+            val device = subscription.hostDevice
+            if (device == null) {
+                failed.add("${subscription.getFullName()} (ID: ${subscription.id}) - sin equipo host")
+                return@forEach
+            }
+            try {
+                if (pppoeAccessService.cut(subscription, device)) {
+                    subscription.isServiceCutOff = true
+                    subscription.lastCutOffDate = LocalDate.now()
+                    val saved = subscriptionRepository.save(subscription)
+                    eventPublisher.publishEvent(SubscriptionChangedEvent(saved.id!!))
+                    cut++
+                } else {
+                    failed.add(
+                        "${subscription.getFullName()} (ID: ${subscription.id}, PPPoE: ${subscription.pppoeUsername}) - no se pudo aplicar ${PppoeProfileCatalog.CUT_PROFILE}"
+                    )
+                }
+            } catch (e: Exception) {
+                logger.error("Error cortando por PPPoE la suscripción ${subscription.id}: ${e.message}")
+                errorLogRepository.save(e.toErrorLog(Modules.CUT_SERVICE))
+                failed.add("${subscription.getFullName()} (ID: ${subscription.id}) - ${e.message}")
+            }
+        }
+        logger.info("✂️ ${cutType.displayName} PPPoE cortados por perfil: $cut de ${subscriptions.size}")
+        return PppoeCutOutcome(cut, failed)
+    }
+
     private fun processAndLogDebtors(debtors: List<Subscription>): CutServiceResultDto {
         val result = processSubscriptionsForCut(debtors, SubscriptionCutType.DEBTOR, isDebtorType = true)
         scheduledTaskLogService.logCutInternetServiceDebtors(result)
@@ -210,15 +254,14 @@ class ServiceCutManagerService(
     
     private fun clearAddressListAndFirewallRule() {
         try {
-            subscriptionRepository.findSubscriptionsWithUnpaidAndAutoCutFlagActivePayments()
-                .firstOrNull()?.hostDevice?.executeCommand { apiConnection ->
-                    val deletedCount = mikrotikService.clearAddressList(apiConnection, DEBTORS_LIST)
-                    logger.info("🧹 Limpiando Address List anterior: $deletedCount entradas")
-
-                    mikrotikService.removeFirewallRulesByComment(apiConnection, FIREWALL_DROP_RULE_COMMENT)
-                    
-                    logger.info("✅ Address List y reglas de firewall limpiados")
+            cutDevice()?.executeCommand { apiConnection ->
+                CutLists.ALL.forEach { list ->
+                    val deletedCount = mikrotikService.clearAddressList(apiConnection, list.name)
+                    logger.info("🧹 Limpiando Address List ${list.name}: $deletedCount entradas")
+                    mikrotikService.removeFirewallRulesByComment(apiConnection, list.dropComment)
                 }
+                logger.info("✅ Address Lists y reglas de firewall limpiados")
+            }
         } catch (e: Exception) {
             logger.error("❌ Error al limpiar address list y firewall: ${e.message}", e)
             errorLogRepository.save(e.toErrorLog(Modules.CUT_SERVICE))
@@ -227,16 +270,22 @@ class ServiceCutManagerService(
     
     private fun createFirewallDropRule() {
         try {
-            subscriptionRepository.findSubscriptionsWithUnpaidAndAutoCutFlagActivePayments()
-                .firstOrNull()?.hostDevice?.executeCommand { apiConnection ->
-                    mikrotikService.createFirewallDropRule(apiConnection)
-                    logger.info("✅ Regla de firewall de bloqueo creada exitosamente")
+            cutDevice()?.executeCommand { apiConnection ->
+                CutLists.ALL.forEach { list ->
+                    mikrotikService.createCutDropRule(apiConnection, list)
+                    logger.info("✅ Regla de firewall de bloqueo creada para ${list.name}")
                 }
+            }
         } catch (e: Exception) {
             logger.error("❌ Error al crear regla de firewall: ${e.message}", e)
             errorLogRepository.save(e.toErrorLog(Modules.CUT_SERVICE))
         }
     }
+
+    private fun cutDevice() =
+        subscriptionRepository.findSubscriptionsWithUnpaidAndAutoCutFlagActivePayments()
+            .firstOrNull()?.hostDevice
+            ?: subscriptionRepository.findCancelledSubscriptions().firstOrNull()?.hostDevice
 }
 
 

@@ -31,6 +31,27 @@ class SubsystemDependencyRulesTest {
     }
 
     @Test
+    fun sharedDoesNotReferenceOptionalSubsystemTypes() {
+        val pattern = Regex("""com\.dscorp\.wispadmin\.(${optionalSubsystems.joinToString("|")})\.""")
+        val sourceRoot = mainKotlin.resolve("com/dscorp/wispadmin/shared")
+        val violations = Files.walk(sourceRoot).asSequence()
+            .filter { it.isRegularFile() && it.toString().endsWith(".kt") }
+            .flatMap { file ->
+                val relative = file.relativeTo(root)
+                Files.readAllLines(file).asSequence().mapIndexedNotNull { index, line ->
+                    if (!pattern.containsMatchIn(line)) return@mapIndexedNotNull null
+                    "$relative:${index + 1}: ${line.trim()}"
+                }
+            }
+            .toList()
+        assertTrue(violations.isEmpty()) {
+            "shared viaja siempre en el Core WAR; referenciar un subsistema opcional tumba el arranque " +
+                "cuando staging lo excluye. El adapter vive en el paquete del subsistema:\n" +
+                violations.joinToString("\n")
+        }
+    }
+
+    @Test
     fun netdiagDoesNotImportSiblingSubsystems() {
         assertNoForbiddenImports(
             sourcePackage = "netdiag",

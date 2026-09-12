@@ -173,6 +173,38 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `authorize de ONU lab emite service-port VLAN 1000 en gem 2`() {
+        service.authorize(
+            AuthorizeCliRequest(
+                board = 1,
+                port = 6,
+                ontId = 119,
+                sn = "VSOL0031C0B6",
+                lineProfileId = 12,
+                serviceProfileId = 13,
+                description = "lab_vsol",
+                vlan = 100,
+                mgmtVlan = 1000,
+                mgmtGemport = 2,
+            )
+        )
+
+        assertTrue(
+            commands.any {
+                it == "service-port vlan 100 gpon 0/1/6 ont 119 gemport 1 multi-service user-vlan 100 " +
+                    "tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+            }
+        )
+        assertTrue(
+            commands.any {
+                it == "service-port vlan 1000 gpon 0/1/6 ont 119 gemport 2 multi-service user-vlan 1000 " +
+                    "tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+            }
+        )
+        assertTrue(commands.any { it.contains("ont-lineprofile-id 12") })
+    }
+
+    @Test
     fun `planAuthorize devuelve la misma secuencia que ejecutaria authorize`() {
         val request = AuthorizeCliRequest(
             board = 0,
@@ -220,5 +252,27 @@ class OltGatewayCommandServiceTest {
             service.reboot(RebootCliRequest(board = 0, port = 0, ontId = 1))
         }
         assertTrue(commands.isEmpty())
+    }
+
+    @Test
+    fun `removeServicePort emite undo service-port vlan del ONT`() {
+        service.removeServicePort(board = 0, port = 1, ontId = 5, vlan = 1)
+
+        assertTrue(commands.any { it == "undo service-port vlan 1 gpon 0/0/1 ont 5" })
+    }
+
+    @Test
+    fun `displayServicePorts pide la tabla del ONT`() {
+        service.displayServicePorts(board = 0, port = 1, ontId = 5)
+        assertTrue(commands.any { it == "display service-port port 0/0/1 ont 5" })
+    }
+
+    @Test
+    fun `parseServicePortVlans extrae VLAN 1 y 100`() {
+        val output = """
+            service-port 12 vlan 1 gpon 0/0/1 ont 5 gemport 1 multi-service user-vlan 1
+            service-port 18 vlan 100 gpon 0/0/1 ont 5 gemport 2 multi-service user-vlan 100
+        """.trimIndent()
+        assertEquals(setOf(1, 100), service.parseServicePortVlans(output))
     }
 }

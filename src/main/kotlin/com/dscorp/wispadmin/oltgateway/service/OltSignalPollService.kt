@@ -17,6 +17,7 @@ import com.dscorp.wispadmin.oltgateway.dto.SignalPollResultDto
 import com.dscorp.wispadmin.oltgateway.dto.SignalPollStatusDto
 import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
+import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOpticalInfo
 import com.dscorp.wispadmin.oltgateway.service.inventory.GponSlotInfo
 import com.dscorp.wispadmin.oltgateway.service.inventory.OltGponTopologyDiscovery
@@ -60,6 +61,7 @@ open class OltSignalPollService(
         .findAndRegisterModules()
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS),
     pollLock: OltSnmpPollLocker = NoOpOltSnmpPollLock(),
+    fusedInventoryCache: OltFusedInventoryCache? = null,
 ) {
 
     companion object {
@@ -79,6 +81,7 @@ open class OltSignalPollService(
         private val cliBusRef = AtomicReference<OltCliBus?>(null)
         private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
         private val pollLockRef = AtomicReference<OltSnmpPollLocker>(NoOpOltSnmpPollLock())
+        private val fusedInventoryCacheRef = AtomicReference<OltFusedInventoryCache?>(null)
     }
 
     init {
@@ -94,6 +97,7 @@ open class OltSignalPollService(
         cliBusRef.set(cliBus)
         snmpClientRef.set(snmpClient)
         pollLockRef.set(pollLock)
+        fusedInventoryCacheRef.set(fusedInventoryCache)
     }
 
     private fun props(): OltGatewayProperties {
@@ -199,7 +203,8 @@ open class OltSignalPollService(
                     SignalSource.SSH -> captureViaSshDeprecated()
                 } ?: return@withLock finish(SignalPollResult(skippedReason = lastSkipReason), startedAt)
 
-                val apply = applyOpticalUpdatesByPort(olt.id!!, capture.rows)
+                val apply = applyOpticalUpdatesByPort(olt.id!!, capture.rows, capture.fusedOnus)
+                publishStateForFusedWithoutOptical(capture.fusedOnus, apply.publishedOpticalSns)
                 finish(
                     SignalPollResult(
                         slotsPolled = capture.slotsPolled,
@@ -252,6 +257,16 @@ open class OltSignalPollService(
             lastSkipReason = "snmp_required"
             return null
         }
+        if (properties.snmp.fusedInventoryOptical) {
+            if (!properties.snmp.opticalPerPortWalks || properties.snmp.opticalParallelPorts > 1) {
+                logger.warn(
+                    "Fused inventory overrides opticalPerPortWalks={} opticalParallelPorts={}; using per-port serial",
+                    properties.snmp.opticalPerPortWalks,
+                    properties.snmp.opticalParallelPorts
+                )
+            }
+            return captureFused(properties, oltId, client)
+        }
         val optical = if (properties.snmp.opticalPerPortWalks) {
             val onus = onuRepository().findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }
             val ports = OpticalPollScope.portsFromOnus(onus, properties.snmp.opticalOnlineOnly)
@@ -287,6 +302,49 @@ open class OltSignalPollService(
             portsFailed = portsFailed,
             rows = rows,
         )
+    }
+
+    /**
+     * Inventory and optical from the same per-port GETBULK. Scope is board-derived so a port
+     * with no DB rows is still scanned; a partial scan is never handed to the inventory sync
+     * because `persistSnapshot` soft-deletes every ONU missing from the snapshot.
+     */
+    private fun captureFused(
+        properties: OltGatewayProperties,
+        oltId: Long,
+        client: OltSnmpClient
+    ): PollCapture? {
+        val onus = onuRepository().findByOlt_IdWithStatus(oltId).filter { it.deletedAt == null }
+        val ports = OpticalPollScope.fusedScanPorts(onus, portsPerBoard())
+        if (ports.isEmpty()) {
+            lastSkipReason = "no_onus_to_poll"
+            return null
+        }
+        logger.info("Signal poll via fused SNMP GETBULK ports={} columns=13", ports.size)
+        val snapshot = client.listInventoryAndOptical(ports)
+        if (snapshot.portsFailed == 0) {
+            fusedInventoryCacheRef.get()?.publish(snapshot.onus)
+        } else {
+            logger.warn(
+                "Fused pass kept out of inventory sync: portsFailed={} of {}",
+                snapshot.portsFailed,
+                snapshot.portsAttempted
+            )
+        }
+        val rows = snapshot.optical.map { it.toOpticalRow() }
+        return PollCapture(
+            slotsPolled = rows.map { it.slot }.toSet().size,
+            portsPolled = snapshot.portsAttempted,
+            portsFailed = snapshot.portsFailed,
+            rows = rows,
+            fusedOnus = snapshot.onus,
+        )
+    }
+
+    private fun portsPerBoard(): Int {
+        val properties = props()
+        val model = oltRepository().findByName(properties.oltId).map { it.model }.orElse(null)
+        return model?.defaultPortsPerGponBoard ?: properties.inventory.defaultPortsPerGponBoard
     }
 
     private fun SnmpOntOptical.toOpticalRow(): OpticalRow {
@@ -428,20 +486,29 @@ open class OltSignalPollService(
     }
 
     @Transactional
-    open fun applyOpticalUpdatesByPort(oltId: Long, rows: List<OpticalRow>): OpticalApplyStats {
+    open fun applyOpticalUpdatesByPort(
+        oltId: Long,
+        rows: List<OpticalRow>,
+        fusedOnus: List<ParsedOnuSummary> = emptyList(),
+    ): OpticalApplyStats {
         if (rows.isEmpty()) {
             return OpticalApplyStats()
         }
+        val runStateByOnt = fusedOnus.associate { Triple(it.slot, it.port, it.ontId) to it.runState }
         var aggregate = OpticalApplyStats()
         val byPort = rows.groupBy { it.slot to it.port }
         for (key in byPort.keys.sortedWith(compareBy({ it.first }, { it.second }))) {
-            aggregate = aggregate.plus(applyOpticalUpdates(oltId, byPort.getValue(key)))
+            aggregate = aggregate.plus(applyOpticalUpdates(oltId, byPort.getValue(key), runStateByOnt))
         }
         return aggregate
     }
 
     @Transactional
-    open fun applyOpticalUpdates(oltId: Long, rows: List<OpticalRow>): OpticalApplyStats {
+    open fun applyOpticalUpdates(
+        oltId: Long,
+        rows: List<OpticalRow>,
+        runStateByOnt: Map<Triple<Int, Int, Int>, String?> = emptyMap(),
+    ): OpticalApplyStats {
         if (rows.isEmpty()) {
             return OpticalApplyStats()
         }
@@ -474,7 +541,7 @@ open class OltSignalPollService(
                     val tx = row.optical.txPowerDbm
                     val oltRx = row.optical.oltRxPowerDbm
                     if (rx != null && tx != null && oltRx != null) {
-                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now)
+                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now, runStateByOnt)
                     }
                 }
                 OpticalUpsertOutcome.POLLED_AT_REFRESHED -> {
@@ -483,7 +550,7 @@ open class OltSignalPollService(
                     val tx = row.optical.txPowerDbm
                     val oltRx = row.optical.oltRxPowerDbm
                     if (rx != null && tx != null && oltRx != null) {
-                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now)
+                        batchItems += toBatchItem(onu, rx, tx, oltRx, row.optical, now, runStateByOnt)
                     }
                 }
                 OpticalUpsertOutcome.INCOMPLETE_DISCARDED -> incomplete++
@@ -501,6 +568,7 @@ open class OltSignalPollService(
             incompleteDiscarded = incomplete,
             unmatchedRows = unmatched,
             rowsMatched = matched,
+            publishedOpticalSns = batchItems.map { it.sn }.toSet(),
         )
     }
 
@@ -511,7 +579,9 @@ open class OltSignalPollService(
         oltRxDbm: Double,
         optical: ParsedOpticalInfo,
         polledAt: Instant,
+        runStateByOnt: Map<Triple<Int, Int, Int>, String?> = emptyMap(),
     ): OnuOpticalBatchItem {
+        val snmpState = runStateByOnt[Triple(onu.board, onu.port, onu.onuIndex)]
         return OnuOpticalBatchItem(
             sn = onu.sn,
             onuExternalId = onu.externalId,
@@ -522,8 +592,31 @@ open class OltSignalPollService(
             temperatureC = optical.temperatureC,
             distanceM = optical.distanceM,
             biasCurrentMa = optical.biasCurrentMa,
-            runState = onu.status?.runState,
+            runState = snmpState ?: onu.status?.runState,
         )
+    }
+
+    private fun publishStateForFusedWithoutOptical(
+        fusedOnus: List<ParsedOnuSummary>,
+        publishedOpticalSns: Set<String>,
+    ) {
+        if (fusedOnus.isEmpty()) return
+        val at = Instant.now()
+        for (onu in fusedOnus) {
+            if (onu.sn in publishedOpticalSns) continue
+            val state = onu.runState ?: continue
+            eventBus.publish(
+                PlatformEvent(
+                    type = PlatformEventTypes.ONU_STATE,
+                    sn = onu.sn,
+                    occurredAt = at,
+                    payloadJson = objectMapper.writeValueAsString(
+                        mapOf("sn" to onu.sn, "runState" to state),
+                    ),
+                    producer = "oltgateway",
+                )
+            )
+        }
     }
 
     private fun publishOpticalBatch(
@@ -690,6 +783,7 @@ open class OltSignalPollService(
         val slotsPolled: Int,
         val portsPolled: Int,
         val portsFailed: Int = 0,
-        val rows: List<OpticalRow>
+        val rows: List<OpticalRow>,
+        val fusedOnus: List<ParsedOnuSummary> = emptyList(),
     )
 }

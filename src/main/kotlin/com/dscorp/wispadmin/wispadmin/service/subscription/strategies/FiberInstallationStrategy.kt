@@ -1,10 +1,12 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 
 import com.dscorp.wispadmin.wispadmin.config.GigafiberEnvironmentProperties
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateRequest
@@ -21,6 +23,7 @@ class FiberInstallationStrategy(
     private val simpleQueueProvisioner: SimpleQueueProvisioner,
     private val environment: GigafiberEnvironmentProperties,
     private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
+    private val pppoeAccessService: PppoeAccessService,
 ) : IInstallationStrategy {
 
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -77,6 +80,9 @@ class FiberInstallationStrategy(
                             wifiPassword24 = request.wifiPassword24,
                             wifiSsid5 = request.wifiSsid5,
                             wifiPassword5 = request.wifiPassword5,
+                            pppoeUsername = subscription.pppoeUsername
+                                ?.takeIf { subscription.accessMode == AccessMode.PPPOE_DYNAMIC },
+                            pppoePassword = pppoeAccessService.decryptedPassword(subscription),
                         )
                     )
                     uniqueExternalId = activated.uniqueExternalId
@@ -130,9 +136,15 @@ class FiberInstallationStrategy(
                 }
             }
 
-            val queueResult = simpleQueueProvisioner.ensureQueue(subscription, device, plan)
-            queueAdded = queueResult.added
-            mikrotikError = queueResult.error
+            if (subscription.accessMode == AccessMode.PPPOE_DYNAMIC) {
+                val pppoeResult = pppoeAccessService.ensureSecret(subscription, device)
+                queueAdded = pppoeResult.successful
+                mikrotikError = pppoeResult.error
+            } else {
+                val queueResult = simpleQueueProvisioner.ensureQueue(subscription, device, plan)
+                queueAdded = queueResult.added
+                mikrotikError = queueResult.error
+            }
         } ?: run {
             oltError = "Solicitud FIBER sin datos de ONU"
         }

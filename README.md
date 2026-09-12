@@ -223,6 +223,9 @@ src/main/kotlin/com/dscorp/wispadmin/
 
 ## Documentación relacionada
 
+- `.agent-docs/mk2-nombres-canonicos.md` - Nombres vivos de interfaces del MK2 (`vlan1-olt`, `vlan100-olt`, bridge `LAN-VLAN1`)
+- `.agent-docs/olt-mk2-uplinks-decision-2026-09-10.md` - Por qué hay dos uplinks OLT y no un bridge unificado (medido)
+- `.agent-docs/cutover-vlan100-mk2-tagged-2026-09-10.md` - Cutover de VLAN 1 y 100 a tagged (MK2 las termina)
 - `.agent-docs/arquitectura-red-dual-mikrotik.md` - Arquitectura de red dual Mikrotik (VLAN 1 / VLAN 100, MK1/MK2, integración ispAdmin)
 - `.agent-docs/checklist-mk2-vlan1-sfp-sfpplus3.md` - Checklist cutover VLAN 1 en MK2 puerto `sfp-sfpplus3`
 - `MIKROTIK_MOCK_README.md` - Configuración de mock/real para MikroTik en desarrollo

@@ -31,7 +31,9 @@ import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
 import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
+import com.dscorp.wispadmin.oltgateway.snmp.NoOpOltSnmpPollLock
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
+import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
@@ -56,7 +58,9 @@ open class OltInventorySyncService(
     snmpClient: OltSnmpClient? = null,
     zoneRepository: OltMgrZoneRepository? = null,
     onuTypeRepository: OltMgrOnuTypeRepository? = null,
-    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null
+    eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
+    pollLock: OltSnmpPollLocker = NoOpOltSnmpPollLock(),
+    fusedInventoryCache: OltFusedInventoryCache? = null
 ) {
 
     companion object {
@@ -84,6 +88,8 @@ open class OltInventorySyncService(
         private val snmpClientRef = AtomicReference<OltSnmpClient?>(null)
         private val zoneRepositoryRef = AtomicReference<OltMgrZoneRepository?>(null)
         private val onuTypeRepositoryRef = AtomicReference<OltMgrOnuTypeRepository?>(null)
+        private val pollLockRef = AtomicReference<OltSnmpPollLocker>(NoOpOltSnmpPollLock())
+        private val fusedInventoryCacheRef = AtomicReference<OltFusedInventoryCache?>(null)
     }
 
     init {
@@ -101,6 +107,8 @@ open class OltInventorySyncService(
         zoneRepositoryRef.set(zoneRepository)
         onuTypeRepositoryRef.set(onuTypeRepository)
         snmpClientRef.set(snmpClient)
+        pollLockRef.set(pollLock)
+        fusedInventoryCacheRef.set(fusedInventoryCache)
     }
 
     private fun props(): OltGatewayProperties {
@@ -136,6 +144,8 @@ open class OltInventorySyncService(
     private fun zoneRepository(): OltMgrZoneRepository? = zoneRepositoryRef.get()
 
     private fun onuTypeRepository(): OltMgrOnuTypeRepository? = onuTypeRepositoryRef.get()
+
+    private fun pollLock(): OltSnmpPollLocker = pollLockRef.get() ?: NoOpOltSnmpPollLock()
 
     fun isRunning(): Boolean = running.get()
 
@@ -565,8 +575,29 @@ open class OltInventorySyncService(
                     if (!properties.snmp.enabled || properties.snmp.roCommunity.isBlank()) {
                         return finish(SyncResult(skippedReason = "snmp_required"), startedAt)
                     }
-                    logger.info("Inventory sync via SNMP GETBULK (SSH inventory deprecated)")
-                    client.listConfiguredOnus()
+                    pollLock().withLock {
+                        val fused = fusedInventoryCacheRef.get()
+                            ?.takeIfFresh(properties.snmp.fusedSnapshotMaxAgeMs)
+                        val existingOnus = onuRepository().findByOlt_IdWithStatus(olt.id!!)
+                        if (fused != null && fusedSnapshotCoversDb(fused, existingOnus)) {
+                            logger.info(
+                                "Inventory sync from fused optical pass onus={} capturedAt={}",
+                                fused.onus.size,
+                                fused.capturedAt
+                            )
+                            fused.onus
+                        } else {
+                            if (fused != null) {
+                                logger.warn(
+                                    "Fused inventory snapshot omitted DB ONUs capturedAt={}; falling back to live walk",
+                                    fused.capturedAt
+                                )
+                            } else {
+                                logger.info("Inventory sync via SNMP GETBULK (SSH inventory deprecated)")
+                            }
+                            client.listConfiguredOnus()
+                        }
+                    }
                 }
             }
             if (snapshot.isEmpty()) {
@@ -599,6 +630,18 @@ open class OltInventorySyncService(
         } finally {
             running.set(false)
         }
+    }
+
+    private fun fusedSnapshotCoversDb(
+        fused: OltFusedInventoryCache.Snapshot,
+        existing: List<OltMgrOnu>
+    ): Boolean {
+        val snapshotSns = fused.onus.map { HuaweiGponSnmpCodec.normalizeOntSn(it.sn) }.toSet()
+        return existing
+            .asSequence()
+            .filter { it.deletedAt == null }
+            .map { HuaweiGponSnmpCodec.normalizeOntSn(it.sn) }
+            .all { it in snapshotSns }
     }
 
     open fun persistSnapshot(olt: OltMgrOlt, snapshot: List<ParsedOnuSummary>): SyncResult {

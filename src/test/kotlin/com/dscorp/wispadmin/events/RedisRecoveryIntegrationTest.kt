@@ -73,4 +73,20 @@ class RedisRecoveryIntegrationTest {
         } finally { factory.destroy() }
     }
 
+    @Test fun `optical patch with runState refreshes runState and observedAt`() {
+        val (factory,redis)=redis()
+        try {
+            val props=GigafiberRedisProperties().apply { namespace="test:${UUID.randomUUID()}" }
+            val cache=RedisLiveTelemetry(redis,props)
+            val now=Instant.now()
+            val later=now.plusSeconds(1)
+            cache.putOnu(8,LiveOnuState("SN1","offline",null,now,updateKind="state"))
+            cache.putOnu(8,LiveOnuState("SN1","online",-20.0,later,updateKind="optical"))
+            val state=cache.onu(8)!!
+            assertEquals("online",state.runState)
+            assertEquals(later,state.observedAt)
+            assertEquals(-20.0,state.rxPowerDbm)
+        } finally { factory.destroy() }
+    }
+
 }

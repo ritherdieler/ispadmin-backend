@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.shared.telemetry
 
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -40,26 +39,6 @@ class TelemetryRetentionCoordinator(
 
     companion object {
         private val logger = LoggerFactory.getLogger(TelemetryRetentionCoordinator::class.java)
-    }
-}
-
-@Component
-class NetDiagTelemetryRetentionAdapter(
-    private val service: ObjectProvider<com.dscorp.wispadmin.netdiag.service.NetDiagRetentionService>
-) : TelemetryRetentionPort {
-    override fun name() = "netdiag"
-    override fun purgeExpired(now: Instant): Int =
-        service.ifAvailable?.purgeExpired(now)?.total() ?: 0
-}
-
-@Component
-class ObservabilityTelemetryRetentionAdapter(
-    private val scheduler: ObjectProvider<com.dscorp.wispadmin.observability.scheduled.ObsRetentionScheduler>
-) : TelemetryRetentionPort {
-    override fun name() = "observability"
-    override fun purgeExpired(now: Instant): Int {
-        scheduler.ifAvailable?.purgeExpiredData()
-        return 0
     }
 }
 

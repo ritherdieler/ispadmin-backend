@@ -23,7 +23,7 @@ class AddressListManagerService(
     private val logger = LoggerFactory.getLogger(AddressListManagerService::class.java)
     
     companion object {
-        private const val DEBTORS_LIST = "deudores"
+        private val CANCELLED_LIST = CutLists.CANCELLED
     }
     
     override fun generateAddressListForCancelledSubscriptions(): AddressListGenerationResultDto {
@@ -90,7 +90,7 @@ class AddressListManagerService(
             try {
                 device.executeCommand { session ->
                     clearAddressList(session, result)
-                    clearFirewallRules(session, result)
+                    clearFirewallRules(session)
                 }
             } catch (e: Exception) {
                 result.errorCount += subscriptions.size
@@ -99,13 +99,12 @@ class AddressListManagerService(
     }
     
     private fun clearAddressList(session: MikrotikSession, result: AddressListGenerationResult) {
-        val deletedCount = mikrotikService.clearAddressList(session, DEBTORS_LIST)
+        val deletedCount = mikrotikService.clearAddressList(session, CANCELLED_LIST.name)
         result.deletedCount += deletedCount
     }
     
-    private fun clearFirewallRules(session: MikrotikSession, result: AddressListGenerationResult) {
-        val deletedCount = mikrotikService.clearFirewallRules(session)
-        result.deletedCount += deletedCount
+    private fun clearFirewallRules(session: MikrotikSession) {
+        mikrotikService.removeFirewallRulesByComment(session, CANCELLED_LIST.dropComment)
     }
     
     private fun createAddressLists(
@@ -136,14 +135,15 @@ class AddressListManagerService(
     ) {
         subscriptions.forEach { subscription ->
             try {
-                if (mikrotikService.checkIfAddressExistsInList(session, DEBTORS_LIST, subscription.ip!!)) {
+                if (mikrotikService.checkIfAddressExistsInList(session, CANCELLED_LIST.name, subscription.ip!!)) {
                     result.alreadyExistsCount++
                     result.alreadyExistsSubscriptions.add(
                         "${subscription.getFullName()} (ID: ${subscription.id}) - IP: ${subscription.ip}"
                     )
                 } else {
-                    mikrotikService.addIpToDebtorsList(
+                    mikrotikService.addIpToCutList(
                         session,
+                        CANCELLED_LIST,
                         subscription.ip!!,
                         subscription.getFullName().uppercase()
                     )
@@ -164,7 +164,7 @@ class AddressListManagerService(
     
     private fun createFirewallRule(session: MikrotikSession) {
         try {
-            mikrotikService.createFirewallDropRule(session)
+            mikrotikService.createCutDropRule(session, CANCELLED_LIST)
         } catch (e: Exception) {
             logger.warn("Error creando regla de firewall: ${e.message}")
         }

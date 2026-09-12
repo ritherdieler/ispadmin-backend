@@ -17,12 +17,13 @@ import java.time.Duration
 @Service
 class HealthLifecycleService(private val properties: ServiceHealthProperties, private val cursors: HealthCursorRepository,
                              private val em: EntityManager, private val watermarks: WifiAggregationWatermarkRepository,
-                             private val rollup: WifiStationRollupService): ApplicationRunner {
+                             private val rollup: WifiStationRollupService,
+                             private val opticalRollup: OpticalDailyRollupService): ApplicationRunner {
     override fun run(args: ApplicationArguments) {
         if(properties.enabled && (properties.acsEnabled || properties.actionsEnabled)) {
             require(properties.stationHmacKey.toByteArray().size>=32) { "SERVICE_HEALTH_STATION_HMAC_KEY (32+ bytes) requerido para telemetría/acciones" }
         }
-        for(key in listOf("acs-watcher","traffic-consumer","evaluation","actions","blast-radius","olt-events","wifi-hourly-rollup")) {
+        for(key in listOf("acs-watcher","traffic-consumer","evaluation","actions","blast-radius","olt-events","wifi-hourly-rollup","optical-daily-rollup")) {
             if(!cursors.existsById(key)) try { cursors.saveAndFlush(HealthCursor(cursorKey=key,observedAt=if(key=="olt-events") Instant.now() else null)) }
             catch (_: DataIntegrityViolationException) { /* Another instance seeded the same lock. */ }
         }
@@ -33,6 +34,7 @@ class HealthLifecycleService(private val properties: ServiceHealthProperties, pr
         if(!properties.enabled) return
         val now=Instant.now()
         rollup.catchUp(now)
+        opticalRollup.catchUp(now)
         fun purge(entity: String, field: String, days: Long) {
             em.createQuery("delete from $entity e where e.$field < :cutoff").setParameter("cutoff",now.minus(Duration.ofDays(days.coerceAtLeast(1)))).executeUpdate()
         }
@@ -42,12 +44,12 @@ class HealthLifecycleService(private val properties: ServiceHealthProperties, pr
         purge("WifiStationHourly","bucketStart",properties.stationHourlyRetentionDays)
         purge("WifiCountSample","informAt",properties.countRetentionDays)
         purge("OpticalSample","observedAt",properties.opticalRetentionDays)
+        purge("OpticalDailySample","bucketStart",properties.opticalDailyRetentionDays)
         purge("OnuStateEvent","observedAt",properties.opticalRetentionDays)
         purge("TelemetryRun","startedAt",properties.runRetentionDays)
         val cutoff=now.minus(Duration.ofDays(properties.eventRetentionDays))
         em.createQuery("delete from EvidenceLink l where l.healthEventId in (select e.id from HealthEvent e where e.eventStatus <> 'OPEN' and e.endedAt < :cutoff)")
             .setParameter("cutoff",cutoff).executeUpdate()
         em.createQuery("delete from HealthEvent e where e.eventStatus <> 'OPEN' and e.endedAt < :cutoff").setParameter("cutoff",cutoff).executeUpdate()
-        // Identity links are intentionally retained: historical evidence can still depend on them.
     }
 }

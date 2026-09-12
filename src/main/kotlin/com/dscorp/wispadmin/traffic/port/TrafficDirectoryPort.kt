@@ -9,6 +9,7 @@ data class TrafficDirectoryTarget(
     val planDownloadMbps: Int? = null,
     val planUploadMbps: Int? = null,
     val displayName: String? = null,
+    val pppoeUsername: String? = null,
 )
 
 interface TrafficDirectoryPort {

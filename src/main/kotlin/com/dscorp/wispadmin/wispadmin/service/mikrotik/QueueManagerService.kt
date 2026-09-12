@@ -59,20 +59,19 @@ class QueueManagerService(
     }
 
     override fun recreateQueueForSubscription(session: MikrotikSession, subscription: Subscription): Boolean {
-        val resultByIp = session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
+        val printFilter = SimpleQueueTarget.printFilter(subscription)
+        val resultByIp = printFilter
+            ?.let { session.print(PATH_QUEUE_SIMPLE, mapOf("target" to it)) }
+            .orEmpty()
         val envTag = environment.normalizedTag()
         val queueToRemove = resultByIp.lastOrNull { SimpleQueueNameParser.belongsToEnvironment(it["name"], envTag) }
             ?: session.print(PATH_QUEUE_SIMPLE, mapOf("name" to buildQueueName(subscription))).lastOrNull()
 
         queueToRemove?.get(".id")?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
 
-        subscription.ip?.let { ip ->
-            if (ip.isNotEmpty()) {
-                addSimpleQueue(session, subscription, includeInstallationComment = true)
-                return true
-            }
-        }
-        return false
+        if (printFilter == null) return false
+        addSimpleQueue(session, subscription, includeInstallationComment = true)
+        return true
     }
 
     override fun configureMikroTikQueue(session: MikrotikSession, subscription: Subscription) {
@@ -80,9 +79,10 @@ class QueueManagerService(
     }
 
     override fun updateMikroTikQueue(subscription: Subscription) {
+        val printFilter = SimpleQueueTarget.printFilter(subscription) ?: return
         subscription.hostDevice?.executeCommand { session ->
             val envTag = environment.normalizedTag()
-            session.print(PATH_QUEUE_SIMPLE, mapOf("target" to "${subscription.ip}/32"))
+            session.print(PATH_QUEUE_SIMPLE, mapOf("target" to printFilter))
                 .filter { SimpleQueueNameParser.belongsToEnvironment(it["name"], envTag) }
                 .forEach { queue ->
                     queue[".id"]?.let { id -> session.remove(PATH_QUEUE_SIMPLE, id) }
@@ -96,12 +96,13 @@ class QueueManagerService(
         subscription: Subscription,
         includeInstallationComment: Boolean
     ) {
+        val target = SimpleQueueTarget.of(subscription) ?: return
         val queueName = buildQueueName(subscription)
         val upload = subscription.plan?.uploadSpeed
         val download = subscription.plan?.downloadSpeed
         val args = mutableMapOf(
             "name" to queueName,
-            "target" to subscription.ip.orEmpty(),
+            "target" to target,
             "max-limit" to "${upload}M/${download}M"
         )
         queueComment(subscription, includeInstallationComment)?.let { args["comment"] = it }

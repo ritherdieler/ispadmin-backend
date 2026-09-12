@@ -12,38 +12,68 @@ class MikroTikService(
 ) : IMikroTikService {
 
     companion object {
-        private const val DEBTORS_LIST = "deudores"
-        private const val FIREWALL_DROP_RULE_COMMENT = "CORTADO POR DEUDA - LISTA DE DEUDORES"
+        private val DEBTORS_LIST = CutLists.DEBTORS
         private const val PATH_ADDRESS_LIST = "/ip/firewall/address-list"
         private const val PATH_FIREWALL_FILTER = "/ip/firewall/filter"
         private const val PATH_QUEUE_SIMPLE = "/queue/simple"
     }
 
-    override fun removeIpFromDebtorsList(session: MikrotikSession, ip: String) = obsTracer.span("mikrotik: removeIpFromDebtorsList") {
-        session.print(PATH_ADDRESS_LIST, mapOf("list" to DEBTORS_LIST, "address" to ip))
-            .forEach { addressEntry ->
-                addressEntry[".id"]?.let { id -> session.remove(PATH_ADDRESS_LIST, id) }
-            }
-    }
+    override fun removeIpFromDebtorsList(session: MikrotikSession, ip: String) =
+        removeIpFromCutList(session, DEBTORS_LIST, ip)
 
-    override fun addIpToDebtorsList(session: MikrotikSession, ip: String, comment: String) = obsTracer.span("mikrotik: addIpToDebtorsList") {
-        session.add(
-            PATH_ADDRESS_LIST,
-            mapOf(
-                "list" to DEBTORS_LIST,
-                "address" to ip,
-                "comment" to comment
-            )
-        )
-        Unit
-    }
+    override fun addIpToDebtorsList(session: MikrotikSession, ip: String, comment: String) =
+        addIpToCutList(session, DEBTORS_LIST, ip, comment)
 
     override fun addIpToDebtorsListIfNotExists(session: MikrotikSession, ip: String, comment: String) =
         obsTracer.span("mikrotik: addIpToDebtorsListIfNotExists") {
-            val existingAddress = session.print(PATH_ADDRESS_LIST, mapOf("list" to DEBTORS_LIST, "address" to ip))
+            val existingAddress =
+                session.print(PATH_ADDRESS_LIST, mapOf("list" to DEBTORS_LIST.name, "address" to ip))
             if (existingAddress.isEmpty()) {
                 addIpToDebtorsList(session, ip, comment)
             }
+            Unit
+        }
+
+    override fun addIpToCutList(session: MikrotikSession, list: CutList, ip: String, comment: String) =
+        obsTracer.span("mikrotik: addIpToCutList") {
+            session.add(
+                PATH_ADDRESS_LIST,
+                mapOf(
+                    "list" to list.name,
+                    "address" to ip,
+                    "comment" to comment
+                )
+            )
+            Unit
+        }
+
+    override fun removeIpFromCutList(session: MikrotikSession, list: CutList, ip: String) =
+        obsTracer.span("mikrotik: removeIpFromCutList") {
+            session.print(PATH_ADDRESS_LIST, mapOf("list" to list.name, "address" to ip))
+                .forEach { addressEntry ->
+                    addressEntry[".id"]?.let { id -> session.remove(PATH_ADDRESS_LIST, id) }
+                }
+        }
+
+    override fun removeIpFromAllCutLists(session: MikrotikSession, ip: String) =
+        obsTracer.span("mikrotik: removeIpFromAllCutLists") {
+            CutLists.ALL.forEach { list -> removeIpFromCutList(session, list, ip) }
+        }
+
+    override fun createCutDropRule(session: MikrotikSession, list: CutList) =
+        obsTracer.span("mikrotik: createCutDropRule") {
+            val placeBefore = DebtorCutRulePlacement.placeBeforeId(session.print(PATH_FIREWALL_FILTER))
+            removeFirewallRulesByComment(session, list.dropComment)
+            val args = mutableMapOf(
+                "chain" to "forward",
+                "action" to "drop",
+                "src-address-list" to list.name,
+                "comment" to list.dropComment,
+            )
+            if (placeBefore != null) {
+                args["place-before"] = placeBefore
+            }
+            session.add(PATH_FIREWALL_FILTER, args)
             Unit
         }
 
@@ -55,19 +85,8 @@ class MikroTikService(
                 }
         }
 
-    override fun createFirewallDropRule(session: MikrotikSession) = obsTracer.span("mikrotik: createFirewallDropRule") {
-        removeFirewallRulesByComment(session, FIREWALL_DROP_RULE_COMMENT)
-        session.add(
-            PATH_FIREWALL_FILTER,
-            mapOf(
-                "chain" to "forward",
-                "action" to "drop",
-                "src-address-list" to DEBTORS_LIST,
-                "comment" to FIREWALL_DROP_RULE_COMMENT
-            )
-        )
-        Unit
-    }
+    override fun createFirewallDropRule(session: MikrotikSession) =
+        createCutDropRule(session, DEBTORS_LIST)
 
     override fun clearAddressList(session: MikrotikSession, listName: String): Int = obsTracer.span("mikrotik: clearAddressList") {
         val existingAddressList = session.print(PATH_ADDRESS_LIST, mapOf("list" to listName))
@@ -75,17 +94,6 @@ class MikroTikService(
             addressEntry[".id"]?.let { id -> session.remove(PATH_ADDRESS_LIST, id) }
         }
         existingAddressList.size
-    }
-
-    override fun clearFirewallRules(session: MikrotikSession): Int = obsTracer.span("mikrotik: clearFirewallRules") {
-        val existingRules = session.print(PATH_FIREWALL_FILTER)
-        val matchingRules = existingRules.filter { rule ->
-            rule["comment"]?.contains("CORTADO POR DEUDA") == true
-        }
-        matchingRules.forEach { rule ->
-            rule[".id"]?.let { id -> session.remove(PATH_FIREWALL_FILTER, id) }
-        }
-        matchingRules.size
     }
 
     override fun findAndRemoveQueueByIp(session: MikrotikSession, ip: String) = obsTracer.span("mikrotik: findAndRemoveQueueByIp") {

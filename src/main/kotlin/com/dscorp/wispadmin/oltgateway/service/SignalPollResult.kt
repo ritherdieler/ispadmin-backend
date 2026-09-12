@@ -24,6 +24,7 @@ data class OpticalApplyStats(
     val unchangedSkipped: Int = 0,
     val unmatchedRows: Int = 0,
     val rowsMatched: Int = 0,
+    val publishedOpticalSns: Set<String> = emptySet(),
 ) {
     fun plus(other: OpticalApplyStats): OpticalApplyStats = OpticalApplyStats(
         onusUpdated = onusUpdated + other.onusUpdated,
@@ -32,5 +33,6 @@ data class OpticalApplyStats(
         unchangedSkipped = unchangedSkipped + other.unchangedSkipped,
         unmatchedRows = unmatchedRows + other.unmatchedRows,
         rowsMatched = rowsMatched + other.rowsMatched,
+        publishedOpticalSns = publishedOpticalSns + other.publishedOpticalSns,
     )
 }

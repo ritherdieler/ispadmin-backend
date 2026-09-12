@@ -27,6 +27,7 @@ class CrossSchemaJdbcForbiddenTest {
         "scripts/sql/staging-e2e-registration-catalog.sql",
         "scripts/sql/staging-e2e-place-nap.sql",
         "scripts/sql/staging-ip-pool.sql",
+        "scripts/sql/stg-acs-pppoe-wan-paths.sql",
         "scripts/whatsapp-normalize-message-log-phones.sql",
     )
 

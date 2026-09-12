@@ -29,6 +29,8 @@ class ServiceHealthProperties {
     var wifiRssiThreshold = -75.0
     var wifiSnrThreshold = 20.0
     var opticalRetentionDays = 90L
+    var opticalDailyRetentionDays = 730L
+    var opticalSeriesRawMaxDays = 90L
     var countRetentionDays = 90L
     var stationRetentionDays = 14L
     var stationHourlyRetentionDays = 90L

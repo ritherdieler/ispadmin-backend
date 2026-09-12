@@ -23,6 +23,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     private val engine: DiagnosisEngine,private val summaries: HealthSummaryQueryService,
     private val properties: ServiceHealthProperties,
     private val optical: OpticalSampleRepository,
+    private val opticalDaily: OpticalDailySampleRepository,
     private val counts: WifiCountSampleRepository,private val stations: WifiStationSampleRepository,
     private val hourlies: WifiStationHourlyRepository,
     private val events: HealthEventRepository,private val actions: RemoteActionRepository,
@@ -60,12 +61,14 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         val window=window(from,to)
         return seriesData(id,window.first,window.second)
     }
-    private fun seriesData(id: Int,from: Instant,to: Instant): Map<String,Any> = mapOf(
-        "optical" to optical.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
-            "id" to s.id,"observed_at" to UtcInstantText.formatApi(s.observedAt),"collected_at" to UtcInstantText.formatApi(s.collectedAt),"onu_id" to s.onuId,
-            "onu_sn" to s.onuSn,"olt_id" to s.oltId,"board" to s.board,"port" to s.port,
-            "onu_rx_dbm" to s.onuRxDbm,"onu_tx_dbm" to s.onuTxDbm,"olt_rx_dbm" to s.oltRxDbm,
-            "temperature_c" to s.temperatureC,"distance_m" to s.distanceM,"bias_ma" to s.biasMa,"voltage_v" to s.voltageV,"quality_status" to s.qualityStatus) },
+    private fun seriesData(id: Int,from: Instant,to: Instant): Map<String,Any> {
+        val opticalDailyWindow = OpticalSeries.useDaily(from,to,properties.opticalSeriesRawMaxDays)
+        return mapOf(
+        "optical" to if (opticalDailyWindow)
+            opticalDaily.listBySubscriptionInUtcWindow(id,from,to).map(OpticalSeries::mapDaily)
+        else
+            optical.listBySubscriptionInUtcWindow(id,from,to).map(OpticalSeries::mapRaw),
+        "optical_resolution" to if (opticalDailyWindow) "daily" else "raw",
         "wifi_counts" to counts.listBySubscriptionInUtcWindow(id,from,to).map { s -> mapOf(
             "id" to s.id,"observed_at" to s.observedAt?.let(UtcInstantText::formatApi),"associated_device_count" to s.associatedDeviceCount,
             "associated_2g" to s.associated2g,"associated_5g" to s.associated5g,"lan_device_count" to s.lanDeviceCount,"quality_status" to s.qualityStatus) },
@@ -74,7 +77,8 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         else
             stations.listBySubscriptionInUtcWindow(id,from,to).map(WifiSignalSeries::mapRaw),
         "wifi_signal_resolution" to if (WifiSignalSeries.useHourly(from,to,properties.stationSeriesRawMaxDays)) "hourly" else "raw"
-    )
+        )
+    }
 
     @GetMapping("/subscription/{id}/service-health/timeline")
     fun timeline(@PathVariable id: Int,@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?,
@@ -97,12 +101,14 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
         val onu=onuPort.ifAvailable?.findByExternalId(externalId) ?: throw NoSuchElementException("ONU inexistente")
         val id=identity.resolveOnu(onu.sn)
         val w=window(from,to)
-        val data=optical.listByOnuInUtcWindow(onu.id,w.first,w.second).map { sample ->
-            mapOf("id" to sample.id,"observed_at" to sample.observedAt,"onu_id" to sample.onuId,"onu_sn" to sample.onuSn,
-                "subscription_id" to sample.subscriptionId,"onu_rx_dbm" to sample.onuRxDbm,"onu_tx_dbm" to sample.onuTxDbm,
-                "olt_rx_dbm" to sample.oltRxDbm,"quality_status" to sample.qualityStatus)
-        }
-        return if(id==null) mapOf("optical" to data) else mapOf("subscription_id" to id,"optical" to data)
+        val daily=OpticalSeries.useDaily(w.first,w.second,properties.opticalSeriesRawMaxDays)
+        val data=if (daily)
+            opticalDaily.listByOnuInUtcWindow(onu.id,w.first,w.second).map(OpticalSeries::mapDaily)
+        else
+            optical.listByOnuInUtcWindow(onu.id,w.first,w.second).map(OpticalSeries::mapRaw)
+        val resolution=if (daily) "daily" else "raw"
+        return if(id==null) mapOf("optical" to data,"optical_resolution" to resolution)
+        else mapOf("subscription_id" to id,"optical" to data,"optical_resolution" to resolution)
     }
 
     @PostMapping("/subscription/{id}/service-health/reboot")
@@ -159,7 +165,8 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
     private fun window(from: String?,to: String?): Pair<Instant,Instant> {
         val end=to?.let { Instant.parse(it) } ?: Instant.now()
         val start=from?.let { Instant.parse(it) } ?: end.minusSeconds(86400)
-        require(start<end && end.epochSecond-start.epochSecond<=90*86400) { "Ventana máxima: 90 días" }
+        val maxDays=properties.opticalDailyRetentionDays.coerceAtLeast(90)
+        require(start<end && end.epochSecond-start.epochSecond<=maxDays*86400) { "Ventana máxima: $maxDays días" }
         return start to end
     }
 }

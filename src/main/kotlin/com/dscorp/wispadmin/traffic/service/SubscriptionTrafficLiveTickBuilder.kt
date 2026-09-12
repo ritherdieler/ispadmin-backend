@@ -99,11 +99,17 @@ object SubscriptionTrafficLiveTickBuilder {
         )
     }
 
-    fun findQueueRowForIp(queues: List<Map<String, String>>, ip: String): Map<String, String>? {
-        val normalizedIp = ip.trim()
-        if (normalizedIp.isEmpty()) return null
+    fun findQueueRowForIp(queues: List<Map<String, String>>, ip: String): Map<String, String>? =
+        findQueueRow(queues, ip, null)
+
+    fun findQueueRow(
+        queues: List<Map<String, String>>,
+        ip: String?,
+        pppoeUsername: String?,
+    ): Map<String, String>? {
+        val key = TrafficTargetKey.of(ip, pppoeUsername) ?: return null
         return queues.firstOrNull { row ->
-            RouterOsTrafficCounterParser.normalizeTarget(row["target"]) == normalizedIp
+            TrafficTargetKey.ofQueue(row["name"], row["target"]) == key
         }
     }
 }

@@ -122,7 +122,9 @@ open class SubscriptionTrafficPollService(
         bucketStart: LocalDateTime,
     ): DevicePollResult {
         val labeledForRouter = targets.filter { it.routerHint == null || it.routerHint == router.id }
-        val byIp = labeledForRouter.associateBy { it.ip }
+        val byKey = labeledForRouter.mapNotNull { target ->
+            TrafficTargetKey.of(target.ip, target.pppoeUsername)?.let { it to target }
+        }.toMap()
         val runStarted = LocalDateTime.now()
         val run = sourceRunRepository.save(
             TrafficSourceRun(
@@ -148,17 +150,17 @@ open class SubscriptionTrafficPollService(
                 val queues = session.print(PATH_QUEUE_SIMPLE, proplist = QUEUE_PROPLIST)
                 val resourceRow = session.print("/system/resource").firstOrNull()
                 val uptimeSeconds = RouterOsUptimeParser.parseSeconds(resourceRow?.get("uptime"))
-                val queuesByIp = queues.mapNotNull { row ->
-                    val ip = RouterOsTrafficCounterParser.normalizeTarget(row["target"]) ?: return@mapNotNull null
-                    ip to row
+                val queuesByKey = queues.mapNotNull { row ->
+                    val key = TrafficTargetKey.ofQueue(row["name"], row["target"]) ?: return@mapNotNull null
+                    key to row
                 }.toMap()
-                queuesByIp.forEach { (ip, queue) ->
+                queuesByKey.forEach { (key, queue) ->
                     try {
                         persistQueueSample(
-                            ip = ip,
+                            key = key,
                             queue = queue,
                             router = router,
-                            byIp = byIp,
+                            byKey = byKey,
                             bucketStart = bucketStart,
                             runId = run.id,
                             uptimeSeconds = uptimeSeconds,
@@ -170,13 +172,13 @@ open class SubscriptionTrafficPollService(
                     } catch (ex: Exception) {
                         matched++
                         invalid++
-                        logger.warn("Traffic sample persist failed ip={}: {}", ip, ex.message)
+                        logger.warn("Traffic sample persist failed key={}: {}", key, ex.message)
                     }
                 }
-                labeledForRouter.filter { it.ip !in queuesByIp }.forEach { target ->
+                byKey.filterKeys { it !in queuesByKey }.forEach { (key, target) ->
                     missing++
                     sampleRepository.save(
-                        upsertObservation(target.ip, target, router.id, bucketStart, run.id, null, TrafficSampleStatus.MISSING, "QUEUE_NOT_FOUND"),
+                        upsertObservation(key, target, router.id, bucketStart, run.id, null, TrafficSampleStatus.MISSING, "QUEUE_NOT_FOUND"),
                     )
                 }
             }
@@ -191,34 +193,36 @@ open class SubscriptionTrafficPollService(
     private data class QueuePersistResult(val written: Int, val invalid: Int)
 
     private fun persistQueueSample(
-        ip: String,
+        key: String,
         queue: Map<String, String>,
         router: TrafficRouter,
-        byIp: Map<String, TrafficDirectoryTarget>,
+        byKey: Map<String, TrafficDirectoryTarget>,
         bucketStart: LocalDateTime,
         runId: Long?,
         uptimeSeconds: Long?,
     ): QueuePersistResult {
-        val target = byIp[ip]
+        val target = byKey[key]
         val bytes = RouterOsTrafficCounterParser.parseUpDown(queue["bytes"])
         if (bytes == null) {
             sampleRepository.save(
-                upsertObservation(ip, target, router.id, bucketStart, runId, queue, TrafficSampleStatus.INVALID, "INVALID_COUNTER"),
+                upsertObservation(key, target, router.id, bucketStart, runId, queue, TrafficSampleStatus.INVALID, "INVALID_COUNTER"),
             )
             return QueuePersistResult(written = 0, invalid = 1)
         }
         val uploadBytes = bytes.first
         val downloadBytes = bytes.second
-        val state = counterStateRepository.findById(ip).orElse(null)
+        val state = counterStateRepository.findById(key).orElse(null)
         val counterReset = detectCounterReset(state?.lastRouterUptimeSeconds, uptimeSeconds) ||
+            detectPppoeReconnect(key, state?.lastClientAddress, queue["target"]) ||
             (state != null && (downloadBytes < state.lastRxBytes || uploadBytes < state.lastTxBytes))
         if (state == null) {
             sampleRepository.save(
-                upsertObservation(ip, target, router.id, bucketStart, runId, queue, TrafficSampleStatus.BASELINE, null),
+                upsertObservation(key, target, router.id, bucketStart, runId, queue, TrafficSampleStatus.BASELINE, null),
             )
             counterStateRepository.save(
                 TrafficCounterState(
-                    clientIp = ip,
+                    clientIp = key,
+                    lastClientAddress = TrafficTargetKey.queueAddress(queue["target"]),
                     subscriptionId = target?.subscriptionId,
                     hostDeviceId = router.id,
                     lastRxBytes = downloadBytes,
@@ -240,7 +244,7 @@ open class SubscriptionTrafficPollService(
         val txDelta = if (status == TrafficSampleStatus.OK) uploadBytes - state.lastTxBytes else null
         val rxDelta = if (status == TrafficSampleStatus.OK) downloadBytes - state.lastRxBytes else null
         val observation = upsertObservation(
-            ip, target, router.id, bucketStart, runId, queue, status,
+            key, target, router.id, bucketStart, runId, queue, status,
             if (status == TrafficSampleStatus.STALE) "POLL_INTERVAL_EXCEEDED" else null,
         )
         observation.collectedAt = collectedAt
@@ -256,6 +260,7 @@ open class SubscriptionTrafficPollService(
         state.lastRxBytes = downloadBytes
         state.lastTxBytes = uploadBytes
         state.lastRouterUptimeSeconds = uptimeSeconds
+        state.lastClientAddress = TrafficTargetKey.queueAddress(queue["target"])
         state.lastPolledAt = collectedAt
         counterStateRepository.save(state)
         publishLatest(observation)
@@ -345,6 +350,12 @@ open class SubscriptionTrafficPollService(
     private fun detectCounterReset(previousUptime: Long?, currentUptime: Long?): Boolean {
         if (previousUptime == null || currentUptime == null) return false
         return currentUptime < previousUptime
+    }
+
+    private fun detectPppoeReconnect(key: String, previousAddress: String?, target: String?): Boolean {
+        if (!TrafficTargetKey.isPppoe(key)) return false
+        val current = TrafficTargetKey.queueAddress(target) ?: return false
+        return previousAddress != null && previousAddress != current
     }
 
     private fun truncateBucket(now: LocalDateTime, bucketMinutes: Int): LocalDateTime {

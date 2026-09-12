@@ -4,6 +4,8 @@
 |------|---------|
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
 | **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |
+| **Migración IP estática → PPPoE** | [pppoe-migracion-plan.md](./pppoe-migracion-plan.md) |
+| **VLAN 1 en desuso — destino VLAN 100** | [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
 | **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
@@ -14,7 +16,9 @@
 | **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
 | **WiFi-on-Inform — flujo ACS → Gateway → Core (canónico)** | [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md) |
 | **Óptica SNMP push — Gateway → Redis → Core (canónico)** | [optical-push-gateway-core.md](./optical-push-gateway-core.md) |
+| **Óptica diaria — roll-up y retención (raw 90d / daily 730d)** | [optical-daily-rollup-retention.md](./optical-daily-rollup-retention.md) |
 | **Contención SNMP óptica (lock Redis + timeout 15s)** | [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md) |
+| **MySQL binlog OFF (VPS 2026-09-09)** | [mysql-binlog-expire-24h-2026-09-09.md](./mysql-binlog-expire-24h-2026-09-09.md) |
 | **JDBC cruzado (prohibido en runtime)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md#prohibido) |
 | **Analítica de consumo (Documento 1) — as-built** | [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md) |
 | **Diagnóstico técnico 360 (Documento 2) — as-built** | [03-implementacion-diagnostico-tecnico-convergente.md](./03-implementacion-diagnostico-tecnico-convergente.md) |
@@ -88,6 +92,7 @@
 | Dashboard payment queries | [dashboard-payment-queries-restore.md](./dashboard-payment-queries-restore.md) |
 | Bypass capacidad bornes | [borne-capacity-bypass.md](./borne-capacity-bypass.md) |
 | Reuso de ONU en suscripción CANCELLED | [reuso-onu-cancelada.md](./reuso-onu-cancelada.md) |
+| **Auditoría red OLT/MK2 (vigente 2026-09-10; snapshot 09-09)** | [auditoria-red-olt-mk2-2026-09-09.md](./auditoria-red-olt-mk2-2026-09-09.md) |
 | **Infraestructura red multi-MikroTik GigaFiber (hub)** | [infra-red-multi-mikrotik-gigafiber.md](./infra-red-multi-mikrotik-gigafiber.md) |
 | **Plan migración clientes CCR1 (MK1) → CCR2 (MK2)** | [plan-migracion-clientes-ccr1-a-ccr2.md](./plan-migracion-clientes-ccr1-a-ccr2.md) |
 | **Selector CLOUD_CORE_ROUTER Android (construcción)** | [selector-cloud-core-router-android-build.md](./selector-cloud-core-router-android-build.md) |

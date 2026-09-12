@@ -6,7 +6,9 @@ import com.dscorp.wispadmin.oltgateway.dto.CpeTelemetryDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivationStatusDto
+import com.dscorp.wispadmin.oltgateway.service.OltServicePortService
 import com.dscorp.wispadmin.oltgateway.service.OnuActivationService
+import com.dscorp.wispadmin.oltgateway.service.OnuServicePortsDto
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -27,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException
 @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
 class OnuActivationController(
     private val activationService: OnuActivationService,
+    private val servicePortService: OltServicePortService,
 ) {
     @PostMapping("/onu/activate")
     @Operation(summary = "Authorize ONU on OLT and kick ACS; returns partial if CPE still pending")
@@ -53,4 +56,15 @@ class OnuActivationController(
     fun telemetry(@PathVariable sn: String): CpeTelemetryDto =
         activationService.telemetry(sn)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No CPE telemetry for SN=$sn")
+
+    @GetMapping("/onus/{sn}/service-ports")
+    fun servicePorts(@PathVariable sn: String): OnuServicePortsDto = servicePortService.listBySn(sn)
+
+    @PostMapping("/onus/{sn}/service-port/remove")
+    fun removeServicePort(
+        @PathVariable sn: String,
+        @RequestBody body: RemoveServicePortRequest,
+    ): OnuServicePortsDto = servicePortService.removeVlan(sn, body.vlan)
 }
+
+data class RemoveServicePortRequest(val vlan: Int = 1)

@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.genieacs
 
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
@@ -139,6 +140,11 @@ class Tr069PostInstallProvisioner(
                 wanVlanId = wanVlanId,
                 connectionName = connectionName,
                 identityOnly = identityOnly,
+                pppoeUsername = subscription.pppoeUsername
+                    ?.takeIf { subscription.accessMode == AccessMode.PPPOE_DYNAMIC },
+                pppoePassword = subscription.pppoePasswordEnc
+                    ?.takeIf { subscription.accessMode == AccessMode.PPPOE_DYNAMIC }
+                    ?.let { resolvePassword(null, it) },
                 onPhase = { phase ->
                     persistStatus(
                         subscriptionId = subscriptionId,

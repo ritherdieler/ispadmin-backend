@@ -6,8 +6,10 @@ import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.repository.*
 import com.dscorp.wispadmin.wispadmin.service.BorneManagementService
 import com.dscorp.wispadmin.wispadmin.service.BorneValidationResult
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.CutListEligibility
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,7 +27,8 @@ class ServiceReactivationManager(
     private val borneManagementService: BorneManagementService,
     private val mikrotikService: IMikroTikService,
     private val queueManager: IQueueManager,
-    private val errorLogRepository: ErrorLogRepository
+    private val errorLogRepository: ErrorLogRepository,
+    private val pppoeAccessService: PppoeAccessService
 ) : IServiceReactivationManager {
     
     private val logger = LoggerFactory.getLogger(ServiceReactivationManager::class.java)
@@ -100,6 +103,9 @@ class ServiceReactivationManager(
         )
 
         if (subscription.installationType!!.isInternetUser()) {
+            if (restorePppoeAccess(subscription)) {
+                return
+            }
             subscription.hostDevice?.let {
                 it.executeCommand { connection ->
                     try {
@@ -114,7 +120,9 @@ class ServiceReactivationManager(
                         errorLogRepository.save(e.toErrorLog(Modules.SUBSCRIPTION))
                     }
 
-                    mikrotikService.removeIpFromDebtorsList(connection, subscription.ip!!)
+                    CutListEligibility.cutListIp(subscription)?.let { ip ->
+                        mikrotikService.removeIpFromAllCutLists(connection, ip)
+                    }
                 }
             }
         } else {
@@ -122,6 +130,24 @@ class ServiceReactivationManager(
         }
     }
     
+    private fun restorePppoeAccess(subscription: Subscription): Boolean {
+        if (!subscription.accessMode.usesPppoe()) return false
+
+        val device = subscription.hostDevice ?: return true
+        try {
+            if (pppoeAccessService.restore(subscription, device)) {
+                subscriptionRepository.save(subscription)
+                logger.info("Perfil PPPoE restaurado para la suscripción ${subscription.id}")
+            } else {
+                logger.warn("No se pudo restaurar el perfil PPPoE de la suscripción ${subscription.id}")
+            }
+        } catch (e: Exception) {
+            logger.error("Error restaurando el perfil PPPoE de la suscripción ${subscription.id}: ${e.message}")
+            errorLogRepository.save(e.toErrorLog(Modules.SUBSCRIPTION))
+        }
+        return true
+    }
+
     private fun createBill(subscription: Subscription, responsibleId: Int) {
         val lastMonthBillingDate = Calendar.getInstance().apply {
             set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
@@ -187,9 +213,16 @@ class ServiceReactivationManager(
             id = subscriptionId
         )
 
-        subscription.hostDevice?.let {
-            it.executeCommand { connection ->
-                mikrotikService.removeIpFromDebtorsList(connection, subscription.ip!!)
+        if (restorePppoeAccess(subscription)) {
+            return
+        }
+
+        val cutListIp = CutListEligibility.cutListIp(subscription)
+        if (cutListIp != null) {
+            subscription.hostDevice?.let {
+                it.executeCommand { connection ->
+                    mikrotikService.removeIpFromAllCutLists(connection, cutListIp)
+                }
             }
         }
     }

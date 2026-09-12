@@ -24,7 +24,8 @@ class TrafficDirectoryService(
     private fun Subscription.toEntry(): TrafficDirectoryEntryDto? {
         val id = id ?: return null
         val ip = ip?.trim().orEmpty()
-        if (ip.isEmpty()) return null
+        val pppoe = pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        if (ip.isEmpty() && pppoe == null) return null
         val person = listOf(firstName, lastName)
             .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
             .joinToString(" ")
@@ -43,6 +44,7 @@ class TrafficDirectoryService(
             planDownloadMbps = plan?.downloadSpeed,
             planUploadMbps = plan?.uploadSpeed,
             displayName = display,
+            pppoeUsername = pppoe,
         )
     }
 }

@@ -87,6 +87,40 @@ class OnuActivationServiceTest {
     }
 
     @Test
+    fun `ACS provision forwards PPPoE credentials without requiring IP`() {
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_6_116",
+        )
+        every { acs.provision(any()) } returns AcsCpeProvisionResponse(
+            status = CpeProvisionStatus.PENDING,
+            sn = "VSOL0031C0B6",
+        )
+        val service = OnuActivationService(facade, acs, events) { it.run() }
+
+        service.activate(
+            activateRequest().copy(
+                sn = "VSOL0031C0B6",
+                ip = null,
+                ipSegment = null,
+                pppoeUsername = "gf2397",
+                pppoePassword = "secreto123",
+            )
+        )
+
+        verify {
+            acs.provision(
+                match<AcsCpeProvisionRequest> {
+                    it.sn == "VSOL0031C0B6" &&
+                        it.ip == null &&
+                        it.pppoeUsername == "gf2397" &&
+                        it.pppoePassword == "secreto123"
+                }
+            )
+        }
+    }
+
+    @Test
     fun `activation status is stored after olt ok`() {
         every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
             status = true,

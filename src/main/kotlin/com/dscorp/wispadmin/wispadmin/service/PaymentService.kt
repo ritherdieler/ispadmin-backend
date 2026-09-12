@@ -189,7 +189,7 @@ class PaymentService(
         }
         payment.subscription?.let { subscription ->
             if (isEligibleForReactivation(subscription)) {
-                mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(subscription.toDto())
+                mikrotikPaymentReactivationHandler.reactivateFromDebtorsList(subscription)
             }
         }
     }

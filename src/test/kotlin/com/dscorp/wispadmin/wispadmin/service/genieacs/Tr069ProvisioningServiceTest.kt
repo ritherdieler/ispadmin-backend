@@ -149,6 +149,71 @@ class Tr069ProvisioningServiceTest {
     }
 
     @Test
+    fun `pppoe alta crea la instancia WANPPPConnection que falta en el CPE`() {
+        registerPppoeProfile()
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueCreateClientWan()
+        enqueuePppoeApplySuccess("10.64.3.7")
+
+        val outcome = service.provision(pppoeRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val posts = drainPostBodies()
+        val addObjects = posts.filter { it.contains("\"addObject\"") }
+        assertEquals(2, addObjects.size, posts.toString())
+        assertTrue(addObjects.any { it.contains("WANConnectionDevice\"") }, addObjects.toString())
+        assertTrue(
+            addObjects.any { it.contains("WANConnectionDevice.2.WANPPPConnection") },
+            addObjects.toString(),
+        )
+        assertTrue(
+            addObjects.none { it.contains("WANIPConnection") },
+            "el alta PPPoE no debe crear WANIPConnection: $addObjects",
+        )
+    }
+
+    @Test
+    fun `pppoe alta apaga la WAN de IP estatica del slot de abonado`() {
+        registerPppoeProfile()
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        enqueueCreateClientWan()
+        enqueuePppoeApplySuccess("10.64.3.7")
+
+        val outcome = service.provision(pppoeRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val spv = drainPostBodies().first { it.contains("setParameterValues") }
+        assertTrue(
+            spv.contains("\"InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANIPConnection.1.Enable\",\"false\""),
+            spv,
+        )
+    }
+
+    @Test
+    fun `pppoe alta no crea la instancia si el CPE ya la tiene`() {
+        registerPppoeProfile()
+        server.enqueue(deviceList())
+        emptyDeviceQueue()
+        server.enqueue(pppoeWanConnectionTree())
+        enqueueRefreshWanTree()
+        server.enqueue(pppoeWanConnectionTree())
+        server.enqueue(pppoeWanConnectionTree())
+        enqueuePppoeApplySuccess("10.64.3.7")
+
+        val outcome = service.provision(pppoeRequest())
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, outcome.status)
+        val posts = drainPostBodies()
+        assertTrue(posts.none { it.contains("\"addObject\"") }, posts.toString())
+        assertTrue(
+            posts.any { it.contains("WANConnectionDevice.2.WANPPPConnection.1.Username") },
+            posts.toString(),
+        )
+    }
+
+    @Test
     fun `dual wan skips addObject when WCD2 already exists`() {
         server.enqueue(deviceList())
         emptyDeviceQueue()
@@ -762,6 +827,90 @@ class Tr069ProvisioningServiceTest {
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
         server.enqueue(deviceWithSsids("acs2g", "acs5g"))
     }
+
+    private fun registerPppoeProfile() {
+        val vsol = Tr069ModelProfile(
+            productClass = "V2804AX15T",
+            wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
+            wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
+            wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
+            clientWanPppConnectionPath =
+                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1",
+        )
+        Tr069ModelProfiles.registerDynamicResolver { onuTypeName, productClass ->
+            if (onuTypeName == "V2804AX15T" || productClass == "V2804AX15T") {
+                vsol
+            } else {
+                Tr069ModelProfiles.resolveBuiltin(onuTypeName, productClass)
+            }
+        }
+    }
+
+    private fun pppoeRequest() = Tr069ProvisionRequest(
+        onuSerial = "VSOL0031C0B6",
+        onuTypeName = "V2804AX15T",
+        ip = null,
+        ipSegment = null,
+        wifiSsid24 = null,
+        wifiPassword24 = null,
+        wifiSsid5 = null,
+        wifiPassword5 = null,
+        wanVlanId = 100,
+        pppoeUsername = "gf4321",
+        pppoePassword = "secreto123",
+    )
+
+    private fun enqueuePppoeApplySuccess(wanIp: String) {
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(taskAccepted())
+        server.enqueue(emptyFaults())
+        server.enqueue(devicePppoeWan(wanIp))
+        server.enqueue(devicePppoeWan(wanIp))
+    }
+
+    private fun pppoeWanConnectionTree() = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"B46415-V2804AX15T-12345B4641531C0B6",
+              "InternetGatewayDevice":{
+                "WANDevice":{"1":{
+                  "WANConnectionDevice":{
+                    "1":{"WANIPConnection":{"1":{"ConnectionStatus":{"_value":"Connected"}}}},
+                    "2":{"WANPPPConnection":{"1":{"ConnectionStatus":{"_value":"Connected"}}}}
+                  }
+                }}
+              }
+            }]
+            """.trimIndent()
+        )
+
+    private fun devicePppoeWan(
+        wanIp: String,
+        connectionStatus: String = "Connected",
+    ) = MockResponse()
+        .setResponseCode(200)
+        .addHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            [{
+              "_id":"B46415-V2804AX15T-12345B4641531C0B6",
+              "InternetGatewayDevice":{
+                "WANDevice":{"1":{
+                  "WANConnectionDevice":{"2":{
+                    "WANPPPConnection":{"1":{
+                      "ExternalIPAddress":{"_value":"$wanIp"},
+                      "ConnectionStatus":{"_value":"$connectionStatus"}
+                    }}
+                  }}
+                }}
+              }
+            }]
+            """.trimIndent()
+        )
 
     private fun registerHuaweiProfile() {
         val huawei = Tr069ModelProfile(

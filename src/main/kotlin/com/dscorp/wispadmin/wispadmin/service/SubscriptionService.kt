@@ -17,10 +17,18 @@ import com.dscorp.wispadmin.wispadmin.service.onu.OnuOperationsPort
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IAddressListManager
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IMikroTikService
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.IQueueManager
+import com.dscorp.wispadmin.wispadmin.config.PppoeProperties
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeProfileCatalog
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.QueueCreationStats
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.SimpleQueueTarget
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceCutManager
 import com.dscorp.wispadmin.wispadmin.service.subscription.IServiceReactivationManager
+import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeAltaDecision
+import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeAltaPolicy
+import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeCredentialFactory
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -61,7 +69,10 @@ class SubscriptionService(
     private val applicationEventPublisher: ApplicationEventPublisher,
     private val cancelledOnuReuseService: CancelledOnuReuseService,
     private val subscriptionProvisionService: SubscriptionProvisionService,
-    private val ipAllocationService: IpAllocationService
+    private val ipAllocationService: IpAllocationService,
+    private val pppoeProperties: PppoeProperties,
+    private val pppoeSecretCipher: CrmSecretCipher,
+    private val pppoeAccessService: PppoeAccessService
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -177,8 +188,13 @@ class SubscriptionService(
 
             subscriptionValidator.validateSubscriptionRequest(newSubscription)
 
-            val ipAssignment = resolveIpAssignment(newSubscription)
-            val subscriptionToSave = createSubscriptionEntity(newSubscription, ipAssignment)
+            val pppoeDecision = PppoeAltaPolicy.decide(
+                enabled = pppoeProperties.newSubscriptions.enabled,
+                installationType = newSubscription.installationType,
+                vlan = newSubscription.vlan
+            )
+            val ipAssignment = if (pppoeDecision.needsStaticIp) resolveIpAssignment(newSubscription) else null
+            val subscriptionToSave = createSubscriptionEntity(newSubscription, ipAssignment, pppoeDecision)
             subscriptionProvisionService.initializeStatuses(
                 subscriptionToSave,
                 newSubscription.installationType
@@ -220,6 +236,8 @@ class SubscriptionService(
             subscription.hostDevice = device
             subscription.plan = plan
             subscription.place = place
+
+            assignPppoeCredentials(subscription)
 
             val strategy = installationStrategyFactory.getStrategy(newSubscription.installationType)
             val installationResult = try {
@@ -278,14 +296,17 @@ class SubscriptionService(
 
     private fun createSubscriptionEntity(
         newSubscription: SubscriptionRequest,
-        freeIp: Pair<String, IpPool>
+        freeIp: Pair<String, IpPool>?,
+        pppoeDecision: PppoeAltaDecision
     ): Subscription {
         return newSubscription.toModel().apply {
             subscriptionDatetime = LocalDateTime.now()
             clientRequestId = newSubscription.clientRequestId?.trim()?.takeIf { it.isNotEmpty() }
 
-            this.ip = freeIp.first
-            this.ipPool = freeIp.second
+            this.ip = freeIp?.first
+            this.ipPool = freeIp?.second
+            this.accessMode = pppoeDecision.accessMode
+            this.pppoeProvisionStatus = pppoeDecision.provisionStatus
 
             if (newSubscription.installationOrderId != null) {
                 val installationOrder =
@@ -293,6 +314,23 @@ class SubscriptionService(
                 this.installationOrder = installationOrder
             }
         }
+    }
+
+    private fun assignPppoeCredentials(subscription: Subscription) {
+        if (subscription.accessMode != AccessMode.PPPOE_DYNAMIC) return
+        if (!subscription.pppoeUsername.isNullOrBlank()) return
+
+        val username = PppoeCredentialFactory.username(subscription.id)
+        if (username == null) {
+            logger.warn("No se pudo derivar username PPPoE para la suscripción ${subscription.id}")
+            return
+        }
+
+        subscription.pppoeUsername = username
+        subscription.pppoePasswordEnc = pppoeSecretCipher.encrypt(PppoeCredentialFactory.password())
+        subscription.pppoeProfile = PppoeProfileCatalog.profileName(subscription.plan)
+        repository.save(subscription)
+        logger.info("Credenciales PPPoE generadas para la suscripción ${subscription.id} con username $username")
     }
 
     private fun processOnuForFiber(subscriptionToSave: Subscription, newSubscription: SubscriptionRequest) {
@@ -427,18 +465,29 @@ class SubscriptionService(
     fun updateSubscriptionPlan(subscriptionId: Int, planId: Int): Subscription {
         val subscription = repository.findById(subscriptionId).get()
         val newPlan = planRepository.findById(planId).get()
-        subscription.hostDevice!!.executeCommand { session ->
-            val result = session.print("/queue/simple", mapOf("target" to "${subscription.ip}/32"))
-            result.lastOrNull()?.get(".id")?.let { id ->
-                session.set(
-                    "/queue/simple",
-                    id,
-                    mapOf("max-limit" to "${newPlan.uploadSpeed}M/${newPlan.downloadSpeed}M")
-                )
+        SimpleQueueTarget.printFilter(subscription)?.let { printFilter ->
+            subscription.hostDevice!!.executeCommand { session ->
+                val result = session.print("/queue/simple", mapOf("target" to printFilter))
+                result.lastOrNull()?.get(".id")?.let { id ->
+                    session.set(
+                        "/queue/simple",
+                        id,
+                        mapOf("max-limit" to "${newPlan.uploadSpeed}M/${newPlan.downloadSpeed}M")
+                    )
+                }
             }
         }
         subscription.plan = newPlan
+        applyPppoePlanProfile(subscription)
         return repository.save(subscription)
+    }
+
+    private fun applyPppoePlanProfile(subscription: Subscription) {
+        if (subscription.accessMode != AccessMode.PPPOE_DYNAMIC) return
+        val device = subscription.hostDevice ?: return
+        if (!pppoeAccessService.applyPlanProfile(subscription, device)) {
+            logger.warn("No se pudo actualizar el perfil PPPoE de la suscripción ${subscription.id}")
+        }
     }
 
     fun updateSubscriptionData(updateSubscriptionData: UpdateSubscriptionDataBody) {
@@ -524,23 +573,34 @@ class SubscriptionService(
     ) {
         // Validar que el cliente tenga menos de 2 facturas pendientes
         val pendingPaymentsCount = paymentRepository.findPendingPaymentsBySubscriptionId(subscriptionId)
-        
+
         if (pendingPaymentsCount >= 2) {
             throw IllegalStateException("No se puede restablecer el internet a un cliente que tiene $pendingPaymentsCount facturas pendientes. Debe tener menos de 2 facturas pendientes.")
         }
 
-        // Obtener la suscripción
         val subscription = repository.findById(subscriptionId)
             .orElseThrow { IllegalArgumentException("Suscripción no encontrada con ID: $subscriptionId") }
 
-        // Registrar log de la operación
         val logEntry = SubscriptionLog(
             subscription = subscription,
             actionType = SubscriptionActionType.RESTORE_INTERNET_CONNECTION
         )
 
         subscriptionLogRepository.save(logEntry)
-        
+
+        val device = subscription.hostDevice
+        if (device != null) {
+            if (subscription.accessMode.usesPppoe()) {
+                pppoeAccessService.restore(subscription, device)
+                repository.save(subscription)
+            }
+            if (subscription.accessMode.usesAddressListCut() && subscription.ip.isValidIpAddress()) {
+                device.executeCommand { session ->
+                    mikrotikService.removeIpFromAllCutLists(session, subscription.ip!!)
+                }
+            }
+        }
+
         logger.info("Conexión a internet restablecida para suscripción $subscriptionId por usuario $responsibleId. Notas: ${notes ?: "Sin notas"}")
     }
 
@@ -559,12 +619,17 @@ class SubscriptionService(
             cancellationDateDatetime = LocalDateTime.now()
         )
 
-        subscription.hostDevice?.let {
-            if (subscription.ip?.isValidIpAddress() == true)
-                it.executeCommand { connection ->
+        subscription.hostDevice?.let { device ->
+            if (subscription.accessMode.usesPppoe()) {
+                pppoeAccessService.cut(subscription, device)
+                repository.save(subscription)
+            }
+            if (subscription.accessMode.usesAddressListCut() && subscription.ip.isValidIpAddress()) {
+                device.executeCommand { connection ->
                     mikrotikService.addIpToDebtorsListIfNotExists(connection, subscription.ip!!, subscription.getFullName().uppercase())
                     mikrotikService.createFirewallDropRule(connection)
                 }
+            }
         }
         onSuccess(subscription)
     }

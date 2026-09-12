@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.dto
 
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMigrationStage
+import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.InstallationType
 import com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus
@@ -63,6 +65,10 @@ data class SubscriptionDto(
     val tr069Message: String? = null,
     val wifiSsid24: String? = null,
     val wifiSsid5: String? = null,
+    val accessMode: AccessMode? = null,
+    val pppoeUsername: String? = null,
+    val accessMigrationStage: AccessMigrationStage? = null,
+    val accessMigration: AccessMigrationProgressDto? = null,
 ) : Serializable
 
 

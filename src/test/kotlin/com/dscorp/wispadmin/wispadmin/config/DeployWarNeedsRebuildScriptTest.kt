@@ -95,6 +95,7 @@ class DeployWarNeedsRebuildScriptTest {
         val pb = ProcessBuilder("bash", script.absolutePath, key, war.toString(), project.toString())
             .directory(root.toFile())
             .redirectErrorStream(true)
+        pb.environment().remove("FORCE_WAR_REBUILD")
         pb.environment().putAll(env)
         val process = pb.start()
         val output = process.inputStream.bufferedReader().readText()

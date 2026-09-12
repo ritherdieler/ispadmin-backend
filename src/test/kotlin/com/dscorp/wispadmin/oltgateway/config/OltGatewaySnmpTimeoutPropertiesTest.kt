@@ -10,38 +10,55 @@ import java.nio.file.Path
 class OltGatewaySnmpTimeoutPropertiesTest {
 
     @Test
-    fun `kotlin defaults timeout 15s retries 1`() {
+    fun `kotlin defaults timeout 20s retries 2 y optica per-port serial`() {
         val snmp = OltGatewayProperties().snmp
-        assertEquals(15_000L, snmp.timeoutMs)
-        assertEquals(1, snmp.retries)
+        assertEquals(20_000L, snmp.timeoutMs)
+        assertEquals(2, snmp.retries)
+        assertEquals(25, snmp.maxRepetitions)
+        assertEquals(100L, snmp.requestIntervalMs)
         assertEquals(1_200_000L, snmp.pollLockTtlMs)
         assertEquals("olt-snmp-poll", snmp.pollLockKey)
         assertTrue(snmp.pollLockEnabled)
         assertTrue(snmp.pollLockShared)
-        assertEquals(3, snmp.opticalParallelPorts)
-        assertFalse(snmp.opticalPerPortWalks)
+        assertEquals(1, snmp.opticalParallelPorts)
+        assertTrue(snmp.opticalPerPortWalks)
+        assertFalse(snmp.opticalParallelColumns)
     }
 
     @Test
-    fun `prod and dev bake timeout 15s retries 1 and shared poll lock`() {
+    fun `prod and dev bake timeout 20s retries 2 and shared poll lock`() {
         val root = Path.of(System.getProperty("user.dir"))
         listOf("application-prod.properties", "application-dev.properties").forEach { name ->
             val text = Files.readString(root.resolve("src/main/resources/$name"))
             assertTrue(
-                text.contains("olt.gateway.snmp.timeout-ms=\${OLT_GATEWAY_SNMP_TIMEOUT_MS:15000}"),
+                text.contains("olt.gateway.snmp.timeout-ms=\${OLT_GATEWAY_SNMP_TIMEOUT_MS:20000}"),
                 "$name timeout: $text",
             )
             assertTrue(
-                text.contains("olt.gateway.snmp.retries=\${OLT_GATEWAY_SNMP_RETRIES:1}"),
+                text.contains("olt.gateway.snmp.retries=\${OLT_GATEWAY_SNMP_RETRIES:2}"),
                 "$name retries: $text",
             )
             assertTrue(
-                text.contains("olt.gateway.snmp.optical-parallel-ports=\${OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS:3}"),
+                text.contains("olt.gateway.snmp.max-repetitions=\${OLT_GATEWAY_SNMP_MAX_REPETITIONS:25}"),
+                "$name max repetitions: $text",
+            )
+            assertTrue(
+                text.contains("olt.gateway.snmp.request-interval-ms=\${OLT_GATEWAY_SNMP_REQUEST_INTERVAL_MS:100}"),
+                "$name request interval: $text",
+            )
+            assertTrue(
+                text.contains("olt.gateway.snmp.optical-parallel-ports=\${OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS:1}"),
                 "$name parallel ports: $text",
             )
             assertTrue(
-                text.contains("olt.gateway.snmp.optical-per-port-walks=\${OLT_GATEWAY_SNMP_OPTICAL_PER_PORT:false}"),
+                text.contains("olt.gateway.snmp.optical-per-port-walks=\${OLT_GATEWAY_SNMP_OPTICAL_PER_PORT:true}"),
                 "$name per-port: $text",
+            )
+            assertTrue(
+                text.contains(
+                    "olt.gateway.snmp.optical-parallel-columns=\${OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_COLUMNS:false}"
+                ),
+                "$name parallel columns: $text",
             )
             assertTrue(
                 text.contains("olt.gateway.snmp.poll-lock-enabled=\${OLT_GATEWAY_SNMP_POLL_LOCK_ENABLED:true}"),
@@ -69,6 +86,14 @@ class OltGatewaySnmpTimeoutPropertiesTest {
         val example = Files.readString(root.resolve("scripts/deploy.config.example"))
         listOf(
             "OLT_GATEWAY_SNMP_TIMEOUT_MS",
+            "OLT_GATEWAY_SNMP_RETRIES",
+            "OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_COLUMNS",
+            "OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS",
+            "OLT_GATEWAY_SNMP_OPTICAL_PER_PORT",
+            "OLT_GATEWAY_SNMP_FUSED_INVENTORY_OPTICAL",
+            "OLT_GATEWAY_SNMP_FUSED_SNAPSHOT_MAX_AGE_MS",
+            "OLT_GATEWAY_SNMP_INVENTORY_TIMEOUT_MS",
+            "OLT_GATEWAY_SNMP_INVENTORY_RETRIES",
             "OLT_GATEWAY_SNMP_POLL_LOCK_ENABLED",
             "OLT_GATEWAY_SNMP_POLL_LOCK_KEY",
             "OLT_GATEWAY_SNMP_POLL_LOCK_TTL_MS",

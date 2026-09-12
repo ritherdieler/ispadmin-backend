@@ -14,6 +14,7 @@ data class Tr069ProfileDraft(
     val wifiSecurityPrep: List<Tr069WifiSecurityPrepSpec> = emptyList(),
     val clientWanIpConnectionPath: String? = null,
     val clientVlanParameters: List<Tr069VlanParameterSpec> = emptyList(),
+    val clientWanPppConnectionPath: String? = null,
     val warnings: List<String> = emptyList(),
 ) {
     fun toModelProfile(): Tr069ModelProfile = Tr069ModelProfile(
@@ -27,6 +28,7 @@ data class Tr069ProfileDraft(
         wifiSecurityPrep = wifiSecurityPrep,
         clientWanIpConnectionPath = clientWanIpConnectionPath,
         clientVlanParameters = clientVlanParameters,
+        clientWanPppConnectionPath = clientWanPppConnectionPath,
     )
 }
 

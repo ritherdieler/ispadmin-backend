@@ -23,8 +23,13 @@ data class Tr069ProvisionRequest(
     val wanVlanId: Int,
     val connectionName: String? = null,
     val identityOnly: Boolean = false,
+    val pppoeUsername: String? = null,
+    val pppoePassword: String? = null,
     val onPhase: ((String) -> Unit)? = null,
-)
+) {
+    fun usesPppoe(): Boolean =
+        !pppoeUsername.isNullOrBlank() && !pppoePassword.isNullOrBlank()
+}
 
 data class Tr069AcsSnapshot(
     val serialSuffix: String? = null,
@@ -83,7 +88,7 @@ class Tr069ProvisioningService(
 
         val ip = request.ip?.trim().orEmpty()
         val segment = request.ipSegment?.trim().orEmpty()
-        if (!request.identityOnly && (ip.isBlank() || segment.isBlank())) {
+        if (!request.identityOnly && !request.usesPppoe() && (ip.isBlank() || segment.isBlank())) {
             return manual("Faltan IP o segmento del pool para aprovisionar WAN por TR-069.")
         }
 
@@ -162,23 +167,45 @@ class Tr069ProvisioningService(
             return provisionIdentity(device.id, request, resolvedProfile, baseSnapshot)
         }
 
-        val gateway = segment.getBaseIpFromRange() + "1"
-        val subnetMask = cidrToSubnetMask(segment)
-        val profileForClientWan = resolvedProfile.forClientInternetWan(properties.clientWanIndex)
+        val pppoeProfile = if (request.usesPppoe()) resolvedProfile.forClientPppoeWanOrNull() else null
+        if (request.usesPppoe() && pppoeProfile == null) {
+            val message = missingPppoeProfileMessage(resolvedProfile.productClass)
+            return Tr069ProvisionOutcome(
+                status = CpeStatus.FAILED,
+                deviceId = device.id,
+                error = message,
+                message = message,
+                acsSnapshot = baseSnapshot,
+            )
+        }
+
+        val subnetMask = if (segment.isBlank()) "" else cidrToSubnetMask(segment)
+        val profileForClientWan = pppoeProfile
+            ?: resolvedProfile.forClientInternetWan(properties.clientWanIndex)
         val applyDeadline = clock() + waitTimeout
 
         request.onPhase?.invoke("Configurando WAN…")
         ensureClientWanSlot(device.id, profileForClientWan, baseSnapshot)?.let { return it }
 
         val connectionName = resolveConnectionName(request)
-        val wanValues = profileForClientWan.buildClientInternetWanParameterValues(
-            ip = ip,
-            subnetMask = subnetMask,
-            gateway = gateway,
-            dns = properties.defaultDns,
-            vlanId = request.wanVlanId,
-            connectionName = connectionName,
-        )
+        val wanValues = if (pppoeProfile != null) {
+            pppoeProfile.buildClientPppoeWanParameterValues(
+                username = request.pppoeUsername!!,
+                password = request.pppoePassword!!,
+                vlanId = request.wanVlanId,
+                connectionName = connectionName,
+                replacedWanIpPath = replacedClientWanIpPath(resolvedProfile, pppoeProfile),
+            )
+        } else {
+            profileForClientWan.buildClientInternetWanParameterValues(
+                ip = ip,
+                subnetMask = subnetMask,
+                gateway = segment.getBaseIpFromRange() + "1",
+                dns = properties.defaultDns,
+                vlanId = request.wanVlanId,
+                connectionName = connectionName,
+            )
+        }
         val wifiValues = profileForClientWan.buildWifiParameterValues(
             wifiSsid24 = request.wifiSsid24,
             wifiPassword24 = request.wifiPassword24,
@@ -235,7 +262,7 @@ class Tr069ProvisioningService(
 
         val lastResult = spv!!.result
         val snapshotAfterTask = baseSnapshot.withTask(lastResult).copy(
-            wanIpCache = ip,
+            wanIpCache = ip.ifBlank { null },
             ssid24 = request.wifiSsid24,
             ssid5 = request.wifiSsid5,
         )
@@ -313,8 +340,8 @@ class Tr069ProvisioningService(
             } else {
                 client.getDeviceParameterValue(device.id, ssid5Path)
             }
-            val ipOk = lastObservedIp == ip
-            val wanUp = lastObservedStatus.equals("Connected", ignoreCase = true)
+            val ipOk = Tr069WanVerification.ipSatisfied(ip, lastObservedIp, pppoeProfile != null)
+            val wanUp = Tr069WanVerification.wanUp(lastObservedStatus)
             val ssid24Ok = request.wifiSsid24.isNullOrBlank() || lastObservedSsid24 == request.wifiSsid24
             val ssid5Ok = request.wifiSsid5.isNullOrBlank() || lastObservedSsid5 == request.wifiSsid5
             if (ipOk && wanUp && ssid24Ok && ssid5Ok) {
@@ -362,6 +389,22 @@ class Tr069ProvisioningService(
         )
     }
 
+    /**
+     * En PPPoE el CPE mantiene la WAN de gestion en su WCD y reutiliza el slot de
+     * abonado. Si la WAN de IP estatica vive en ese mismo slot hay que apagarla o el
+     * equipo quedaria con dos WAN compitiendo en la misma VLAN.
+     */
+    private fun replacedClientWanIpPath(
+        resolvedProfile: Tr069ModelProfile,
+        pppoeProfile: Tr069ModelProfile,
+    ): String? {
+        val staticWan = resolvedProfile
+            .forClientInternetWan(properties.clientWanIndex)
+            .wanIpConnectionPath
+        val pppoeSlotPrefix = "${pppoeProfile.wcdParentPath()}.${pppoeProfile.clientWanSlotIndex()}."
+        return staticWan.takeIf { it.startsWith(pppoeSlotPrefix) }
+    }
+
     private fun ensureClientWanSlot(
         deviceId: String,
         profile: Tr069ModelProfile,
@@ -370,6 +413,7 @@ class Tr069ProvisioningService(
         val wcdParent = profile.wcdParentPath()
         val clientWanIndex = profile.clientWanSlotIndex()
         val wanIpInstance = profile.wanIpInstanceIndex()
+        val connectionSegment = profile.wanConnectionSegment()
         var slots = try {
             client.listWanConnectionDeviceIndices(deviceId, wcdParent)
         } catch (ex: Exception) {
@@ -389,16 +433,24 @@ class Tr069ProvisioningService(
             log.info("ONU {} sin WCD.{}; AddObject WANConnectionDevice en cola", deviceId, clientWanIndex)
             submitQueuedAddObject(deviceId, wcdParent, baseSnapshot)?.let { return it }
         }
-        if (!client.hasWanIpConnection(deviceId, clientWanIndex, wcdParent, wanIpInstance)) {
+        if (!client.hasWanConnectionInstance(
+                deviceId = deviceId,
+                wanIndex = clientWanIndex,
+                wcdParentPath = wcdParent,
+                connectionSegment = connectionSegment,
+                instanceIndex = wanIpInstance,
+            )
+        ) {
             log.info(
-                "ONU {} WCD.{} sin WANIPConnection.{}; AddObject WANIP en cola",
+                "ONU {} WCD.{} sin {}.{}; AddObject en cola",
                 deviceId,
                 clientWanIndex,
+                connectionSegment,
                 wanIpInstance,
             )
             submitQueuedAddObject(
                 deviceId,
-                "$wcdParent.$clientWanIndex.WANIPConnection",
+                profile.wanConnectionInstanceParentPath(),
                 baseSnapshot,
             )?.let { return it }
         }
@@ -410,11 +462,9 @@ class Tr069ProvisioningService(
         profile: Tr069ModelProfile,
         baseSnapshot: Tr069AcsSnapshot,
     ): Tr069ProvisionOutcome? {
-        val wcdParent = profile.wcdParentPath()
-        val clientWanIndex = profile.clientWanSlotIndex()
         submitQueuedAddObject(
             deviceId,
-            "$wcdParent.$clientWanIndex.WANIPConnection",
+            profile.wanConnectionInstanceParentPath(),
             baseSnapshot,
         )?.let { return it }
         return null
@@ -674,6 +724,9 @@ class Tr069ProvisioningService(
 
         fun missingModelProfileMessage(modelLabel: String): String =
             "Modelo ONU sin perfil TR-069 ($modelLabel). Importe el CSV del modelo en Administración → Perfiles TR-069."
+
+        fun missingPppoeProfileMessage(modelLabel: String): String =
+            "El perfil TR-069 de $modelLabel no declara WANPPPConnection de abonado; configure la WAN PPPoE manualmente."
 
         const val SSID_VERIFICATION_TIMEOUT_MESSAGE =
             "IP/SSID/WAN ConnectionStatus no se confirmaron en el ACS dentro del tiempo de espera."

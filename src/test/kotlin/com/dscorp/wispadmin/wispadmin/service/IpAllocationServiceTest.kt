@@ -127,6 +127,83 @@ class IpAllocationServiceTest {
     }
 
     @Test
+    fun `allocate reports ppp secret collision and returns next free ip`() {
+        stubQueues(
+            rows = emptyList(),
+            secrets = listOf(
+                mapOf(
+                    "name" to "CLIENTEX#484465@B938C6*",
+                    "remote-address" to "192.168.30.10",
+                    "profile" to "PLAN 50 SOLES"
+                )
+            )
+        )
+        val captured = slot<ReportedEvent>()
+        every { observabilityReporter.report(capture(captured)) } returns Unit
+
+        val (ip, _) = service.allocate(hostDeviceId = 8)
+
+        assertEquals("192.168.30.11", ip)
+        assertEquals("ip_collision", captured.captured.eventType)
+        assertEquals("pppoe_secret", captured.captured.tags?.get("reason"))
+        assertEquals("192.168.30.10", captured.captured.tags?.get("ip"))
+        assertEquals("CLIENTEX#484465@B938C6*", captured.captured.tags?.get("pppoeUsername"))
+    }
+
+    @Test
+    fun `allocate skips every ip reserved by a ppp secret`() {
+        stubQueues(
+            rows = emptyList(),
+            secrets = (10..14).map { octet ->
+                mapOf("name" to "cliente$octet", "remote-address" to "192.168.30.$octet")
+            }
+        )
+
+        val (ip, _) = service.allocate(hostDeviceId = 8)
+
+        assertEquals("192.168.30.15", ip)
+    }
+
+    @Test
+    fun `allocate ignores ppp secrets without remote address`() {
+        stubQueues(
+            rows = emptyList(),
+            secrets = listOf(mapOf("name" to "sin-ip", "profile" to "PLAN 70"))
+        )
+
+        val (ip, _) = service.allocate(hostDeviceId = 8)
+
+        assertEquals("192.168.30.10", ip)
+        verify(exactly = 0) { observabilityReporter.report(any()) }
+    }
+
+    @Test
+    fun `allocate does not use preferred ip reserved by a ppp secret`() {
+        stubQueues(
+            rows = emptyList(),
+            secrets = listOf(mapOf("name" to "duenio", "remote-address" to "192.168.30.77"))
+        )
+
+        val (ip, _) = service.allocate(hostDeviceId = 8, preferredIp = "192.168.30.77")
+
+        assertEquals("192.168.30.10", ip)
+        verify(exactly = 1) {
+            observabilityReporter.report(match { event ->
+                event.tags?.get("ip") == "192.168.30.77" && event.tags?.get("reason") == "pppoe_secret"
+            })
+        }
+    }
+
+    @Test
+    fun `allocate keeps working when ppp secret read fails`() {
+        stubSecretsFailure(emptyList())
+
+        val (ip, _) = service.allocate(hostDeviceId = 8)
+
+        assertEquals("192.168.30.10", ip)
+    }
+
+    @Test
     fun `allocate uses preferred ip when it is free`() {
         val (ip, _) = service.allocate(hostDeviceId = 8, preferredIp = "192.168.30.77")
 
@@ -174,11 +251,25 @@ class IpAllocationServiceTest {
         assertTrue(error.message!!.contains("No more ips available"))
     }
 
-    private fun stubQueues(rows: List<Map<String, String>>) {
+    private fun stubQueues(
+        rows: List<Map<String, String>>,
+        secrets: List<Map<String, String>> = emptyList()
+    ) {
         every { mikrotikService.executeOnDevice(any(), any()) } answers {
             val block = secondArg<(MikrotikSession) -> Unit>()
             val session = mockk<MikrotikSession>()
             every { session.print("/queue/simple", any()) } returns rows
+            every { session.print("/ppp/secret", any()) } returns secrets
+            block(session)
+        }
+    }
+
+    private fun stubSecretsFailure(rows: List<Map<String, String>>) {
+        every { mikrotikService.executeOnDevice(any(), any()) } answers {
+            val block = secondArg<(MikrotikSession) -> Unit>()
+            val session = mockk<MikrotikSession>()
+            every { session.print("/queue/simple", any()) } returns rows
+            every { session.print("/ppp/secret", any()) } throws RuntimeException("ppp unavailable")
             block(session)
         }
     }

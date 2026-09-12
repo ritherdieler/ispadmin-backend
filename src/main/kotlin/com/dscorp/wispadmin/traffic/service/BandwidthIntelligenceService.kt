@@ -198,8 +198,10 @@ open class BandwidthIntelligenceService(
     open fun subscriptions(from: LocalDateTime, to: LocalDateTime, routerId: Int?, planId: Int?, search: String?, sort: String, page: Int, size: Int): BandwidthSubscriptionPageDto {
         val effective = effectiveRankingResolution(from, to)
         val candidates = eligibleClients(routerId, planId).filter {
-            it.customerName.contains(search.orEmpty(), true) ||
-                it.ip.orEmpty().contains(search.orEmpty(), true) ||
+            val query = search.orEmpty()
+            it.customerName.contains(query, true) ||
+                it.ip.orEmpty().contains(query, true) ||
+                it.pppoeUsername.orEmpty().contains(query, true) ||
                 it.subscriptionId.toString() == search
         }
         val candidateIds = candidates.map { it.subscriptionId }.toSet()
@@ -288,6 +290,7 @@ open class BandwidthIntelligenceService(
     private data class EligibleClient(
         val subscriptionId: Int,
         val ip: String?,
+        val pppoeUsername: String?,
         val routerId: Int?,
         val routerName: String?,
         val planId: Int?,
@@ -321,6 +324,7 @@ open class BandwidthIntelligenceService(
     private fun TrafficDirectoryTarget.toClient(routerName: String?) = EligibleClient(
         subscriptionId = subscriptionId,
         ip = ip,
+        pppoeUsername = pppoeUsername,
         routerId = routerHint,
         routerName = routerName,
         planId = planId,

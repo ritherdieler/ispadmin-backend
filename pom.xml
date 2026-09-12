@@ -1033,7 +1033,7 @@
                                                        match="^acs\.gateway\.internal-base-url=.*"
                                                        replace="acs.gateway.internal-base-url=${ACS_GATEWAY_BASE_URL:http://127.0.0.1:8080/ispadmin-staging-oltgateway}"
                                                        byline="true"/>
-                                        <echo append="true" file="${project.build.outputDirectory}/application-acs.properties" message="${line.separator}gigafiber.redis.namespace=stg${line.separator}"/>
+                                        <echo append="true" file="${project.build.outputDirectory}/application-acs.properties" message="${line.separator}gigafiber.redis.namespace=stg${line.separator}genieacs.vparams.enabled=true${line.separator}"/>
                                     </target>
                                 </configuration>
                             </execution>

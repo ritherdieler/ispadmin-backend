@@ -49,6 +49,9 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("traffic.core-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging-oltgateway"), staging)
         assertTrue(staging.contains("olt.gateway.client-enabled=false"), staging)
+        assertTrue(staging.contains("acs.client-enabled=true"), staging)
+        assertTrue(staging.contains("acs.internal-base-url=http://127.0.0.1:8080/ispadmin-staging-acs"), staging)
+        assertTrue(staging.contains("pppoe.migration.quarantine-days=7"), staging)
         assertTrue(staging.contains("gigafiber.redis.enabled=\${REDIS_ENABLED:true}"), staging)
         assertTrue(staging.contains("gigafiber.redis.host=\${REDIS_HOST:redis}"), staging)
     }
@@ -213,6 +216,20 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(
             acsStaging.contains("gigafiber.redis.namespace=stg"),
             "ACS staging bake must keep redis namespace: $acsStaging",
+        )
+        assertTrue(
+            acsStaging.contains("genieacs.vparams.enabled=true"),
+            "ACS staging bake must enable GenieACS vparams: $acsStaging",
+        )
+        assertFalse(
+            acsProd.contains("genieacs.vparams.enabled=true"),
+            "ACS prod bake must not force vparams: $acsProd",
+        )
+        val acsProps = Files.readString(root.resolve("src/main/resources/application-acs.properties"))
+        assertTrue(
+            Regex("""^genieacs\.vparams\.enabled=\$\{GENIEACS_VPARAMS_ENABLED:false\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(acsProps),
+            acsProps,
         )
     }
 
