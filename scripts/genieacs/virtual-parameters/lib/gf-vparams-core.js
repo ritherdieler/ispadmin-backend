@@ -8,6 +8,7 @@ var GfVparams = (function () {
       wlan24: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
       wlan5: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
       writeAlias: true,
+      writeCtCom: true,
       gponVlanPath: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig.VLANIDMark",
     },
     F6600R: {
@@ -17,6 +18,8 @@ var GfVparams = (function () {
       wlan24: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
       wlan5: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
       writeAlias: false,
+      writeCtCom: false,
+      slimPpp: true,
       gponVlanPath: null,
     },
   };
@@ -207,6 +210,7 @@ var GfVparams = (function () {
         throw new Error("Refusing to write management WAN " + path);
       }
     }
+    if (layout.slimPpp) return;
     var host = managementHost(crUrl);
     if (!host || !isManagementHost(host)) return;
     var wanBase = wanInstanceOf(path);
@@ -235,13 +239,40 @@ var GfVparams = (function () {
     addObject(declare, pppParentPath(layout.pppPath), pppInstanceCount(layout.pppPath));
   }
 
+  function pppInstanceReady(declare, pppPath) {
+    return readValue(declare, pppPath + ".Username") != null
+      || readValue(declare, pppPath + ".Enable") != null;
+  }
+
+  function pppCredentialsApplied(declare, pppPath, payload) {
+    var username = readValue(declare, pppPath + ".Username");
+    return username != null && String(username) === String(payload.username);
+  }
+
   function spv(declare, path, value) {
     declare(path, { value: Date.now() }, { value: value });
   }
 
+  function truthyFlag(value) {
+    return value === 1 || value === true || String(value).toLowerCase() === "true";
+  }
+
+  function falsyFlag(value) {
+    return value === 0 || value === false || String(value).toLowerCase() === "false";
+  }
+
+  function vlanAlreadyApplied(declare, layout, wanPath, vlanId) {
+    var vlan = vlanId == null ? 100 : vlanId;
+    var current = readValue(declare, wanPath + ".X_ZTE-COM_VLANID");
+    var enabled = readValue(declare, wanPath + ".X_ZTE-COM_VLANEnable");
+    return current != null && Number(current) === Number(vlan) && truthyFlag(enabled);
+  }
+
   function applyVlan(declare, layout, wanPath, vlanId) {
     var vlan = vlanId == null ? 100 : vlanId;
-    spv(declare, wanPath + ".X_CT-COM_VLANIDMark", vlan);
+    if (layout.writeCtCom) {
+      spv(declare, wanPath + ".X_CT-COM_VLANIDMark", vlan);
+    }
     spv(declare, wanPath + ".X_ZTE-COM_VLANID", vlan);
     spv(declare, wanPath + ".X_ZTE-COM_VLANEnable", 1);
     if (layout.gponVlanPath) {
@@ -250,8 +281,11 @@ var GfVparams = (function () {
   }
 
   function applyPppCommon(declare, layout, wanPath, payload) {
-    spv(declare, wanPath + ".Enable", true);
     spv(declare, wanPath + ".ConnectionType", "IP_Routed");
+    if (layout.slimPpp) {
+      applyVlan(declare, layout, wanPath, payload.vlanId);
+      return;
+    }
     if (payload.connectionName) {
       spv(declare, wanPath + ".Name", payload.connectionName);
       if (layout.writeAlias) {
@@ -259,14 +293,18 @@ var GfVparams = (function () {
       }
     }
     spv(declare, wanPath + ".ConnectionTrigger", "AlwaysOn");
-    spv(declare, wanPath + ".X_CT-COM_ServiceList", "INTERNET");
+    if (layout.writeCtCom) {
+      spv(declare, wanPath + ".X_CT-COM_ServiceList", "INTERNET");
+    }
     spv(declare, wanPath + ".X_ZTE-COM_ServiceList", "INTERNET");
     spv(declare, wanPath + ".NATEnabled", true);
     applyVlan(declare, layout, wanPath, payload.vlanId);
   }
 
-  function connectionRequestUrl(declare) {
-    return readValue(declare, CR_URL) || readValue(declare, "Device.ManagementServer.ConnectionRequestURL");
+  function connectionRequestUrl(declare, layout) {
+    var igd = readValue(declare, CR_URL);
+    if (igd || (layout && layout.slimPpp)) return igd;
+    return readValue(declare, "Device.ManagementServer.ConnectionRequestURL");
   }
 
   function handleApplyInternetPppoe(deviceId, declare, args) {
@@ -279,13 +317,35 @@ var GfVparams = (function () {
     if (!payload.username || !payload.password) {
       throw new Error("PPPoE credentials required");
     }
-    var crUrl = connectionRequestUrl(declare);
+    var crUrl = connectionRequestUrl(declare, layout);
     assertWritableInternetWan(layout, layout.pppPath, declare, crUrl);
     assertWritableInternetWan(layout, layout.ipPath, declare, crUrl);
-    ensureInternetPpp(declare, layout);
+    if (!pppInstanceReady(declare, layout.pppPath)) {
+      ensureInternetPpp(declare, layout);
+      return { writable: true, value: [JSON.stringify({ ok: true, pending: "addObject" }), "xsd:string"] };
+    }
+    if (layout.slimPpp && !pppCredentialsApplied(declare, layout.pppPath, payload)) {
+      spv(declare, layout.pppPath + ".ConnectionType", "IP_Routed");
+      spv(declare, layout.pppPath + ".Username", payload.username);
+      spv(declare, layout.pppPath + ".Password", payload.password);
+      return { writable: true, value: [JSON.stringify({ ok: true, pending: "credentials" }), "xsd:string"] };
+    }
+    if (layout.slimPpp) {
+      if (!vlanAlreadyApplied(declare, layout, layout.pppPath, payload.vlanId)) {
+        applyVlan(declare, layout, layout.pppPath, payload.vlanId);
+      }
+      if (!truthyFlag(readValue(declare, layout.pppPath + ".Enable"))) {
+        spv(declare, layout.pppPath + ".Enable", true);
+      }
+      if (!falsyFlag(readValue(declare, layout.ipPath + ".Enable"))) {
+        spv(declare, layout.ipPath + ".Enable", false);
+      }
+      return { writable: true, value: [JSON.stringify({ ok: true }), "xsd:string"] };
+    }
     applyPppCommon(declare, layout, layout.pppPath, payload);
     spv(declare, layout.pppPath + ".Username", payload.username);
     spv(declare, layout.pppPath + ".Password", payload.password);
+    spv(declare, layout.pppPath + ".Enable", true);
     spv(declare, layout.ipPath + ".Enable", false);
     return { writable: true, value: [JSON.stringify({ ok: true }), "xsd:string"] };
   }
@@ -300,7 +360,7 @@ var GfVparams = (function () {
     if (!payload.ip) {
       throw new Error("Static IP required");
     }
-    var crUrl = connectionRequestUrl(declare);
+    var crUrl = connectionRequestUrl(declare, layout);
     assertWritableInternetWan(layout, layout.ipPath, declare, crUrl);
     var wanPath = layout.ipPath;
     spv(declare, wanPath + ".Enable", true);
@@ -311,7 +371,9 @@ var GfVparams = (function () {
         spv(declare, wanPath + ".Alias", payload.connectionName);
       }
     }
-    spv(declare, wanPath + ".X_CT-COM_ServiceList", "INTERNET");
+    if (layout.writeCtCom) {
+      spv(declare, wanPath + ".X_CT-COM_ServiceList", "INTERNET");
+    }
     spv(declare, wanPath + ".X_ZTE-COM_ServiceList", "INTERNET");
     spv(declare, wanPath + ".NATEnabled", true);
     spv(declare, wanPath + ".AddressingType", "Static");
@@ -393,6 +455,107 @@ var GfVparams = (function () {
     return { writable: true, value: ["ok", "xsd:string"] };
   }
 
+  function incomingSetValue(args) {
+    if (!args || !args[1] || !Object.prototype.hasOwnProperty.call(args[1], "value")) {
+      return null;
+    }
+    var raw = args[1].value;
+    if (raw == null || raw === "") {
+      return null;
+    }
+    return unwrapSetValue(raw);
+  }
+
+  function emptyForType(type) {
+    return type === "xsd:unsignedInt" ? 0 : "";
+  }
+
+  function coerceReturn(value, type) {
+    if (value == null || value === "") {
+      return emptyForType(type);
+    }
+    return type === "xsd:unsignedInt" ? Number(value) : String(value);
+  }
+
+  function handlePppoeAttribute(deviceId, declare, args, spec) {
+    var resolved = layoutOf(deviceId, declare);
+    var layout = resolved.layout;
+    var incoming = incomingSetValue(args);
+    if (incoming != null) {
+      var crUrl = connectionRequestUrl(declare, layout);
+      assertWritableInternetWan(layout, layout.pppPath, declare, crUrl);
+      if (spec.ensureInstance && !pppInstanceReady(declare, layout.pppPath)) {
+        ensureInternetPpp(declare, layout);
+        return { writable: true, value: [emptyForType(spec.type), spec.type] };
+      }
+      if (!spec.ensureInstance && !pppInstanceReady(declare, layout.pppPath)) {
+        return { writable: true, value: [emptyForType(spec.type), spec.type] };
+      }
+      spec.write(declare, layout, incoming);
+      return { writable: true, value: [coerceReturn(incoming, spec.type), spec.type] };
+    }
+    return {
+      writable: true,
+      value: [coerceReturn(readValue(declare, spec.readPath(layout)), spec.type), spec.type],
+    };
+  }
+
+  function handlePppoeUsername(deviceId, declare, args) {
+    return handlePppoeAttribute(deviceId, declare, args, {
+      type: "xsd:string",
+      ensureInstance: true,
+      readPath: function (layout) {
+        return layout.pppPath + ".Username";
+      },
+      write: function (declareFn, layout, value) {
+        spv(declareFn, layout.pppPath + ".Username", String(value));
+      },
+    });
+  }
+
+  function handlePppoePassword(deviceId, declare, args) {
+    return handlePppoeAttribute(deviceId, declare, args, {
+      type: "xsd:string",
+      ensureInstance: false,
+      readPath: function (layout) {
+        return layout.pppPath + ".Password";
+      },
+      write: function (declareFn, layout, value) {
+        spv(declareFn, layout.pppPath + ".Password", String(value));
+      },
+    });
+  }
+
+  function handlePppoeVlanId(deviceId, declare, args) {
+    return handlePppoeAttribute(deviceId, declare, args, {
+      type: "xsd:unsignedInt",
+      ensureInstance: false,
+      readPath: function (layout) {
+        return layout.pppPath + ".X_ZTE-COM_VLANID";
+      },
+      write: function (declareFn, layout, value) {
+        applyVlan(declareFn, layout, layout.pppPath, Number(value));
+      },
+    });
+  }
+
+  function handlePppoeConnectionName(deviceId, declare, args) {
+    return handlePppoeAttribute(deviceId, declare, args, {
+      type: "xsd:string",
+      ensureInstance: false,
+      readPath: function (layout) {
+        return layout.pppPath + ".Name";
+      },
+      write: function (declareFn, layout, value) {
+        var name = String(value);
+        spv(declareFn, layout.pppPath + ".Name", name);
+        if (layout.writeAlias) {
+          spv(declareFn, layout.pppPath + ".Alias", name);
+        }
+      },
+    });
+  }
+
   return {
     handleApplyInternetPppoe: handleApplyInternetPppoe,
     handleApplyInternetStatic: handleApplyInternetStatic,
@@ -400,6 +563,10 @@ var GfVparams = (function () {
     handleInternetStatus: handleInternetStatus,
     handleWifiStatus: handleWifiStatus,
     handleReboot: handleReboot,
+    handlePppoeUsername: handlePppoeUsername,
+    handlePppoePassword: handlePppoePassword,
+    handlePppoeVlanId: handlePppoeVlanId,
+    handlePppoeConnectionName: handlePppoeConnectionName,
   };
 })();
 

@@ -115,4 +115,8 @@
     <logger name="FACE_RECOGNITION_METRICS" level="INFO" additivity="false">
         <appender-ref ref="FACE_METRICS_FILE" />
     </logger>
+    <logger name="REG_TIMING" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+    </logger>
 </configuration> 

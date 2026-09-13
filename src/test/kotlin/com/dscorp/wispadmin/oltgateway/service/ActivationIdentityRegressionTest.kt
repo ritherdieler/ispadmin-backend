@@ -5,10 +5,11 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.util.concurrent.Executor
 class ActivationIdentityRegressionTest {
     @Test fun `unknown external id is never sent to a serial lookup`() {
         val acs = mockk<AcsCpeClient>(relaxed=true)
-        val service=OnuActivationService(mockk(),acs,RecordingEventBus()) { it.run() }
+        val service=OnuActivationService(mockk(),acs,RecordingEventBus(), acsExecutor = Executor { it.run() })
         assertNull(service.statusByExternalId("external-not-a-serial"))
         verify(exactly=0) { acs.status("external-not-a-serial") }
     }

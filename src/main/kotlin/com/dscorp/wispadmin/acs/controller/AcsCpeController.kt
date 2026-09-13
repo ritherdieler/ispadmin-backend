@@ -36,6 +36,12 @@ class AcsCpeController(
     @PostMapping("/cpe/{sn}/reboot")
     fun reboot(@PathVariable sn: String): CpeCommandResult = facade.reboot(sn)
 
+    @PostMapping("/cpe/{sn}/wifi")
+    fun setWifi(
+        @PathVariable sn: String,
+        @RequestBody command: com.dscorp.wispadmin.acs.CpeWifiCommand,
+    ): CpeCommandResult = facade.setWifi(sn, command)
+
     @PostMapping("/cpe/{sn}/wifi-refresh")
     fun wifiRefresh(@PathVariable sn: String): CpeCommandResult = facade.wifiRefresh(sn)
 

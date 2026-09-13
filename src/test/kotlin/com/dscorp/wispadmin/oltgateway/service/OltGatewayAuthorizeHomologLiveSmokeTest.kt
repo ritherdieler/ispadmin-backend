@@ -10,17 +10,17 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 /**
- * Live: authorize via SSH must leave the same line/srv profiles SmartOLT uses for Generic_1 + vlan 100.
+ * Live: authorize via SSH for lab ZTE with VLAN 100 (gem 1) and VLAN 1000 (gem 2).
  *
- *   OLT_WRITE_LIVE=true OLT_HOMOLOG_AUTHORIZE=true ./mvnw -Dtest=OltGatewayAuthorizeHomologLiveSmokeTest test
+ *   OLT_WRITE_LIVE=true OLT_HOMOLOG_AUTHORIZE=true OLT_WRITE_KEEP=1 ./mvnw -Dtest=OltGatewayAuthorizeHomologLiveSmokeTest test
  *
- * Optional: OLT_WRITE_SN / OLT_WRITE_BOARD / OLT_WRITE_PORT / OLT_WRITE_ONT_ID / OLT_WRITE_KEEP=1
+ * Optional: OLT_WRITE_SN / OLT_WRITE_BOARD / OLT_WRITE_PORT / OLT_WRITE_ONT_ID
  */
 @Tag("live")
 class OltGatewayAuthorizeHomologLiveSmokeTest {
 
     @Test
-    fun `ssh authorize Generic_1 vlan100 leaves line 6 srv 13 and traffic tables`() {
+    fun `ssh authorize Generic_1 vlan100 and vlan1000 on lab zte`() {
         assumeTrue(System.getenv("OLT_WRITE_LIVE") == "true") { "set OLT_WRITE_LIVE=true" }
         assumeTrue(System.getenv("OLT_HOMOLOG_AUTHORIZE") == "true") {
             "set OLT_HOMOLOG_AUTHORIZE=true (destructive on lab ONU)"
@@ -62,6 +62,7 @@ class OltGatewayAuthorizeHomologLiveSmokeTest {
             runCommand = executor::run,
             properties = props,
             inWriteJob = { block -> executor.write { block() } },
+            inAuthorizeJob = { block -> executor.authorize { block() } },
         )
 
         fun bySn(): String = executor.run("display ont info by-sn $sn")
@@ -89,13 +90,20 @@ class OltGatewayAuthorizeHomologLiveSmokeTest {
                     serviceProfileId = profiles.serviceProfileId,
                     description = profiles.description,
                     vlan = 100,
+                    mgmtVlan = profiles.mgmtVlan,
+                    mgmtGemport = profiles.mgmtGemport,
                 )
             )
 
             val after = bySn()
-            assertTrue(after.contains("Line profile ID      : 6"), after.takeLast(800))
-            assertTrue(after.contains("Generic_1_V100"), after.takeLast(800))
-            assertTrue(after.contains("Service profile ID   : 13"), after.takeLast(800))
+            assertTrue(
+                after.contains("Line profile ID      : ${profiles.lineProfileId}"),
+                after.takeLast(800),
+            )
+            assertTrue(
+                after.contains("Service profile ID   : ${profiles.serviceProfileId}"),
+                after.takeLast(800),
+            )
 
             var onlineOutput = after
             var online = onlineOutput.contains(Regex("(?i)Run state\\s*:\\s*online"))
@@ -108,14 +116,17 @@ class OltGatewayAuthorizeHomologLiveSmokeTest {
             assertTrue(online, "ONT should become online after SSH authorize: ${onlineOutput.takeLast(800)}")
 
             val sp = servicePorts()
-            assertTrue(
-                sp.contains("traffic-table") || sp.contains("Inbound") || sp.contains("8"),
-                sp.takeLast(800),
-            )
+            val vlans = commands.parseServicePortVlans(sp) +
+                Regex("""(?m)^\s+\d+\s+(\d{1,4})\s+""").findAll(sp)
+                    .mapNotNull { it.groupValues[1].toIntOrNull() }
+                    .toSet()
+            assertTrue(100 in vlans, "missing VLAN 100 in service-ports: ${sp.takeLast(800)}")
+            assertTrue(1000 in vlans, "missing VLAN 1000 in service-ports: ${sp.takeLast(800)}")
 
             println(
                 "LIVE SSH HOMOLOG OK sn=$sn fsp=0/$board/$port ont=$ontId " +
-                    "line=${profiles.lineProfileId} srv=${profiles.serviceProfileId} desc=${profiles.description}"
+                    "line=${profiles.lineProfileId} srv=${profiles.serviceProfileId} " +
+                    "vlans=$vlans desc=${profiles.description}"
             )
 
             if (!keep) {

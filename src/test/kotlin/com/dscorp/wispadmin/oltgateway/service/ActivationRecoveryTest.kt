@@ -38,7 +38,7 @@ class ActivationRecoveryTest {
         every { acs.provision(any()) } throws ResourceAccessException("timeout", SocketTimeoutException("fixture"))
         every { acs.status("SN1") } returns AcsCpeProvisionResponse("SN1", CpeProvisionStatus.COMPLETE)
         val journal = MemoryActivationJournal()
-        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, Executor { it.run() })
+        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, acsExecutor = Executor { it.run() })
         val first = service.activate(request)
         assertEquals(OltActivationStatus.COMPLETE, first.oltStatus)
         assertEquals(CpeProvisionStatus.PENDING, first.cpeStatus)
@@ -57,7 +57,7 @@ class ActivationRecoveryTest {
         every { acs.provision(any()) } throws ResourceAccessException("timeout", SocketTimeoutException("fixture"))
         every { acs.status("SN1") } returns null
         val journal = MemoryActivationJournal()
-        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, Executor { it.run() })
+        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, acsExecutor = Executor { it.run() })
         service.activate(request)
         repeat(5) {
             journal.bySn("SN1")!!.leaseUntil = 0
@@ -110,7 +110,7 @@ class ActivationRecoveryTest {
         val acs = mockk<AcsCpeClient>()
         every { acs.provision(any()) } returns AcsCpeProvisionResponse("SN1", CpeProvisionStatus.PENDING)
         val journal = MemoryActivationJournal()
-        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, Executor { it.run() })
+        val service = OnuActivationService(facade, acs, RecordingEventBus(), journal, acsExecutor = Executor { it.run() })
         service.activate(request)
         assertEquals(OltActivationStatus.COMPLETE, service.statusBySn("SN1")!!.oltStatus)
         journal.clear("SN1")

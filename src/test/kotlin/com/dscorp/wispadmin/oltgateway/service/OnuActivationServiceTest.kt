@@ -7,6 +7,8 @@ import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeClient
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionRequest
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionResponse
+import com.dscorp.wispadmin.oltgateway.client.AcsCpeWifiRequest
+import com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.OltActivationStatus
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OnuActivationServiceTest {
@@ -29,7 +32,7 @@ class OnuActivationServiceTest {
     @Test
     fun `olt failure does not call ACS and returns cpe NA`() {
         every { facade.authorizeOnu(any()) } throws IllegalStateException("CLI timeout")
-        val service = OnuActivationService(facade, acs, events) { it.run() }
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
 
         val result = service.activate(activateRequest())
 
@@ -76,7 +79,7 @@ class OnuActivationServiceTest {
             status = CpeProvisionStatus.PENDING,
             sn = "ALCL12345678",
         )
-        val service = OnuActivationService(facade, acs, events) { it.run() }
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
 
         val result = service.activate(activateRequest())
 
@@ -96,7 +99,7 @@ class OnuActivationServiceTest {
             status = CpeProvisionStatus.PENDING,
             sn = "VSOL0031C0B6",
         )
-        val service = OnuActivationService(facade, acs, events) { it.run() }
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
 
         service.activate(
             activateRequest().copy(
@@ -130,7 +133,7 @@ class OnuActivationServiceTest {
             status = CpeProvisionStatus.PENDING,
             sn = "ALCL12345678",
         )
-        val service = OnuActivationService(facade, acs, events) { it.run() }
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
         service.activate(activateRequest())
 
         val bySn = service.statusBySn("ALCL12345678")!!
@@ -150,11 +153,83 @@ class OnuActivationServiceTest {
             status = CpeProvisionStatus.COMPLETE,
             sn = "ALCL12345678",
         )
-        val service = OnuActivationService(facade, acs, events) { it.run() }
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
         service.activate(activateRequest())
 
         assertEquals(CpeProvisionStatus.COMPLETE, service.statusBySn("ALCL12345678")!!.cpeStatus)
         assertTrue(events.published.any { it.type == PlatformEventTypes.CPE_PROVISIONING && it.sn == "ALCL12345678" })
+    }
+
+    @Test
+    fun `provisionCpe calls ACS without OLT authorize`() {
+        every { acs.provision(any()) } returns AcsCpeProvisionResponse(
+            sn = "VSOL0031C0B6",
+            status = CpeProvisionStatus.COMPLETE,
+        )
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+
+        val result = service.provisionCpe(
+            "vsol0031c0b6",
+            AcsCpeProvisionRequest(
+                sn = "ignored",
+                wanVlanId = 100,
+                pppoeUsername = "gf2397",
+                pppoePassword = "secreto123",
+            ),
+        )
+
+        assertEquals(CpeProvisionStatus.COMPLETE, result.status)
+        verify(exactly = 0) { facade.authorizeOnu(any()) }
+        verify {
+            acs.provision(
+                match<AcsCpeProvisionRequest> {
+                    it.sn == "VSOL0031C0B6" &&
+                        it.pppoeUsername == "gf2397" &&
+                        it.pppoePassword == "secreto123"
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `setWifi forwards to ACS`() {
+        every { acs.setWifi(any(), any()) } returns com.dscorp.wispadmin.oltgateway.client.CpeCommandAck(
+            accepted = true,
+            status = CpeProvisionStatus.COMPLETE,
+        )
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+
+        val result = service.setWifi(
+            "VSOL0031C0B6",
+            AcsCpeWifiRequest("lab-24", "lab-5", "11111111"),
+        )
+
+        assertEquals(true, result.accepted)
+        verify {
+            acs.setWifi(
+                "VSOL0031C0B6",
+                match<AcsCpeWifiRequest> {
+                    it.ssid24 == "lab-24" && it.ssid5 == "lab-5" && it.passphrase == "11111111"
+                },
+            )
+        }
+        verify(exactly = 0) { facade.authorizeOnu(any()) }
+    }
+
+    @Test
+    fun `accessLayout proxies ACS`() {
+        every { acs.accessLayout("VSOL0031C0B6") } returns CpeAccessLayoutDto(
+            sn = "VSOL0031C0B6",
+            productClass = "V2804AX15T",
+            hasPppPath = true,
+        )
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+
+        val layout = service.accessLayout("vsol0031c0b6")
+
+        assertEquals("V2804AX15T", layout?.productClass)
+        assertEquals(true, layout?.hasPppPath)
+        verify(exactly = 0) { facade.authorizeOnu(any()) }
     }
 
     private fun activateRequest() = OnuActivateRequestDto(

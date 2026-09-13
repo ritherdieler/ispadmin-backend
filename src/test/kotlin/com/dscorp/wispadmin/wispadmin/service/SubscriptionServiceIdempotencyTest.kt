@@ -56,6 +56,7 @@ class SubscriptionServiceIdempotencyTest {
             gatewayActivation = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient>>().also {
                 every { it.ifAvailable } returns null
             },
+            pppoeAccessService = mockk(relaxed = true),
             cpeEnabled = false,
         )
     }

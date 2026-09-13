@@ -55,6 +55,8 @@ import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import com.dscorp.wispadmin.oltgateway.ssh.OltCommandExecutor
 import com.dscorp.wispadmin.oltgateway.ssh.OltSshClient
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.dscorp.wispadmin.transport.RegistrationTiming
+import com.dscorp.wispadmin.transport.RegistrationTimingClientInterceptor
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -192,7 +194,8 @@ class OltGatewayConfig {
         return OltGatewayCommandService(
             runCommand = oltCommandExecutor::run,
             properties = properties,
-            inWriteJob = { block -> oltCommandExecutor.write { block() } }
+            inWriteJob = { block -> oltCommandExecutor.write { block() } },
+            inAuthorizeJob = { block -> oltCommandExecutor.authorize { block() } },
         )
     }
 
@@ -245,7 +248,7 @@ class OltGatewayConfig {
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "olt.gateway.autofind", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "olt.gateway.autofind", name = ["enabled"], havingValue = "true")
     fun oltAutofindRefreshScheduler(
         oltAutofindCacheService: OltAutofindCacheService
     ): OltAutofindRefreshScheduler {
@@ -316,16 +319,19 @@ class OltGatewayConfig {
     fun acsCpeClient(
         properties: OltGatewayProperties,
         objectMapper: ObjectMapper,
+        timingInterceptor: ObjectProvider<RegistrationTimingClientInterceptor>,
     ): com.dscorp.wispadmin.oltgateway.client.AcsCpeClient {
         return if (properties.acs.enabled && properties.acs.internalBaseUrl.isNotBlank()) {
+            val rest = org.springframework.web.client.RestTemplate(
+                org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
+                    setConnectTimeout(3_000)
+                    setReadTimeout(120_000)
+                }
+            )
+            timingInterceptor.ifAvailable?.let { rest.interceptors.add(it) }
             com.dscorp.wispadmin.oltgateway.client.HttpAcsCpeClient(
                 properties,
-                org.springframework.web.client.RestTemplate(
-                    org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
-                        setConnectTimeout(3_000)
-                        setReadTimeout(120_000)
-                    }
-                ),
+                rest,
                 objectMapper,
             )
         } else {
@@ -351,12 +357,14 @@ class OltGatewayConfig {
         acsCpeClient: com.dscorp.wispadmin.oltgateway.client.AcsCpeClient,
         eventBus: EventBusPort,
         journal: com.dscorp.wispadmin.oltgateway.service.ActivationJournal,
+        timing: ObjectProvider<RegistrationTiming>,
     ): com.dscorp.wispadmin.oltgateway.service.OnuActivationService {
         return com.dscorp.wispadmin.oltgateway.service.OnuActivationService(
             oltManagerFacade,
             acsCpeClient,
             eventBus,
             journal,
+            timing = timing.ifAvailable ?: RegistrationTiming.NOOP,
         )
     }
 

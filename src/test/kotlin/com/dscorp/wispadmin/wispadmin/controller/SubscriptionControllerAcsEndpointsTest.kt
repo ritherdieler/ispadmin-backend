@@ -105,6 +105,26 @@ class SubscriptionControllerAcsEndpointsTest {
     }
 
     @Test
+    fun `POST wifi returns gateway ack`() {
+        every {
+            gateway.setWifi("SN1", match { it.ssid24 == "lab-24" && it.passphrase == "11111111" })
+        } returns GatewayCpeCommandResponse(accepted = true, status = "COMPLETE")
+
+        val response = controller.setSubscriptionAcsWifi(
+            42,
+            com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeWifiRequest(
+                ssid24 = "lab-24",
+                ssid5 = "lab-5",
+                passphrase = "11111111",
+            ),
+        )
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        val body = response.body as GatewayCpeCommandResponse
+        assertTrue(body.accepted)
+    }
+
+    @Test
     fun `POST reboot returns 503 when gateway missing`() {
         every { gatewayCpe.ifAvailable } returns null
 

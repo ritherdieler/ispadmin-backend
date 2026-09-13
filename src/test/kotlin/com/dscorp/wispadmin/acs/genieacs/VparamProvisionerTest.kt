@@ -240,6 +240,73 @@ class VparamProvisionerTest {
     }
 
     @Test
+    fun `pppoe retries GfApplyInternetPppoe while pending then verifies pool IP`() {
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(
+                id = "5872C9-F6600R-ZTEGDC47BFFD",
+                serialNumber = "ZTEGDC47BFFD",
+                productClass = "F6600R",
+                lastInform = "2026-09-12T04:00:00Z",
+            )
+        )
+        every { client.setParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every {
+            client.getDeviceParameterValue("5872C9-F6600R-ZTEGDC47BFFD", "VirtualParameters.GfApplyInternetPppoe")
+        } returnsMany listOf(
+            """{"ok":true,"pending":"addObject"}""",
+            """{"ok":true,"pending":"credentials"}""",
+            """{"ok":true}""",
+        )
+        every {
+            client.getDeviceParameterValue("5872C9-F6600R-ZTEGDC47BFFD", "VirtualParameters.GfInternetStatus")
+        } returns """{"connected":true,"ip":"10.64.60.2","productClass":"F6600R"}"""
+        val provisioner = VparamProvisioner(
+            client,
+            GenieAcsProperties().apply {
+                enabled = true
+                vparams.enabled = true
+            },
+        )
+
+        val outcome = provisioner.provision(
+            Tr069ProvisionRequest(
+                onuSerial = "ZTEGDC47BFFD",
+                onuTypeName = "F6600R",
+                ip = null,
+                ipSegment = null,
+                wifiSsid24 = null,
+                wifiPassword24 = null,
+                wifiSsid5 = null,
+                wifiPassword5 = null,
+                wanVlanId = 100,
+                pppoeUsername = "gflabzte",
+                pppoePassword = "secret123",
+            )
+        )
+
+        assertEquals(CpeStatus.COMPLETE, outcome.status)
+        verify(exactly = 3) {
+            client.setParameterValues(
+                "5872C9-F6600R-ZTEGDC47BFFD",
+                match { values ->
+                    values.size == 1 && values[0].path == "VirtualParameters.GfApplyInternetPppoe"
+                },
+                connectionRequest = true,
+            )
+        }
+    }
+
+    @Test
     fun `flag off is not used by this provisioner contract`() {
         val client = mockk<GenieAcsClient>(relaxed = true)
         val provisioner = VparamProvisioner(client, GenieAcsProperties().apply { enabled = true })

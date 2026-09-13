@@ -31,6 +31,7 @@ class StagingEnvironmentPropertiesTest {
         val staging = staging()
         assertTrue(staging.contains("gigafiber.scheduling.enabled=false"), staging)
         assertTrue(staging.contains("gigafiber.environment.tag=stg"), staging)
+        assertTrue(staging.contains("gigafiber.registration.timing.enabled=true"), staging)
         assertTrue(staging.contains("gigafiber.subsystems.servicehealth.enabled=false"), staging)
         assertTrue(staging.contains("gigafiber.subsystems.observability.enabled=false"), staging)
         assertTrue(staging.contains("service.health.enabled=false"), staging)

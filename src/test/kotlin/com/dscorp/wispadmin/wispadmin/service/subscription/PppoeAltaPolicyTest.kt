@@ -10,52 +10,42 @@ import org.junit.jupiter.api.Test
 class PppoeAltaPolicyTest {
 
     @Test
-    fun `a fiber subscription on vlan 100 is born as dynamic pppoe when the flag is on`() {
-        val decision = PppoeAltaPolicy.decide(
-            enabled = true,
-            installationType = InstallationType.FIBER,
-            vlan = "100"
-        )
-
-        assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
-        assertEquals(PppoeProvisionStatus.PENDING, decision.provisionStatus)
-    }
-
-    @Test
-    fun `a fiber subscription outside vlan 100 falls back to static ip and never fails`() {
+    fun `a fiber subscription is born as dynamic pppoe even outside vlan 100`() {
         val decision = PppoeAltaPolicy.decide(
             enabled = true,
             installationType = InstallationType.FIBER,
             vlan = "1"
         )
 
-        assertEquals(AccessMode.STATIC_IP, decision.accessMode)
-        assertEquals(PppoeProvisionStatus.SKIPPED_VLAN, decision.provisionStatus)
+        assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
+        assertEquals(PppoeProvisionStatus.PENDING, decision.provisionStatus)
+        assertEquals(false, decision.needsStaticIp)
     }
 
     @Test
-    fun `a missing vlan also falls back instead of blocking the sale`() {
-        listOf(null, "", "   ").forEach { vlan ->
-            val decision = PppoeAltaPolicy.decide(
-                enabled = true,
-                installationType = InstallationType.FIBER,
-                vlan = vlan
-            )
-            assertEquals(AccessMode.STATIC_IP, decision.accessMode, "vlan=$vlan")
-            assertEquals(PppoeProvisionStatus.SKIPPED_VLAN, decision.provisionStatus, "vlan=$vlan")
-        }
-    }
-
-    @Test
-    fun `with the flag off every subscription stays static and is not marked as skipped by vlan`() {
+    fun `a fiber subscription is born as dynamic pppoe when the flag is off`() {
         val decision = PppoeAltaPolicy.decide(
             enabled = false,
             installationType = InstallationType.FIBER,
             vlan = "100"
         )
 
-        assertEquals(AccessMode.STATIC_IP, decision.accessMode)
-        assertEquals(PppoeProvisionStatus.SKIPPED_DISABLED, decision.provisionStatus)
+        assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
+        assertEquals(PppoeProvisionStatus.PENDING, decision.provisionStatus)
+        assertEquals(false, decision.needsStaticIp)
+    }
+
+    @Test
+    fun `a missing vlan still becomes pppoe for fiber`() {
+        listOf(null, "", "   ").forEach { vlan ->
+            val decision = PppoeAltaPolicy.decide(
+                enabled = true,
+                installationType = InstallationType.FIBER,
+                vlan = vlan
+            )
+            assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode, "vlan=$vlan")
+            assertEquals(PppoeProvisionStatus.PENDING, decision.provisionStatus, "vlan=$vlan")
+        }
     }
 
     @Test
@@ -64,6 +54,7 @@ class PppoeAltaPolicyTest {
             val decision = PppoeAltaPolicy.decide(enabled = true, installationType = type, vlan = "100")
             assertEquals(AccessMode.STATIC_IP, decision.accessMode, "type=$type")
             assertNull(decision.provisionStatus, "type=$type")
+            assertEquals(true, decision.needsStaticIp, "type=$type")
         }
     }
 
@@ -73,28 +64,14 @@ class PppoeAltaPolicyTest {
 
         assertEquals(AccessMode.STATIC_IP, decision.accessMode)
         assertNull(decision.provisionStatus)
+        assertEquals(true, decision.needsStaticIp)
     }
 
     @Test
-    fun `only dynamic pppoe skips ip allocation`() {
-        assertEquals(
-            false,
-            PppoeAltaPolicy.decide(true, InstallationType.FIBER, "100").needsStaticIp
-        )
-        assertEquals(
-            true,
-            PppoeAltaPolicy.decide(true, InstallationType.FIBER, "1").needsStaticIp
-        )
-        assertEquals(
-            true,
-            PppoeAltaPolicy.decide(false, InstallationType.FIBER, "100").needsStaticIp
-        )
-    }
-
-    @Test
-    fun `vlan is compared after trimming`() {
+    fun `vlan 100 fiber remains pppoe`() {
         val decision = PppoeAltaPolicy.decide(true, InstallationType.FIBER, " 100 ")
 
         assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
+        assertEquals(false, decision.needsStaticIp)
     }
 }

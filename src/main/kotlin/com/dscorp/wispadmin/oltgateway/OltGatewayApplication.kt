@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement
 import java.util.TimeZone
 
 @SpringBootApplication
-@ComponentScan(basePackages = ["com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.events"])
+@ComponentScan(basePackages = ["com.dscorp.wispadmin.oltgateway", "com.dscorp.wispadmin.events", "com.dscorp.wispadmin.transport"])
 @EntityScan(basePackages = ["com.dscorp.wispadmin.oltgateway"])
 @EnableJpaRepositories(basePackages = ["com.dscorp.wispadmin.oltgateway"])
 @EnableScheduling
@@ -24,5 +24,16 @@ class OltGatewayApplication : SpringBootServletInitializer() {
 
 fun main(args: Array<String>) {
     TimeZone.setDefault(TimeZone.getTimeZone(System.getProperty("app.timezone", "America/Lima")))
-    SpringApplicationBuilder(OltGatewayApplication::class.java).profiles("prod", "oltgateway").run(*args)
+    val builder = SpringApplicationBuilder(OltGatewayApplication::class.java)
+    if (!localPrestagingRequested(args)) {
+        builder.profiles("prod", "oltgateway")
+    }
+    builder.run(*args)
+}
+
+private fun localPrestagingRequested(args: Array<String>): Boolean {
+    if (args.any { it.contains("local-prestaging") }) {
+        return true
+    }
+    return System.getenv("SPRING_PROFILES_ACTIVE")?.contains("local-prestaging") == true
 }

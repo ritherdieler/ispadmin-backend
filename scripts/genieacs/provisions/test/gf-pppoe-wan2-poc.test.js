@@ -184,10 +184,10 @@ describe("gf-pppoe-wan2-poc layouts", () => {
     );
     const sets = bySetPath(ops);
     assert.equal(sets[F6600_WLAN24 + ".SSID"], "lab-zte-24");
-    assert.equal(sets[F6600_WLAN24 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[F6600_WLAN24 + ".KeyPassphrase"], "labwifi24");
     assert.equal(sets[F6600_WLAN24 + ".Enable"], true);
     assert.equal(sets[F6600_WLAN5 + ".SSID"], "lab-zte-5");
-    assert.equal(sets[F6600_WLAN5 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[F6600_WLAN5 + ".KeyPassphrase"], "labwifi24");
     assert.equal(sets[F6600_WLAN5 + ".Enable"], true);
     assert.equal(sets["InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.SSID"], undefined);
     assert.equal(sets[F6600_WLAN24 + ".PreSharedKey.1.KeyPassphrase"], undefined);
@@ -198,24 +198,24 @@ describe("gf-pppoe-wan2-poc layouts", () => {
     const ops = runProvision("V2804AX15T", [VSOL_MGMT, VSOL_PPP], WIFI);
     const sets = bySetPath(ops);
     assert.equal(sets[VSOL_WLAN24 + ".SSID"], "lab-zte-24");
-    assert.equal(sets[VSOL_WLAN24 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[VSOL_WLAN24 + ".KeyPassphrase"], "labwifi24");
     assert.equal(sets[VSOL_WLAN5 + ".SSID"], "lab-zte-5");
-    assert.equal(sets[VSOL_WLAN5 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[VSOL_WLAN5 + ".KeyPassphrase"], "labwifi24");
     assert.equal(sets[F6600_WLAN24 + ".SSID"], "lab-zte-5");
     assertNeverTouches(ops, VSOL_MGMT_PREFIX);
   });
 
-  it("wifi passphrase is always 11111111 even if the args differ", () => {
+  it("wifi passphrase is pass24 on both bands and pass5 is ignored", () => {
     const ops = runProvision(
       "F6600R",
       [F6600_MGMT, F6600_PPP],
-      ["lab-zte-24", "short", "lab-zte-5", "other"],
+      ["lab-zte-24", "from24pass", "lab-zte-5", "other"],
     );
     const sets = bySetPath(ops);
     assert.equal(sets[F6600_WLAN24 + ".SSID"], "lab-zte-24");
-    assert.equal(sets[F6600_WLAN24 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[F6600_WLAN24 + ".KeyPassphrase"], "from24pass");
     assert.equal(sets[F6600_WLAN5 + ".SSID"], "lab-zte-5");
-    assert.equal(sets[F6600_WLAN5 + ".KeyPassphrase"], "11111111");
+    assert.equal(sets[F6600_WLAN5 + ".KeyPassphrase"], "from24pass");
   });
 
   it("unknown product class writes nothing", () => {

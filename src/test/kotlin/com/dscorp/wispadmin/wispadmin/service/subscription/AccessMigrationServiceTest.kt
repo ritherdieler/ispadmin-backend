@@ -1,9 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription
 
-import com.dscorp.wispadmin.wispadmin.acsclient.AcsCpeCoreClient
-import com.dscorp.wispadmin.wispadmin.acsclient.CoreCpeAccessLayout
-import com.dscorp.wispadmin.wispadmin.acsclient.CoreCpeProvisionRequest
-import com.dscorp.wispadmin.wispadmin.acsclient.CoreCpeProvisionResponse
 import com.dscorp.wispadmin.wispadmin.config.PppoeProperties
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMigrationStage
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
@@ -14,6 +10,9 @@ import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAccessMigration
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeAccessLayout
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionRequest
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionResponse
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayServicePortsDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAccessMigrationRepository
@@ -42,7 +41,6 @@ class AccessMigrationServiceTest {
     private val subscriptions = mockk<SubscriptionRepository>()
     private val migrations = mockk<SubscriptionAccessMigrationRepository>(relaxed = true)
     private val acsRecords = mockk<SubscriptionAcsRepository>(relaxed = true)
-    private val acs = mockk<AcsCpeCoreClient>()
     private val gateway = mockk<GatewayOnuActivationClient>(relaxed = true)
     private val pppoeManager = mockk<PppoeManagerService>()
     private val mikrotik = mockk<IMikroTikService>(relaxed = true)
@@ -53,9 +51,7 @@ class AccessMigrationServiceTest {
     @BeforeEach
     fun setUp() {
         rows.clear()
-        val acsClients = mockk<ObjectProvider<AcsCpeCoreClient>>()
         val gatewayClients = mockk<ObjectProvider<GatewayOnuActivationClient>>()
-        every { acsClients.ifAvailable } returns acs
         every { gatewayClients.ifAvailable } returns gateway
         every { migrations.save(any()) } answers {
             val row = firstArg<SubscriptionAccessMigration>()
@@ -76,7 +72,6 @@ class AccessMigrationServiceTest {
             subscriptions,
             migrations,
             acsRecords,
-            acsClients,
             gatewayClients,
             pppoeManager,
             mikrotik,
@@ -91,7 +86,7 @@ class AccessMigrationServiceTest {
     fun `start aborts when WANIP and WANPPP do not share a slot`() {
         val subscription = fiberStatic()
         every { subscriptions.findById(1001) } returns Optional.of(subscription)
-        every { acs.accessLayout("VSOL0031C0B6") } returns sharedLayout().copy(
+        every { gateway.accessLayout("VSOL0031C0B6") } returns sharedLayout().copy(
             wanIpPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
             wanPppPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1",
         )
@@ -106,7 +101,7 @@ class AccessMigrationServiceTest {
     fun `start continues when ACS vparams layout has empty WAN paths`() {
         val subscription = fiberStatic()
         stubHappyPath(subscription)
-        every { acs.accessLayout("VSOL0031C0B6") } returns sharedLayout().copy(
+        every { gateway.accessLayout("VSOL0031C0B6") } returns sharedLayout().copy(
             wanIpPath = null,
             wanPppPath = null,
             wanIpSharesPppSlot = false,
@@ -115,14 +110,14 @@ class AccessMigrationServiceTest {
         val progress = service.start(1001)
 
         assertEquals(AccessMigrationStage.QUARANTINE, progress.stage)
-        verify(exactly = 1) { acs.provision(any()) }
+        verify(exactly = 1) { gateway.provision(any()) }
     }
 
     @Test
     fun `start rejects a subscription that is not FIBER`() {
         val subscription = fiberStatic().apply { installationType = InstallationType.WIRELESS }
         every { subscriptions.findById(1001) } returns Optional.of(subscription)
-        every { acs.accessLayout("VSOL0031C0B6") } returns sharedLayout()
+        every { gateway.accessLayout("VSOL0031C0B6") } returns sharedLayout()
 
         val error = assertThrows(IllegalStateException::class.java) { service.start(1001) }
 
@@ -132,12 +127,12 @@ class AccessMigrationServiceTest {
     @Test
     fun `happy path reaches quarantine as PPPOE_DYNAMIC without touching WiFi`() {
         val subscription = fiberStatic()
-        val captured = mutableListOf<CoreCpeProvisionRequest>()
+        val captured = mutableListOf<GatewayCpeProvisionRequest>()
         stubHappyPath(subscription)
-        every { acs.provision(any()) } answers {
-            val request = firstArg<CoreCpeProvisionRequest>()
+        every { gateway.provision(any()) } answers {
+            val request = firstArg<GatewayCpeProvisionRequest>()
             captured.add(request)
-            CoreCpeProvisionResponse(sn = request.sn, status = "COMPLETE")
+            GatewayCpeProvisionResponse(sn = request.sn, status = "COMPLETE")
         }
 
         val progress = service.start(1001)
@@ -162,12 +157,12 @@ class AccessMigrationServiceTest {
     @Test
     fun `verify failure with recent Inform reverts the CPE`() {
         val subscription = fiberStatic()
-        val captured = mutableListOf<CoreCpeProvisionRequest>()
+        val captured = mutableListOf<GatewayCpeProvisionRequest>()
         stubHappyPath(subscription)
-        every { acs.provision(any()) } answers {
-            val request = firstArg<CoreCpeProvisionRequest>()
+        every { gateway.provision(any()) } answers {
+            val request = firstArg<GatewayCpeProvisionRequest>()
             captured.add(request)
-            CoreCpeProvisionResponse(sn = request.sn, status = "COMPLETE")
+            GatewayCpeProvisionResponse(sn = request.sn, status = "COMPLETE")
         }
         every { pppoeManager.sessionOf(any(), "gf1001") } returns null
 
@@ -201,15 +196,15 @@ class AccessMigrationServiceTest {
 
     private fun stubHappyPath(subscription: Subscription) {
         every { subscriptions.findById(1001) } returns Optional.of(subscription)
-        every { acs.accessLayout("VSOL0031C0B6") } returns sharedLayout()
+        every { gateway.accessLayout("VSOL0031C0B6") } returns sharedLayout()
         every { gateway.servicePorts("VSOL0031C0B6") } returns GatewayServicePortsDto(
             sn = "VSOL0031C0B6",
             vlans = setOf(1, 100),
         )
         every { pppoeManager.ensureSecret(any(), subscription, "secret") } returns
             PppoeSecretResult(created = true, profile = "GF-200-200")
-        every { acs.provision(any()) } returns
-            CoreCpeProvisionResponse(sn = "VSOL0031C0B6", status = "COMPLETE")
+        every { gateway.provision(any()) } returns
+            GatewayCpeProvisionResponse(sn = "VSOL0031C0B6", status = "COMPLETE")
         every { pppoeManager.sessionOf(any(), "gf1001") } returns PppoeSession(
             username = "gf1001",
             address = "10.64.0.25/32",
@@ -235,7 +230,7 @@ class AccessMigrationServiceTest {
         fiberOnuSn = "VSOL0031C0B6"
     }
 
-    private fun sharedLayout() = CoreCpeAccessLayout(
+    private fun sharedLayout() = GatewayCpeAccessLayout(
         sn = "VSOL0031C0B6",
         productClass = "V2804AX15T",
         connectionRequestUrl = "http://192.168.253.40:7547/",

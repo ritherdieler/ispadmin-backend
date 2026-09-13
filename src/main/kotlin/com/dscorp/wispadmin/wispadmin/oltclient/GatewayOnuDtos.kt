@@ -59,3 +59,42 @@ data class GatewayServicePortsDto(
 data class GatewayRemoveServicePortRequest(
     val vlan: Int,
 )
+
+data class GatewayCpeProvisionRequest(
+    val sn: String,
+    val uniqueExternalId: String? = null,
+    val onuType: String? = null,
+    val ip: String? = null,
+    val ipSegment: String? = null,
+    val wanVlanId: Int = 1,
+    val wifiSsid24: String? = null,
+    val wifiPassword24: String? = null,
+    val wifiSsid5: String? = null,
+    val wifiPassword5: String? = null,
+    val pppoeUsername: String? = null,
+    val pppoePassword: String? = null,
+)
+
+data class GatewayCpeProvisionResponse(
+    val sn: String = "",
+    val status: String = "NA",
+    val message: String? = null,
+    val deviceId: String? = null,
+)
+
+data class GatewayCpeWifiRequest(
+    val ssid24: String? = null,
+    val ssid5: String? = null,
+    val passphrase: String? = null,
+)
+
+data class GatewayCpeAccessLayout(
+    val sn: String = "",
+    val productClass: String? = null,
+    val connectionRequestUrl: String? = null,
+    val lastInformAt: String? = null,
+    val wanIpPath: String? = null,
+    val wanPppPath: String? = null,
+    val hasPppPath: Boolean = false,
+    val wanIpSharesPppSlot: Boolean = false,
+)

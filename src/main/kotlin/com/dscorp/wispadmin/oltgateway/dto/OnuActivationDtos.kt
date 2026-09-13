@@ -74,3 +74,20 @@ data class CpeTelemetryDto(
     val wifiObservedAt: String? = null,
     val wifiQualityStatus: String? = null,
 )
+
+data class CpeWifiRequestDto(
+    val ssid24: String? = null,
+    val ssid5: String? = null,
+    val passphrase: String? = null,
+)
+
+data class CpeAccessLayoutDto(
+    val sn: String = "",
+    val productClass: String? = null,
+    val connectionRequestUrl: String? = null,
+    val lastInformAt: String? = null,
+    val wanIpPath: String? = null,
+    val wanPppPath: String? = null,
+    val hasPppPath: Boolean = false,
+    val wanIpSharesPppSlot: Boolean = false,
+)

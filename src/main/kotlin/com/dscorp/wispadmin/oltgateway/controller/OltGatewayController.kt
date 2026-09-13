@@ -119,7 +119,7 @@ class OltGatewayController(
     @GetMapping("/onus/autofind")
     @Operation(
         summary = "ONUs en autofind",
-        description = "Lista ONUs no confirmadas (SNMP listAutofind cuando snmp.enabled; SSH deprecado). " +
+        description = "Lista ONUs no confirmadas vía SSH `display ont autofind all` (prioridad 2, a demanda). " +
             "Contrato compatible SmartOLT."
     )
     @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)

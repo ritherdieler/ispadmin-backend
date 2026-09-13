@@ -50,7 +50,8 @@ data class RebootCliRequest(
 class OltGatewayCommandService(
     private val runCommand: (String) -> String,
     private val properties: OltGatewayProperties,
-    private val inWriteJob: (() -> Unit) -> Unit = { it() }
+    private val inWriteJob: (() -> Unit) -> Unit = { it() },
+    private val inAuthorizeJob: (() -> Unit) -> Unit = inWriteJob,
 ) {
 
     fun planAuthorize(request: AuthorizeCliRequest): List<String> {
@@ -79,7 +80,7 @@ class OltGatewayCommandService(
         ensureWritesEnabled()
         val planned = planAuthorize(request)
         val executed = mutableListOf<String>()
-        inWriteJob {
+        inAuthorizeJob {
             planned.forEach { cmd ->
                 executed.add(cmd)
                 runCommand(cmd)

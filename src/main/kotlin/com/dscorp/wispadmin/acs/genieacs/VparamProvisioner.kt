@@ -87,7 +87,7 @@ class VparamProvisioner(
                 "vlanId" to request.wanVlanId,
                 "connectionName" to connectionName,
             )
-            spvJson(device.id, GfVirtualParameters.APPLY_INTERNET_PPPOE, payload, baseSnapshot)?.let { return it }
+            applyPppoeUntilSettled(device.id, payload, baseSnapshot)?.let { return it }
         } else if (!wifiOnly) {
             val segment = request.ipSegment?.trim().orEmpty()
             val payload = linkedMapOf(
@@ -169,6 +169,34 @@ class VparamProvisioner(
         val ssid24Ok = request.wifiSsid24.isNullOrBlank() || node.path("ssid24").asText(null) == request.wifiSsid24
         val ssid5Ok = request.wifiSsid5.isNullOrBlank() || node.path("ssid5").asText(null) == request.wifiSsid5
         return ssid24Ok && ssid5Ok
+    }
+
+    private fun applyPppoeUntilSettled(
+        deviceId: String,
+        payload: Map<String, Any?>,
+        baseSnapshot: Tr069AcsSnapshot,
+    ): Tr069ProvisionOutcome? {
+        var pending: String? = "apply"
+        var tries = 0
+        while (tries < 3 && pending != null) {
+            spvJson(deviceId, GfVirtualParameters.APPLY_INTERNET_PPPOE, payload, baseSnapshot)?.let { return it }
+            tries++
+            pending = readJson(deviceId, GfVirtualParameters.APPLY_INTERNET_PPPOE)
+                ?.path("pending")
+                ?.asText()
+                ?.takeIf { it.isNotBlank() }
+        }
+        if (pending != null) {
+            val error = "GfApplyInternetPppoe stayed pending ($pending)"
+            return Tr069ProvisionOutcome(
+                status = CpeStatus.FAILED,
+                deviceId = deviceId,
+                error = error,
+                message = error,
+                acsSnapshot = baseSnapshot,
+            )
+        }
+        return null
     }
 
     private fun readJson(deviceId: String, path: String): JsonNode? {

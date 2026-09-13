@@ -12,7 +12,9 @@ import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizati
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivateRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.CancelledOnuReuseService
+import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeCredentialFactory
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
+import com.dscorp.wispadmin.transport.RegistrationTiming
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Component
@@ -24,6 +26,7 @@ class FiberInstallationStrategy(
     private val environment: GigafiberEnvironmentProperties,
     private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
     private val pppoeAccessService: PppoeAccessService,
+    private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) : IInstallationStrategy {
 
     private val logger = LoggerFactory.getLogger(FiberInstallationStrategy::class.java)
@@ -52,6 +55,10 @@ class FiberInstallationStrategy(
 
         request.onu?.let { onuRequest ->
             onuSn = onuRequest.sn
+            subscription.accessMode = AccessMode.PPPOE_DYNAMIC
+            if (subscription.pppoeUsername.isNullOrBlank()) {
+                subscription.pppoeUsername = PppoeCredentialFactory.username(subscription.id)
+            }
             val vlan = resolveVlan(subscription)
             val gateway = gatewayActivation.ifAvailable
             if (gateway != null) {
@@ -61,30 +68,34 @@ class FiberInstallationStrategy(
                     subscription.id,
                 )
                 try {
-                    val activated = gateway.activate(
-                        GatewayOnuActivateRequest(
-                            oltId = onuRequest.olt_id,
-                            ponType = onuRequest.pon_type,
-                            board = onuRequest.board,
-                            port = onuRequest.port,
-                            sn = onuRequest.sn,
-                            vlan = vlan,
-                            onuType = onuRequest.onu_type_name,
-                            zone = DEFAULT_ZONE,
-                            name = subscription.getFullName(),
-                            onuMode = DEFAULT_ONU_MODE,
-                            customProfile = DEFAULT_CUSTOM_PROFILE,
-                            ip = subscription.ip,
-                            ipSegment = subscription.ipPool?.ipSegment,
-                            wifiSsid24 = request.wifiSsid24,
-                            wifiPassword24 = request.wifiPassword24,
-                            wifiSsid5 = request.wifiSsid5,
-                            wifiPassword5 = request.wifiPassword5,
-                            pppoeUsername = subscription.pppoeUsername
-                                ?.takeIf { subscription.accessMode == AccessMode.PPPOE_DYNAMIC },
-                            pppoePassword = pppoeAccessService.decryptedPassword(subscription),
+                    val activated = timing.span(
+                        "core.gateway.activate",
+                        mapOf("sn" to onuRequest.sn, "subscriptionId" to subscription.id?.toString()),
+                    ) {
+                        gateway.activate(
+                            GatewayOnuActivateRequest(
+                                oltId = onuRequest.olt_id,
+                                ponType = onuRequest.pon_type,
+                                board = onuRequest.board,
+                                port = onuRequest.port,
+                                sn = onuRequest.sn,
+                                vlan = vlan,
+                                onuType = onuRequest.onu_type_name,
+                                zone = DEFAULT_ZONE,
+                                name = subscription.getFullName(),
+                                onuMode = DEFAULT_ONU_MODE,
+                                customProfile = DEFAULT_CUSTOM_PROFILE,
+                                ip = subscription.ip,
+                                ipSegment = subscription.ipPool?.ipSegment,
+                                wifiSsid24 = request.wifiSsid24,
+                                wifiPassword24 = request.wifiPassword24,
+                                wifiSsid5 = request.wifiSsid5,
+                                wifiPassword5 = request.wifiPassword5,
+                                pppoeUsername = subscription.pppoeUsername,
+                                pppoePassword = pppoeAccessService.decryptedPassword(subscription),
+                            )
                         )
-                    )
+                    }
                     uniqueExternalId = activated.uniqueExternalId
                     cpeStatus = activated.cpeStatus
                     onuAuthorized = activated.oltStatus.equals("COMPLETE", ignoreCase = true)
@@ -136,15 +147,14 @@ class FiberInstallationStrategy(
                 }
             }
 
-            if (subscription.accessMode == AccessMode.PPPOE_DYNAMIC) {
-                val pppoeResult = pppoeAccessService.ensureSecret(subscription, device)
-                queueAdded = pppoeResult.successful
-                mikrotikError = pppoeResult.error
-            } else {
-                val queueResult = simpleQueueProvisioner.ensureQueue(subscription, device, plan)
-                queueAdded = queueResult.added
-                mikrotikError = queueResult.error
+            val pppoeResult = timing.span(
+                "core.mk.pppoe",
+                mapOf("sn" to onuSn, "subscriptionId" to subscription.id?.toString()),
+            ) {
+                pppoeAccessService.ensureSecret(subscription, device)
             }
+            queueAdded = pppoeResult.successful
+            mikrotikError = pppoeResult.error
         } ?: run {
             oltError = "Solicitud FIBER sin datos de ONU"
         }

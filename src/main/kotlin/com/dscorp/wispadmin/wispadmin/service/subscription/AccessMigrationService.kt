@@ -1,8 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.service.subscription
 
-import com.dscorp.wispadmin.wispadmin.acsclient.AcsCpeCoreClient
-import com.dscorp.wispadmin.wispadmin.acsclient.CoreCpeAccessLayout
-import com.dscorp.wispadmin.wispadmin.acsclient.CoreCpeProvisionRequest
 import com.dscorp.wispadmin.wispadmin.config.PppoeProperties
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMigrationStage
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
@@ -12,6 +9,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAccessMigration
 import com.dscorp.wispadmin.wispadmin.dto.AccessMigrationEligibleDto
 import com.dscorp.wispadmin.wispadmin.dto.AccessMigrationProgressDto
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeAccessLayout
+import com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAccessMigrationRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository
@@ -36,7 +35,6 @@ class AccessMigrationService(
     private val subscriptionRepository: SubscriptionRepository,
     private val migrationRepository: SubscriptionAccessMigrationRepository,
     private val subscriptionAcsRepository: SubscriptionAcsRepository,
-    private val acsClients: ObjectProvider<AcsCpeCoreClient>,
     private val gatewayClients: ObjectProvider<GatewayOnuActivationClient>,
     private val pppoeManager: PppoeManagerService,
     private val mikrotikService: IMikroTikService,
@@ -218,8 +216,8 @@ class AccessMigrationService(
             ?.takeIf { secretCipher.looksEncrypted(it) }
             ?.let { secretCipher.decrypt(it) }
             ?: throw IllegalStateException("Sin contraseña PPPoE")
-        val response = acs().provision(
-            CoreCpeProvisionRequest(
+        val response = gateway().provision(
+            GatewayCpeProvisionRequest(
                 sn = sn,
                 uniqueExternalId = subscription.id?.toString(),
                 onuType = layout.productClass,
@@ -305,8 +303,8 @@ class AccessMigrationService(
     private fun revertCpe(subscription: Subscription, row: SubscriptionAccessMigration) {
         val sn = subscription.fiberOnuSn ?: return
         val vlan = row.previousVlan?.toIntOrNull() ?: 1
-        acs().provision(
-            CoreCpeProvisionRequest(
+        gateway().provision(
+            GatewayCpeProvisionRequest(
                 sn = sn,
                 uniqueExternalId = subscription.id?.toString(),
                 ip = row.previousIp,
@@ -322,25 +320,22 @@ class AccessMigrationService(
         migrationRepository.save(row)
     }
 
-    private fun requireLayout(subscription: Subscription): CoreCpeAccessLayout {
+    private fun requireLayout(subscription: Subscription): GatewayCpeAccessLayout {
         val sn = subscription.fiberOnuSn ?: throw IllegalStateException("Sin serial de ONU")
-        return acs().accessLayout(sn)
+        return gateway().accessLayout(sn)
     }
 
-    private fun liveLayoutOrNull(sn: String?): CoreCpeAccessLayout? {
+    private fun liveLayoutOrNull(sn: String?): GatewayCpeAccessLayout? {
         if (sn.isNullOrBlank()) return null
-        return runCatching { acsClients.ifAvailable?.accessLayout(sn) }.getOrNull()
+        return runCatching { gatewayClients.ifAvailable?.accessLayout(sn) }.getOrNull()
     }
-
-    private fun acs(): AcsCpeCoreClient =
-        acsClients.ifAvailable ?: throw IllegalStateException("Cliente ACS no habilitado")
 
     private fun gateway(): GatewayOnuActivationClient =
         gatewayClients.ifAvailable ?: throw IllegalStateException("Cliente OLT Gateway no habilitado")
 
     private fun knownPppModel(productClass: String?): Boolean {
         val value = productClass?.uppercase() ?: return false
-        return value.contains("V2804AX15T") || value.contains("F6600R")
+        return value.contains("V2804AX15T") || value.contains("F6600R") || value.contains("VSOLVA74")
     }
 
     private fun parseInstant(value: String?): Instant? {

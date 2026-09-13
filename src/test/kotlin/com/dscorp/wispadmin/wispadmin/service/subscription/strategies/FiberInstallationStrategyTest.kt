@@ -159,10 +159,8 @@ class FiberInstallationStrategyTest {
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
-        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(
-            added = false,
-            error = "rest PUT /rest/queue/simple: Remote host terminated the handshake"
-        )
+        every { pppoeAccessService.ensureSecret(any(), any()) } returns
+            PppoeSecretResult(error = "rest PUT /rest/queue/simple: Remote host terminated the handshake")
 
         val result = strategy.processInstallation(
             subscription = subscription,
@@ -178,10 +176,11 @@ class FiberInstallationStrategyTest {
             "rest PUT /rest/queue/simple: Remote host terminated the handshake",
             result.mikrotikError
         )
+        verify(exactly = 0) { queueProvisioner.ensureQueue(any(), any(), any()) }
     }
 
     @Test
-    fun `processInstallation uses offline client ip as simple queue target`() {
+    fun `processInstallation always creates pppoe secret and never simple queue`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
         strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
@@ -189,10 +188,12 @@ class FiberInstallationStrategyTest {
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
             ip = "192.168.1.77"
+            accessMode = AccessMode.STATIC_IP
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
-        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        every { pppoeAccessService.ensureSecret(any(), any()) } returns
+            PppoeSecretResult(created = true, profile = "GF-50-50")
 
         val result = strategy.processInstallation(
             subscription = subscription,
@@ -203,9 +204,10 @@ class FiberInstallationStrategyTest {
         )
 
         assertTrue(result.queueAdded)
-        verify {
-            queueProvisioner.ensureQueue(match { it.ip == "192.168.1.77" }, host, subscription.plan!!)
-        }
+        assertEquals(AccessMode.PPPOE_DYNAMIC, subscription.accessMode)
+        assertEquals("gf100", subscription.pppoeUsername)
+        verify { pppoeAccessService.ensureSecret(subscription, host) }
+        verify(exactly = 0) { queueProvisioner.ensureQueue(any(), any(), any()) }
     }
 
     @Test
@@ -278,7 +280,8 @@ class FiberInstallationStrategyTest {
         )
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        every { pppoeAccessService.ensureSecret(any(), any()) } returns
+            PppoeSecretResult(created = true, profile = "GF-50-50")
         strategy = buildStrategy(onuReuse, queueProvisioner, provider)
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
@@ -299,7 +302,7 @@ class FiberInstallationStrategyTest {
         assertTrue(result.onuAuthorized)
         assertEquals("PENDING", result.cpeStatus)
         assertEquals("gigafiber-ma5608t_1_0_5", result.uniqueExternalId)
-        verify { gateway.activate(match<GatewayOnuActivateRequest> { it.sn == "ALCL12345678" && it.vlan == "100" }) }
+        verify { gateway.activate(match<GatewayOnuActivateRequest> { it.sn == "ALCL12345678" && it.vlan == "100" && it.pppoeUsername == "gf100" }) }
         verify(exactly = 0) { onuReuse.authorizeWithCancelledReuse(any()) }
     }
 
@@ -366,7 +369,8 @@ class FiberInstallationStrategyTest {
     fun `processInstallation falls back to SmartOLT when gateway client unavailable`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
-        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        every { pppoeAccessService.ensureSecret(any(), any()) } returns
+            PppoeSecretResult(created = true, profile = "GF-50-50")
         strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {

@@ -19,11 +19,22 @@ Prerrequisitos en la máquina:
 
 ```bash
 cd "IpsAdmin-android app"
-E2E_ONU_SN=ZTEGDC47BFFD E2E_WIFI_SSID=lab-zte-e2e-24 E2E_WIFI_PASS='LabZteWifi24!' \
-  ./scripts/e2e_register_fiber_staging_espresso.sh
+E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_register_fiber_staging_espresso.sh \
+  --wifi-ssid 'lab-zte-e2e-24' --wifi-pass 'LabZteWifi24!' \
+  --cleanup-mode ask
 ```
 
-El wrapper: precleanup → login API → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso → ping MK2 → `tr069-e2e-hard-cleanup.sh --env staging`.
+El 5 GHz es siempre `{ssid} - 5G` y la clave es la misma en ambas bandas. Flags ganan sobre `E2E_WIFI_SSID` / `E2E_WIFI_PASS`. SSID 1–27 (el sufijo « - 5G» cabe en 32). Clave 8–63.
+
+El wrapper: precleanup → login API → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso (`tr069ProvisionStatus=COMPLETE` vía ACS: SSID + WiFi) → cleanup según `--cleanup-mode`.
+
+`--cleanup-mode auto` (default) ejecuta `tr069-e2e-hard-cleanup.sh --env staging` al terminar. `--cleanup-mode ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]` (`s` limpia; Enter/`n` deja la suscripción). `--cleanup-mode skip` no limpia. Aliases: `--ask-cleanup`, `--auto-cleanup` / `--cleanup`, `--no-cleanup`. Env: `CLEANUP_MODE`. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
+
+Tiempos del cableado (Core/Gateway/ACS, no prod): grep `REG_TIMING` en logs. Detalle: [registration-timing-logs.md](./registration-timing-logs.md).
+
+## Criterio de éxito
+
+`E2E_FIBER_STAGING_ESPRESSO_OK` con Espresso en verde y `tr069ProvisionStatus=COMPLETE`. El ACS ya confirma WiFi y nombre de red (SSID 2.4/5). **No** hay ping L3 a MikroTik: el alta PPPoE no asigna IP estática en `subscription.ip`. Si `COMPLETE`, entregar SSID **y clave** 2.4/5 **antes** del hard cleanup.
 
 Tras el alta, el POST no espera TR-069. Flags Core: `oltProvisionStatus=COMPLETE` y `tr069ProvisionStatus=PENDING|COMPLETE`. Poll HTTP:
 
@@ -35,9 +46,7 @@ E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_onu_cpe_day2_staging.sh
 
 Day-2 (360 / wifi-refresh / reboot) va Core → Gateway. Si CPE `COMPLETE`, entregar WiFi 2.4/5 **antes** del hard cleanup.
 
-Para dejar la suscripción viva (p. ej. verla en Diagnóstico 360): `SKIP_POST_CLEANUP=1`. Lab VSOL ACS `12345B4641531C0B6` → SN Android/SmartOLT `VSOL0031C0B6` (corrida 2026-09-03: suscripción **2360**, [staging-android-vsol-360-2360-2026-09-03.md](./staging-android-vsol-360-2360-2026-09-03.md)).
-
-Éxito del script: `E2E_FIBER_STAGING_ESPRESSO_OK`. Si `tr069ProvisionStatus=COMPLETE`, entregar al usuario **SSID y clave** 2.4/5 **antes** del hard cleanup (regla `AGENTS.md` backend). El 5 GHz es `{ssid24} - 5G` con la misma clave.
+Para dejar la suscripción viva (p. ej. verla en Diagnóstico 360): `--cleanup-mode skip` / `--no-cleanup` / `SKIP_POST_CLEANUP=1`, o `--cleanup-mode ask` y responder `n`. Lab VSOL ACS `12345B4641531C0B6` → SN Android/SmartOLT `VSOL0031C0B6` (corrida 2026-09-03: suscripción **2360**, [staging-android-vsol-360-2360-2026-09-03.md](./staging-android-vsol-360-2360-2026-09-03.md)).
 
 Cleanup manual:
 
@@ -75,7 +84,7 @@ Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `
 | `place` (24, polígonos) | prod | `findByLocation`, selector Lugar |
 | `mufa` / `nap_box` (162, `NO-001`) | prod | NAP |
 | `plan` (FIBER activo, p. ej. `lab-basico`) | prod | paso plan |
-| `network_device` id **8** (MK2) | prod | host + ping |
+| `network_device` id **8** (MK2) | prod | host PPPoE |
 | `ip_pool` **`192.168.250.1/24`** → host 8 | seed (no solapa prod `.30`) | IP VLAN 100 + tag `stg` |
 | `tr069_model_profile` | `prod_acs` → `stg_acs`: `F6600R`, `HG8145X6`, `V2804AX15T` | ACS WAR; alias `F6600RV9.0.21` → **F6600R** |
 | Staff `dscorp` | seed de app | login |
@@ -124,9 +133,9 @@ Con `gigafiber.environment.tag=stg`, `SubscriptionVlanRules` acepta VLAN **100**
 
 Doc: `staging-vlan100-pool-2026-09-01.md`.
 
-## Red L3 (por qué el ping fallaba y cómo quedó)
+## Red L3 (histórico; el e2e ya no pinea)
 
-El e2e pingeá **desde MK2** (`POST /rest/ping`), no desde el VPS.
+Hasta 2026-09 el wrapper pingeaba **desde MK2** (`POST /rest/ping`). Eso dejó de ser criterio: basta el COMPLETE ACS (SSID + WiFi). La tabla queda como contexto de red.
 
 | Capa | Estado 2026-09-01 | Nota |
 |------|-------------------|------|
@@ -163,8 +172,8 @@ No usar SmartOLT cloud en staging: el alta va por Gateway SSH; el cleanup debe b
 | Wizard sin lugar/NAP/plan | `staging-e2e-seed-all.sh`; `findByLocation` con el geo de arriba |
 | ONU no en unconfigured | SmartOLT; cleanup previo; esperar ~1 min |
 | TR-069 `MANUAL_REQUIRED` | perfil / alias tipo ONU |
-| Ping 100% loss | MK2 tiene `192.168.250.1`? ONU aún autorizada? ping **antes** del cleanup |
-| Script exit 1 post-PASS | Firebase o ping; MySQL no debe quedar con la sub |
+| Ping 100% loss | Ya no es criterio de e2e (ACS COMPLETE = SSID + WiFi) |
+| Script exit 1 post-PASS | Firebase; MySQL no debe quedar con la sub |
 | `ispadmin-staging.xml` vacío | no crearlo; rompe Tomcat |
 
 Verificar API (token `dscorp`/`nohacker`):

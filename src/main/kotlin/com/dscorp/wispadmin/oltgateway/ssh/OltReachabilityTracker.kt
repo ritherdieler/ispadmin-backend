@@ -25,6 +25,8 @@ class OltReachabilityTracker(
             CliJobType.AUTOFIND_POLL,
             CliJobType.KEEPALIVE -> true
             CliJobType.WRITE,
+            CliJobType.AUTHORIZE,
+            CliJobType.UNCONFIGURED,
             CliJobType.ADHOC -> false
         }
     }

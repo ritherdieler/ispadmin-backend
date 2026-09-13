@@ -15,6 +15,7 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
+import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import org.slf4j.LoggerFactory
@@ -33,6 +34,7 @@ class SubscriptionProvisionService(
     private val installationStrategyFactory: InstallationStrategyFactory,
     private val errorLogRepository: ErrorLogRepository,
     private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
+    private val pppoeAccessService: PppoeAccessService,
     @Value("\${olt.gateway.client-enabled:false}") private val cpeEnabled: Boolean = false,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
@@ -331,9 +333,20 @@ class SubscriptionProvisionService(
         val sn = subscription.fiberOnuSn ?: throw IllegalStateException("ONU sin serial")
         val gateway = gatewayActivation.ifAvailable
             ?: throw IllegalStateException("Gateway ONU no disponible")
-        val activation = gateway.activationBySn(sn)
-        mapCpeStatus(subscription, activation.cpeStatus)
-        activation.message?.let { subscription.tr069LastError = it.take(500) }
+        val vlan = subscription.vlan?.trim()?.toIntOrNull() ?: 1
+        val outcome = gateway.provision(
+            com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionRequest(
+                sn = sn,
+                uniqueExternalId = subscription.id?.toString(),
+                wanVlanId = vlan,
+                ip = subscription.ip,
+                ipSegment = subscription.ipPool?.ipSegment,
+                pppoeUsername = subscription.pppoeUsername,
+                pppoePassword = pppoeAccessService.decryptedPassword(subscription),
+            )
+        )
+        mapCpeStatus(subscription, outcome.status)
+        outcome.message?.let { subscription.tr069LastError = it.take(500) }
         repository.save(subscription)
         return subscription.toDto()
     }

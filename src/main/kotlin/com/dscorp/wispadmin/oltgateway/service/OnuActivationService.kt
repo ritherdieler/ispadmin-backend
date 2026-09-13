@@ -6,6 +6,8 @@ import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeClient
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionRequest
+import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionResponse
+import com.dscorp.wispadmin.oltgateway.client.AcsCpeWifiRequest
 import com.dscorp.wispadmin.oltgateway.dto.CpeCommandResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.CpeTelemetryDto
@@ -14,6 +16,7 @@ import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivationStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
+import com.dscorp.wispadmin.transport.RegistrationTiming
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -26,6 +29,7 @@ class OnuActivationService(
     private val eventBus: EventBusPort,
     private val journal: ActivationJournal = MemoryActivationJournal(),
     private val acsExecutor: Executor = Executors.newFixedThreadPool(4),
+    private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) {
     private val log = LoggerFactory.getLogger(OnuActivationService::class.java)
     fun activate(rawRequest: OnuActivateRequestDto): OnuActivateResponseDto {
@@ -34,7 +38,7 @@ class OnuActivationService(
         val (operation,acquired)=journal.acquire(request)
         if(!acquired) return response(operation.status)
         if(operation.stage=="OLT") {
-            val authorized=authorizeOlt(request)
+            val authorized=timing.span("gateway.olt.authorize", mapOf("sn" to request.sn)) { authorizeOlt(request) }
             val externalId=authorized?.first
             if(externalId==null) {
                 operation.status=OnuActivationStatusDto(sn=request.sn,oltStatus=OltActivationStatus.FAILED,cpeStatus=CpeProvisionStatus.NA,message=authorized?.second ?: "OLT authorize failed",updatedAtEpochMs=Instant.now().toEpochMilli())
@@ -95,6 +99,18 @@ class OnuActivationService(
         return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
     }
 
+    fun provisionCpe(sn: String, request: AcsCpeProvisionRequest): AcsCpeProvisionResponse {
+        return acsCpeClient.provision(request.copy(sn = sn.trim().uppercase()))
+    }
+
+    fun setWifi(sn: String, request: AcsCpeWifiRequest): CpeCommandResponseDto {
+        val ack = acsCpeClient.setWifi(sn.trim().uppercase(), request)
+        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
+    }
+
+    fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto? =
+        acsCpeClient.accessLayout(sn.trim().uppercase())
+
     fun wifiRefresh(sn: String): CpeCommandResponseDto {
         val ack = acsCpeClient.wifiRefresh(sn)
         return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
@@ -124,11 +140,13 @@ class OnuActivationService(
         operation.attempts+=1
         journal.save(operation)
         try {
-            val outcome=acsCpeClient.provision(AcsCpeProvisionRequest(
+            val outcome=timing.span("gateway.acs.provision", mapOf("sn" to request.sn)) {
+                acsCpeClient.provision(AcsCpeProvisionRequest(
                 sn=request.sn,uniqueExternalId=externalId,onuType=request.onuType,ip=request.ip,ipSegment=request.ipSegment,
                 wanVlanId=request.vlan.toIntOrNull() ?: 1,wifiSsid24=request.wifiSsid24,wifiPassword24=request.wifiPassword24,
                 wifiSsid5=request.wifiSsid5,wifiPassword5=request.wifiPassword5,
                 pppoeUsername=request.pppoeUsername,pppoePassword=request.pppoePassword))
+            }
             operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,updatedAtEpochMs=Instant.now().toEpochMilli())
             operation.stage=if(outcome.status==CpeProvisionStatus.PENDING) "ACS_STATUS" else "DONE"
             operation.leaseUntil=System.currentTimeMillis()+30_000

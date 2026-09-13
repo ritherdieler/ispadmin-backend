@@ -10,7 +10,7 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 |-------|-------------|----------|
 | **Core WAR** | Mac `:8082` `/ispadmin` | No desplegar staging “para probar”. No embeber OLT/ACS en el Core. |
 | **Gateway WAR** | Mac `:8080` `/ispadmin` | No llamar SmartOLT cloud si `olt.provider.authorize=GATEWAY`. |
-| **ACS WAR** | **VPS staging** por túnel `:8091` `/ispadmin-staging-acs` | **No** levantar `AcsApplication` local. |
+| **ACS WAR** | **VPS staging** por túnel `:8091` `/ispadmin-staging-acs` | **No** levantar `AcsApplication` local (salvo el ambiente opt-in [`local-prestaging`](#ambiente-local-prestaging)). |
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
 | **OLT** | Real `10.11.104.2` (SSH desde Gateway) | No saturar VTY con SSH extra (health del Gateway basta). |
 | **MikroTik** | **MK2** `network_device.id=8`, VLAN **100** | No MK1 ni `mikrotik_test`. |
@@ -208,8 +208,10 @@ No usar NAP `NO-001` / lugar `9 de octubre` (puerto GPON distinto). Lab local:
 Desde el repo Android (background; no `AwaitShell`):
 
 ```bash
-./scripts/e2e_register_fiber_local_espresso.sh
+./scripts/e2e_register_fiber_local_espresso.sh --cleanup-mode ask
 ```
+
+`--cleanup-mode auto` (default) limpia al terminar. `ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]`. `skip` / `--no-cleanup` no limpia. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
 
 No usar `e2e_register_fiber_espresso.sh` (prodDebug) ni el script staging contra este Core.
 
@@ -250,6 +252,111 @@ Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y**
 - Re-probar activate sin borrar `olt_activation_operation` (no-op).
 - Usar ONUs sin tag `lab`, MK1 o `mikrotik_test`.
 - SSH directo a la OLT en paralelo al Gateway (llena VTY / lockout de `oltadmin`).
+
+---
+
+## Ambiente `local-prestaging`
+
+Opt-in. **No** reemplaza el runbook canónico de arriba (ACS VPS `:8091`). Existe **solo** cuando el proceso arranca con el perfil Spring `local-prestaging`. No edita `application-dev|staging|prod|acs|oltgateway.properties`. Los `main()` de Gateway/ACS siguen igual en VPS (`prod,oltgateway` / `acs`); solo omiten esos perfiles extra si los args o `SPRING_PROFILES_ACTIVE` incluyen `local-prestaging` (si `prod` queda al final, JDBC pasa a `mysql:3306/ispadmin`).
+
+| Pieza | Dónde | Perfiles | Schema JDBC |
+|-------|--------|----------|-------------|
+| Core | Mac `:8082` `/ispadmin` | `local-prestaging` | `ispadmin_prestaging` |
+| Gateway | Mac `:8080` `/ispadmin` | `oltgateway,local-prestaging` (`main()` **no** añade `prod` si el arranque pide este perfil; el WAR VPS en `configure()` sigue `prod,oltgateway`) | `prestaging_oltgateway` |
+| ACS | Mac `:8090` `/ispadmin-acs` | `acs,local-prestaging` (`main()` **no** fuerza `acs` extra si ya viene prestaging; el WAR VPS en `configure()` sigue `acs`) | `prestaging_acs` |
+| GenieACS NBI | Túnel `127.0.0.1:7557` → VPS | — | — |
+| OLT | SSH LAN `10.11.104.2` desde el Gateway **en la Mac** | — | — |
+| ONU | Solo tag GenieACS `lab`. Canónica `ZTEGDC47BFFD` | — | — |
+
+El único tráfico al VPS es NBI `:7557`. No usar `:8091`, `ispadmin-staging-acs`, Gateway en Tomcat VPS, ni `olt.provider.authorize=SMARTOLT`.
+
+```text
+Cliente / app
+  │ HTTP JWT
+  ▼
+Core :8082  (local-prestaging)
+  │ HTTP activate (localhost)
+  ▼
+Gateway :8080  (oltgateway + local-prestaging)
+  │ SSH LAN 10.11.104.2
+  ▼
+OLT MA5608T
+
+Gateway ──HTTP localhost──► ACS :8090 (acs + local-prestaging)
+                              │ NBI túnel
+                              ▼
+                         GenieACS VPS :7557
+                              ▲
+ONU lab CWMP (VLAN 1000) ─────┘
+```
+
+Tag: `gigafiber.environment.tag=lpstg` (no `stg`, para no activar reglas de colas/VLAN de staging).
+
+### Archivos
+
+| Archivo | Git |
+|---------|-----|
+| `src/main/resources/application-local-prestaging.properties` | Versionado, sin secretos |
+| `src/main/resources/application-local-prestaging.secrets.properties.example` | Versionado, claves vacías |
+| `src/main/resources/application-local-prestaging.secrets.properties` | **gitignore**. Copiar el example o claves desde `application-local.properties` |
+| `scripts/run-local-prestaging.sh` | Opt-in; no cambia defaults de VPS |
+
+Este ambiente **no** lee `application-local.properties`.
+
+### Arranque
+
+```bash
+# overlay de passwords (una vez)
+cp src/main/resources/application-local-prestaging.secrets.properties.example \
+   src/main/resources/application-local-prestaging.secrets.properties
+# rellenar MySQL / OLT / ACS_API_KEY (no commitear)
+
+# túnel NBI (el script canónico también abre :8091; este ambiente no lo usa)
+/Users/sergiocarrillo/gigafiber/start-genieacs-tunnel.sh
+
+# opcional: matar listeners de los tres WARs (no toca túneles :7557 ni :8091)
+./scripts/run-local-prestaging.sh stop
+
+# tres terminales (cada uno libera su puerto y arranca = restart de ese WAR)
+./scripts/run-local-prestaging.sh check
+./scripts/run-local-prestaging.sh core
+./scripts/run-local-prestaging.sh gateway
+./scripts/run-local-prestaging.sh acs
+```
+
+`stop` y el arranque de cada WAR matan **solo** listeners TCP (`lsof -iTCP:PORT -sTCP:LISTEN`) en **8080 / 8082 / 8090**. SIGTERM y, si sigue el listener, SIGKILL. No `pkill` de java/mvn. **No** mata `:7557` (GenieACS NBI) ni `:8091` (ACS VPS). `core|gateway|acs` y `restart core|gateway|acs` hacen kill+start de ese puerto.
+
+Equivalente Maven:
+
+```text
+Core:    --spring.profiles.active=local-prestaging --server.port=8082
+Gateway: --spring.profiles.active=oltgateway,local-prestaging --server.port=8080
+ACS:     --spring.profiles.active=acs,local-prestaging --server.port=8090
+```
+
+Antes de un alta: `ping -c 1 10.11.104.2` y health del Gateway con `oltReachable=true`. El log debe mostrar SSH a `10.11.104.2`. Si `oltReachable=false` con ping OK: esperar ~8 s VTY y relanzar **este** Gateway local. ONU `lab` only.
+
+Schemas locales: `ispadmin_prestaging`, `prestaging_oltgateway`, `prestaging_acs` (el JDBC lleva `createDatabaseIfNotExist=true`). El catálogo e2e de `scripts/local-e2e-ensure-catalog.sh` apunta a `ispadmin_dev`; este schema nace vacío hasta que se copie o se siembre.
+
+Hallazgos boot **2026-09-13**: el plugin Maven usa `<mainClass>${start-class}</mainClass>`; el script debe pasar `-Dstart-class=…ApplicationKt` (sin eso ACS/Gateway levantan el Core). Schema ACS/Core vacío: Flyway de Core (`V2` WhatsApp / `V39` netdiag) y ACS (`V2` altera `cpe_record`) fallan; prestaging deja `spring.flyway.enabled=false` en Core/ACS y `classpath:db/oltgateway` en Gateway. Core necesita placeholders de `application-dev` (`custom.username`, Firebase): el script usa `dev,local-prestaging` (prestaging gana JDBC/OLT/ACS). Alta lab: NAP **42** (board 1 / port 6), no `NO-001` (port 8).
+
+### E2E alta FIBER (`local-prestaging`)
+
+Curl contra el **Core** `:8082` `/ispadmin`. No Gateway activate, no ACS VPS `:8091`. NAP **42**, MK2 `hostDeviceId` 8, VLAN 100, ONU `ZTEGDC47BFFD` (tag `lab`). Schema `ispadmin_prestaging`.
+
+`/scripts/` está gitignored: al versionar, `git add -f scripts/e2e_register_fiber_local_prestaging.sh`.
+
+WARs ya arriba (`./scripts/run-local-prestaging.sh core|gateway|acs`) y túnel NBI `:7557`. Overlay: `application-local-prestaging.secrets.properties` (no `application-local.properties`).
+
+```bash
+./scripts/e2e_register_fiber_local_prestaging.sh check
+
+./scripts/e2e_register_fiber_local_prestaging.sh \
+  --wifi-ssid 'mimiwifi' --wifi-pass 'MimiWifi24pass' \
+  --cleanup-mode ask
+```
+
+`--cleanup-mode skip` es el default (no borra la suscripción). `auto` limpia solo la ONU lab. Poll `GET /subscription/{id}/registration-progress` hasta `tr069ProvisionStatus=COMPLETE`. Si COMPLETE, imprime SSID **y** password 2.4 y 5 GHz (`{ssid} - 5G`). Wrapper fino Android (opcional): `IpsAdmin-android app/scripts/e2e_register_fiber_local_prestaging.sh` (delega al backend; no cambia espresso local/staging).
 
 ---
 

@@ -44,6 +44,15 @@ class HttpAcsCpeClient(
         )
     }
 
+    override fun setWifi(sn: String, request: AcsCpeWifiRequest): CpeCommandAck {
+        val node = post("/api/acs/v1/cpe/${enc(sn)}/wifi", objectMapper.writeValueAsString(request))
+        return CpeCommandAck(
+            accepted = node.path("accepted").asBoolean(false),
+            status = statusOf(node.path("status").asText("")),
+            message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
     override fun telemetry(sn: String): CpeTelemetryDto? {
         val node = get("/api/acs/v1/cpe/${enc(sn)}/telemetry") ?: return null
         return CpeTelemetryDto(
@@ -71,6 +80,20 @@ class HttpAcsCpeClient(
             status = statusOf(node.path("status").asText("")),
             message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
             deviceId = node.path("deviceId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    override fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto? {
+        val node = get("/api/acs/v1/cpe/${enc(sn)}/access-layout") ?: return null
+        return com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto(
+            sn = node.path("sn").asText(sn),
+            productClass = node.path("productClass").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            connectionRequestUrl = node.path("connectionRequestUrl").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            lastInformAt = node.path("lastInformAt").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            wanIpPath = node.path("wanIpPath").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            wanPppPath = node.path("wanPppPath").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            hasPppPath = node.path("hasPppPath").asBoolean(false),
+            wanIpSharesPppSlot = node.path("wanIpSharesPppSlot").asBoolean(false),
         )
     }
 

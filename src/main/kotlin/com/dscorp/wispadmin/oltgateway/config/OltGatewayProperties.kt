@@ -46,8 +46,8 @@ class OltGatewayProperties {
     val autofind: AutofindProperties = AutofindProperties()
 
     class AutofindProperties {
-        /** Sirve /onu/unconfigured_onus desde la caché propia en vez de SmartOLT. */
-        var enabled: Boolean = true
+        /** Serves GET unconfigured from the on-demand SSH job. Background poll is off. */
+        var enabled: Boolean = false
         var refreshIntervalMs: Long = 30_000
         var initialDelayMs: Long = 20_000
         /** Timeout duro del refresco forzado desde el botón de campo. */

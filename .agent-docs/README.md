@@ -4,11 +4,15 @@
 |------|---------|
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
 | **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |
+| **Ambiente `local-prestaging` (Core+Gateway+ACS en Mac, OLT LAN, GenieACS túnel)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#ambiente-local-prestaging) |
+| **E2E FIBER `local-prestaging` (curl Core `:8082`, ACS `:8090`)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#e2e-alta-fiber-local-prestaging) |
 | **Migración IP estática → PPPoE** | [pppoe-migracion-plan.md](./pppoe-migracion-plan.md) |
 | **VLAN 1 en desuso — destino VLAN 100** | [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
 | **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
+| **Provisions nombrados cableados Core→Gateway→ACS** | [provisions-core-gateway-acs.md](./provisions-core-gateway-acs.md) |
+| **Provisions de lab: PPPoE, WiFi, reboot (args, layouts, curl, Core→Gateway→ACS)** | [genieacs-provisions-lab.md](./genieacs-provisions-lab.md) |
 | **GenieACS provisions F6600R/VSOL: `commit()`, AddObject, layouts, errores de POC, ver logs** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |
 | **Scripts GenieACS — clean code** (provisions / virtual-parameters) | [genieacs-scripts-cleancode.md](./genieacs-scripts-cleancode.md) |
 | **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
@@ -105,6 +109,8 @@
 | **GenieACS — credenciales ACS / Connection Request** | [genieacs-cr-credentials.md](./genieacs-cr-credentials.md) (ZTE F6600R `PeriodicInformTime` 9007) |
 | **GenieACS — parámetros writable VSOL V2804AX15T** | [genieacs-vsol-v2804-parametros.md](./genieacs-vsol-v2804-parametros.md) |
 | **E2E TR-069 — validación de modelo (incl. lab HG8145X6 WAN)** | [tr069-e2e-validacion-modelo.md](./tr069-e2e-validacion-modelo.md) |
+| **Logs timing alta FIBER (`REG_TIMING`, no prod)** | [registration-timing-logs.md](./registration-timing-logs.md) |
+| **E2E Espresso — `--cleanup-mode` ask/auto/skip** | [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md) |
 | **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |

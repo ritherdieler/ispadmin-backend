@@ -1,12 +1,14 @@
 package com.dscorp.wispadmin.wispadmin.oltclient
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.client.RestTemplate
+import com.dscorp.wispadmin.transport.RegistrationTimingClientInterceptor
 
 @Configuration
 class OltGatewayClientConfig {
@@ -17,11 +19,15 @@ class OltGatewayClientConfig {
     }
 
     @Bean("oltGatewayRestTemplate")
-    fun oltGatewayRestTemplate(): RestTemplate {
+    fun oltGatewayRestTemplate(
+        timingInterceptor: ObjectProvider<RegistrationTimingClientInterceptor>? = null,
+    ): RestTemplate {
         val factory = SimpleClientHttpRequestFactory()
         factory.setConnectTimeout(CONNECT_TIMEOUT_MS)
         factory.setReadTimeout(READ_TIMEOUT_MS)
-        return RestTemplate(factory)
+        return RestTemplate(factory).apply {
+            timingInterceptor?.ifAvailable?.let { interceptors.add(it) }
+        }
     }
 
     @Bean

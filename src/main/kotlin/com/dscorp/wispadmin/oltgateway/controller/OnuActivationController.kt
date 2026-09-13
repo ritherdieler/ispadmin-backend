@@ -49,6 +49,31 @@ class OnuActivationController(
     @PostMapping("/onus/{sn}/cpe/reboot")
     fun reboot(@PathVariable sn: String): CpeCommandResponseDto = activationService.reboot(sn)
 
+    @PostMapping("/onus/{sn}/cpe/provision")
+    fun provisionCpe(
+        @PathVariable sn: String,
+        @RequestBody request: com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionRequest,
+    ): com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionResponse =
+        activationService.provisionCpe(sn, request)
+
+    @PostMapping("/onus/{sn}/cpe/wifi")
+    fun setWifi(
+        @PathVariable sn: String,
+        @RequestBody request: com.dscorp.wispadmin.oltgateway.dto.CpeWifiRequestDto,
+    ): CpeCommandResponseDto = activationService.setWifi(
+        sn,
+        com.dscorp.wispadmin.oltgateway.client.AcsCpeWifiRequest(
+            ssid24 = request.ssid24,
+            ssid5 = request.ssid5,
+            passphrase = request.passphrase,
+        ),
+    )
+
+    @GetMapping("/onus/{sn}/cpe/access-layout")
+    fun accessLayout(@PathVariable sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto =
+        activationService.accessLayout(sn)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No CPE access-layout for SN=$sn")
+
     @PostMapping("/onus/{sn}/cpe/wifi-refresh")
     fun wifiRefresh(@PathVariable sn: String): CpeCommandResponseDto = activationService.wifiRefresh(sn)
 

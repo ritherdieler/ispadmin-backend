@@ -60,6 +60,46 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `authorize usa el job de authorize y delete el de write`() {
+        var authorizeJobs = 0
+        var writeJobs = 0
+        val split = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("ont delete")) {
+                    "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"
+                } else {
+                    "Success\nMA5608T#"
+                }
+            },
+            properties = properties,
+            inWriteJob = { block ->
+                writeJobs += 1
+                block()
+            },
+            inAuthorizeJob = { block ->
+                authorizeJobs += 1
+                block()
+            },
+        )
+        split.authorize(
+            AuthorizeCliRequest(
+                board = 0,
+                port = 2,
+                ontId = 5,
+                sn = "4857544311E70E9A",
+                lineProfileId = 10,
+                serviceProfileId = 10,
+                description = "cliente_demo",
+                vlan = 100
+            )
+        )
+        split.delete(DeleteCliRequest(board = 0, port = 2, ontId = 5))
+        assertEquals(1, authorizeJobs)
+        assertEquals(1, writeJobs)
+    }
+
+    @Test
     fun `authorize con perfiles Generic_1_V100 emite line 6 srv 13 y traffic tables`() {
         val result = service.authorize(
             AuthorizeCliRequest(

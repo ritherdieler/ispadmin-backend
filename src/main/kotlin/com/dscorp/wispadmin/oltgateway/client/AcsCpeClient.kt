@@ -28,12 +28,20 @@ data class AcsCpeProvisionResponse(
     val deviceId: String? = null,
 )
 
+data class AcsCpeWifiRequest(
+    val ssid24: String? = null,
+    val ssid5: String? = null,
+    val passphrase: String? = null,
+)
+
 interface AcsCpeClient {
     fun provision(request: AcsCpeProvisionRequest): AcsCpeProvisionResponse
     fun reboot(sn: String): CpeCommandAck
     fun wifiRefresh(sn: String): CpeCommandAck
+    fun setWifi(sn: String, request: AcsCpeWifiRequest): CpeCommandAck
     fun telemetry(sn: String): CpeTelemetryDto?
     fun status(sn: String): AcsCpeProvisionResponse?
+    fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto?
     fun listProfiles(): ResponseEntity<String>
     fun previewProfile(body: String): ResponseEntity<String>
     fun importProfile(body: String): ResponseEntity<String>
@@ -57,9 +65,14 @@ class NoOpAcsCpeClient : AcsCpeClient {
 
     override fun wifiRefresh(sn: String) = CpeCommandAck(false, CpeProvisionStatus.NA, "ACS client disabled")
 
+    override fun setWifi(sn: String, request: AcsCpeWifiRequest) =
+        CpeCommandAck(false, CpeProvisionStatus.NA, "ACS client disabled")
+
     override fun telemetry(sn: String): CpeTelemetryDto? = null
 
     override fun status(sn: String): AcsCpeProvisionResponse? = null
+
+    override fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto? = null
 
     override fun listProfiles(): ResponseEntity<String> =
         ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body("[]")

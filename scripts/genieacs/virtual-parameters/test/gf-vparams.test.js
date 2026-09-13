@@ -16,7 +16,9 @@ const WLAN5_F6600 = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5";
 function mockDeclare(tree) {
   const writes = [];
   const addObjects = [];
+  const reads = [];
   function declare(path, _timestamps, values) {
+    reads.push(path);
     if (values && Object.prototype.hasOwnProperty.call(values, "path")) {
       addObjects.push({ path, count: values.path });
     }
@@ -28,6 +30,7 @@ function mockDeclare(tree) {
   }
   declare.writes = writes;
   declare.addObjects = addObjects;
+  declare.reads = reads;
   return declare;
 }
 
@@ -55,21 +58,20 @@ function f6600Declare() {
   return mockDeclare({
     "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.253.10:7547/",
     [F6600_MGMT + ".ExternalIPAddress"]: "192.168.253.10",
+    [F6600_PPP + ".Username"]: "",
+    [F6600_PPP + ".Enable"]: false,
   });
 }
 
 function assertPppoeCredentials(declare) {
   const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+  assert.equal(byPath[F6600_PPP + ".ConnectionType"], "IP_Routed");
   assert.equal(byPath[F6600_PPP + ".Username"], "gf2398");
   assert.equal(byPath[F6600_PPP + ".Password"], "secret-pppoe");
-  assert.equal(byPath[F6600_PPP + ".X_CT-COM_VLANIDMark"], 100);
-  assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANID"], 100);
-  assert.ok(
-    declare.addObjects.some(
-      (a) => a.path === "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*",
-    ),
-    `expected AddObject WANPPP, got ${JSON.stringify(declare.addObjects)}`,
-  );
+  assert.equal(byPath[F6600_PPP + ".Enable"], undefined);
+  assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANID"], undefined);
+  assert.equal(byPath[F6600_PPP + ".X_CT-COM_VLANIDMark"], undefined);
+  assert.equal(declare.addObjects.length, 0);
 }
 
 describe("GfApplyInternetPppoe payload parse", () => {
@@ -178,6 +180,8 @@ describe("GfApplyInternetPppoe mapping", () => {
     const declare = mockDeclare({
       "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://10.20.0.2:7547/",
       [V2804_MGMT + ".ExternalIPAddress"]: "10.20.0.2",
+      [V2804_PPP + ".Username"]: "",
+      [V2804_PPP + ".Enable"]: false,
     });
     GfVparams.handleApplyInternetPppoe(
       { _ProductClass: "V2804AX15T" },
@@ -186,19 +190,14 @@ describe("GfApplyInternetPppoe mapping", () => {
     );
     const paths = declare.writes.map((w) => w.path);
     const addPaths = declare.addObjects.map((a) => a.path);
-    assert.ok(
-      addPaths.some((p) => p === "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.*"),
-      `expected AddObject WANPPP on WCD.2, got ${JSON.stringify(addPaths)}`,
-    );
-    assert.ok(
-      addPaths.every((p) => !p.includes("WANConnectionDevice.1.")),
-      `VSOL must never AddObject on WCD.1, got ${JSON.stringify(addPaths)}`,
-    );
+    assert.equal(addPaths.length, 0, `ready VSOL must not AddObject, got ${JSON.stringify(addPaths)}`);
+    assert.ok(addPaths.every((p) => !p.includes("WANConnectionDevice.1.")));
     assert.ok(paths.some((p) => p.startsWith(V2804_PPP + ".")));
     assert.equal(
       declare.writes.find((w) => w.path === V2804_IP + ".Enable")?.value,
       false,
     );
+    assert.ok(paths.some((p) => p === V2804_PPP + ".X_CT-COM_VLANIDMark"));
     assert.ok(paths.every((p) => !p.includes("WANConnectionDevice.1.")));
   });
 
@@ -206,6 +205,8 @@ describe("GfApplyInternetPppoe mapping", () => {
     const declare = mockDeclare({
       "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.253.10:7547/",
       [F6600_MGMT + ".ExternalIPAddress"]: "192.168.253.10",
+      [F6600_PPP + ".Username"]: "gf2398",
+      [F6600_PPP + ".Enable"]: false,
     });
     GfVparams.handleApplyInternetPppoe(
       { _ProductClass: "F6600R" },
@@ -214,10 +215,7 @@ describe("GfApplyInternetPppoe mapping", () => {
     );
     const paths = declare.writes.map((w) => w.path);
     const addPaths = declare.addObjects.map((a) => a.path);
-    assert.ok(
-      addPaths.some((p) => p === "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*"),
-      `expected AddObject WANPPP on internet WCD.1, got ${JSON.stringify(addPaths)}`,
-    );
+    assert.equal(addPaths.length, 0, `ready F6600R must not AddObject, got ${JSON.stringify(addPaths)}`);
     assert.ok(
       addPaths.every((p) => !p.includes("WANIPConnection")),
       `F6600R must not AddObject WANIP, got ${JSON.stringify(addPaths)}`,
@@ -228,6 +226,152 @@ describe("GfApplyInternetPppoe mapping", () => {
       false,
     );
     assert.ok(paths.every((p) => p !== F6600_MGMT + ".Enable" && !p.startsWith(F6600_MGMT + ".")));
+  });
+
+  it("F6600R defers Username Password Enable until PPP instance exists", () => {
+    const missing = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+    });
+    const first = GfVparams.handleApplyInternetPppoe(
+      { _ProductClass: "F6600R" },
+      missing,
+      [pppoePayload()],
+    );
+    const addPaths = missing.addObjects.map((a) => a.path);
+    assert.ok(
+      addPaths.some((p) => p === "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*"),
+      `expected AddObject WANPPP, got ${JSON.stringify(addPaths)}`,
+    );
+    const firstPppWrites = missing.writes.filter(
+      (w) => w.path === F6600_PPP || w.path.startsWith(F6600_PPP + "."),
+    );
+    assert.equal(
+      firstPppWrites.length,
+      0,
+      `AddObject cycle must not SPV PPP children, got ${JSON.stringify(firstPppWrites)}`,
+    );
+    assert.equal(JSON.parse(first.value[0]).pending, "addObject");
+
+    const ready = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+      [F6600_PPP + ".Username"]: "",
+      [F6600_PPP + ".Enable"]: false,
+    });
+    const second = GfVparams.handleApplyInternetPppoe(
+      { _ProductClass: "F6600R" },
+      ready,
+      [pppoePayload()],
+    );
+    const credPaths = ready.writes.map((w) => w.path);
+    assert.equal(ready.addObjects.length, 0, `ready cycle must not AddObject, got ${JSON.stringify(ready.addObjects)}`);
+    assert.equal(Object.fromEntries(ready.writes.map((w) => [w.path, w.value]))[F6600_PPP + ".Username"], "gf2398");
+    assert.equal(Object.fromEntries(ready.writes.map((w) => [w.path, w.value]))[F6600_PPP + ".Password"], "secret-pppoe");
+    assert.equal(Object.fromEntries(ready.writes.map((w) => [w.path, w.value]))[F6600_PPP + ".ConnectionType"], "IP_Routed");
+    assert.ok(!credPaths.includes(F6600_PPP + ".Enable"), `credentials cycle must not Enable, got ${JSON.stringify(credPaths)}`);
+    assert.ok(!credPaths.some((p) => p.includes("VLAN")), `credentials cycle must not set VLAN, got ${JSON.stringify(credPaths)}`);
+    assert.equal(JSON.parse(second.value[0]).pending, "credentials");
+
+    const armed = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+      [F6600_PPP + ".Username"]: "gf2398",
+      [F6600_PPP + ".Enable"]: false,
+    });
+    const third = GfVparams.handleApplyInternetPppoe(
+      { _ProductClass: "F6600R" },
+      armed,
+      [pppoePayload()],
+    );
+    const byPath = Object.fromEntries(armed.writes.map((w) => [w.path, w.value]));
+    assert.equal(armed.addObjects.length, 0);
+    assert.equal(byPath[F6600_PPP + ".Enable"], true);
+    assert.equal(byPath[F6600_IP + ".Enable"], false);
+    assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANID"], 100);
+    assert.equal(byPath[F6600_PPP + ".Username"], undefined);
+    const allowed = new Set([
+      F6600_PPP + ".Enable",
+      F6600_PPP + ".X_ZTE-COM_VLANID",
+      F6600_PPP + ".X_ZTE-COM_VLANEnable",
+      F6600_IP + ".Enable",
+    ]);
+    const extra = armed.writes.map((w) => w.path).filter((p) => !allowed.has(p));
+    assert.equal(extra.length, 0, `F6600R enable cycle extra leaves ${JSON.stringify(extra)}`);
+    assert.ok(armed.writes.every((w) => w.path !== F6600_MGMT + ".Enable" && !w.path.startsWith(F6600_MGMT + ".")));
+    assert.ok(!JSON.parse(third.value[0]).pending);
+  });
+
+  it("F6600R does not declare TR-181 Device.ManagementServer when IGD CR URL is unread", () => {
+    const declare = mockDeclare({
+      [F6600_PPP + ".Username"]: "",
+      [F6600_PPP + ".Enable"]: false,
+    });
+    GfVparams.handleApplyInternetPppoe({ _ProductClass: "F6600R" }, declare, [pppoePayload()]);
+    assert.ok(
+      declare.reads.every((p) => !String(p).startsWith("Device.")),
+      `F6600R must not declare Device.*, got ${JSON.stringify(declare.reads)}`,
+    );
+  });
+
+  it("F6600R slim does not GPV internet WAN ExternalIPAddress", () => {
+    const declare = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+      [F6600_PPP + ".Username"]: "",
+      [F6600_PPP + ".Enable"]: false,
+    });
+    GfVparams.handleApplyInternetPppoe({ _ProductClass: "F6600R" }, declare, [pppoePayload()]);
+    assert.ok(
+      !declare.reads.includes(F6600_PPP + ".ExternalIPAddress"),
+      `slim must not GPV PPP ExternalIP, got ${JSON.stringify(declare.reads)}`,
+    );
+    assert.ok(
+      !declare.reads.includes(F6600_IP + ".ExternalIPAddress"),
+      `slim must not GPV WANIP.2 ExternalIP, got ${JSON.stringify(declare.reads)}`,
+    );
+  });
+
+  it("F6600R enable cycle writes nothing when PPP already enabled", () => {
+    const declare = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+      [F6600_PPP + ".Username"]: "gf2398",
+      [F6600_PPP + ".Enable"]: true,
+      [F6600_PPP + ".X_ZTE-COM_VLANID"]: 100,
+      [F6600_PPP + ".X_ZTE-COM_VLANEnable"]: 1,
+      [F6600_IP + ".Enable"]: false,
+    });
+    const result = GfVparams.handleApplyInternetPppoe(
+      { _ProductClass: "F6600R" },
+      declare,
+      [pppoePayload()],
+    );
+    assert.equal(declare.writes.length, 0, `settled enable must not SPV, got ${JSON.stringify(declare.writes)}`);
+    assert.ok(!JSON.parse(result.value[0]).pending);
+  });
+
+  it("F6600R enable cycle skips VLAN and WANIP.2 when already applied", () => {
+    const declare = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+      [F6600_PPP + ".Username"]: "gf2398",
+      [F6600_PPP + ".Enable"]: false,
+      [F6600_PPP + ".X_ZTE-COM_VLANID"]: 100,
+      [F6600_PPP + ".X_ZTE-COM_VLANEnable"]: 1,
+      [F6600_IP + ".Enable"]: false,
+    });
+    const result = GfVparams.handleApplyInternetPppoe(
+      { _ProductClass: "F6600R" },
+      declare,
+      [pppoePayload()],
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[F6600_PPP + ".Enable"], true);
+    assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANID"], undefined);
+    assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANEnable"], undefined);
+    assert.equal(byPath[F6600_IP + ".Enable"], undefined);
+    assert.ok(!JSON.parse(result.value[0]).pending);
   });
 
   it("IGD is rejected without SPV", () => {
@@ -363,5 +507,207 @@ describe("GfReboot", () => {
     GfVparams.handleReboot({ _ProductClass: "V2804AX15T" }, declare, ['{"requested":true}']);
     assert.equal(declare.writes.length, 1);
     assert.equal(declare.writes[0].path, "Reboot");
+  });
+});
+
+function genieSet(value) {
+  return [{}, { value }];
+}
+
+function genieGet() {
+  return [{ value: Date.now(), writable: Date.now() }, {}, { object: 1 }, { object: 1 }];
+}
+
+function f6600ReadyTree(extra) {
+  return {
+    "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+    [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+    [F6600_PPP + ".Username"]: "",
+    [F6600_PPP + ".Enable"]: false,
+    ...extra,
+  };
+}
+
+function vsolReadyTree(extra) {
+  return {
+    "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://10.20.0.2:7547/",
+    [V2804_MGMT + ".ExternalIPAddress"]: "10.20.0.2",
+    [V2804_PPP + ".Username"]: "",
+    [V2804_PPP + ".Enable"]: false,
+    ...extra,
+  };
+}
+
+describe("GfPppoeUsername", () => {
+  it("SET writes Username on F6600R PPP.2 and never WANIP.1", () => {
+    const declare = mockDeclare(f6600ReadyTree());
+    const result = GfVparams.handlePppoeUsername(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet(["gflabzte", "xsd:string"]),
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[F6600_PPP + ".Username"], "gflabzte");
+    assert.equal(result.value[0], "gflabzte");
+    assert.equal(result.value[1], "xsd:string");
+    assert.ok(declare.writes.every((w) => w.path !== F6600_MGMT && !w.path.startsWith(F6600_MGMT + ".")));
+    assert.equal(declare.addObjects.length, 0);
+  });
+
+  it("SET writes Username on VSOL WCD.2 and never WCD.1", () => {
+    const declare = mockDeclare(vsolReadyTree());
+    GfVparams.handlePppoeUsername(
+      { _ProductClass: "V2804AX15T" },
+      declare,
+      genieSet(["gflabzte", "xsd:string"]),
+    );
+    const paths = declare.writes.map((w) => w.path);
+    assert.ok(paths.includes(V2804_PPP + ".Username"));
+    assert.ok(paths.every((p) => !p.includes("WANConnectionDevice.1.")));
+  });
+
+  it("GET returns scalar username not JSON", () => {
+    const declare = mockDeclare(f6600ReadyTree({ [F6600_PPP + ".Username"]: "gflabzte" }));
+    const result = GfVparams.handlePppoeUsername({ _ProductClass: "F6600R" }, declare, genieGet());
+    assert.equal(result.value[0], "gflabzte");
+    assert.equal(result.value[1], "xsd:string");
+    assert.equal(declare.writes.length, 0);
+    assert.equal(declare.addObjects.length, 0);
+    assert.equal(typeof result.value[0], "string");
+    assert.throws(() => JSON.parse(result.value[0]));
+  });
+
+  it("SET AddObject when PPP missing and does not SPV Username", () => {
+    const declare = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+    });
+    const result = GfVparams.handlePppoeUsername(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet(["gflabzte", "xsd:string"]),
+    );
+    assert.ok(
+      declare.addObjects.some(
+        (a) => a.path === "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*",
+      ),
+    );
+    assert.equal(declare.writes.length, 0);
+    assert.equal(result.value[0], "");
+    assert.equal(result.value[1], "xsd:string");
+  });
+});
+
+describe("GfPppoePassword", () => {
+  it("SET writes Password on F6600R PPP.2", () => {
+    const declare = mockDeclare(f6600ReadyTree());
+    const result = GfVparams.handlePppoePassword(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet(["secret-pppoe", "xsd:string"]),
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[F6600_PPP + ".Password"], "secret-pppoe");
+    assert.equal(result.value[0], "secret-pppoe");
+    assert.equal(result.value[1], "xsd:string");
+    assert.equal(declare.addObjects.length, 0);
+    assert.ok(declare.writes.every((w) => w.path !== F6600_MGMT && !w.path.startsWith(F6600_MGMT + ".")));
+  });
+
+  it("GET returns scalar password not JSON", () => {
+    const declare = mockDeclare(f6600ReadyTree({ [F6600_PPP + ".Password"]: "secret-pppoe" }));
+    const result = GfVparams.handlePppoePassword({ _ProductClass: "F6600R" }, declare, genieGet());
+    assert.equal(result.value[0], "secret-pppoe");
+    assert.equal(result.value[1], "xsd:string");
+    assert.equal(declare.writes.length, 0);
+  });
+
+  it("SET without PPP instance does not AddObject", () => {
+    const declare = mockDeclare({
+      "InternetGatewayDevice.ManagementServer.ConnectionRequestURL": "http://192.168.255.236:58000/",
+      [F6600_MGMT + ".ExternalIPAddress"]: "192.168.255.236",
+    });
+    GfVparams.handlePppoePassword(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet(["secret-pppoe", "xsd:string"]),
+    );
+    assert.equal(declare.addObjects.length, 0);
+    assert.equal(declare.writes.length, 0);
+  });
+});
+
+describe("GfPppoeVlanId", () => {
+  it("SET writes ZTE VLAN leaves on F6600R and not CT-COM or WANIP.1", () => {
+    const declare = mockDeclare(f6600ReadyTree());
+    const result = GfVparams.handlePppoeVlanId(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet([100, "xsd:unsignedInt"]),
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANID"], 100);
+    assert.equal(byPath[F6600_PPP + ".X_ZTE-COM_VLANEnable"], 1);
+    assert.equal(byPath[F6600_PPP + ".X_CT-COM_VLANIDMark"], undefined);
+    assert.equal(result.value[0], 100);
+    assert.equal(result.value[1], "xsd:unsignedInt");
+    assert.ok(declare.writes.every((w) => w.path !== F6600_MGMT && !w.path.startsWith(F6600_MGMT + ".")));
+  });
+
+  it("SET writes ZTE and CT-COM VLAN on VSOL WCD.2 never WCD.1", () => {
+    const declare = mockDeclare(vsolReadyTree());
+    GfVparams.handlePppoeVlanId({ _ProductClass: "V2804AX15T" }, declare, genieSet(100));
+    const paths = declare.writes.map((w) => w.path);
+    assert.ok(paths.includes(V2804_PPP + ".X_ZTE-COM_VLANID"));
+    assert.ok(paths.includes(V2804_PPP + ".X_ZTE-COM_VLANEnable"));
+    assert.ok(paths.includes(V2804_PPP + ".X_CT-COM_VLANIDMark"));
+    assert.ok(paths.includes("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig.VLANIDMark"));
+    assert.ok(paths.every((p) => !p.includes("WANConnectionDevice.1.")));
+  });
+
+  it("GET returns scalar vlan not JSON", () => {
+    const declare = mockDeclare(f6600ReadyTree({ [F6600_PPP + ".X_ZTE-COM_VLANID"]: 100 }));
+    const result = GfVparams.handlePppoeVlanId({ _ProductClass: "F6600R" }, declare, genieGet());
+    assert.equal(result.value[0], 100);
+    assert.equal(result.value[1], "xsd:unsignedInt");
+    assert.equal(declare.writes.length, 0);
+  });
+});
+
+describe("GfPppoeConnectionName", () => {
+  it("SET writes Name on F6600R PPP.2", () => {
+    const declare = mockDeclare(f6600ReadyTree());
+    const result = GfVparams.handlePppoeConnectionName(
+      { _ProductClass: "F6600R" },
+      declare,
+      genieSet(["2_INTERNET_R_VID_100", "xsd:string"]),
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[F6600_PPP + ".Name"], "2_INTERNET_R_VID_100");
+    assert.equal(byPath[F6600_PPP + ".Alias"], undefined);
+    assert.equal(result.value[0], "2_INTERNET_R_VID_100");
+    assert.equal(result.value[1], "xsd:string");
+    assert.ok(declare.writes.every((w) => w.path !== F6600_MGMT && !w.path.startsWith(F6600_MGMT + ".")));
+  });
+
+  it("SET writes Name and Alias on VSOL", () => {
+    const declare = mockDeclare(vsolReadyTree());
+    GfVparams.handlePppoeConnectionName(
+      { _ProductClass: "V2804AX15T" },
+      declare,
+      genieSet(["2_INTERNET_R_VID_100", "xsd:string"]),
+    );
+    const byPath = Object.fromEntries(declare.writes.map((w) => [w.path, w.value]));
+    assert.equal(byPath[V2804_PPP + ".Name"], "2_INTERNET_R_VID_100");
+    assert.equal(byPath[V2804_PPP + ".Alias"], "2_INTERNET_R_VID_100");
+    assert.ok(declare.writes.every((w) => !w.path.includes("WANConnectionDevice.1.")));
+  });
+
+  it("GET returns scalar Name not JSON", () => {
+    const declare = mockDeclare(f6600ReadyTree({ [F6600_PPP + ".Name"]: "2_INTERNET_R_VID_100" }));
+    const result = GfVparams.handlePppoeConnectionName({ _ProductClass: "F6600R" }, declare, genieGet());
+    assert.equal(result.value[0], "2_INTERNET_R_VID_100");
+    assert.equal(result.value[1], "xsd:string");
+    assert.equal(declare.writes.length, 0);
   });
 });

@@ -23,12 +23,6 @@ object PppoeAltaPolicy {
         if (installationType != InstallationType.FIBER) {
             return PppoeAltaDecision(AccessMode.STATIC_IP, null)
         }
-        if (!enabled) {
-            return PppoeAltaDecision(AccessMode.STATIC_IP, PppoeProvisionStatus.SKIPPED_DISABLED)
-        }
-        if (vlan?.trim() != PPPOE_VLAN) {
-            return PppoeAltaDecision(AccessMode.STATIC_IP, PppoeProvisionStatus.SKIPPED_VLAN)
-        }
         return PppoeAltaDecision(AccessMode.PPPOE_DYNAMIC, PppoeProvisionStatus.PENDING)
     }
 }

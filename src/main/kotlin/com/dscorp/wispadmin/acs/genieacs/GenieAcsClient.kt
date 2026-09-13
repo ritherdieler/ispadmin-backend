@@ -136,6 +136,50 @@ class GenieAcsClient(
         return postTask(deviceId, mapOf("name" to "reboot"), connectionRequest)
     }
 
+    fun enqueueProvisions(
+        deviceId: String,
+        provisionId: String,
+        args: List<Any?> = emptyList(),
+        connectionRequest: Boolean = true,
+    ): GenieAcsTaskResult {
+        val row = ArrayList<Any>(args.size + 1)
+        row.add(provisionId)
+        args.forEach { arg -> row.add(arg?.toString() ?: "") }
+        return postTask(
+            deviceId,
+            mapOf("name" to "provisions", "provisions" to listOf(row)),
+            connectionRequest,
+            sensitive = true,
+        )
+    }
+
+    fun putProvision(id: String, script: String): GenieAcsTaskResult {
+        val encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8).replace("+", "%20")
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/provisions/$encodedId")
+            .build(true)
+            .toUri()
+        val headers = HttpHeaders().apply { contentType = MediaType.TEXT_PLAIN }
+        val entity = HttpEntity(script, headers)
+        return try {
+            val response = restTemplate.exchange(uri, HttpMethod.PUT, entity, String::class.java)
+            buildTaskResult(
+                statusCode = response.statusCodeValue,
+                body = response.body,
+                accepted = response.statusCodeValue in 200..299,
+                sensitive = false,
+            )
+        } catch (ex: HttpStatusCodeException) {
+            buildTaskResult(
+                statusCode = ex.rawStatusCode,
+                body = ex.responseBodyAsString,
+                accepted = false,
+                sensitive = false,
+            )
+        }
+    }
+
     fun addObject(
         deviceId: String,
         objectName: String,

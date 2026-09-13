@@ -40,6 +40,31 @@ class GatewayOnuActivationClient(
         }
     }
 
+    fun provision(request: GatewayCpeProvisionRequest): GatewayCpeProvisionResponse {
+        val sn = request.sn.trim()
+        val response = http.postJsonBody(
+            "/api/olt-gateway/onus/$sn/cpe/provision",
+            objectMapper.writeValueAsString(request),
+        )
+        val body = response.body ?: throw IllegalStateException("Empty CPE provision response")
+        return objectMapper.readValue(body, GatewayCpeProvisionResponse::class.java)
+    }
+
+    fun setWifi(sn: String, request: GatewayCpeWifiRequest): GatewayCpeCommandResponse {
+        val response = http.postJsonBody(
+            "/api/olt-gateway/onus/$sn/cpe/wifi",
+            objectMapper.writeValueAsString(request),
+        )
+        val body = response.body ?: return GatewayCpeCommandResponse()
+        return objectMapper.readValue(body, GatewayCpeCommandResponse::class.java)
+    }
+
+    fun accessLayout(sn: String): GatewayCpeAccessLayout {
+        val response = http.getJson("/api/olt-gateway/onus/$sn/cpe/access-layout")
+        val body = response.body ?: throw IllegalStateException("Empty CPE access-layout response")
+        return objectMapper.readValue(body, GatewayCpeAccessLayout::class.java)
+    }
+
     fun servicePorts(sn: String): GatewayServicePortsDto {
         val response = http.getJson("/api/olt-gateway/onus/$sn/service-ports")
         val body = response.body ?: throw IllegalStateException("Empty service-ports response")

@@ -105,7 +105,32 @@ class GenieAcsVirtualParametersTest {
         assertTrue(src.contains("WLANConfiguration.1"), src)
         assertTrue(src.contains("WLANConfiguration.5"), src)
         assertTrue(src.contains("KeyPassphrase"), src)
-        assertTrue(src.contains("11111111"), src)
+        assertTrue(src.contains("args[5]"), src)
+        assertFalse(src.contains("11111111"), src)
+    }
+
+    @Test
+    fun wifi_ssid_provision_maps_vsol_and_f6600_and_uses_one_passphrase() {
+        val src = read("scripts/genieacs/provisions/gf-wifi-ssid-poc.js")
+        assertTrue(src.contains("V2804AX15T"), src)
+        assertTrue(src.contains("VSOLVA74"), src)
+        assertTrue(src.contains("F6600R"), src)
+        assertTrue(src.contains("WLANConfiguration.1"), src)
+        assertTrue(src.contains("WLANConfiguration.5"), src)
+        assertTrue(src.contains("KeyPassphrase"), src)
+        assertTrue(src.contains("function setWifi"), src)
+        assertTrue(src.contains("unsupported productClass"), src)
+        assertFalse(src.contains("WANPPPConnection"), src)
+        assertFalse(src.contains("WANIPConnection"), src)
+    }
+
+    @Test
+    fun reboot_provision_declares_cwmp_reboot_only() {
+        val src = read("scripts/genieacs/provisions/gf-reboot-poc.js")
+        assertTrue(src.contains("\"Reboot\""), src)
+        assertFalse(src.contains("Tags"), src)
+        assertFalse(src.contains("WANPPPConnection"), src)
+        assertFalse(src.contains("WLANConfiguration"), src)
     }
 
     private fun read(relative: String): String {

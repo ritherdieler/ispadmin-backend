@@ -48,6 +48,7 @@ class SubscriptionProvisionServiceTest {
     private val errorLogRepository = mockk<ErrorLogRepository>(relaxed = true)
     private val gatewayClient = mockk<GatewayOnuActivationClient>()
     private val gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+    private val pppoeAccessService = mockk<com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService>(relaxed = true)
 
     private val service = SubscriptionProvisionService(
         repository = repository,
@@ -57,6 +58,7 @@ class SubscriptionProvisionServiceTest {
         installationStrategyFactory = installationStrategyFactory,
         errorLogRepository = errorLogRepository,
         gatewayActivation = gatewayActivation,
+        pppoeAccessService = pppoeAccessService,
         cpeEnabled = false,
     )
 
@@ -100,6 +102,7 @@ class SubscriptionProvisionServiceTest {
             gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>().also {
                 every { it.ifAvailable } returns null
             },
+            pppoeAccessService = pppoeAccessService,
             cpeEnabled = true,
         )
         val subscription = baseSubscription()
@@ -131,6 +134,7 @@ class SubscriptionProvisionServiceTest {
             gatewayActivation = mockk<ObjectProvider<GatewayOnuActivationClient>>().also {
                 every { it.ifAvailable } returns null
             },
+            pppoeAccessService = pppoeAccessService,
             cpeEnabled = true,
         )
         val subscription = baseSubscription().apply {
@@ -396,21 +400,32 @@ class SubscriptionProvisionServiceTest {
             tr069ProvisionStatus = Tr069ProvisionStatus.MANUAL_REQUIRED
             vlan = "100"
             ip = "192.168.30.10"
+            pppoeUsername = "gf42"
+            accessMode = com.dscorp.wispadmin.wispadmin.data.model.AccessMode.PPPOE_DYNAMIC
         }
         every { repository.findById(42) } returns Optional.of(subscription)
         every { repository.save(subscription) } returns subscription
         every { gatewayActivation.ifAvailable } returns gatewayClient
-        every { gatewayClient.activationBySn("ALCL123") } returns GatewayOnuActivateResponse(
-            uniqueExternalId = "ext-1",
+        every { pppoeAccessService.decryptedPassword(subscription) } returns "secreto123"
+        every { gatewayClient.provision(any()) } returns com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionResponse(
             sn = "ALCL123",
-            oltStatus = "COMPLETE",
-            cpeStatus = "COMPLETE",
+            status = "COMPLETE",
         )
 
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { gatewayClient.activationBySn("ALCL123") }
+        verify {
+            gatewayClient.provision(
+                match {
+                    it.sn == "ALCL123" &&
+                        it.pppoeUsername == "gf42" &&
+                        it.pppoePassword == "secreto123" &&
+                        it.wanVlanId == 100
+                }
+            )
+        }
+        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
     }
 
     @Test
@@ -426,7 +441,7 @@ class SubscriptionProvisionServiceTest {
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
+        verify(exactly = 0) { gatewayClient.provision(any()) }
     }
 
     @Test
@@ -458,16 +473,15 @@ class SubscriptionProvisionServiceTest {
         every { repository.findById(42) } returns Optional.of(subscription)
         every { repository.save(subscription) } returns subscription
         every { gatewayActivation.ifAvailable } returns gatewayClient
-        every { gatewayClient.activationBySn("VSOL0031C0B6") } returns GatewayOnuActivateResponse(
+        every { gatewayClient.provision(any()) } returns com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionResponse(
             sn = "VSOL0031C0B6",
-            oltStatus = "COMPLETE",
-            cpeStatus = "COMPLETE",
+            status = "COMPLETE",
         )
 
         val result = service.retryTr069(42)
 
         assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
-        verify(exactly = 1) { gatewayClient.activationBySn("VSOL0031C0B6") }
+        verify(exactly = 1) { gatewayClient.provision(any()) }
     }
 
     @Test

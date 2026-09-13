@@ -68,7 +68,7 @@ class OltGatewayQueryServiceTest {
 
     @Test
     fun `autofind orquesta CLI y mapea SmartOLT`() {
-        every { commandExecutor.run("display ont autofind all") } returns FixtureLoader.load("display-ont-autofind-all.txt")
+        every { commandExecutor.unconfigured<String>(any()) } returns FixtureLoader.load("display-ont-autofind-all.txt")
 
         val result = service.autofind()
 
@@ -77,7 +77,7 @@ class OltGatewayQueryServiceTest {
         assertEquals("4857544311E70E9A", result.response[0].sn)
         assertEquals("0", result.response[0].board)
         assertEquals("2", result.response[0].port)
-        verify(exactly = 1) { commandExecutor.run("display ont autofind all") }
+        verify(exactly = 1) { commandExecutor.unconfigured<String>(any()) }
     }
 
     @Test
@@ -85,13 +85,13 @@ class OltGatewayQueryServiceTest {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "ro"
         properties.snmp.allowSshInventoryFallback = false
-        every { commandExecutor.run("display ont autofind all") } returns FixtureLoader.load("display-ont-autofind-all.txt")
+        every { commandExecutor.unconfigured<String>(any()) } returns FixtureLoader.load("display-ont-autofind-all.txt")
 
         val result = service.autofind()
 
         assertTrue(result.status)
         assertEquals(2, result.response.size)
-        verify(exactly = 1) { commandExecutor.run("display ont autofind all") }
+        verify(exactly = 1) { commandExecutor.unconfigured<String>(any()) }
         verify(exactly = 0) { snmpClient.listAutofind() }
     }
 

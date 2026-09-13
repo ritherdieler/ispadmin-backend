@@ -13,6 +13,10 @@ class OltCommandExecutor(
 
     fun <T> write(block: (HuaweiCliSession) -> T): T = execute(CliJobType.WRITE, block)
 
+    fun <T> authorize(block: (HuaweiCliSession) -> T): T = execute(CliJobType.AUTHORIZE, block)
+
+    fun <T> unconfigured(block: (HuaweiCliSession) -> T): T = execute(CliJobType.UNCONFIGURED, block)
+
     fun ping(): Long = cliBus.ping()
 
     private fun <T> execute(type: CliJobType, block: (HuaweiCliSession) -> T): T {

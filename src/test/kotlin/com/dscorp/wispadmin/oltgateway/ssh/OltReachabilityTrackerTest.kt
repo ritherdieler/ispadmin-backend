@@ -30,6 +30,8 @@ class OltReachabilityTrackerTest {
         assertTrue(tracker.shouldSkip(CliJobType.SIGNAL_POLL))
         assertTrue(tracker.shouldSkip(CliJobType.KEEPALIVE))
         assertFalse(tracker.shouldSkip(CliJobType.WRITE))
+        assertFalse(tracker.shouldSkip(CliJobType.AUTHORIZE))
+        assertFalse(tracker.shouldSkip(CliJobType.UNCONFIGURED))
         assertEquals("olt_unreachable", tracker.skipReason())
     }
 

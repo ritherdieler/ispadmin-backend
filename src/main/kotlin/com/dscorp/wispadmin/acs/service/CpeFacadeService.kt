@@ -6,17 +6,22 @@ import com.dscorp.wispadmin.acs.CpeProvisionCommand
 import com.dscorp.wispadmin.acs.CpeProvisionResult
 import com.dscorp.wispadmin.acs.CpeStatus
 import com.dscorp.wispadmin.acs.CpeTelemetryResult
+import com.dscorp.wispadmin.acs.CpeWifiCommand
 import com.dscorp.wispadmin.acs.entity.CpeRecord
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
 import com.dscorp.wispadmin.acs.genieacs.GfVirtualParameters
-import com.dscorp.wispadmin.acs.genieacs.Tr069ParameterValue
+import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
+import com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner
+import com.dscorp.wispadmin.acs.genieacs.NamedGenieAcsProvisions
+import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionOutcome
 import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionRequest
 import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisioningService
 import com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfileRegistry
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import com.dscorp.wispadmin.acs.genieacs.VparamProvisioner
 import com.dscorp.wispadmin.acs.repository.CpeRecordRepository
+import com.dscorp.wispadmin.transport.RegistrationTiming
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -28,6 +33,8 @@ class CpeFacadeService(
     private val properties: GenieAcsProperties,
     private val profiles: Tr069ModelProfileRegistry? = null,
     private val vparamProvisioner: VparamProvisioner? = null,
+    private val namedProvisioner: NamedCpeProvisioner? = null,
+    private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) {
     fun provision(command: CpeProvisionCommand): CpeProvisionResult {
         val record = records.findById(command.sn).orElseGet { CpeRecord(sn = command.sn) }
@@ -43,12 +50,17 @@ class CpeFacadeService(
             return CpeProvisionResult(command.sn, CpeStatus.NA, "ACS disabled")
         }
         val request = toProvisionRequest(command)
-        val outcome = if (properties.vparams.enabled) {
+        val outcome = if (request.usesPppoe()) {
+            timing.span("acs.provision", mapOf("sn" to command.sn)) {
+                namedProvisioner?.provision(request)
+                    ?: Tr069ProvisionOutcome(status = CpeStatus.FAILED, error = "named provisioner missing", message = "named provisioner missing")
+            }
+        } else if (properties.vparams.enabled) {
             val provisioner = vparamProvisioner
                 ?: return CpeProvisionResult(command.sn, CpeStatus.FAILED, "vparams provisioner missing")
-            provisioner.provision(request)
+            timing.span("acs.provision", mapOf("sn" to command.sn)) { provisioner.provision(request) }
         } else {
-            provisioningService.provision(request)
+            timing.span("acs.provision", mapOf("sn" to command.sn)) { provisioningService.provision(request) }
         }
         record.status = outcome.status
         record.message = outcome.error ?: outcome.message
@@ -120,7 +132,7 @@ class CpeFacadeService(
             null
         }
         val productClass = device?.productClass ?: record?.productClass
-        if (properties.vparams.enabled) {
+        if (NamedCpeLayouts.supported(productClass) || properties.vparams.enabled) {
             return CpeAccessLayout(
                 sn = sn,
                 productClass = productClass,
@@ -128,7 +140,7 @@ class CpeFacadeService(
                 lastInformAt = device?.lastInform ?: record?.lastInformAt?.toString(),
                 wanIpPath = null,
                 wanPppPath = null,
-                hasPppPath = GfVirtualParameters.supportedPppProductClass(productClass),
+                hasPppPath = NamedCpeLayouts.supported(productClass),
                 wanIpSharesPppSlot = false,
             )
         }
@@ -155,19 +167,22 @@ class CpeFacadeService(
         val deviceId = records.findById(sn).orElse(null)?.deviceId
             ?: return CpeCommandResult(false, CpeStatus.FAILED, "unknown device")
         return try {
-            val result = if (properties.vparams.enabled) {
-                client.setParameterValues(
-                    deviceId,
-                    listOf(Tr069ParameterValue(GfVirtualParameters.REBOOT, """{"requested":true}""", "xsd:string")),
-                    connectionRequest = true,
-                )
-            } else {
-                client.reboot(deviceId, connectionRequest = true)
-            }
+            val result = client.enqueueProvisions(
+                deviceId,
+                NamedGenieAcsProvisions.REBOOT,
+                emptyList(),
+                connectionRequest = true,
+            )
             CpeCommandResult(result.accepted, if (result.accepted) CpeStatus.PENDING else CpeStatus.FAILED, result.body)
         } catch (ex: Exception) {
             CpeCommandResult(false, CpeStatus.FAILED, ex.message)
         }
+    }
+
+    fun setWifi(sn: String, command: CpeWifiCommand): CpeCommandResult {
+        val provisioner = namedProvisioner
+            ?: return CpeCommandResult(false, CpeStatus.FAILED, "named provisioner missing")
+        return provisioner.setWifi(sn, command.ssid24, command.ssid5, command.passphrase.orEmpty())
     }
 
     fun wifiRefresh(sn: String): CpeCommandResult {

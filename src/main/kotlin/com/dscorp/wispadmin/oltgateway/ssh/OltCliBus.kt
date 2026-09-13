@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
-import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,6 +18,8 @@ enum class CliLane {
 }
 
 enum class CliJobType {
+    AUTHORIZE,
+    UNCONFIGURED,
     WRITE,
     ADHOC,
     KEEPALIVE,
@@ -28,19 +29,22 @@ enum class CliJobType {
     AUTOFIND_POLL;
 
     fun priority(): Int = when (this) {
-        WRITE -> 0
-        ADHOC -> 1
-        KEEPALIVE -> 2
-        AUTOFIND_POLL -> 3
-        INVENTORY, SIGNAL_POLL, ALARM_POLL -> 4
+        AUTHORIZE -> 0
+        UNCONFIGURED -> 1
+        else -> 2
     }
 
     fun isSync(): Boolean =
         this == INVENTORY || this == SIGNAL_POLL || this == ALARM_POLL || this == AUTOFIND_POLL
 
+    fun isWrite(): Boolean = this == AUTHORIZE || this == WRITE
+
+    fun isLongRead(): Boolean =
+        this == INVENTORY || this == SIGNAL_POLL || this == ALARM_POLL || this == AUTOFIND_POLL
+
     fun lane(): CliLane = when (this) {
-        WRITE, ADHOC -> CliLane.INTERACTIVE
-        KEEPALIVE, INVENTORY, SIGNAL_POLL, ALARM_POLL, AUTOFIND_POLL -> CliLane.BACKGROUND
+        AUTHORIZE, UNCONFIGURED -> CliLane.INTERACTIVE
+        else -> CliLane.BACKGROUND
     }
 }
 
@@ -75,6 +79,11 @@ class OltCliBus(
     private val closed = AtomicBoolean(false)
     private val sequence = AtomicLong(0)
     private val lanes = LinkedHashMap<CliLane, Lane>()
+    private val jobs = ArrayList<QueuedJob<*>>()
+    private val lock = ReentrantLock()
+    private val notEmpty = lock.newCondition()
+    private var writeInFlight = false
+    private var unconfiguredFlight: CompletableFuture<CliBusResult<*>>? = null
 
     private var keepaliveScheduler: ScheduledExecutorService? = null
 
@@ -91,16 +100,16 @@ class OltCliBus(
 
     fun sessionCount(): Int = lanes.size
 
-    fun queueDepth(): Int = lanes.values.sumOf { it.queue.size }
+    fun queueDepth(): Int = lock.withLock { jobs.size }
 
-    fun queueDepth(lane: CliLane): Int = laneOrFallback(lane).queue.size
+    fun queueDepth(lane: CliLane): Int = queueDepth()
 
     fun busyJobType(): CliJobType? = lanes.values.firstNotNullOfOrNull { it.busyType }
 
     fun busyJobType(lane: CliLane): CliJobType? = laneOrFallback(lane).busyType
 
     fun <T> submit(type: CliJobType, block: (HuaweiCliSession) -> T): CompletableFuture<CliBusResult<T>> =
-        submitToLane(type.lane(), type, block)
+        submitInternal(type, boundLane = null, block)
 
     fun <T> execute(type: CliJobType, block: (HuaweiCliSession) -> T): CliBusResult<T> {
         return try {
@@ -133,22 +142,22 @@ class OltCliBus(
             return
         }
         stopKeepalive()
-        lanes.values.forEach { lane ->
-            lane.lock.withLock { lane.notEmpty.signalAll() }
-        }
+        lock.withLock { notEmpty.signalAll() }
         lanes.values.forEach { lane ->
             lane.worker?.join(properties.commandTimeoutMs)
             lane.worker = null
-            while (true) {
-                val job = lane.queue.poll() ?: break
-                job.failClosed()
-            }
             try {
                 lane.session?.close()
             } catch (ex: Exception) {
                 logger.warn("Error closing CLI lane {} session: {}", lane.name, ex.message)
             }
             lane.session = null
+        }
+        lock.withLock {
+            jobs.forEach { it.failClosed() }
+            jobs.clear()
+            unconfiguredFlight = null
+            writeInFlight = false
         }
         lanes.clear()
     }
@@ -170,9 +179,10 @@ class OltCliBus(
     private fun laneOrFallback(lane: CliLane): Lane =
         lanes[lane] ?: lanes.getValue(CliLane.INTERACTIVE)
 
-    private fun <T> submitToLane(
-        lane: CliLane,
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> submitInternal(
         type: CliJobType,
+        boundLane: CliLane?,
         block: (HuaweiCliSession) -> T
     ): CompletableFuture<CliBusResult<T>> {
         check(!closed.get()) { "CLI bus is closed" }
@@ -182,22 +192,28 @@ class OltCliBus(
         workerSession.get()?.let { inherited ->
             return CompletableFuture.completedFuture(runOnSession(inherited, block))
         }
-        val target = laneOrFallback(lane)
-        target.lock.withLock {
-            val skipReason = syncSkipReasonLocked(target, type)
+        lock.withLock {
+            if (type == CliJobType.UNCONFIGURED) {
+                unconfiguredFlight?.let { return it as CompletableFuture<CliBusResult<T>> }
+            }
+            val skipReason = syncSkipReasonLocked(type)
             if (skipReason != null) {
                 return CompletableFuture.completedFuture(CliBusResult.Skipped(skipReason))
             }
             val future = CompletableFuture<CliBusResult<T>>()
-            target.queue.offer(
+            if (type == CliJobType.UNCONFIGURED) {
+                unconfiguredFlight = future as CompletableFuture<CliBusResult<*>>
+            }
+            jobs.add(
                 QueuedJob(
                     type = type,
                     seq = sequence.incrementAndGet(),
                     block = block,
-                    future = future
+                    future = future,
+                    boundLane = boundLane
                 )
             )
-            target.notEmpty.signal()
+            notEmpty.signalAll()
             return future
         }
     }
@@ -206,10 +222,10 @@ class OltCliBus(
         workerSession.set(lane.session)
         try {
             while (!closed.get()) {
-                val job = takeNextJob(lane) ?: continue
+                val job = takeEligibleJob(lane) ?: continue
                 val currentSession = lane.session
                 if (currentSession == null) {
-                    clearBusy(lane)
+                    clearBusy(lane, job.type)
                     job.failClosed()
                     continue
                 }
@@ -225,7 +241,13 @@ class OltCliBus(
                     }
                     job.future.completeExceptionally(ex)
                 } finally {
-                    clearBusy(lane)
+                    clearBusy(lane, job.type)
+                    lock.withLock {
+                        if (job.type == CliJobType.UNCONFIGURED) {
+                            unconfiguredFlight = null
+                        }
+                        notEmpty.signalAll()
+                    }
                 }
             }
         } finally {
@@ -233,34 +255,74 @@ class OltCliBus(
         }
     }
 
-    private fun takeNextJob(lane: Lane): QueuedJob<*>? {
-        lane.lock.withLock {
-            while (!closed.get() && lane.queue.isEmpty()) {
-                lane.notEmpty.await(200, TimeUnit.MILLISECONDS)
+    private fun takeEligibleJob(lane: Lane): QueuedJob<*>? {
+        lock.withLock {
+            while (!closed.get()) {
+                val job = nextEligible(lane)
+                if (job != null) {
+                    jobs.remove(job)
+                    lane.busyType = job.type
+                    if (job.type.isWrite()) {
+                        writeInFlight = true
+                    }
+                    return job
+                }
+                notEmpty.await(200, TimeUnit.MILLISECONDS)
             }
-            if (closed.get() && lane.queue.isEmpty()) {
-                return null
-            }
-            val job = lane.queue.poll() ?: return null
-            lane.busyType = job.type
-            return job
+            return null
         }
     }
 
-    private fun clearBusy(lane: Lane) {
-        lane.lock.withLock {
+    private fun nextEligible(lane: Lane): QueuedJob<*>? =
+        jobs.filter { eligible(lane, it) }.minWithOrNull(compareBy({ it.type.priority() }, { it.seq }))
+
+    private fun eligible(lane: Lane, job: QueuedJob<*>): Boolean {
+        if (job.boundLane != null && job.boundLane != lane.name) {
+            return false
+        }
+        if (job.type.isWrite() && writeInFlight) {
+            return false
+        }
+        if (lanes.size == 1) {
+            return true
+        }
+        return when (lane.name) {
+            CliLane.INTERACTIVE -> when (job.type) {
+                CliJobType.AUTHORIZE, CliJobType.UNCONFIGURED -> true
+                CliJobType.WRITE -> otherBusy(CliLane.BACKGROUND)
+                CliJobType.KEEPALIVE -> job.boundLane == CliLane.INTERACTIVE
+                else -> false
+            }
+            CliLane.BACKGROUND -> when (job.type) {
+                CliJobType.AUTHORIZE, CliJobType.UNCONFIGURED -> otherBusy(CliLane.INTERACTIVE)
+                CliJobType.WRITE, CliJobType.ADHOC, CliJobType.KEEPALIVE -> true
+                else -> job.type.isLongRead()
+            }
+        }
+    }
+
+    private fun otherBusy(name: CliLane): Boolean {
+        val other = lanes[name] ?: return true
+        return other.busyType != null
+    }
+
+    private fun clearBusy(lane: Lane, type: CliJobType) {
+        lock.withLock {
             lane.busyType = null
+            if (type.isWrite()) {
+                writeInFlight = false
+            }
         }
     }
 
-    private fun syncSkipReasonLocked(lane: Lane, type: CliJobType): String? {
+    private fun syncSkipReasonLocked(type: CliJobType): String? {
         if (!type.isSync()) {
             return null
         }
-        if (lane.busyType == type) {
+        if (lanes.values.any { it.busyType == type }) {
             return "already_running"
         }
-        if (lane.queue.any { it.type == type }) {
+        if (jobs.any { it.type == type }) {
             return "already_queued"
         }
         return null
@@ -315,11 +377,14 @@ class OltCliBus(
             return
         }
         lanes.forEach { (name, lane) ->
-            if (lane.busyType != null || lane.queue.isNotEmpty()) {
+            val idle = lock.withLock {
+                lane.busyType == null && jobs.none { eligible(lane, it) }
+            }
+            if (!idle) {
                 return@forEach
             }
             try {
-                submitToLane(name, CliJobType.KEEPALIVE) { session -> session.ping() }
+                submitInternal(CliJobType.KEEPALIVE, boundLane = name) { session -> session.ping() }
             } catch (ex: Exception) {
                 logger.warn("CLI bus keepalive submit failed on lane {}: {}", name, ex.message)
             }
@@ -374,10 +439,6 @@ class OltCliBus(
         val name: CliLane,
         @Volatile var session: HuaweiCliSession?
     ) {
-        val queue = PriorityBlockingQueue<QueuedJob<*>>()
-        val lock = ReentrantLock()
-        val notEmpty: java.util.concurrent.locks.Condition = lock.newCondition()
-
         @Volatile
         var busyType: CliJobType? = null
 
@@ -389,16 +450,9 @@ class OltCliBus(
         val type: CliJobType,
         val seq: Long,
         val block: (HuaweiCliSession) -> T,
-        val future: CompletableFuture<CliBusResult<T>>
-    ) : Comparable<QueuedJob<*>> {
-        override fun compareTo(other: QueuedJob<*>): Int {
-            val byPriority = type.priority().compareTo(other.type.priority())
-            if (byPriority != 0) {
-                return byPriority
-            }
-            return seq.compareTo(other.seq)
-        }
-
+        val future: CompletableFuture<CliBusResult<T>>,
+        val boundLane: CliLane?
+    ) {
         fun failClosed() {
             future.completeExceptionally(IllegalStateException("CLI bus is closed"))
         }

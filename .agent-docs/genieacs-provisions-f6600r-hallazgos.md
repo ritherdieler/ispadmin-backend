@@ -2,7 +2,9 @@
 
 Fecha: 2026-09-12. Solo ONUs con tag GenieACS `lab`. No aplicar a ONUs de clientes.
 
-Fuente de verdad de lo que sí funcionó. Contrato NBI: `genieacs-nbi-provisions-task-poc-2026-09-12.md`. Script vivo: `scripts/genieacs/provisions/gf-pppoe-wan2-poc.js` (`/scripts/` está en gitignore; la copia de abajo es la que hay que copiar). NBI: `PUT /provisions/gf-pppoe-wan2-poc` HTTP 200.
+Camino vivo (2026-09-12): Cliente → Core → Gateway → ACS WAR → NBI `provisions`. El ACS hace PUT de los tres scripts al arrancar. Alta FIBER siempre PPPoE (`gf-pppoe-wan2-poc`, passphrase = `wifiPassword24` en ambas bandas). Product class fuera de F6600R / V2804AX15T / VSOLVA74 (Huawei incluido) → FAILED. Catálogo de args y endpoints: [genieacs-provisions-lab.md](./genieacs-provisions-lab.md).
+
+Fuente de verdad de lo que sí funcionó (errores CWMP). Catálogo de los tres provisions de lab (args, curl, qué toca cada uno): [genieacs-provisions-lab.md](./genieacs-provisions-lab.md). Contrato NBI: `genieacs-nbi-provisions-task-poc-2026-09-12.md`. Script vivo: `scripts/genieacs/provisions/gf-pppoe-wan2-poc.js` (`/scripts/` está en gitignore). NBI: `PUT /provisions/gf-pppoe-wan2-poc` HTTP 200.
 
 Tests: `node --test scripts/genieacs/provisions/test/gf-pppoe-wan2-poc.test.js` y `GenieAcsVirtualParametersTest.pppoe_provision_maps_vsol_to_wcd2_and_f6600_to_ppp2`.
 
@@ -19,7 +21,7 @@ Tests: `node --test scripts/genieacs/provisions/test/gf-pppoe-wan2-poc.test.js` 
 | Escribir `X_ZTE-COM_VLANEnable=true` en VSOL | 2026-09-12 19:20 UTC, lab `31C0B6` con WAN IP y PPP ya existentes: SPV **9003 / 9007 Invalid parameter value** en `...WANPPPConnection.1.X_ZTE-COM_VLANEnable`. | VSOL: solo `X_CT-COM_ServiceList`, `X_CT-COM_VLANIDMark` y VLAN GPON de WCD.2. `writeZte` solo en F6600R. |
 | Add PPP bajo `WCD.2` cuando ese WCD no existe | 2026-09-12 19:46–19:55 UTC, lab `31C0B6` (solo ACS en `WCD.1` tras borrar la WAN IP y un BOOT): GPN **9005** en `...WCD.2.WANIPConnection.1` y `...WCD.2.WANPPPConnection.*`. El script loguea `add WANPPPConnection.* count=undefined -> 1` y llega a `end`. **No hay AddObject ni SPV.** HTTP 200 igual. | Primero `declare("...WANConnectionDevice.*", {path:now}, {path: size+1})` (mínimo 2) y `commit()`. Nunca `{path:1}` en `WANConnectionDevice.*` (borraría extras y amenaza `WCD.1`). Luego PPP bajo `WCD.2`. |
 | Array plano del foro `["script", arg, arg]` | No encola. El POST no responde. | `provisions: [["script", arg, arg]]`. |
-| Tratar HTTP 202 como éxito | 202 = encolado o sesión no cerrada. 200 = la sesión CWMP terminó el task. | Esperar 200 y confirmar el data model. |
+| Tratar HTTP 202 como COMPLETE | 202 = tarea NBI encolada (sesión CWMP puede no haber cerrado). Alta lab 2026-09-13: devolver `PENDING` al 202 dejó TR-069 eterno. | Encolar OK (200 **o** 202) y confirmar el data model con GPV (`NamedCpeProvisioner.waitForComplete`: IP `10.64.*` + SSIDs). |
 | `declare` solo de hijos de un alias, sin `{path:1}` en la instancia | No hay `AddObject` ni SPV. El log llega a `end` y la ONU no cambia. | Ver la fila de `.*`. |
 | `log()` para depurar y mirar `docker logs` o `journalctl` | No aparecen. `docker logs` del contenedor se cuelga. | `docker exec` + `grep` del access log. Sección «Ver logs». |
 
@@ -120,6 +122,24 @@ WiFi va en el mismo provision (`setWifi`). F6600R: 2.4 es `WLANConfiguration.1`,
 ```
 
 Query: `connection_request` y `timeout` en milisegundos (45000 en la POC). Solo device id con tag `lab`.
+
+Solo WiFi (sin WAN), una passphrase para las dos bandas. Script: `scripts/genieacs/provisions/gf-wifi-ssid-poc.js`. `PUT /provisions/gf-wifi-ssid-poc`.
+
+```json
+{
+  "name": "provisions",
+  "provisions": [["gf-wifi-ssid-poc", "<ssid24>", "<ssid5>", "<passphrase>"]]
+}
+```
+
+Reinicio (RPC CWMP `Reboot`, sin args ni filtros). Script: `scripts/genieacs/provisions/gf-reboot-poc.js`. `PUT /provisions/gf-reboot-poc`.
+
+```json
+{
+  "name": "provisions",
+  "provisions": [["gf-reboot-poc"]]
+}
+```
 
 | Modelo | Device id lab |
 |---|---|

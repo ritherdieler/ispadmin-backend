@@ -35,6 +35,12 @@ data class CpeCommandResult(
     val message: String? = null,
 )
 
+data class CpeWifiCommand(
+    val ssid24: String? = null,
+    val ssid5: String? = null,
+    val passphrase: String? = null,
+)
+
 data class CpeTelemetryResult(
     val sn: String,
     val uniqueExternalId: String? = null,

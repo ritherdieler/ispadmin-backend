@@ -239,6 +239,18 @@ class SubscriptionController(
         return ResponseEntity.ok(client.reboot(sn))
     }
 
+    @PostMapping("/{subscriptionId}/acs/wifi")
+    fun setSubscriptionAcsWifi(
+        @PathVariable subscriptionId: Int,
+        @RequestBody request: com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeWifiRequest,
+    ): ResponseEntity<Any> {
+        val sn = repository.findById(subscriptionId).orElse(null)?.fiberOnuSn
+            ?: return ResponseEntity.notFound().build()
+        val client = gatewayCpe.ifAvailable
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "Gateway no disponible"))
+        return ResponseEntity.ok(client.setWifi(sn, request))
+    }
+
     @PostMapping("/{subscriptionId}/acs/retry-tr069")
     fun retryTr069Provisioning(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
         return try {

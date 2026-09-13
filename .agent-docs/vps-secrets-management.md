@@ -15,7 +15,7 @@ Host de referencia: `212.85.13.47` (`srv1043610`), stack en `/opt/gigafiber/`.
 | **`/opt/gigafiber/.env`** | Secretos del backend (WhatsApp, observabilidad, NetDiag, OLT gateway, Mapbox, Meili host/key, release) | Contenedores **`tomcat9027`** y **`tomcat-staging`** vía `env_file` |
 | **`/opt/gigafiber/docker-compose.yml`** | Algunos secretos **inline** (MySQL root, Meilisearch master key) + override JDBC Tomcat | `mysql8033`, `meilisearch`, `tomcat9027`, `tomcat-staging` (host **8081**) |
 | **`ispadmin.war`** | Perfil `prod` embebido; **evitar** nuevos secretos en claro en `application-prod.properties` | Tomcat (preferir `${ENV}`) |
-| **Máquina del desarrollador** | `scripts/deploy.config.local`, `application-local.properties` | Deploy SSH y dev local (**gitignore**) |
+| **Máquina del desarrollador** | `scripts/deploy.config.local`, `application-local.properties`, `application-local-prestaging.secrets.properties` | Deploy SSH, dev `local`, overlay `local-prestaging` (**gitignore**) |
 | **Build frontends** | `.env.production` (backoffice, asistencias, observability-web) | Variables `VITE_*` **embebidas en JS** (tratar como expuestas al navegador) |
 
 No usar `/etc/wispadmin/whatsapp.env` en el VPS actual: WhatsApp va en **`/opt/gigafiber/.env`** (plantilla histórica: `deploy-prod-whatsapp.sh`).
@@ -166,7 +166,8 @@ Rotación MySQL: actualizar **compose + `.env` si aplica + `application-prod` le
 | Archivo | Uso |
 |---------|-----|
 | `scripts/deploy.config.local` | `VPS_HOST`, `DEPLOY_SSH_PASSWORD` o clave SSH, `MAPBOX_ACCESS_TOKEN`, `OBS_API_KEY` para deploy |
-| `src/main/resources/application-local.properties` | MySQL local, OLT lab, etc. (**gitignore**) |
+| `src/main/resources/application-local.properties` | MySQL local, OLT lab, etc. (**gitignore**). Perfil `dev,local`. No lo lee `local-prestaging`. |
+| `src/main/resources/application-local-prestaging.secrets.properties` | Overlay gitignored del perfil `local-prestaging` (passwords MySQL/OLT/ACS). Plantilla versionada: `application-local-prestaging.secrets.properties.example`. Claves: `spring.datasource.username` / `password`, `olt.gateway.username` / `password` / `api-key`, `acs.api-key`. |
 
 Copiar plantilla: `scripts/deploy.config.example`. **Nunca commitear** `deploy.config.local`.
 

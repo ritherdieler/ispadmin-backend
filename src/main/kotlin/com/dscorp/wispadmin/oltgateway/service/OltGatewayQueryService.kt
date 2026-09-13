@@ -211,7 +211,7 @@ class OltGatewayQueryService(
     }
 
     private fun autofindViaSsh(): List<ParsedAutofindOnt> {
-        val output = commandExecutor.run(AUTOFIND_COMMAND)
+        val output = commandExecutor.unconfigured { it.execute(AUTOFIND_COMMAND) }
         return autofindParser.parse(output)
     }
 
