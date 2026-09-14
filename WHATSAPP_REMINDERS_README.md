@@ -333,7 +333,7 @@ whatsapp.payment-reminder-mode=template
 ```powershell
 git diff | Select-String "EAA"
 git status --short --ignored src/main/resources/application-local.properties
-.\mvnw -q compile
+./gradlew -q classes
 ```
 
 Resultados esperados:

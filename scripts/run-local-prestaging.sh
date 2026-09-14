@@ -2,16 +2,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SECRETS="$ROOT/src/main/resources/application-local-prestaging.secrets.properties"
-EXAMPLE="$ROOT/src/main/resources/application-local-prestaging.secrets.properties.example"
-MVN="$ROOT/mvnw"
+SECRETS="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties"
+EXAMPLE="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties.example"
 CMD="${1:-help}"
 
 need_secrets() {
   if [[ ! -f "$SECRETS" ]]; then
     echo "Missing $SECRETS" >&2
     echo "Copy $EXAMPLE to that path and fill passwords (or copy from application-local.properties)." >&2
-    echo "WARs will not start without the overlay." >&2
+    echo "bootRun will not start without the overlay." >&2
     exit 1
   fi
 }
@@ -24,9 +23,9 @@ listen_pids() {
 free_listen_port() {
   local port="$1"
   case "$port" in
-    8080|8082|8090) ;;
+    8082) ;;
     *)
-      echo "Refusing to free TCP port ${port} (only 8080, 8082, 8090)." >&2
+      echo "Refusing to free TCP port ${port} (only 8082)." >&2
       return 1
       ;;
   esac
@@ -62,43 +61,16 @@ free_listen_port() {
   sleep 0.2
 }
 
-stop_wars() {
-  free_listen_port 8080
+stop_app() {
   free_listen_port 8082
-  free_listen_port 8090
 }
 
-run_core() {
+run_app() {
   need_secrets
   free_listen_port 8082
-  exec "$MVN" -DskipTests \
-    -Dstart-class=com.dscorp.wispadmin.wispadmin.WispAdminApplicationKt \
-    spring-boot:run \
-    -Dspring-boot.run.mainClass=com.dscorp.wispadmin.wispadmin.WispAdminApplicationKt \
+  exec "$ROOT/gradlew" :app:bootRun \
     -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false" \
-    -Dspring-boot.run.arguments="--server.port=8082 --server.servlet.context-path=/ispadmin --spring.profiles.active=dev,local-prestaging"
-}
-
-run_gateway() {
-  need_secrets
-  free_listen_port 8080
-  exec "$MVN" -DskipTests \
-    -Dstart-class=com.dscorp.wispadmin.oltgateway.OltGatewayApplicationKt \
-    spring-boot:run \
-    -Dspring-boot.run.mainClass=com.dscorp.wispadmin.oltgateway.OltGatewayApplicationKt \
-    -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false" \
-    -Dspring-boot.run.arguments="--server.port=8080 --server.servlet.context-path=/ispadmin --spring.profiles.active=oltgateway,local-prestaging"
-}
-
-run_acs() {
-  need_secrets
-  free_listen_port 8090
-  exec "$MVN" -DskipTests \
-    -Dstart-class=com.dscorp.wispadmin.acs.AcsApplicationKt \
-    spring-boot:run \
-    -Dspring-boot.run.mainClass=com.dscorp.wispadmin.acs.AcsApplicationKt \
-    -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false" \
-    -Dspring-boot.run.arguments="--server.port=8090 --server.servlet.context-path=/ispadmin-acs --spring.profiles.active=acs,local-prestaging"
+    --args="--server.port=8082 --server.servlet.context-path=/ispadmin --spring.profiles.active=dev,local-prestaging"
 }
 
 check_lab() {
@@ -110,37 +82,27 @@ check_lab() {
 
 usage() {
   cat <<EOF
-Opt-in local-prestaging (Core :8082, Gateway :8080, ACS :8090). Does not change VPS defaults.
+Opt-in local-prestaging (single WAR bootRun :8082 /ispadmin). Does not change VPS defaults.
 
   $0 stop
+  $0 start
   $0 core
-  $0 gateway
-  $0 acs
-  $0 restart core|gateway|acs
+  $0 restart
   $0 check
 
-stop kills TCP listeners on 8080, 8082 and 8090 (SIGTERM, then SIGKILL if still listening).
-core|gateway|acs (and restart <war>) free that WAR port then start: Core 8082, Gateway 8080, ACS 8090.
-Does not kill listeners outside those three ports (SSH tunnels stay up). Never pkill java/mvn by name.
+stop kills TCP listeners on 8082 (SIGTERM, then SIGKILL if still listening).
+start|core|restart free 8082 then ./gradlew :app:bootRun with profiles dev,local-prestaging.
+Does not kill listeners outside 8082 (SSH tunnels stay up). Never pkill java/gradle by name.
 
-Requires $SECRETS (gitignored). Start each WAR in its own terminal.
+Requires $SECRETS (gitignored).
 EOF
 }
 
 cd "$ROOT"
 case "$CMD" in
-  core) run_core ;;
-  gateway) run_gateway ;;
-  acs) run_acs ;;
-  stop) stop_wars ;;
-  restart)
-    case "${2:-}" in
-      core) run_core ;;
-      gateway) run_gateway ;;
-      acs) run_acs ;;
-      *) usage ;;
-    esac
-    ;;
+  start|core) run_app ;;
+  stop) stop_app ;;
+  restart) run_app ;;
   check) check_lab ;;
   *) usage ;;
 esac

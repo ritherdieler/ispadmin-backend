@@ -16,13 +16,13 @@ Antes de **deploy staging/prod** o de un e2e largo, elige el camino **más corto
 
 1. **Unit / TDD** del servicio o parser tocado.
 2. **Smoke local** si la dependencia es alcanzable desde la Mac (p. ej. OLT `10.11.104.2` por SSH/VPN): live test `@Tag("live")`, script o el mismo stack CLI/HTTP en local.
-3. **Staging / e2e** solo cuando el bug o la feature **depende** del WAR desplegado, overlay, Redis en VPS, Tomcat multi-WAR, o del flujo Android↔Core completo.
+3. **Staging / e2e** solo cuando el bug o la feature **depende** del WAR desplegado, overlay, Redis en VPS, Tomcat, o del flujo Android↔Core completo.
 
 ### Anti-patrón
 
 Desplegar staging “para probar” un cambio que solo habla con la OLT (authorize/delete/CLI) cuando desde local ya se puede llamar al mismo `OltGatewayCommandService` / SSH. Eso **pierde tiempo** (build + upload + restart) sin ganar señal.
 
-Ejemplo correcto: `OLT_WRITE_LIVE=true ./mvnw -Dtest=OltGatewayDeleteLiveSmokeTest test` antes de cualquier `deploy.sh --env staging`.
+Ejemplo correcto: `OLT_WRITE_LIVE=true ./gradlew :oltgateway:test --tests "OltGatewayDeleteLiveSmokeTest"` antes de cualquier `deploy.sh --env staging`.
 
 Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
@@ -30,19 +30,18 @@ Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
 Cuando el usuario pida **pruebas en local** (alta FIBER, authorize/activate/delete, TR-069): seguir el runbook numerado de `.agent-docs/pruebas-local-gateway-acs-lab.md`. No improvisar otro stack.
 
-1. **WARs locales** = Core `:8082` + Gateway `:8080`. Cliente → **solo Core**.
-2. **ACS = VPS** (WAR staging `ispadmin-staging-acs` por túnel `:8091`). **No** levantar `AcsApplication` local.
-3. **GenieACS = VPS** (túnel NBI `7557`).
-4. **MikroTik = MK2** (`network_device` id **8**, VLAN 100). No MK1 ni `mikrotik_test`.
-5. **Solo ONUs con tag GenieACS `lab`**. Canónica: `ZTEGDC47BFFD`.
-6. Usuario e2e local: `scripts/local-e2e-ensure-catalog.sh` (`dscorp` / `nohacker`, ADMIN, `verified=1`, hash compatible con SHA-384 de la app). Place `9 de octubre`, NAP `NO-001`, plan FIBER, MK2 id 8. Core: `olt.service.mock.enabled=false` (si no, `/onu/unconfigured_onus` devuelve `ALCL*`).
-7. Alta: `POST /subscription` en el Core (VLAN 100, NAP 42, `hostDeviceId` 8, WiFi passphrase **≥ 8**). Poll `registration-progress` hasta `tr069ProvisionStatus=COMPLETE` y entregar SSID **y** password.
+1. **WAR local** = un `bootRun` `:8082` `/ispadmin` (Core + Gateway + ACS + Traffic en el mismo contexto). Cliente → **solo Core**.
+2. **GenieACS = VPS** (túnel NBI `7557`). ACS corre in-process en el WAR local; no levantar un segundo proceso ACS.
+3. **MikroTik = MK2** (`network_device` id **8**, VLAN 100). No MK1 ni `mikrotik_test`.
+4. **Solo ONUs con tag GenieACS `lab`**. Canónica: `ZTEGDC47BFFD`.
+5. Usuario e2e local: `scripts/local-e2e-ensure-catalog.sh` (`dscorp` / `nohacker`, ADMIN, `verified=1`, hash compatible con SHA-384 de la app). Place `9 de octubre`, NAP `NO-001`, plan FIBER, MK2 id 8. Core: `olt.service.mock.enabled=false` (si no, `/onu/unconfigured_onus` devuelve `ALCL*`).
+6. Alta: `POST /subscription` en el Core (VLAN 100, NAP 42, `hostDeviceId` 8, WiFi passphrase **≥ 8**). Poll `registration-progress` hasta `tr069ProvisionStatus=COMPLETE` y entregar SSID **y** password.
 
 Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
 
 ### Pruebas largas: notificación de fin (obligatorio)
 
-Smoke VPS, live OLT, cleanup duro, suites Maven largas o cualquier script >~1–2 min: lanzar en background, **cerrar el turno** y continuar solo cuando Cursor notifique que el job terminó. No bloquear con `AwaitShell`/polling. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».
+Smoke VPS, live OLT, cleanup duro, suites Gradle largas o cualquier script >~1–2 min: lanzar en background, **cerrar el turno** y continuar solo cuando Cursor notifique que el job terminó. No bloquear con `AwaitShell`/polling. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».
 
 ## Desacople de subsistemas (obligatorio)
 
@@ -54,7 +53,7 @@ Entre core ↔ subsistemas y entre subsistemas se conectan por **REST/HTTP JSON*
 
 No exponer a clientes externos endpoints, sockets o contratos de un subsistema por conveniencia. Si un cliente necesita datos o acciones de un subsistema, debe consumirlos a través del core.
 
-**JDBC cruzado (prohibido en runtime):** cada WAR habla solo con **su** schema MySQL (`ispadmin*` Core, `stg_acs`/`prod_acs` ACS, `stg_oltgateway`/`prod_oltgateway` Gateway, `stg_traffic`/`prod_traffic` Traffic). Prohibido `schema.tabla` de otro WAR, `` `$catalog`.tabla ``, `acs.profiles.catalog` o un segundo datasource hacia el schema de un hermano. Entre WARs: HTTP/WS/Redis Streams. Copias one-shot viven en `scripts/sql/` (no en el arranque de la app). Test: `CrossSchemaJdbcForbiddenTest`. Detalle: `.agent-docs/subsistemas-desacople-transporte.md`.
+**JDBC cruzado (prohibido en runtime):** cada módulo persiste solo en **su** schema MySQL (`ispadmin*` Core, `stg_acs`/`prod_acs` ACS, `stg_oltgateway`/`prod_oltgateway` Gateway, `stg_traffic`/`prod_traffic` Traffic) con su propio DataSource. Prohibido `schema.tabla` de otro módulo, `` `$catalog`.tabla ``, `acs.profiles.catalog` o `@Transactional` cruzado. Entre módulos: HTTP/WS/Redis Streams. Copias one-shot viven en `scripts/sql/` (no en el arranque de la app). Test: `CrossSchemaJdbcForbiddenTest`. Detalle: `.agent-docs/subsistemas-desacople-transporte.md`.
 
 Prohibido reacoplar por JDBC cruzado, inyección de facades/repos de otro paquete/WAR o imports de dominio ajeno. Detalle y vocabulario (core ≠ CRM): `.agent-docs/subsistemas-desacople-transporte.md`.
 
@@ -152,3 +151,14 @@ Si un e2e de alta FIBER/TR-069 termina en **`tr069ProvisionStatus=COMPLETE`** (G
 No dar la prueba por cerrada si solo se mencionan los SSID. Usar los valores reales del alta, no un placeholder.
 
 Runbook: `.agent-docs/tr069-e2e-validacion-modelo.md` (sección «Entregar WiFi al usuario»).
+
+## Gradle (obligatorio)
+
+Build y tests: **Gradle** (`./gradlew`). Grafo de módulos: `.agent-docs/gradle-modulos.md`.
+
+```bash
+./gradlew test
+./gradlew :app:war :app:tomcatLibs -Pdjl.linux
+./gradlew :app:bootRun
+./scripts/run-local-prestaging.sh start
+```

@@ -158,7 +158,7 @@ Al implementar sistemas similares de monitoreo en tiempo real:
 
 - Java 17 o superior
 - Kotlin 1.8+
-- Maven 3.6+
+- Gradle 8.13 (wrapper `./gradlew`)
 - Base de datos MySQL/PostgreSQL
 
 ### Configuración de la Base de Datos
@@ -188,26 +188,29 @@ mikrotik.connection.retry-attempts=3
 
 ```bash
 # Compilar el proyecto
-./mvnw clean compile
+./gradlew classes
 
 # Ejecutar en modo desarrollo
-./mvnw spring-boot:run
+./gradlew :app:bootRun
 
 # Ejecutar tests
-./mvnw test
+./gradlew test
+
+# Empaquetar el WAR único
+./gradlew :app:war :app:tomcatLibs
 ```
 
 ## Estructura del Proyecto
 
 ```
-src/main/kotlin/com/dscorp/wispadmin/
-├── controller/          # Controladores REST
-├── service/            # Lógica de negocio
-├── repository/         # Acceso a datos
-├── websocket/          # WebSockets y eventos
-├── config/             # Configuraciones
-└── util/               # Utilidades
+:shared :events :transport :routeros   # L1 plataforma
+:servicehealth                         # L2
+:acs :oltgateway :traffic :core         # L3
+:netdiag :observability                  # L4
+:app                                   # L5 → ispadmin.war
 ```
+
+Detalle: `.agent-docs/gradle-modulos.md`.
 
 ## API Endpoints
 

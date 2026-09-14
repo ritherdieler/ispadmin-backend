@@ -1,7 +1,7 @@
 HELP.md
 .DS_Store
 target/
-!.mvn/wrapper/maven-wrapper.jar
+.mvn/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -19,6 +19,13 @@ target/
 *.iws
 *.iml
 *.ipr
+
+### Gradle ###
+.gradle/
+app/build/
+app/logs/
+build-logic/build/
+build-logic/.gradle/
 
 ### NetBeans ###
 /nbproject/private/
@@ -38,9 +45,14 @@ build/
 /src/main/resources/firebase_service_account.json
 /src/main/resources/firebase_service_account_dev.json
 /src/main/resources/firebase_service_account_prod.json
+/core/src/main/resources/firebase_service_account.json
+/core/src/main/resources/firebase_service_account_dev.json
+/core/src/main/resources/firebase_service_account_prod.json
 /.agent-docs/
 /src/main/resources/application-local.properties
 /src/main/resources/application-local-prestaging.secrets.properties
+/app/src/main/resources/application-local.properties
+/app/src/main/resources/application-local-prestaging.secrets.properties
 
 /scripts/
 

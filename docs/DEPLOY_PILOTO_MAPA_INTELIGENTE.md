@@ -12,7 +12,7 @@
 1. Ejecutar SQL en BD dev (opcional, complementa fix de codigo):
    - `docs/fix-orphan-assistance-tickets.sql`
 2. Verificar backend:
-   - `mvnw compile`
+   - `./gradlew classes`
    - `GET /ispadmin/smart-map/summary` → 200
    - `GET /ispadmin/assistanceTicket/findAll?status=PENDING` → 200
    - `GET /ispadmin/smart-map/road-route?sector=9%20de%20octubre&originLatitude=-11.235031&originLongitude=-77.380845&destinationLatitude=-11.235380&destinationLongitude=-77.380390` → 200 o 400 validacion

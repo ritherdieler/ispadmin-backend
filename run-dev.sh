@@ -8,4 +8,6 @@ echo "Firebase: ispadmin-dev"
 echo "NetDiag: habilitado (NET_DIAG_ENABLED=false para desactivar)"
 echo ""
 
-sh mvnw spring-boot:run -Dspring-boot.run.profiles=dev,local -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false"
+./gradlew :app:bootRun \
+  -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false" \
+  --args="--spring.profiles.active=dev,local"

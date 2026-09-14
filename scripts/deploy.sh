@@ -18,15 +18,15 @@ Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|stag
 
   --setup     Upload DJL libs and face models, patch Docker image/compose, rebuild Tomcat (once)
   --full      --setup then deploy WAR
-  --war-only  Upload existing target/*.war only (no Maven clean/test, no rebuild)
+  --war-only  Upload existing target/*.war only (no Gradle test/rebuild)
   --deploy    Build, verify, deploy WAR (default)
   --env       prod (default): ispadmin.war → /ispadmin on tomcat9027
               staging: ispadmin-staging*.war → tomcat-staging :8081 (does not touch tomcat9027 or ispadmin.war)
   --with      Optional subsystems to keep in the staging Core WAR (observability,oltgateway,netdiag,traffic,servicehealth).
               Default staging: none. `traffic`, `oltgateway` and `acs` enable HTTP clients; those classes always ship in sibling WARs.
-  --only      Staging: deploy only these WARs (core,oltgateway,traffic,acs). Wins over git mapping.
+  --only      Accepted for compatibility (see deploy-select-wars.sh); the single WAR always deploys core.
 
-Modes --deploy and --full run the Maven test suite (mvnw test, no clean) before packaging or connecting to the VPS.
+Modes --deploy and --full run the Gradle test suite (./gradlew test) before packaging or connecting to the VPS.
 Packaging skips a selected WAR when target/*.war is newer than that WAR's sources (see deploy-war-needs-rebuild.sh).
 FORCE_WAR_REBUILD=1 forces package. --war-only never packages.
 Any failing test aborts --deploy/--full.
@@ -134,20 +134,10 @@ else
   ACS_MAVEN_PROFILE=""
 fi
 
-if [[ "$DEPLOY_ENV" == "staging" ]]; then
-  if [[ -n "$ONLY_WARS" ]]; then
-    SELECTED_WARS="$(bash "$SCRIPT_DIR/deploy-select-wars.sh" --only "$ONLY_WARS")"
-  elif [[ "$MODE" == "setup" ]]; then
-    SELECTED_WARS="acs,core,oltgateway,traffic"
-  else
-    SELECTED_WARS="$(cd "$PROJECT_DIR" && bash "$SCRIPT_DIR/deploy-select-wars.sh")"
-  fi
-else
-  if [[ -n "$ONLY_WARS" ]]; then
-    echo "Ignoring --only on prod (core WAR only)"
-  fi
-  SELECTED_WARS="core"
+if [[ -n "$ONLY_WARS" ]]; then
+  echo "Ignoring --only (single WAR deploy)"
 fi
+SELECTED_WARS="core"
 echo "Selected WARs: $SELECTED_WARS (env=$DEPLOY_ENV container=$DOCKER_TOMCAT_CONTAINER port=$TOMCAT_HTTP_PORT)"
 
 war_selected() {
@@ -161,8 +151,9 @@ if [[ -z "$VPS_HOST" ]]; then
 fi
 
 SSH_TARGET="${VPS_USER}@${VPS_HOST}"
+GRADLE_WAR="$PROJECT_DIR/app/build/libs/ispadmin.war"
 WAR_PATH="$PROJECT_DIR/target/$WAR_NAME"
-TOMCAT_LIB_SRC="$PROJECT_DIR/target/tomcat-lib"
+TOMCAT_LIB_SRC="$PROJECT_DIR/app/build/tomcat-lib"
 CATALINA_OPTS_VALUE='-Duser.timezone=America/Lima -DPYTORCH_VERSION=2.7.1 -DPYTORCH_FLAVOR=cpu -Dai.djl.pytorch.native_helper=com.dscorp.wispadmin.wispadmin.util.PytorchNativeHelper'
 TOMCAT_BASE_IMAGE="${TOMCAT_BASE_IMAGE:-tomcat:9.0-jdk11-temurin-jammy}"
 
@@ -260,45 +251,20 @@ run_rsync() {
 
 run_tests() {
   echo "Running complete backend test suite before deployment..."
-  (cd "$PROJECT_DIR" && sh mvnw test)
+  (cd "$PROJECT_DIR" && ./gradlew test)
   echo "All backend tests passed. Deployment may continue."
 }
 
 require_existing_wars() {
-  local missing=0
-  local name=""
-  if war_selected core; then
-    promote_packaged_war "$WAR_NAME"
-    if [[ ! -f "$PROJECT_DIR/target/$WAR_NAME" ]]; then
-      echo "Missing $PROJECT_DIR/target/$WAR_NAME (build with --deploy first)" >&2
-      missing=1
-    fi
+  mkdir -p "$PROJECT_DIR/target"
+  if [[ -f "$GRADLE_WAR" && ( ! -f "$WAR_PATH" || "$GRADLE_WAR" -nt "$WAR_PATH" ) ]]; then
+    cp -f "$GRADLE_WAR" "$WAR_PATH"
   fi
-  if war_selected traffic && [[ -n "${TRAFFIC_WAR_NAME:-}" ]]; then
-    promote_packaged_war "$TRAFFIC_WAR_NAME"
-    if [[ ! -f "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME" ]]; then
-      echo "Missing $PROJECT_DIR/target/$TRAFFIC_WAR_NAME (build with --deploy first)" >&2
-      missing=1
-    fi
-  fi
-  if war_selected oltgateway && [[ -n "${OLTGATEWAY_WAR_NAME:-}" ]]; then
-    promote_packaged_war "$OLTGATEWAY_WAR_NAME"
-    if [[ ! -f "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME" ]]; then
-      echo "Missing $PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME (build with --deploy first)" >&2
-      missing=1
-    fi
-  fi
-  if war_selected acs && [[ -n "${ACS_WAR_NAME:-}" ]]; then
-    promote_packaged_war "$ACS_WAR_NAME"
-    if [[ ! -f "$PROJECT_DIR/target/$ACS_WAR_NAME" ]]; then
-      echo "Missing $PROJECT_DIR/target/$ACS_WAR_NAME (build with --deploy first)" >&2
-      missing=1
-    fi
-  fi
-  if [[ "$missing" -ne 0 ]]; then
+  if [[ ! -f "$WAR_PATH" ]]; then
+    echo "Missing $WAR_PATH (build with --deploy first)" >&2
     exit 1
   fi
-  echo "Using existing WARs in target/ (no rebuild): $SELECTED_WARS"
+  echo "Using existing WAR $WAR_PATH (no rebuild)"
 }
 
 promote_packaged_war() {
@@ -322,50 +288,27 @@ war_needs_rebuild() {
 }
 
 build_war() {
-  if war_selected core; then
-    local models_dir="$PROJECT_DIR/src/main/resources/models"
-    for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
-      if [[ ! -f "$models_dir/$model" ]]; then
-        echo "Missing $models_dir/$model — required for facial recognition." >&2
-        exit 1
-      fi
-    done
-    promote_packaged_war_if_present "$WAR_NAME"
-    if ! war_needs_rebuild core "$PROJECT_DIR/target/$WAR_NAME"; then
-      echo "Skipping core WAR package (sources unchanged): $WAR_NAME"
-    else
-      echo "Building $WAR_NAME (Maven profile $MAVEN_WAR_PROFILE) for Linux x86_64..."
-      local maven_args=(package -DskipTests -Ddjl.linux -P"$MAVEN_WAR_PROFILE")
-      if [[ "$DEPLOY_ENV" == "staging" ]]; then
-        mkdir -p "$PROJECT_DIR/target"
-        bash "$SCRIPT_DIR/subsystems.sh" --with "$WITH_SUBSYSTEMS" --write-dir "$PROJECT_DIR/target"
-        local excludes
-        excludes="$(tr -d '\n' < "$PROJECT_DIR/target/subsystem-excludes.txt")"
-        maven_args+=("-Dsubsystem.excludes=$excludes")
-        maven_args+=("-Dsubsystem.with=$WITH_SUBSYSTEMS")
-      fi
-      (cd "$PROJECT_DIR" && sh mvnw "${maven_args[@]}")
-      promote_packaged_war "$WAR_NAME"
-      VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
-      if [[ "$DEPLOY_ENV" == "staging" ]]; then
-        VERIFY_WAR="$WAR_PATH" VERIFY_WITH_SUBSYSTEMS="$WITH_SUBSYSTEMS" bash "$SCRIPT_DIR/verify-war.sh"
-        printf '%s' "$WITH_SUBSYSTEMS" > "$PROJECT_DIR/target/$WAR_NAME.with"
-      fi
-    fi
-  else
-    echo "Skipping core WAR package (not in $SELECTED_WARS)"
+  if ! war_selected "core"; then
+    echo "Skipping WAR package (not in $SELECTED_WARS)"
+    return
   fi
-  if [[ "$DEPLOY_ENV" == "staging" ]]; then
-    if war_selected traffic; then
-      build_traffic_war
+  local models_dir="$PROJECT_DIR/core/src/main/resources/models"
+  for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
+    if [[ ! -f "$models_dir/$model" ]]; then
+      echo "Missing $models_dir/$model — required for facial recognition." >&2
+      exit 1
     fi
-    if war_selected oltgateway; then
-      build_oltgateway_war
-    fi
-    if war_selected acs; then
-      build_acs_war
-    fi
+  done
+  mkdir -p "$PROJECT_DIR/target"
+  if [[ -f "$WAR_PATH" ]] && ! war_needs_rebuild core "$WAR_PATH"; then
+    echo "Skipping WAR package (sources unchanged): $WAR_NAME"
+    return
   fi
+  echo "Building $WAR_NAME with Gradle for Linux x86_64..."
+  (cd "$PROJECT_DIR" && ./gradlew :app:war :app:tomcatLibs -Pdjl.linux)
+  cp -f "$GRADLE_WAR" "$WAR_PATH"
+  VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
+  VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-war.sh"
 }
 
 promote_packaged_war_if_present() {
@@ -378,45 +321,15 @@ promote_packaged_war_if_present() {
 }
 
 build_traffic_war() {
-  if [[ -z "${TRAFFIC_MAVEN_PROFILE:-}" ]]; then
-    return 0
-  fi
-  promote_packaged_war_if_present "$TRAFFIC_WAR_NAME"
-  if ! war_needs_rebuild traffic "$PROJECT_DIR/target/$TRAFFIC_WAR_NAME"; then
-    echo "Skipping traffic WAR package (sources unchanged): $TRAFFIC_WAR_NAME"
-    return 0
-  fi
-  echo "Building $TRAFFIC_WAR_NAME (Maven profile $TRAFFIC_MAVEN_PROFILE)..."
-  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$TRAFFIC_MAVEN_PROFILE")
-  promote_packaged_war "$TRAFFIC_WAR_NAME"
+  echo "Skipping sibling traffic WAR (single WAR deploy)"
 }
 
 build_oltgateway_war() {
-  if [[ -z "${OLTGATEWAY_MAVEN_PROFILE:-}" ]]; then
-    return 0
-  fi
-  promote_packaged_war_if_present "$OLTGATEWAY_WAR_NAME"
-  if ! war_needs_rebuild oltgateway "$PROJECT_DIR/target/$OLTGATEWAY_WAR_NAME"; then
-    echo "Skipping oltgateway WAR package (sources unchanged): $OLTGATEWAY_WAR_NAME"
-    return 0
-  fi
-  echo "Building $OLTGATEWAY_WAR_NAME (Maven profile $OLTGATEWAY_MAVEN_PROFILE)..."
-  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$OLTGATEWAY_MAVEN_PROFILE")
-  promote_packaged_war "$OLTGATEWAY_WAR_NAME"
+  echo "Skipping sibling oltgateway WAR (single WAR deploy)"
 }
 
 build_acs_war() {
-  if [[ -z "${ACS_MAVEN_PROFILE:-}" ]]; then
-    return 0
-  fi
-  promote_packaged_war_if_present "$ACS_WAR_NAME"
-  if ! war_needs_rebuild acs "$PROJECT_DIR/target/$ACS_WAR_NAME"; then
-    echo "Skipping acs WAR package (sources unchanged): $ACS_WAR_NAME"
-    return 0
-  fi
-  echo "Building $ACS_WAR_NAME (Maven profile $ACS_MAVEN_PROFILE)..."
-  (cd "$PROJECT_DIR" && sh mvnw package -DskipTests -Ddjl.linux -P"$ACS_MAVEN_PROFILE")
-  promote_packaged_war "$ACS_WAR_NAME"
+  echo "Skipping sibling acs WAR (single WAR deploy)"
 }
 
 upload_tomcat_lib() {
@@ -488,7 +401,7 @@ upload_face_models() {
     echo "Skipping face models (core WAR not selected)"
     return 0
   fi
-  local src="$PROJECT_DIR/src/main/resources/models"
+  local src="$PROJECT_DIR/core/src/main/resources/models"
   local dest="$DOCKER_FACE_MODELS_HOST_DIR"
   for model in face_feature.zip ultranet.zip arcface_w600k_mbf.onnx; do
     if [[ ! -f "$src/$model" ]]; then
@@ -641,9 +554,9 @@ restore_host_wars() {
   echo "Restoring WARs from $DOCKER_COMPOSE_DIR into $DOCKER_TOMCAT_CONTAINER webapps..."
   local wars
   if [[ "$DEPLOY_ENV" == "staging" ]]; then
-    wars="ispadmin-staging.war ispadmin-staging-traffic.war ispadmin-staging-oltgateway.war ispadmin-staging-acs.war"
+    wars="ispadmin-staging.war"
   else
-    wars="ispadmin.war ispadmin-traffic.war ispadmin-oltgateway.war ispadmin-acs.war"
+    wars="ispadmin.war"
   fi
   run_ssh "bash -s" <<EOF
 set -euo pipefail
@@ -846,6 +759,8 @@ if [[ "\$container_bytes" != "\$EXPECTED_BYTES" ]]; then
   exit 1
 fi
 EOF
+  echo "Restarting $DOCKER_TOMCAT_CONTAINER so PyTorch JNI is not left in a previous classloader..."
+  run_ssh "docker restart '$DOCKER_TOMCAT_CONTAINER'"
 }
 
 deploy_traffic_war() {

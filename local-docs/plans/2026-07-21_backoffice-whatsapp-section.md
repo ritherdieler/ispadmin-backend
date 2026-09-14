@@ -105,7 +105,7 @@
 
 ### Verificación automática ejecutada
 
-- Backend: `mvnw compile test` (tests WhatsApp webhook) → OK
+- Backend: `./gradlew test` (tests WhatsApp webhook) → OK
 - Frontend: `npm run build` → OK
 
 ---

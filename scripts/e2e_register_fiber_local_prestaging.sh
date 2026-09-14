@@ -2,13 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SECRETS="$ROOT/src/main/resources/application-local-prestaging.secrets.properties"
-EXAMPLE="$ROOT/src/main/resources/application-local-prestaging.secrets.properties.example"
+SECRETS="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties"
+EXAMPLE="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties.example"
 MYSQL="${MYSQL_BIN:-/opt/homebrew/opt/mysql-client/bin/mysql}"
 
 CORE="${CORE_BASE:-http://127.0.0.1:8082/ispadmin}"
-GW="${GATEWAY_BASE:-http://127.0.0.1:8080/ispadmin}"
-ACS="${ACS_BASE:-http://127.0.0.1:8090/ispadmin-acs}"
+GW="${GATEWAY_BASE:-http://127.0.0.1:8082/ispadmin}"
+ACS="${ACS_BASE:-http://127.0.0.1:8082/ispadmin}"
 NBI="${NBI_BASE:-http://127.0.0.1:7557}"
 export CORE GW ACS NBI
 OLT_HOST="${OLT_HOST:-10.11.104.2}"
@@ -39,13 +39,11 @@ Alta FIBER lab contra Core local-prestaging (no Gateway directo, no ACS VPS).
   $(basename "$0") --wifi-ssid 'mimiwifi' --wifi-pass 'MimiWifi24pass' --cleanup-mode ask
   $(basename "$0") check
 
-Prerrequisitos (tres terminales, WARs ya arriba):
+Prerrequisitos (WAR único ya arriba):
   ./scripts/run-local-prestaging.sh check
-  ./scripts/run-local-prestaging.sh core
-  ./scripts/run-local-prestaging.sh gateway
-  ./scripts/run-local-prestaging.sh acs
+  ./scripts/run-local-prestaging.sh start
 
-Stack: Core :8082 /ispadmin, Gateway :8080, ACS :8090 /ispadmin-acs, NBI 127.0.0.1:7557,
+Stack: WAR único :8082 /ispadmin (Core+Gateway+ACS), NBI 127.0.0.1:7557,
 OLT $OLT_HOST, ONU lab $E2E_ONU_SN, MK2 hostDeviceId $HOST_DEVICE_ID, VLAN $VLAN, NAP $NAP_BOX_ID
 (board 1 / port 6). Schema ispadmin_prestaging. 5 GHz SSID = "{ssid} - 5G".
 

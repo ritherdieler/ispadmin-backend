@@ -8,13 +8,12 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 
 | Pieza | Dónde corre | No hacer |
 |-------|-------------|----------|
-| **Core WAR** | Mac `:8082` `/ispadmin` | No desplegar staging “para probar”. No embeber OLT/ACS en el Core. |
-| **Gateway WAR** | Mac `:8080` `/ispadmin` | No llamar SmartOLT cloud si `olt.provider.authorize=GATEWAY`. |
-| **ACS WAR** | **VPS staging** por túnel `:8091` `/ispadmin-staging-acs` | **No** levantar `AcsApplication` local (salvo el ambiente opt-in [`local-prestaging`](#ambiente-local-prestaging)). |
+| **WAR único** | Mac `:8082` `/ispadmin` (`./scripts/run-local-prestaging.sh start` o `./gradlew :app:bootRun`) | No desplegar staging “para probar”. No arrancar Gateway/ACS en otros puertos. |
+| **ACS** | In-process en el WAR local (HTTP loopback al mismo context-path) | **No** levantar un segundo `AcsApplication`. |
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
-| **OLT** | Real `10.11.104.2` (SSH desde Gateway) | No saturar VTY con SSH extra (health del Gateway basta). |
+| **OLT** | Real `10.11.104.2` (SSH desde Gateway in-process) | No saturar VTY con SSH extra. |
 | **MikroTik** | **MK2** `network_device.id=8`, VLAN **100** | No MK1 ni `mikrotik_test`. |
-| **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`**. VSOL lab **`VSOL0031C0B6`** | Prohibido writes a ONUs de clientes. La VSOL lab **siempre** lleva VLAN **1000** (WCD.1 → ACS, `10.20.0.0/22`) más VLAN **100** (internet). Un alta que deje solo VLAN 100 corta el ACS. |
+| **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`**. VSOL lab **`VSOL0031C0B6`** | Prohibido writes a ONUs de clientes. |
 
 Cliente (curl, app, script) habla **solo con el Core**. El Core orquesta Gateway (OLT + ACS) y MK2.
 
@@ -231,6 +230,19 @@ WHERE host_device_id = 8 AND is_eligible = 1;
 
 Esperado: dispositivo **8** activo; pool `192.168.30.1/24` (`is_eligible=1`).
 
+### Prestaging: MK2 real, no mock
+
+`./scripts/run-local-prestaging.sh` activa `dev,local-prestaging`. `application-dev.properties` deja `mikrotik.connection.mock.enabled=true`; sin override, `PppoeAccessService.ensureSecret` no abre sesión con el CCR (`core.mk.pppoe` ~4 ms) y MikroTik COMPLETE es falso.
+
+En `application-local-prestaging.properties`:
+
+```properties
+olt.service.mock.enabled=false
+mikrotik.connection.mock.enabled=false
+```
+
+No poner `mikrotik.connection.override.ip`: el alta usa `hostDeviceId` **8** (MK2 `38.224.231.4`). No `mikrotik_test` ni MK1.
+
 ---
 
 ## Criterio COMPLETE del ACS WAR
@@ -251,6 +263,7 @@ Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y**
 - Password WiFi de **menos de 8** caracteres.
 - Re-probar activate sin borrar `olt_activation_operation` (no-op).
 - Usar ONUs sin tag `lab`, MK1 o `mikrotik_test`.
+- Prestaging con `mikrotik.connection.mock.enabled=true` (el perfil `dev` lo enciende; hay que apagarlo en `application-local-prestaging.properties`).
 - SSH directo a la OLT en paralelo al Gateway (llena VTY / lockout de `oltadmin`).
 
 ---

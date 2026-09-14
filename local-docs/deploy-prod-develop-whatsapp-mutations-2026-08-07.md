@@ -4,7 +4,7 @@
 |-------|--------|
 | Versión | `1.0.3+42dc522` |
 | Rama | `develop` |
-| Comando | `./mvnw clean test` (881 tests OK) → `./scripts/deploy.sh --deploy` |
+| Comando | `./gradlew test` (OK) → `./scripts/deploy.sh --deploy` |
 | Tomcat | `tomcat9027` |
 | Smoke | `GET /ispadmin/` → HTTP 200 |
 

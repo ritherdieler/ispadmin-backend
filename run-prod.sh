@@ -17,4 +17,4 @@ echo "Plantilla: deploy-prod-whatsapp.sh"
 echo "Webhook prod: https://<tu-dominio-o-ip>/ispadmin/whatsapp/webhook"
 echo ""
 
-./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
+./gradlew :app:bootRun --args="--spring.profiles.active=prod"

@@ -174,7 +174,7 @@ if [[ -n "$SUB_SN" ]]; then
   if [[ "$E2E_ENV" == "staging" ]]; then
     echo "== clear Gateway activation journal $SUB_SN =="
     ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || true
-    echo "== OLT Gateway delete $SUB_SN (ispadmin-staging-oltgateway) =="
+    echo "== OLT Gateway delete $SUB_SN (ispadmin-staging) =="
     ssh_vps "bash -s" <<EOF
 set -euo pipefail
 set -a
@@ -182,7 +182,7 @@ set -a
 source /opt/gigafiber/.env
 set +a
 KEY="\${OLT_GATEWAY_API_KEY:?OLT_GATEWAY_API_KEY missing on VPS}"
-GW="http://127.0.0.1:8081/ispadmin-staging-oltgateway"
+GW="http://127.0.0.1:8081/ispadmin-staging"
 SN=$(printf '%q' "$SUB_SN")
 hdr=(-H "X-Olt-Gateway-Key: \$KEY" -H "Content-Type: application/json")
 EXT=""

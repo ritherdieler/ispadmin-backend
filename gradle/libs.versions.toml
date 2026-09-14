@@ -1,0 +1,81 @@
+[versions]
+kotlin = "1.9.23"
+spring-boot = "2.7.18"
+spring-dependency-management = "1.0.15.RELEASE"
+poi = "5.2.0"
+datasource-proxy = "1.10.1"
+firebase-admin = "9.2.0"
+lyra-sdk = "2.2.0"
+meilisearch = "0.14.6"
+okhttp = "4.12.0"
+kotlinx-coroutines = "1.6.4"
+hibernate-spatial = "5.6.14.Final"
+jts = "1.18.2"
+sshd = "2.12.1"
+snmp4j = "2.8.18"
+springdoc = "1.8.0"
+mockk = "1.13.11"
+djl = "0.36.0"
+pytorch-jni = "2.7.1-0.36.0"
+pytorch = "2.7.1"
+
+[libraries]
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-allopen = { module = "org.jetbrains.kotlin:kotlin-allopen", version.ref = "kotlin" }
+kotlin-noarg = { module = "org.jetbrains.kotlin:kotlin-noarg", version.ref = "kotlin" }
+spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "spring-boot" }
+spring-dependency-management-plugin = { module = "io.spring.gradle:dependency-management-plugin", version.ref = "spring-dependency-management" }
+
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
+kotlin-stdlib-jdk8 = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8" }
+
+spring-boot-starter-aop = { module = "org.springframework.boot:spring-boot-starter-aop" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-cache = { module = "org.springframework.boot:spring-boot-starter-cache" }
+spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+spring-boot-starter-data-redis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-boot-starter-tomcat = { module = "org.springframework.boot:spring-boot-starter-tomcat" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-webflux = { module = "org.springframework.boot:spring-boot-starter-webflux" }
+spring-boot-starter-websocket = { module = "org.springframework.boot:spring-boot-starter-websocket" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-devtools = { module = "org.springframework.boot:spring-boot-devtools" }
+jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" }
+mysql-connector-j = { module = "com.mysql:mysql-connector-j" }
+flyway-core = { module = "org.flywaydb:flyway-core" }
+flyway-mysql = { module = "org.flywaydb:flyway-mysql" }
+h2 = { module = "com.h2database:h2" }
+caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
+logback-classic = { module = "ch.qos.logback:logback-classic" }
+slf4j-api = { module = "org.slf4j:slf4j-api" }
+janino = { module = "org.codehaus.janino:janino" }
+
+poi = { module = "org.apache.poi:poi", version.ref = "poi" }
+poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
+datasource-proxy = { module = "net.ttddyy:datasource-proxy", version.ref = "datasource-proxy" }
+firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
+lyra-server-rest-sdk = { module = "com.lyra:server-rest-sdk", version.ref = "lyra-sdk" }
+meilisearch-java = { module = "com.meilisearch.sdk:meilisearch-java", version.ref = "meilisearch" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-reactor = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactor", version.ref = "kotlinx-coroutines" }
+hibernate-spatial = { module = "org.hibernate:hibernate-spatial", version.ref = "hibernate-spatial" }
+jts-core = { module = "org.locationtech.jts:jts-core", version.ref = "jts" }
+sshd-core = { module = "org.apache.sshd:sshd-core", version.ref = "sshd" }
+snmp4j = { module = "org.snmp4j:snmp4j", version.ref = "snmp4j" }
+springdoc-openapi-ui = { module = "org.springdoc:springdoc-openapi-ui", version.ref = "springdoc" }
+mockk-jvm = { module = "io.mockk:mockk-jvm", version.ref = "mockk" }
+djl-api = { module = "ai.djl:api", version.ref = "djl" }
+djl-pytorch-engine = { module = "ai.djl.pytorch:pytorch-engine", version.ref = "djl" }
+djl-pytorch-jni = { module = "ai.djl.pytorch:pytorch-jni", version.ref = "pytorch-jni" }
+djl-pytorch-native-cpu = { module = "ai.djl.pytorch:pytorch-native-cpu", version.ref = "pytorch" }
+djl-onnxruntime-engine = { module = "ai.djl.onnxruntime:onnxruntime-engine", version.ref = "djl" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+kotlin-jpa = { id = "org.jetbrains.kotlin.plugin.jpa", version.ref = "kotlin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }

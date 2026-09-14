@@ -2,7 +2,7 @@
 
 Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en el VPS.
 
-Build verificado: `bash mvnw clean package -DskipTests -Ddjl.linux` + `./scripts/deploy.sh --full` (2026-06-17).
+Build verificado: `./gradlew :app:war :app:tomcatLibs -Pdjl.linux` + `./scripts/deploy.sh --full`.
 
 Último deploy prod: hotfix `hotfix/search-debt-hydrate` @ `83de8fe` → `APP_RELEASE=1.0.3+83de8fe` (deuda/facturas pendientes en `GET /subscription/search`). Detalle: [hotfix-search-debt-hydrate-2026-09-03.md](./hotfix-search-debt-hydrate-2026-09-03.md). Base prod previa: `4c1cc1f`.
 
@@ -28,12 +28,12 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 | **Setup + primer WAR** | `./scripts/deploy.sh --full` |
 | **Release habitual (prod)** | `./scripts/deploy.sh --env prod` |
 | **Pre-prod (Tomcat propio `tomcat-staging` :8081)** | `./scripts/deploy.sh --env staging` |
-| **Staging un WAR** | `./scripts/deploy.sh --env staging --only oltgateway` |
+| **Staging un WAR** | `./scripts/deploy.sh --env staging` |
 | **Solo subir WAR ya compilado** | `./scripts/deploy.sh --war-only --env prod\|staging` |
 
 En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
 
-Todos los modos que despliegan un WAR (`--deploy`, `--full` y `--war-only`) ejecutan primero `mvnw clean test`. Con `set -e`, cualquier test fallido cancela el proceso antes de compilar el WAR, abrir SSH o modificar el VPS. `--war-only` reutiliza el artefacto, pero no omite esta compuerta.
+Todos los modos que despliegan un WAR (`--deploy`, `--full`) ejecutan primero `./gradlew test`. Con `set -e`, cualquier test fallido cancela el proceso antes de compilar el WAR, abrir SSH o modificar el VPS. `--war-only` reutiliza el artefacto en `target/` (copia de `app/build/libs/ispadmin.war`) y no corre la suite.
 
 ---
 
@@ -49,7 +49,7 @@ Todos los modos que despliegan un WAR (`--deploy`, `--full` y `--war-only`) ejec
 | Base Docker | `tomcat:9.0-jdk11-temurin-jammy` |
 | JARs DJL (host) | `/opt/gigafiber/tomcat/lib/*.jar` |
 | WAR prod | `tomcat9027` `/usr/local/tomcat/webapps/ispadmin.war` → `/ispadmin` → MySQL `ispadmin` |
-| WAR staging | `tomcat-staging` `ispadmin-staging*.war` → `/ispadmin-staging*` → `ispadmin_staging` / `stg_*` |
+| WAR staging | `tomcat-staging` `ispadmin-staging.war` → `/ispadmin-staging` → `ispadmin_staging` / `stg_*` |
 | Tomcat Manager prod | `http://212.85.13.47:8080/manager` |
 
 Los JARs de PyTorch/DJL **no van dentro del WAR**. Se embeben en la imagen Docker vía `COPY lib/*.jar` en el Dockerfile.
@@ -66,7 +66,7 @@ Staging y prod **no comparten JVM**. Detalle: [staging-tomcat-isolation-war-sele
 | `**/acs/**`, `application-acs.properties` | ACS |
 | `**/traffic/**`, `application-traffic.properties` | Traffic |
 | `**/wispadmin/**`, observability/netdiag/servicehealth, `application-staging.properties` | Core |
-| `**/events/**`, `pom.xml`, `application-prod.properties`, `application.properties` | los 4 |
+| `**/events/**`, `settings.gradle.kts`, `build.gradle.kts`, `application-prod.properties`, `application.properties` | WAR único |
 
 `--with` solo activa clientes HTTP al empaquetar Core; no elige qué WAR se construye. `rsync -t` una vez; `deploy_*` hace `docker cp` desde el host.
 
@@ -122,7 +122,7 @@ git checkout a4c8d3c -- src/main/resources/models/face_feature.zip
 Desde Mac, **siempre** compilar para Linux x86_64:
 
 ```bash
-bash mvnw clean package -DskipTests -Ddjl.linux
+./gradlew :app:war :app:tomcatLibs -Pdjl.linux
 bash scripts/verify-djl-war.sh
 ```
 
@@ -183,8 +183,8 @@ Si el setup DJL ya está hecho y solo quieres subir el WAR tras rebuild:
 
 Equivale a `--deploy` (modo por defecto):
 
-1. `mvnw clean test` y cancelación inmediata ante cualquier fallo
-2. `mvnw clean package -DskipTests -Ddjl.linux`
+1. `./gradlew test` y cancelación inmediata ante cualquier fallo
+2. `./gradlew :app:war :app:tomcatLibs -Pdjl.linux`
 3. `verify-djl-war.sh`
 4. SCP del WAR al VPS
 5. `docker cp` a `tomcat9027:/usr/local/tomcat/webapps/ispadmin.war`
@@ -201,7 +201,7 @@ Si **ya compilaste** y no quieres rebuild:
 
 1. Compilar en Mac:
    ```bash
-   bash mvnw clean package -DskipTests -Ddjl.linux
+   ./gradlew :app:war :app:tomcatLibs -Pdjl.linux
    bash scripts/verify-djl-war.sh
    ```
 2. Abrir `http://212.85.13.47:8080/manager`.

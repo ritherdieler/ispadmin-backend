@@ -22,22 +22,22 @@ El backend está configurado para usar diferentes ambientes (profiles) de Spring
 
 ## 🎯 Cómo Ejecutar
 
-### **Opción 1: Scripts Automatizados**
+### **Opción 1: Gradle**
 ```bash
 # Desarrollo
-./run-dev.sh
+./gradlew :app:bootRun
 
-# Producción
-./run-prod.sh
+# Producción (empaquetar WAR)
+./gradlew :app:war
 ```
 
-### **Opción 2: Maven Directo**
+### **Opción 2: Profiles**
 ```bash
-# Desarrollo
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# Desarrollo (default en application.properties)
+./gradlew :app:bootRun
 
-# Producción
-./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
+# Prestaging de lab
+./scripts/run-local-prestaging.sh start
 ```
 
 ### **Opción 3: IntelliJ IDEA**

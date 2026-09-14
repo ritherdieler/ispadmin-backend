@@ -90,3 +90,4 @@ El mock actual cubre rutas de lectura y monitoreo frecuentes (interfaces, recurs
 - Sin equipo disponible: usa mock puro.
 - Con equipo de laboratorio estable: usa override por IP.
 - Pruebas de integración por flujo real: desactiva mock y deja override vacío.
+- Prestaging (`application-local-prestaging.properties`): `mikrotik.connection.mock.enabled=false` y override vacío para MK2 (`hostDevice` id 8). El perfil `dev` no debe quedar con mock encendido.
