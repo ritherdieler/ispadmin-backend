@@ -1,0 +1,35 @@
+===== /system identity print =====
+/system identity print                                                         [admin1@SWICH 4 SFP] >
+
+===== /ip address print =====
+ [admin1@SWICH 4 SFP] >
+
+===== /interface bridge print detail =====
+/interface bridge print detail /system identity print
+[admin1@SWICH 4 SFP] >
+
+===== /interface bridge port print detail =====
+[admin1@SWICH 4 SFP] > /interface bridge print detail
+[admin1@SWICH 4 SFP] >                                                         [admin1@SWICH 4 SFP] > /interface bridge port print detail                                                         [admin1@SWICH 4 SFP] >
+
+===== /interface bridge settings print =====
+/interface bridge settings print
+
+===== /interface print brief =====
+/interface print brief
+
+===== /interface ethernet print =====
+/interface ethernet print
+
+===== /interface vlan print detail =====
+[admin1@SWICH 4 SFP] > /interface ethernet print
+[admin1@SWICH 4 SFP] >                                                         [admin1@SWICH 4 SFP] > /interface vlan print detail
+
+===== /ip route print =====
+/ip route print
+
+===== /ip service print =====
+/ip service print
+
+===== /export hide-sensitive =====
+/export hide-sensitive

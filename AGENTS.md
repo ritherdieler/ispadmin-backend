@@ -4,9 +4,9 @@
 
 Este repo es Spring Boot/Kotlin (WAR), no Android.
 
-Workflows opcionales: `.cursor/skills/` (feature, TDD, endpoint, review) y `Skills/kotlin-backend/SKILL.md` (notas HTTPS/mapas, acotado).
+Workflows opcionales: `.cursor/skills/` (feature, TDD, endpoint, review).
 
-No apliques skills de Jetpack Compose / R8 / Navigation 3 al backend. Esos docs en `Skills/` y `.skills/mobile-best-practices` son referencia para la app **IpsAdmin**, no para este código.
+Este repo no lleva skills de Jetpack Compose / R8 / Navigation 3; esos viven en la app **IpsAdmin**.
 
 ## Pruebas: camino más corto (obligatorio)
 
@@ -25,6 +25,14 @@ Desplegar staging “para probar” un cambio que solo habla con la OLT (authori
 Ejemplo correcto: `OLT_WRITE_LIVE=true ./gradlew :oltgateway:test --tests "OltGatewayDeleteLiveSmokeTest"` antes de cualquier `deploy.sh --env staging`.
 
 Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
+
+## Prestaging nunca al VPS (obligatorio)
+
+`local-prestaging` corre **solo en la Mac** (`:8082` `/ispadmin`). Al VPS solo van **prod** y **staging**.
+
+Prohibido subir WAR, properties, secretos, schema MySQL, nginx o un Tomcat de prestaging. `deploy.sh` rechaza cualquier env que no sea `prod|staging` y un WAR que contenga `application-local-prestaging`. No empaquetar esos archivos (`core/build.gradle.kts` los excluye).
+
+Regla Cursor: `gigafiber/.cursor/rules/prestaging-solo-local.mdc`.
 
 ## Deploy: módulos desactivados (obligatorio)
 
@@ -169,7 +177,7 @@ Build y tests: **Gradle** (`./gradlew`). Grafo de módulos: `.agent-docs/gradle-
 
 ```bash
 ./gradlew test
-./gradlew :app:war :app:tomcatLibs -Pdjl.linux
-./gradlew :app:bootRun
+./gradlew :core:war :core:tomcatLibs -Pdjl.linux
+./gradlew :core:bootRun
 ./scripts/run-local-prestaging.sh start
 ```

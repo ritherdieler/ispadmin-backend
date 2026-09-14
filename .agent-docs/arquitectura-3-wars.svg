@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="760" viewBox="0 0 1000 760">
+  <style>
+    .title { font: 600 18px ui-sans-serif, system-ui, sans-serif; fill: #1e293b; }
+    .sub { font: 12px ui-sans-serif, system-ui, sans-serif; fill: #64748b; }
+    .box-label { font: 600 13px ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+    .box-label-accent { font: 600 13px ui-sans-serif, system-ui, sans-serif; fill: #1d4ed8; }
+    .box-sub { font: 10px ui-sans-serif, system-ui, sans-serif; fill: #64748b; }
+    .edge { font: 10px ui-sans-serif, system-ui, sans-serif; fill: #64748b; }
+    .war { fill: #f8fafc; stroke: #3b82f6; stroke-width: 1.8; }
+    .node { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.2; }
+    .node-accent { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.8; }
+    .solid { fill: none; stroke: #64748b; stroke-width: 1.4; }
+    .dashed { fill: none; stroke: #2563eb; stroke-width: 1.8; stroke-dasharray: 6 4; }
+  </style>
+
+  <rect width="1000" height="760" fill="#ffffff"/>
+  <text x="24" y="28" class="title">Arquitectura: 3 WARs + Redis</text>
+  <text x="24" y="48" class="sub">Clientes solo al Core · continua = HTTP/JWT · punteada = Redis Streams</text>
+
+  <rect x="230" y="70" width="140" height="44" rx="7" class="node"/>
+  <text x="300" y="90" text-anchor="middle" class="box-label">Android</text>
+  <text x="300" y="104" text-anchor="middle" class="box-sub">app IpsAdmin</text>
+
+  <rect x="610" y="70" width="140" height="44" rx="7" class="node"/>
+  <text x="680" y="90" text-anchor="middle" class="box-label">Backoffice</text>
+  <text x="680" y="104" text-anchor="middle" class="box-sub">web</text>
+
+  <rect x="200" y="150" width="580" height="230" rx="10" class="war"/>
+  <text x="214" y="172" class="box-label-accent">Core WAR</text>
+
+  <rect x="230" y="198" width="150" height="52" rx="7" class="node-accent"/>
+  <text x="305" y="218" text-anchor="middle" class="box-label-accent">Service-health</text>
+  <text x="305" y="234" text-anchor="middle" class="box-sub">módulo</text>
+
+  <rect x="430" y="198" width="150" height="52" rx="7" class="node-accent"/>
+  <text x="505" y="218" text-anchor="middle" class="box-label-accent">Snapshot 360</text>
+  <text x="505" y="234" text-anchor="middle" class="box-sub">fila + cache</text>
+
+  <rect x="620" y="198" width="130" height="52" rx="7" class="node"/>
+  <text x="685" y="218" text-anchor="middle" class="box-label">BFF</text>
+  <text x="685" y="234" text-anchor="middle" class="box-sub">fachada HTTP</text>
+
+  <rect x="430" y="290" width="150" height="52" rx="7" class="node"/>
+  <text x="505" y="310" text-anchor="middle" class="box-label">Consumer</text>
+  <text x="505" y="326" text-anchor="middle" class="box-sub">solo lee Redis</text>
+
+  <rect x="840" y="198" width="130" height="52" rx="7" class="node"/>
+  <text x="905" y="218" text-anchor="middle" class="box-label">GenieACS</text>
+  <text x="905" y="234" text-anchor="middle" class="box-sub">TR-069</text>
+
+  <rect x="430" y="430" width="150" height="52" rx="7" class="node-accent"/>
+  <text x="505" y="450" text-anchor="middle" class="box-label-accent">Redis</text>
+  <text x="505" y="466" text-anchor="middle" class="box-sub">gigafiber.events</text>
+
+  <rect x="200" y="550" width="150" height="52" rx="7" class="node-accent"/>
+  <text x="275" y="570" text-anchor="middle" class="box-label-accent">Traffic WAR</text>
+  <text x="275" y="586" text-anchor="middle" class="box-sub">poll MikroTik</text>
+
+  <rect x="630" y="550" width="150" height="52" rx="7" class="node-accent"/>
+  <text x="705" y="570" text-anchor="middle" class="box-label-accent">Gateway WAR</text>
+  <text x="705" y="586" text-anchor="middle" class="box-sub">SSH OLT</text>
+
+  <rect x="200" y="660" width="150" height="44" rx="7" class="node"/>
+  <text x="275" y="686" text-anchor="middle" class="box-label">MikroTik</text>
+
+  <rect x="630" y="660" width="150" height="44" rx="7" class="node"/>
+  <text x="705" y="686" text-anchor="middle" class="box-label">OLT MA5608T</text>
+
+  <path class="solid" d="M 300 114 V 198"/>
+  <text x="308" y="160" class="edge">JWT</text>
+  <path class="solid" d="M 680 114 V 198"/>
+  <text x="688" y="160" class="edge">JWT</text>
+
+  <path class="solid" d="M 380 224 H 430"/>
+  <text x="405" y="216" text-anchor="middle" class="edge">lee / escribe</text>
+  <path class="solid" d="M 580 224 H 620"/>
+  <path class="solid" d="M 750 224 H 840"/>
+  <text x="795" y="216" text-anchor="middle" class="edge">ACS</text>
+
+  <path class="solid" d="M 230 224 H 36 V 576 H 200"/>
+  <text x="42" y="300" class="edge">HTTP miss</text>
+
+  <path class="solid" d="M 685 250 V 366 H 920 V 576 H 780"/>
+  <text x="928" y="480" class="edge">HTTP</text>
+
+  <path class="solid" d="M 505 290 V 250"/>
+  <text x="513" y="272" class="edge">actualiza</text>
+
+  <path class="dashed" d="M 505 430 V 342"/>
+  <text x="513" y="390" class="edge">eventos</text>
+
+  <path class="dashed" d="M 350 566 H 430 V 482"/>
+  <text x="390" y="558" text-anchor="middle" class="edge">XADD</text>
+  <path class="dashed" d="M 630 566 H 580 V 482"/>
+  <text x="605" y="558" text-anchor="middle" class="edge">XADD</text>
+
+  <path class="solid" d="M 275 602 V 660"/>
+  <path class="solid" d="M 705 602 V 660"/>
+
+  <text x="24" y="740" class="sub">Fuente: arquitectura-3-wars · Gigafiber · 2026-09-04</text>
+</svg>

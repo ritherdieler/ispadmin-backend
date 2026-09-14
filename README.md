@@ -191,23 +191,21 @@ mikrotik.connection.retry-attempts=3
 ./gradlew classes
 
 # Ejecutar en modo desarrollo
-./gradlew :app:bootRun
+./gradlew :core:bootRun
 
 # Ejecutar tests
 ./gradlew test
 
 # Empaquetar el WAR único
-./gradlew :app:war :app:tomcatLibs
+./gradlew :core:war :core:tomcatLibs
 ```
 
 ## Estructura del Proyecto
 
 ```
-:shared :events :transport :routeros   # L1 plataforma
-:servicehealth                         # L2
-:acs :oltgateway :traffic :core         # L3
-:netdiag :observability                  # L4
-:app                                   # L5 → ispadmin.war
+:shared                             # L1 plataforma (events, transport, routeros)
+:acs :oltgateway :traffic           # L2 satélites
+:core                               # L3 → ispadmin.war (wispadmin, servicehealth, netdiag, observability)
 ```
 
 Detalle: `.agent-docs/gradle-modulos.md`.
@@ -231,8 +229,8 @@ Detalle: `.agent-docs/gradle-modulos.md`.
 - `.agent-docs/cutover-vlan100-mk2-tagged-2026-09-10.md` - Cutover de VLAN 1 y 100 a tagged (MK2 las termina)
 - `.agent-docs/arquitectura-red-dual-mikrotik.md` - Arquitectura de red dual Mikrotik (VLAN 1 / VLAN 100, MK1/MK2, integración ispAdmin)
 - `.agent-docs/checklist-mk2-vlan1-sfp-sfpplus3.md` - Checklist cutover VLAN 1 en MK2 puerto `sfp-sfpplus3`
-- `MIKROTIK_MOCK_README.md` - Configuración de mock/real para MikroTik en desarrollo
-- `OLT_MOCK_README.md` - Configuración de mock para OLT
+- `docs/MIKROTIK_MOCK_README.md` - Configuración de mock/real para MikroTik en desarrollo
+- `docs/OLT_MOCK_README.md` - Configuración de mock para OLT
 
 ## Contribución
 

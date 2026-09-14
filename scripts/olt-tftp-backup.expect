@@ -1,0 +1,149 @@
+#!/usr/bin/expect -f
+set timeout 900
+set cfg_file [lindex $argv 0]
+set dat_file [lindex $argv 1]
+set tftp_server [lindex $argv 2]
+set olt_pass [lindex $argv 3]
+set ssh_host [lindex $argv 4]
+set ssh_port [lindex $argv 5]
+set ssh_user [lindex $argv 6]
+
+if {$cfg_file eq "" || $dat_file eq "" || $tftp_server eq "" || $olt_pass eq ""} {
+    puts "Usage: olt-tftp-backup.expect <cfg> <dat> <tftp_ip> <olt_password> \[ssh_host\] \[ssh_port\] \[ssh_user\]"
+    exit 1
+}
+if {$ssh_host eq ""} { set ssh_host "10.11.104.2" }
+if {$ssh_port eq ""} { set ssh_port "22" }
+if {$ssh_user eq ""} { set ssh_user "oltadmin" }
+
+log_user 1
+
+proc wait_save_done {done_re} {
+    set timeout 4
+    set loops 0
+    while {$loops < 150} {
+        incr loops
+        expect {
+            -re $done_re {
+                set timeout 30
+                expect {
+                    "MA5608T#" {}
+                    timeout {}
+                }
+                set timeout 900
+                return
+            }
+            -re "System is busy|Loading\\(backuping|percentage of saved|please wait|please retry" {
+                send -- "\r"
+            }
+            -re "MA5608T#" {
+                send -- "\r"
+            }
+            eof {
+                puts "ERROR: SSH disconnected during save"
+                exit 5
+            }
+            timeout {
+                send -- "\r"
+            }
+        }
+    }
+    puts "ERROR: save timed out"
+    exit 3
+}
+
+proc wait_backup_done {} {
+    set timeout 5
+    set loops 0
+    while {$loops < 90} {
+        incr loops
+        expect {
+            -re "Failure cause:" {
+                puts "ERROR: $expect_out(buffer)"
+                exit 2
+            }
+            -re "successfully|Success|succeed" {
+                set timeout 30
+                expect {
+                    "MA5608T#" {}
+                    timeout {}
+                }
+                set timeout 900
+                return
+            }
+            -re "System is busy|Loading\\(backuping|Backing up files|Backup type|progress" {
+                send -- "\r"
+            }
+            -re "MA5608T#" {
+                send -- "\r"
+            }
+            eof {
+                puts "WARN: SSH disconnected during tftp; transfer may continue via UDP"
+                return
+            }
+            timeout {
+                send -- "\r"
+            }
+        }
+    }
+    puts "WARN: tftp backup wait finished without explicit success"
+}
+
+proc backup_tftp {kind remote_name} {
+    global tftp_server
+    expect {
+        "MA5608T#" {}
+        timeout {}
+    }
+    send -- "backup $kind tftp $tftp_server $remote_name\r"
+    expect {
+        -re "Are you sure to continue\\?" { send -- "y\r" }
+        timeout {
+            puts "ERROR: no confirm prompt for backup $kind"
+            exit 4
+        }
+    }
+    expect {
+        -re "Backing up files starts|Load\\(backup" {}
+        timeout {
+            puts "ERROR: backup $kind did not start"
+            exit 4
+        }
+    }
+    wait_backup_done
+}
+
+spawn ssh -p $ssh_port \
+    -o ServerAliveInterval=5 \
+    -o ServerAliveCountMax=240 \
+    -o TCPKeepAlive=yes \
+    -o KexAlgorithms=+diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1 \
+    -o HostKeyAlgorithms=+ssh-rsa \
+    -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+    -o Ciphers=aes128-cbc \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    ${ssh_user}@${ssh_host}
+expect -re {[Pp]assword:}
+send -- "$olt_pass\r"
+expect "MA5608T>"
+send -- "enable\r"
+expect "MA5608T#"
+
+send -- "save configuration\r"
+wait_save_done "Configuration file had been saved successfully|saved successfully"
+
+send -- "save data\r"
+wait_save_done "saved completely|no need to save again|The data of .* is saved"
+
+backup_tftp "configuration" $cfg_file
+backup_tftp "data" $dat_file
+
+send -- "quit\r"
+expect {
+    -re "Are you sure to log out" { send -- "y\r"; exp_continue }
+    eof {}
+    timeout {}
+}
+
+puts "BACKUP_CMDS_DONE"

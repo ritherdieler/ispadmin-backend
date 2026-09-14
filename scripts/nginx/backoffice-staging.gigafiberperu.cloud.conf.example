@@ -1,0 +1,20 @@
+# Staging SPA — DNS backoffice-staging.gigafiberperu.cloud → VPS
+# Build: npm run build:staging → /var/www/gigafiber/backoffice-staging
+# API: https://api.gigafiberperu.cloud/ispadmin-staging
+
+server {
+    listen 80;
+    server_name backoffice-staging.gigafiberperu.cloud;
+
+    root  /var/www/gigafiber/backoffice-staging;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}

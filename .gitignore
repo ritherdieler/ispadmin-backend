@@ -22,8 +22,8 @@ target/
 
 ### Gradle ###
 .gradle/
-app/build/
-app/logs/
+core/build/
+core/logs/
 build-logic/build/
 build-logic/.gradle/
 
@@ -42,23 +42,36 @@ build/
 /logs/
 /catalina.base_IS_UNDEFINED/
 /scripts/deploy.config.local
+/scripts/genieacs/.env
+**/node_modules/
+**/__pycache__/
 /src/main/resources/firebase_service_account.json
 /src/main/resources/firebase_service_account_dev.json
 /src/main/resources/firebase_service_account_prod.json
 /core/src/main/resources/firebase_service_account.json
 /core/src/main/resources/firebase_service_account_dev.json
 /core/src/main/resources/firebase_service_account_prod.json
-/.agent-docs/
 /src/main/resources/application-local.properties
 /src/main/resources/application-local-prestaging.secrets.properties
-/app/src/main/resources/application-local.properties
-/app/src/main/resources/application-local-prestaging.secrets.properties
+/core/src/main/resources/application-local.properties
+/core/src/main/resources/application-local-prestaging.secrets.properties
 
-/scripts/
-
+/local-docs/
 /data/
 /data/observability/replays/
 /backups/
 .cursor/
 /.cursor/
 .e2e-artifacts/
+
+### Root leftovers ###
+/src/
+/org/
+/.jpb/
+/Skills/
+/.skills/
+/backend-restart.log
+/tmp-analyze-out.txt
+/_propuesta_extract.txt
+/keystore.p12
+*.class

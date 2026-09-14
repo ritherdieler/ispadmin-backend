@@ -1,0 +1,24 @@
+# PLANTILLA — landing corporativo (SPA estático)
+#   1. DNS: gigafiberperu.cloud y www → IP del VPS (212.85.13.47)
+#   2. npm run build en landing → rsync dist/ a /var/www/gigafiber/landing
+#   3. Copiar a sites-available y habilitar en sites-enabled
+#   4. certbot --nginx -d gigafiberperu.cloud -d www.gigafiberperu.cloud
+#
+# Automatizado: landing/scripts/deploy.sh --full
+
+server {
+    listen 80;
+    server_name gigafiberperu.cloud www.gigafiberperu.cloud;
+
+    root  /var/www/gigafiber/landing;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}

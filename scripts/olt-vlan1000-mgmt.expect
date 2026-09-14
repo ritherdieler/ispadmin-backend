@@ -1,0 +1,74 @@
+#!/usr/bin/env expect -f
+# VLAN 1000 de gestion CPE: alta en la OLT y segundo service-port en la ONU lab.
+# Uso: olt-vlan1000-mgmt.expect [inspect|apply] [SN]
+set timeout 180
+set mode "inspect"
+if {[llength $argv] > 0} { set mode [lindex $argv 0] }
+set sn "ZTEGDC47BFFD"
+if {[llength $argv] > 1} { set sn [lindex $argv 1] }
+
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+set log_file "/tmp/olt-vlan1000-$mode.log"
+file delete -force $log_file
+
+proc log_line {msg} {
+    global log_file
+    set f [open $log_file a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    expect {
+        -re "More \\( Press 'Q' to break \\)" { send " "; exp_continue }
+        -re "MA5608T\\(config-if-gpon-0/\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config-if-mcu-0/\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config\\)#" { return }
+        -re "MA5608T#" { return }
+        -re "MA5608T>" { return }
+        -re "\\(y/n\\)" { send -- "y\r"; exp_continue }
+        timeout { log_line "TIMEOUT waiting prompt"; return }
+    }
+}
+
+proc send_cmd {line} {
+    log_line ">>> $line"
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts oltadmin@10.11.104.2
+expect {
+    -re "(?i)password:" { send -- "$env(OLT_PASSWORD)\r" }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+
+send_cmd "enable"
+send_cmd "config"
+send_cmd "mmi-mode enable"
+
+log_line "=== ESTADO ACTUAL ==="
+send_cmd "display vlan 1000"
+send_cmd "display vlan 100"
+send_cmd "display port vlan 0/3 2"
+send_cmd "display ont info by-sn $sn"
+send_cmd "display service-port all"
+send_cmd "display ont-lineprofile gpon all"
+send_cmd "display ont-lineprofile gpon profile-id 6"
+send_cmd "display ont-lineprofile gpon profile-id 11"
+
+if {$mode eq "apply"} {
+    log_line "=== APPLY VLAN 1000 tagged en 0/3/2 ==="
+    send_cmd "vlan 1000 smart"
+    send_cmd "port vlan 1000 0/3 2"
+    send_cmd "display vlan 1000"
+    send_cmd "display port vlan 0/3 2"
+    send_cmd "save configuration"
+}
+
+send_cmd "quit"
+send_cmd "quit"
+expect { eof {} timeout {} }
+log_line "DONE mode=$mode log=$log_file"

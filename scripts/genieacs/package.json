@@ -1,0 +1,12 @@
+{
+  "name": "genieacs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test virtual-parameters/test/gf-vparams.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

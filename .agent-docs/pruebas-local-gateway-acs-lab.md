@@ -8,7 +8,7 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 
 | Pieza | Dónde corre | No hacer |
 |-------|-------------|----------|
-| **WAR único** | Mac `:8082` `/ispadmin` (`./scripts/run-local-prestaging.sh start` o `./gradlew :app:bootRun`) | No desplegar staging “para probar”. No arrancar Gateway/ACS en otros puertos. |
+| **WAR único** | Mac `:8082` `/ispadmin` (`./scripts/run-local-prestaging.sh start` o `./gradlew :core:bootRun`) | No desplegar staging “para probar”. No arrancar Gateway/ACS en otros puertos. |
 | **ACS** | In-process en el WAR local (HTTP loopback al mismo context-path) | **No** levantar un segundo `AcsApplication`. |
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
 | **OLT** | Real `10.11.104.2` (SSH desde Gateway in-process) | No saturar VTY con SSH extra. |

@@ -1,0 +1,96 @@
+#!/usr/bin/env expect -f
+set timeout 120
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+set log_file "/tmp/olt-onu-pilot-mk2-authorize.log"
+file delete -force $log_file
+
+proc log_line {msg} {
+    global log_file
+    set f [open $log_file a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    expect {
+        -re "---- More \\( Press 'Q' to break \\) ----" {
+            send " "
+            exp_continue
+        }
+        -re "More \\( Press 'Q' to break \\)" {
+            send " "
+            exp_continue
+        }
+        -re "MA5608T\\(config-gpon-lineprofile-100\\)#" { return }
+        -re "MA5608T\\(config-gpon-srvprofile-100\\)#" { return }
+        -re "MA5608T\\(config-if-gpon-0/1\\)#" { return }
+        -re "MA5608T\\(config\\)#" { return }
+        -re "MA5608T#" { return }
+        -re "MA5608T>" { return }
+        -re "\\(y/n\\)" {
+            send -- "y\r"
+            exp_continue
+        }
+        -re "Failure:" {
+            set buf $expect_out(buffer)
+            log_line $buf
+            exp_continue
+        }
+        timeout {
+            log_line "TIMEOUT waiting prompt"
+            return
+        }
+    }
+}
+
+proc send_cmd {line} {
+    log_line ">>> $line"
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts oltadmin@10.11.104.2
+expect {
+    -re "(?i)password:" { send -- "GigaOlt2026\r" }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+
+send_cmd "enable"
+send_cmd "config"
+send_cmd "mmi-mode enable"
+
+send_cmd "ont-lineprofile gpon profile-id 100 profile-name PILOT_VLAN100"
+send_cmd "tcont 1 dba-profile-id 11"
+send_cmd "gem add 1 eth tcont 1"
+send_cmd "gem mapping 1 1 vlan 100"
+send_cmd "commit"
+send_cmd "quit"
+
+send_cmd "ont-srvprofile gpon profile-id 100 profile-name PILOT_VLAN100"
+send_cmd "ont-port eth 1"
+send_cmd "port vlan eth 1 100"
+send_cmd "commit"
+send_cmd "quit"
+
+send_cmd "interface gpon 0/1"
+send_cmd "ont confirm 6 ontid 127 sn-auth 5A544547DC47C169 omci ont-lineprofile-id 100 ont-srvprofile-id 100 desc \"PILOTO-MK2\""
+send_cmd "ont port native-vlan 6 127 eth 1 vlan 100"
+send_cmd "quit"
+
+send_cmd "service-port vlan 100 gpon 0/1/6 ont 127 gemport 1 multi-service user-vlan 100 tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+
+send_cmd "display ont info by-sn 5A544547DC47C169"
+send_cmd "display service-port port 0/1/6 ont 127"
+send_cmd "display ont optical-info 6 127"
+
+send_cmd "save configuration"
+send_cmd "quit"
+send_cmd "quit"
+
+expect {
+    eof { }
+    timeout { }
+}
+log_line "DONE log=$log_file"

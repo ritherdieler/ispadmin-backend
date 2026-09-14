@@ -152,9 +152,9 @@ if [[ -z "$VPS_HOST" ]]; then
 fi
 
 SSH_TARGET="${VPS_USER}@${VPS_HOST}"
-GRADLE_WAR="$PROJECT_DIR/app/build/libs/ispadmin.war"
+GRADLE_WAR="$PROJECT_DIR/core/build/libs/ispadmin.war"
 WAR_PATH="$PROJECT_DIR/target/$WAR_NAME"
-TOMCAT_LIB_SRC="$PROJECT_DIR/app/build/tomcat-lib"
+TOMCAT_LIB_SRC="$PROJECT_DIR/core/build/tomcat-lib"
 CATALINA_OPTS_VALUE='-Duser.timezone=America/Lima -DPYTORCH_VERSION=2.7.1 -DPYTORCH_FLAVOR=cpu -Dai.djl.pytorch.native_helper=com.dscorp.wispadmin.wispadmin.util.PytorchNativeHelper'
 TOMCAT_BASE_IMAGE="${TOMCAT_BASE_IMAGE:-tomcat:9.0-jdk11-temurin-jammy}"
 
@@ -261,6 +261,25 @@ check_disabled_modules() {
   "$PROJECT_DIR/scripts/deploy-disabled-modules-preflight.sh" --env "$DEPLOY_ENV"
 }
 
+refuse_prestaging_on_vps() {
+  case "$DEPLOY_ENV" in
+    prod|staging) ;;
+    *)
+      echo "local-prestaging no se despliega al VPS (solo prod y staging). Env=$DEPLOY_ENV" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "${SPRING_PROFILES_ACTIVE:-}" == *prestaging* || "${SPRING_PROFILES_ACTIVE:-}" == *local-prestaging* ]]; then
+    echo "local-prestaging no se despliega al VPS (solo prod y staging)." >&2
+    exit 1
+  fi
+  local war="${WAR_PATH:-}"
+  if [[ -n "$war" && -f "$war" ]] && unzip -l "$war" | grep -q 'application-local-prestaging'; then
+    echo "local-prestaging no se despliega al VPS: $war contiene application-local-prestaging" >&2
+    exit 1
+  fi
+}
+
 require_existing_wars() {
   mkdir -p "$PROJECT_DIR/target"
   if [[ -f "$GRADLE_WAR" && ( ! -f "$WAR_PATH" || "$GRADLE_WAR" -nt "$WAR_PATH" ) ]]; then
@@ -311,7 +330,7 @@ build_war() {
     return
   fi
   echo "Building $WAR_NAME with Gradle for Linux x86_64..."
-  (cd "$PROJECT_DIR" && ./gradlew :app:war :app:tomcatLibs -Pdjl.linux)
+  (cd "$PROJECT_DIR" && ./gradlew :core:war :core:tomcatLibs -Pdjl.linux)
   cp -f "$GRADLE_WAR" "$WAR_PATH"
   VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-djl-war.sh"
   VERIFY_WAR="$WAR_PATH" bash "$SCRIPT_DIR/verify-war.sh"
@@ -1077,10 +1096,12 @@ register_deploy() {
 
 case "$MODE" in
   setup)
+    refuse_prestaging_on_vps
     setup_djl
     echo "Setup complete. Redeploy WAR with: ./scripts/deploy.sh --war-only"
     ;;
   full)
+    refuse_prestaging_on_vps
     check_disabled_modules
     load_release_version
     check_version_not_registered
@@ -1104,6 +1125,7 @@ case "$MODE" in
     register_deploy
     ;;
   war-only)
+    refuse_prestaging_on_vps
     check_disabled_modules
     load_release_version
     check_version_not_registered
@@ -1127,6 +1149,7 @@ case "$MODE" in
     register_deploy
     ;;
   deploy)
+    refuse_prestaging_on_vps
     check_disabled_modules
     load_release_version
     check_version_not_registered

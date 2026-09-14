@@ -60,7 +60,7 @@ map_file() {
       ;;
   esac
   case "$f" in
-    shared/*|events/*|transport/*|routeros/*|servicehealth/*|acs/*|oltgateway/*|traffic/*|core/*|netdiag/*|observability/*|app/*|build-logic/*)
+    shared/*|acs/*|oltgateway/*|traffic/*|core/*|build-logic/*)
       echo core
       ;;
     src/*)

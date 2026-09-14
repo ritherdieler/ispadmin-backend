@@ -1,0 +1,92 @@
+#!/usr/bin/expect -f
+# Solo lectura: trap status / trap-source / usm (sin writes)
+set timeout 60
+set host "10.11.104.2"
+set user "oltadmin"
+set pass $env(OLT_GATEWAY_PASSWORD)
+set outfile "/tmp/olt-snmp-trap-capture.txt"
+
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+
+file delete -force $outfile
+
+proc log_line {msg} {
+    global outfile
+    set f [open $outfile a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    global outfile
+    expect {
+        -re {---- More \( Press 'Q' to break \) ----} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send " "
+            exp_continue
+        }
+        -re {More \( Press 'Q' to break \)} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send " "
+            exp_continue
+        }
+        -re {\{ <cr>} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send "\r"
+            exp_continue
+        }
+        -re {MA5608T#} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        -re {MA5608T>} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        -re {MA5608T\(config\)#} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        timeout {
+            log_line "TIMEOUT waiting prompt"
+            return
+        }
+    }
+}
+
+proc send_cmd {line} {
+    log_line "\n========== $line =========="
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts ${user}@${host}
+expect {
+    -re {(?i)password:} { send -- "$pass\r" }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+send_cmd "enable"
+send_cmd "scroll 512"
+send_cmd "display snmp-agent trap"
+send_cmd "display snmp-agent trap-source"
+send_cmd "display snmp-agent trap-format"
+send_cmd "display snmp-agent target-host"
+send_cmd "display snmp-agent local-engineid"
+send_cmd "display snmp-agent usm-user"
+send_cmd "quit"
+expect eof
+log_line "DONE"

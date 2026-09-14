@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 
-VPS_ALLOW = "212.85.13.47/32,192.168.0.0/16"
+VPS_ALLOW = "212.85.13.47/32,192.168.0.0/16,10.64.60.4/32"
 
 ROS_SCRIPT = r"""
 /certificate remove [find where name~"^netdiag"]

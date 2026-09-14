@@ -1,0 +1,26 @@
+# PLANTILLA — no activar hasta completar estos pasos:
+#   1. Crear registro DNS observability.gigafiberperu.cloud → IP del VPS
+#   2. npm run build en ispadmin-observability-web → copiar dist/ a /var/www/gigafiber/observability
+#   3. Renombrar este archivo quitando el sufijo .example
+#   4. Habilitar en sites-enabled: ln -s /etc/nginx/sites-available/observability.gigafiberperu.cloud.conf /etc/nginx/sites-enabled/
+#   5. certbot --nginx -d observability.gigafiberperu.cloud
+#
+# El panel consume la API y el WebSocket en api.gigafiberperu.cloud; este vhost solo sirve el SPA.
+# La autorización ADMIN se aplica a nivel de API mediante token de sesión (X-Obs-Session).
+
+server {
+    listen 80;
+    server_name observability.gigafiberperu.cloud;
+
+    root  /var/www/gigafiber/observability;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}

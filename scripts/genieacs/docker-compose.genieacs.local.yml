@@ -1,0 +1,9 @@
+# Override local: CWMP/NBI/UI accesibles desde la LAN (ONU física en pruebas).
+# Uso: docker compose -f docker-compose.genieacs.yml -f docker-compose.genieacs.local.yml up -d
+services:
+  genieacs:
+    ports:
+      - "7547:7547"
+      - "7557:7557"
+      - "7567:7567"
+      - "3000:3000"

@@ -1,0 +1,31 @@
+# Panel admin GenieACS (UI :3000) en HTTPS :8443 del mismo certificado ACS.
+# URL: https://acs.gigafiberperu.cloud:8443/
+# Restringido a IPs publicas Mikrotik (ver genieacs-ui-allowed-ips.conf.example).
+# CWMP sigue en :443/:80 -> :7547 (no mezclar con la UI en /).
+
+server {
+    listen 8443 ssl;
+    server_name acs.gigafiberperu.cloud;
+
+    ssl_certificate /etc/letsencrypt/live/acs.gigafiberperu.cloud/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/acs.gigafiberperu.cloud/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        allow 38.224.231.2;
+        allow 38.224.231.4;
+        deny all;
+
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+}

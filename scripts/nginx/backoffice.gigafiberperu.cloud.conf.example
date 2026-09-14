@@ -1,0 +1,24 @@
+# PLANTILLA — no activar hasta completar estos pasos:
+#   1. Crear registro DNS backoffice.gigafiberperu.cloud → IP del VPS
+#   2. npm run build en ispadmin-backoffice → copiar dist/ a /var/www/gigafiber/backoffice
+#   3. Renombrar este archivo quitando el sufijo .example
+#   4. Habilitar en sites-enabled: ln -s /etc/nginx/sites-available/backoffice.gigafiberperu.cloud.conf /etc/nginx/sites-enabled/
+#   5. certbot --nginx -d backoffice.gigafiberperu.cloud
+#   6. Actualizar src/services/config.ts → baseUrl: 'https://api.gigafiberperu.cloud/ispadmin'
+
+server {
+    listen 80;
+    server_name backoffice.gigafiberperu.cloud;
+
+    root  /var/www/gigafiber/backoffice;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}

@@ -1,0 +1,87 @@
+#!/usr/bin/expect -f
+set timeout 900
+set cfg_file [lindex $argv 0]
+set tftp_server [lindex $argv 1]
+set olt_pass [lindex $argv 2]
+set ssh_host [lindex $argv 3]
+set ssh_port [lindex $argv 4]
+set ssh_user [lindex $argv 5]
+
+if {$cfg_file eq "" || $tftp_server eq "" || $olt_pass eq ""} {
+    puts "Usage: olt-tftp-backup-cfg.expect <cfg> <tftp_ip> <olt_password> \[ssh_host\] \[ssh_port\] \[ssh_user\]"
+    exit 1
+}
+if {$ssh_host eq ""} { set ssh_host "10.11.104.2" }
+if {$ssh_port eq ""} { set ssh_port "22" }
+if {$ssh_user eq ""} { set ssh_user "oltadmin" }
+
+log_user 1
+
+spawn ssh -p $ssh_port \
+    -o ServerAliveInterval=5 \
+    -o ServerAliveCountMax=240 \
+    -o TCPKeepAlive=yes \
+    -o KexAlgorithms=+diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1 \
+    -o HostKeyAlgorithms=+ssh-rsa \
+    -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+    -o Ciphers=aes128-cbc \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    ${ssh_user}@${ssh_host}
+expect -re {[Pp]assword:}
+send -- "$olt_pass\r"
+expect "MA5608T>"
+send -- "enable\r"
+expect "MA5608T#"
+
+send -- "backup configuration tftp $tftp_server $cfg_file\r"
+expect {
+    -re "Are you sure to continue\\?" { send -- "y\r" }
+    timeout {
+        puts "ERROR: no confirm prompt for backup configuration"
+        exit 4
+    }
+}
+expect {
+    -re "Backing up files starts|Load\\(backup" {}
+    timeout {
+        puts "ERROR: backup configuration did not start"
+        exit 4
+    }
+}
+
+set timeout 20
+set loops 0
+set seen_success 0
+while {$loops < 30} {
+    incr loops
+    expect {
+        -re "Failure cause:" {
+            puts "ERROR: $expect_out(buffer)"
+            exit 2
+        }
+        -re "successfully|Success|succeed" {
+            set seen_success 1
+            break
+        }
+        eof {
+            puts "WARN: SSH disconnected during tftp cfg; transfer may continue via UDP"
+            break
+        }
+        timeout {}
+    }
+}
+if {$seen_success == 0} {
+    puts "WARN: tftp cfg wait finished without explicit success"
+}
+
+catch {
+    send -- "quit\r"
+    expect {
+        -re "Are you sure to log out" { send -- "y\r"; exp_continue }
+        eof {}
+        timeout {}
+    }
+}
+
+puts "CFG_BACKUP_DONE"

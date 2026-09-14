@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAR="${VERIFY_WAR:-$PROJECT_DIR/app/build/libs/ispadmin.war}"
-TOMCAT_LIB="${TOMCAT_LIB_SRC:-$PROJECT_DIR/app/build/tomcat-lib}"
+WAR="${VERIFY_WAR:-$PROJECT_DIR/core/build/libs/ispadmin.war}"
+TOMCAT_LIB="${TOMCAT_LIB_SRC:-$PROJECT_DIR/core/build/tomcat-lib}"
 
 fail() {
   echo "ERROR: $*" >&2
@@ -11,7 +11,7 @@ fail() {
 }
 
 if [ ! -f "$WAR" ]; then
-  fail "No existe $WAR. Compila primero: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  fail "No existe $WAR. Compila primero: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
 fi
 
 MODELS_DIR="$PROJECT_DIR/core/src/main/resources/models"
@@ -39,26 +39,15 @@ if grep -q "WEB-INF/lib/.*\\(api-${DJL_VERSION:-0.36.0}\\|pytorch-engine\\|pytor
 fi
 
 if grep -q "osx-aarch64" <<< "$WAR_LIST"; then
-  fail "El WAR contiene osx-aarch64. Para Debian x86_64 recompila con: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  fail "El WAR contiene osx-aarch64. Para Debian x86_64 recompila con: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
 fi
 
 if grep -q "WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class" <<< "$WAR_LIST"; then
   fail "El WAR contiene PytorchNativeHelper. Esa clase debe estar solo en CATALINA_HOME/lib/ispadmin-djl-native-helper.jar para evitar classloader nativo por redeploy."
 fi
 
-CORE_JAR="$(mktemp)"
-if ! unzip -p "$WAR" WEB-INF/lib/core.jar > "$CORE_JAR"; then
-  rm -f "$CORE_JAR"
-  fail "El WAR no contiene WEB-INF/lib/core.jar"
-fi
-if jar tf "$CORE_JAR" | grep -q "PytorchNativeHelper"; then
-  rm -f "$CORE_JAR"
-  fail "WEB-INF/lib/core.jar contiene PytorchNativeHelper; esa clase debe vivir solo en CATALINA_HOME/lib/ispadmin-djl-native-helper.jar"
-fi
-rm -f "$CORE_JAR"
-
 if [ ! -d "$TOMCAT_LIB" ] || [ -z "$(find "$TOMCAT_LIB" -maxdepth 1 -name '*.jar' -print -quit)" ]; then
-  fail "$TOMCAT_LIB no existe o no contiene JARs. Recompila con: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  fail "$TOMCAT_LIB no existe o no contiene JARs. Recompila con: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
 fi
 
 if ! find "$TOMCAT_LIB" -maxdepth 1 -name "pytorch-native-cpu-*-linux-x86_64.jar" -print -quit | grep -q .; then

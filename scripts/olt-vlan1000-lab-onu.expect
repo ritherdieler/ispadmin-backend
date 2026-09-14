@@ -1,0 +1,92 @@
+#!/usr/bin/env expect -f
+# Segundo service-port de gestion (VLAN 1000) sobre la ONU de laboratorio.
+# Crea un ont-lineprofile propio (gem 1 -> VLAN 100, gem 2 -> VLAN 1000) y lo
+# vincula SOLO a la ONU lab; no toca el profile 6 que usan 82 abonados.
+# Uso: olt-vlan1000-lab-onu.expect [inspect|apply]
+set timeout 180
+set mode "inspect"
+if {[llength $argv] > 0} { set mode [lindex $argv 0] }
+
+set board 1
+set port 6
+set ontId 117
+set lpId 12
+set lpName "Generic_1_V100M1000MGM"
+
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+set log_file "/tmp/olt-vlan1000-lab-$mode.log"
+file delete -force $log_file
+
+proc log_line {msg} {
+    global log_file
+    set f [open $log_file a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    expect {
+        -re "---- More \\( Press 'Q' to break \\) ----" { send " "; exp_continue }
+        -re "More \\( Press 'Q' to break \\)" { send " "; exp_continue }
+        -re "MA5608T\\(config-gpon-lineprofile-\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config-if-gpon-0/\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config-if-mcu-0/\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config\\)#" { return }
+        -re "MA5608T#" { return }
+        -re "MA5608T>" { return }
+        -re "\\(y/n\\)" { send -- "y\r"; exp_continue }
+        timeout { log_line "TIMEOUT waiting prompt"; return }
+    }
+}
+
+proc send_cmd {line} {
+    log_line ">>> $line"
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts oltadmin@10.11.104.2
+expect {
+    -re "(?i)password:" { send -- "$env(OLT_PASSWORD)\r" }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+
+send_cmd "enable"
+send_cmd "config"
+send_cmd "mmi-mode enable"
+
+log_line "=== ESTADO PREVIO ==="
+send_cmd "display ont-lineprofile gpon profile-id $lpId"
+send_cmd "display service-port port 0/$board/$port ont $ontId"
+
+if {$mode eq "apply"} {
+    log_line "=== CREAR LINEPROFILE $lpId ==="
+    send_cmd "ont-lineprofile gpon profile-id $lpId profile-name \"$lpName\""
+    send_cmd "tcont 1 dba-profile-id 11"
+    send_cmd "gem add 1 eth tcont 1"
+    send_cmd "gem add 2 eth tcont 1"
+    send_cmd "gem mapping 1 1 vlan 100"
+    send_cmd "gem mapping 2 1 vlan 1000"
+    send_cmd "commit"
+    send_cmd "quit"
+    send_cmd "display ont-lineprofile gpon profile-id $lpId"
+
+    log_line "=== REVINCULAR ONU LAB ==="
+    send_cmd "interface gpon 0/$board"
+    send_cmd "ont modify $port $ontId ont-lineprofile-id $lpId"
+    send_cmd "display ont info $port $ontId"
+    send_cmd "quit"
+
+    log_line "=== SERVICE-PORT GESTION VLAN 1000 ==="
+    send_cmd "service-port vlan 1000 gpon 0/$board/$port ont $ontId gemport 2 multi-service user-vlan 1000 tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+    send_cmd "display service-port port 0/$board/$port ont $ontId"
+    send_cmd "display vlan 1000"
+    send_cmd "save configuration"
+}
+
+send_cmd "quit"
+send_cmd "quit"
+expect { eof {} timeout {} }
+log_line "DONE mode=$mode log=$log_file"

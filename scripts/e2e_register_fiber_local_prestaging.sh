@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SECRETS="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties"
-EXAMPLE="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties.example"
+SECRETS="$ROOT/core/src/main/resources/application-local-prestaging.secrets.properties"
+EXAMPLE="$ROOT/core/src/main/resources/application-local-prestaging.secrets.properties.example"
 MYSQL="${MYSQL_BIN:-/opt/homebrew/opt/mysql-client/bin/mysql}"
 
 CORE="${CORE_BASE:-http://127.0.0.1:8082/ispadmin}"

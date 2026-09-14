@@ -9,23 +9,23 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-TOMCAT_LIB_SRC="$PROJECT_DIR/app/build/tomcat-lib"
+TOMCAT_LIB_SRC="$PROJECT_DIR/core/build/tomcat-lib"
 
 if [ ! -d "$TOMCAT_LIB_SRC" ]; then
   echo "No existe $TOMCAT_LIB_SRC"
-  echo "Compila primero: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  echo "Compila primero: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
   exit 1
 fi
 
 if [ ! -f "$TOMCAT_LIB_SRC/ispadmin-djl-native-helper.jar" ]; then
   echo "Falta $TOMCAT_LIB_SRC/ispadmin-djl-native-helper.jar"
-  echo "Compila primero: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  echo "Compila primero: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
   exit 1
 fi
 
 if ! find "$TOMCAT_LIB_SRC" -maxdepth 1 -name "pytorch-native-cpu-*-linux-x86_64.jar" -print -quit | grep -q .; then
   echo "Falta pytorch-native-cpu linux-x86_64 en $TOMCAT_LIB_SRC"
-  echo "El VPS Debian confirmado es x86_64; compila desde Mac con: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux"
+  echo "El VPS Debian confirmado es x86_64; compila desde Mac con: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux"
   exit 1
 fi
 

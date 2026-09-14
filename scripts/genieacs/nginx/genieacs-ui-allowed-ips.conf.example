@@ -1,0 +1,6 @@
+# IPs publicas Mikrotik (network_device en prod). Incluir en location del panel UI.
+# MK1 Mikrotik CCR
+allow 38.224.231.2;
+# MK2 Mikrotik CCR 2
+allow 38.224.231.4;
+deny all;

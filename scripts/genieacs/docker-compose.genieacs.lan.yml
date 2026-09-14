@@ -1,0 +1,104 @@
+name: genieacs-pilot
+
+services:
+  genieacs:
+    image: drumsergio/genieacs:1.2.16.0
+    container_name: gigafiber-genieacs
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GENIEACS_MONGODB_CONNECTION_URL: ${GENIEACS_MONGODB_CONNECTION_URL}
+      GENIEACS_UI_JWT_SECRET: ${GENIEACS_UI_JWT_SECRET}
+      GENIEACS_CWMP_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-cwmp-access.log
+      GENIEACS_NBI_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-nbi-access.log
+      GENIEACS_FS_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-fs-access.log
+      GENIEACS_UI_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-ui-access.log
+      GENIEACS_DEBUG_FILE: /var/log/genieacs/genieacs-debug.yaml
+      GENIEACS_EXT_DIR: /opt/genieacs/ext
+      CWMP_WORKER_PROCESSES: ${CWMP_WORKER_PROCESSES:-2}
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-25}
+    ports:
+      - "127.0.0.1:13000:3000"
+      - "0.0.0.0:7547:7547"
+      - "127.0.0.1:7557:7557"
+    volumes:
+      - genieacs_ext:/opt/genieacs/ext
+      - genieacs_logs:/var/log/genieacs
+    networks:
+      - genieacs_internal
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 1536M
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  mongo:
+    image: mongo:7.0
+    container_name: gigafiber-genieacs-mongo
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - genieacs_mongo_data:/data/db
+      - genieacs_mongo_config:/data/configdb
+    networks:
+      - genieacs_internal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "-u",
+          "${MONGO_ROOT_USER}",
+          "-p",
+          "${MONGO_ROOT_PASSWORD}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
+volumes:
+  genieacs_mongo_data:
+    name: genieacs_pilot_mongo_data
+  genieacs_mongo_config:
+    name: genieacs_pilot_mongo_config
+  genieacs_ext:
+    name: genieacs_pilot_ext
+  genieacs_logs:
+    name: genieacs_pilot_logs
+
+networks:
+  genieacs_internal:
+    name: genieacs_pilot_internal
+    driver: bridge
+    internal: false

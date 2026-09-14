@@ -57,7 +57,7 @@ if [[ "$DEPLOY_ENV" != "prod" && "$DEPLOY_ENV" != "staging" ]]; then
 fi
 
 if [[ -z "$PROPS" ]]; then
-  PROPS="$PROJECT_DIR/app/src/main/resources/application-${DEPLOY_ENV}.properties"
+  PROPS="$PROJECT_DIR/core/src/main/resources/application-${DEPLOY_ENV}.properties"
 fi
 if [[ ! -f "$PROPS" ]]; then
   echo "Missing properties file: $PROPS" >&2

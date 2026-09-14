@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SECRETS="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties"
-EXAMPLE="$ROOT/app/src/main/resources/application-local-prestaging.secrets.properties.example"
+SECRETS="$ROOT/core/src/main/resources/application-local-prestaging.secrets.properties"
+EXAMPLE="$ROOT/core/src/main/resources/application-local-prestaging.secrets.properties.example"
 CMD="${1:-help}"
 
 need_secrets() {
@@ -68,7 +68,7 @@ stop_app() {
 run_app() {
   need_secrets
   free_listen_port 8082
-  exec "$ROOT/gradlew" :app:bootRun \
+  exec "$ROOT/gradlew" :core:bootRun \
     -Dspring-boot.run.jvmArguments="-Djava.net.preferIPv4Stack=true -Dspring.devtools.restart.enabled=false" \
     --args="--server.port=8082 --server.servlet.context-path=/ispadmin --spring.profiles.active=dev,local-prestaging"
 }
@@ -91,7 +91,7 @@ Opt-in local-prestaging (single WAR bootRun :8082 /ispadmin). Does not change VP
   $0 check
 
 stop kills TCP listeners on 8082 (SIGTERM, then SIGKILL if still listening).
-start|core|restart free 8082 then ./gradlew :app:bootRun with profiles dev,local-prestaging.
+start|core|restart free 8082 then ./gradlew :core:bootRun with profiles dev,local-prestaging.
 Does not kill listeners outside 8082 (SSH tunnels stay up). Never pkill java/gradle by name.
 
 Requires $SECRETS (gitignored).

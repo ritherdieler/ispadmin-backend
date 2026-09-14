@@ -2,7 +2,7 @@
 
 Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en el VPS.
 
-Build verificado: `./gradlew :app:war :app:tomcatLibs -Pdjl.linux` + `./scripts/deploy.sh --full`.
+Build verificado: `./gradlew :core:war :core:tomcatLibs -Pdjl.linux` + `./scripts/deploy.sh --full`.
 
 Último deploy prod: hotfix `hotfix/search-debt-hydrate` @ `83de8fe` → `APP_RELEASE=1.0.3+83de8fe` (deuda/facturas pendientes en `GET /subscription/search`). Detalle: [hotfix-search-debt-hydrate-2026-09-03.md](./hotfix-search-debt-hydrate-2026-09-03.md). Base prod previa: `4c1cc1f`.
 
@@ -33,7 +33,7 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 
 En el día a día solo necesitas **`./scripts/deploy.sh`** o **`--war-only`**.
 
-Todos los modos que despliegan un WAR (`--deploy`, `--full`) ejecutan primero `./gradlew test`. Con `set -e`, cualquier test fallido cancela el proceso antes de compilar el WAR, abrir SSH o modificar el VPS. `--war-only` reutiliza el artefacto en `target/` (copia de `app/build/libs/ispadmin.war`) y no corre la suite.
+Todos los modos que despliegan un WAR (`--deploy`, `--full`) ejecutan primero `./gradlew test`. Con `set -e`, cualquier test fallido cancela el proceso antes de compilar el WAR, abrir SSH o modificar el VPS. `--war-only` reutiliza el artefacto en `target/` (copia de `core/build/libs/ispadmin.war`) y no corre la suite.
 
 ---
 
@@ -122,7 +122,7 @@ git checkout a4c8d3c -- src/main/resources/models/face_feature.zip
 Desde Mac, **siempre** compilar para Linux x86_64:
 
 ```bash
-./gradlew :app:war :app:tomcatLibs -Pdjl.linux
+./gradlew :core:war :core:tomcatLibs -Pdjl.linux
 bash scripts/verify-djl-war.sh
 ```
 
@@ -184,7 +184,7 @@ Si el setup DJL ya está hecho y solo quieres subir el WAR tras rebuild:
 Equivale a `--deploy` (modo por defecto):
 
 1. `./gradlew test` y cancelación inmediata ante cualquier fallo
-2. `./gradlew :app:war :app:tomcatLibs -Pdjl.linux`
+2. `./gradlew :core:war :core:tomcatLibs -Pdjl.linux`
 3. `verify-djl-war.sh`
 4. SCP del WAR al VPS
 5. `docker cp` a `tomcat9027:/usr/local/tomcat/webapps/ispadmin.war`
@@ -201,7 +201,7 @@ Si **ya compilaste** y no quieres rebuild:
 
 1. Compilar en Mac:
    ```bash
-   ./gradlew :app:war :app:tomcatLibs -Pdjl.linux
+   ./gradlew :core:war :core:tomcatLibs -Pdjl.linux
    bash scripts/verify-djl-war.sh
    ```
 2. Abrir `http://212.85.13.47:8080/manager`.

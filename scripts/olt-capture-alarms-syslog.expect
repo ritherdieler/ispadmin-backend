@@ -1,0 +1,124 @@
+#!/usr/bin/env expect -f
+set timeout 90
+set host "10.11.104.2"
+set user "oltadmin"
+set pass "GigaOlt2026"
+set outfile "/tmp/olt-alarms-syslog-capture.txt"
+
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+
+file delete -force $outfile
+
+proc log_line {msg} {
+    global outfile
+    set f [open $outfile a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    global outfile
+    expect {
+        -re {---- More \( Press 'Q' to break \) ----} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send " "
+            exp_continue
+        }
+        -re {More \( Press 'Q' to break \)} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send " "
+            exp_continue
+        }
+        -re {\{ <cr>} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send "\r"
+            exp_continue
+        }
+        -re {\(y/n\)} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            send "y\r"
+            exp_continue
+        }
+        -re {MA5608T\(config-if-gpon-0/[01]\)#} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        -re {MA5608T\(config\)#} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        -re {MA5608T#} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        -re {MA5608T>} {
+            set f [open $outfile a]
+            puts -nonewline $f $expect_out(buffer)
+            close $f
+            return
+        }
+        timeout {
+            log_line "TIMEOUT waiting prompt"
+            return
+        }
+    }
+}
+
+proc send_cmd {line} {
+    log_line "\n========== $line =========="
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts ${user}@${host}
+expect {
+    -re {(?i)password:} { send -- "$pass\r" }
+    -re {upper limit|Reenter times} { log_line "SSH LOCKED"; exit 2 }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+
+send_cmd "enable"
+send_cmd "config"
+send_cmd "mmi-mode enable"
+send_cmd "quit"
+send_cmd "scroll 512"
+send_cmd "display alarm active all"
+send_cmd "display alarm history"
+send_cmd "display logbuffer"
+send_cmd "display snmp-agent trap all"
+send_cmd "display current-configuration section snmp-agent"
+send_cmd "config"
+send_cmd "info-center ?"
+send_cmd "display information-center"
+send_cmd "interface gpon 0/0"
+send_cmd "display port state 0"
+send_cmd "display port state 5"
+send_cmd "quit"
+send_cmd "interface gpon 0/1"
+send_cmd "display port state 0"
+send_cmd "quit"
+send_cmd "quit"
+send_cmd "quit"
+
+expect {
+    -re {\(y/n\)} { send -- "y\r"; exp_continue }
+    eof {}
+}
+log_line "DONE"
+puts "DONE -> $outfile"
