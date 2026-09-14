@@ -58,6 +58,25 @@ class StagingEnvironmentPropertiesTest {
     }
 
     @Test
+    fun staging_enables_gateway_acs_client_for_tr069() {
+        val staging = staging()
+        assertTrue(
+            Regex("""^olt\.gateway\.acs\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(staging),
+            staging,
+        )
+        assertTrue(
+            staging.contains("olt.gateway.acs.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"),
+            staging,
+        )
+        assertTrue(staging.contains("olt.gateway.acs.api-key=\${ACS_API_KEY:dev-acs-key}"), staging)
+        assertTrue(
+            Regex("""^genieacs\.enabled=\$\{GENIEACS_ENABLED:true\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(staging),
+            staging,
+        )
+    }
+
+    @Test
     fun staging_and_prod_use_satellite_datasources_in_the_single_war() {
         val root = Path.of(System.getProperty("user.dir"))
         val staging = Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))

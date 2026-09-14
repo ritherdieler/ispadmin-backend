@@ -26,6 +26,17 @@ Ejemplo correcto: `OLT_WRITE_LIVE=true ./gradlew :oltgateway:test --tests "OltGa
 
 Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 
+## Deploy: módulos desactivados (obligatorio)
+
+Antes de **cualquier** `deploy.sh` (staging o prod, incluido `--war-only`):
+
+1. Correr `scripts/deploy-disabled-modules-preflight.sh --env <staging|prod>` (el propio `deploy.sh` lo invoca).
+2. Si avisa de un flag `*.enabled=false` o ausente **que rompe la cadena del deploy** (p. ej. `olt.gateway.acs.enabled` → TR-069 `NA`), **parar**. Listar el impacto al usuario.
+3. **No** desplegar hasta que el usuario confirme explícitamente. Prohibido pasar `--yes` / `DEPLOY_CONFIRM_DISABLED_MODULES=yes` por iniciativa del agente.
+4. Collectors, WhatsApp y UDP apagados en staging **no** son compromiso (van a propósito).
+
+Regla Cursor: `gigafiber/.cursor/rules/deploy-modulos-desactivados.mdc`.
+
 ### Pruebas locales Gateway / ACS / MK2 / ONU lab (obligatorio)
 
 Cuando el usuario pida **pruebas en local** (alta FIBER, authorize/activate/delete, TR-069): seguir el runbook numerado de `.agent-docs/pruebas-local-gateway-acs-lab.md`. No improvisar otro stack.

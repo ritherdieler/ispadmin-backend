@@ -13,12 +13,36 @@ class StagingE2eRegistrationCatalogSqlTest {
         val sql = Files.readString(root().resolve("scripts/sql/staging-e2e-registration-catalog.sql"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.place"))
         assertTrue(sql.contains("FROM ispadmin.place"))
+        assertTrue(sql.contains("ST_GeomFromText(ST_AsText"))
+        assertFalse(
+            Regex("INSERT INTO ispadmin_staging\\.place\\s+SELECT \\*").containsMatchIn(sql),
+            "place copy must not SELECT * (GEOMETRY SRID 4326)",
+        )
         assertFalse(sql.contains("WHERE id = 1"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.mufa"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.nap_box"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.plan"))
         assertTrue(sql.contains("FROM ispadmin.plan"))
+        assertFalse(
+            Regex("INSERT INTO ispadmin_staging\\.plan\\s+SELECT \\*").containsMatchIn(sql),
+            "plan copy must name columns (Hibernate order differs from prod)",
+        )
+        assertFalse(
+            Regex("INSERT INTO ispadmin_staging\\.nap_box\\s+SELECT \\*").containsMatchIn(sql),
+            "nap_box copy must name columns (Hibernate order differs from prod)",
+        )
+        assertFalse(
+            Regex("INSERT INTO ispadmin_staging\\.network_device\\s+SELECT \\*").containsMatchIn(sql),
+            "network_device copy must name columns (Hibernate order differs from prod)",
+        )
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.network_device"))
+        assertTrue(sql.contains("INSERT INTO ispadmin_staging.user"))
+        assertTrue(sql.contains("FROM ispadmin.user"))
+        assertFalse(
+            Regex("INSERT INTO ispadmin_staging\\.user\\s+SELECT \\*").containsMatchIn(sql),
+            "user copy must name columns (Hibernate order differs from prod)",
+        )
+        assertTrue(sql.contains("s.id = p.id"))
         assertTrue(sql.contains("192.168.250.1/24"))
         assertTrue(sql.contains("ST_Contains"))
         assertTrue(sql.contains("POINT(-77.4107 -11.2156)"))

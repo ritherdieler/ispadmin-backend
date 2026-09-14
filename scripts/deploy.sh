@@ -27,6 +27,7 @@ Usage: ./scripts/deploy.sh [--setup|--full|--war-only|--deploy] [--env prod|stag
   --only      Accepted for compatibility (see deploy-select-wars.sh); the single WAR always deploys core.
 
 Modes --deploy and --full run the Gradle test suite (./gradlew test) before packaging or connecting to the VPS.
+A preflight (deploy-disabled-modules-preflight.sh) warns if a disabled module would break FIBER/TR-069 and asks for confirmation.
 Packaging skips a selected WAR when target/*.war is newer than that WAR's sources (see deploy-war-needs-rebuild.sh).
 FORCE_WAR_REBUILD=1 forces package. --war-only never packages.
 Any failing test aborts --deploy/--full.
@@ -253,6 +254,11 @@ run_tests() {
   echo "Running complete backend test suite before deployment..."
   (cd "$PROJECT_DIR" && ./gradlew test)
   echo "All backend tests passed. Deployment may continue."
+}
+
+check_disabled_modules() {
+  echo "Preflight: módulos desactivados que pueden comprometer el deploy ($DEPLOY_ENV)..."
+  "$PROJECT_DIR/scripts/deploy-disabled-modules-preflight.sh" --env "$DEPLOY_ENV"
 }
 
 require_existing_wars() {
@@ -1075,6 +1081,7 @@ case "$MODE" in
     echo "Setup complete. Redeploy WAR with: ./scripts/deploy.sh --war-only"
     ;;
   full)
+    check_disabled_modules
     load_release_version
     check_version_not_registered
     run_tests
@@ -1097,6 +1104,7 @@ case "$MODE" in
     register_deploy
     ;;
   war-only)
+    check_disabled_modules
     load_release_version
     check_version_not_registered
     require_existing_wars
@@ -1119,6 +1127,7 @@ case "$MODE" in
     register_deploy
     ;;
   deploy)
+    check_disabled_modules
     load_release_version
     check_version_not_registered
     run_tests
