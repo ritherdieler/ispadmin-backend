@@ -20,15 +20,8 @@ dependencyResolutionManagement {
 rootProject.name = "ispadmin"
 include(
     ":shared",
-    ":events",
-    ":transport",
-    ":routeros",
-    ":servicehealth",
     ":acs",
     ":oltgateway",
     ":traffic",
     ":core",
-    ":netdiag",
-    ":observability",
-    ":app",
 )

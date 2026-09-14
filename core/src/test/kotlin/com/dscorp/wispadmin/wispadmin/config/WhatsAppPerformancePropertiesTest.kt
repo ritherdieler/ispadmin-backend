@@ -11,7 +11,7 @@ class WhatsAppPerformancePropertiesTest {
     private fun loadProperties(resourceName: String): Properties {
         val properties = Properties()
         val root = Path.of(System.getProperty("user.dir"))
-        Files.newInputStream(root.resolve("app/src/main/resources/$resourceName")).use { properties.load(it) }
+        Files.newInputStream(root.resolve("core/src/main/resources/$resourceName")).use { properties.load(it) }
         return properties
     }
 

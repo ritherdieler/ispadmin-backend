@@ -39,7 +39,7 @@ class AcsProfileOwnershipTest {
         val sql = Files.readString(root.resolve("acs/src/main/resources/db/acs/V1__tr069_model_profile.sql"))
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS tr069_model_profile") || sql.contains("CREATE TABLE tr069_model_profile"), sql)
         assertTrue(sql.contains("client_wan_ip_connection_path"), sql)
-        val acs = Files.readString(root.resolve("app/src/main/resources/application-acs.properties"))
+        val acs = Files.readString(root.resolve("core/src/main/resources/application-acs.properties"))
         assertTrue(
             Regex("""^spring\.flyway\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(acs),
             acs,

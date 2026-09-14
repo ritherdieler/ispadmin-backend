@@ -2,10 +2,8 @@ plugins {
     id("gigafiber.spring-module")
 }
 
-extra["gigafiberLayer"] = 3
+extra["gigafiberLayer"] = 2
 
 dependencies {
-    implementation(project(":events"))
-    implementation(project(":routeros"))
     implementation(project(":shared"))
 }

@@ -17,5 +17,6 @@ class Mk2EnableWwwSslScriptTest {
         val text = Files.readString(enable)
         assertTrue(text.contains("netdiag-rest-mk2"))
         assertTrue(text.contains("212.85.13.47/32"))
+        assertTrue(text.contains("10.64.60.4/32"))
     }
 }

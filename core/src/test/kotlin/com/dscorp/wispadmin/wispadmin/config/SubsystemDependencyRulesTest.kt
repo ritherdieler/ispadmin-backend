@@ -13,7 +13,11 @@ class SubsystemDependencyRulesTest {
     private val root: Path = Path.of(System.getProperty("user.dir"))
 
     private fun sourceRootFor(pkg: String): Path {
-        val module = if (pkg == "wispadmin") "core" else pkg
+        val module = when (pkg) {
+            "wispadmin", "netdiag", "servicehealth", "observability" -> "core"
+            "shared", "events", "transport", "routeros" -> "shared"
+            else -> pkg
+        }
         return root.resolve("$module/src/main/kotlin/com/dscorp/wispadmin/$pkg")
     }
 
@@ -174,16 +178,16 @@ class SubsystemDependencyRulesTest {
     @Test
     fun embeddedModulesImportCoreOnlyThroughAllowlistedAdapters() {
         val allowed = setOf(
-            "netdiag/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/NetDiagDeviceDirectoryAdapter.kt",
-            "netdiag/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminOntSubscriptionAdapter.kt",
-            "netdiag/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminRadiusImpactAdapter.kt",
-            "netdiag/src/main/kotlin/com/dscorp/wispadmin/netdiag/service/WhatsAppOpsNotifier.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/config/TraceContextFilter.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/controller/ObservabilityEventController.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/service/InProcessObservabilityReporter.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/service/ObsIngestionService.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/tracing/ObsTracer.kt",
-            "observability/src/main/kotlin/com/dscorp/wispadmin/observability/tracing/TracingClientHttpRequestInterceptor.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/NetDiagDeviceDirectoryAdapter.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminOntSubscriptionAdapter.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/adapter/WispAdminRadiusImpactAdapter.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/service/WhatsAppOpsNotifier.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/config/TraceContextFilter.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/controller/ObservabilityEventController.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/service/InProcessObservabilityReporter.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/service/ObsIngestionService.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/tracing/ObsTracer.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/tracing/TracingClientHttpRequestInterceptor.kt",
         )
         val actual = listOf("servicehealth", "netdiag", "observability").flatMap { pkg ->
             findForbiddenPrefixes(

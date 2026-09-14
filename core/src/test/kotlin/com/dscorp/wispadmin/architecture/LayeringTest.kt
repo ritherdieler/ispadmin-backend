@@ -13,9 +13,7 @@ class LayeringTest {
     private val root: Path = Path.of(System.getProperty("user.dir"))
 
     private val modules = listOf(
-        "shared", "events", "transport", "routeros",
-        "servicehealth", "acs", "oltgateway", "traffic", "core",
-        "netdiag", "observability", "app",
+        "shared", "acs", "oltgateway", "traffic", "core",
     )
 
     @Test
@@ -38,9 +36,11 @@ class LayeringTest {
 
     @Test
     fun platformAndHealthDoNotImportCore() {
-        val inner = listOf("shared", "events", "transport", "routeros", "servicehealth")
-        val violations = inner.flatMap { module ->
-            val src = root.resolve("$module/src/main")
+        val sources = listOf(
+            root.resolve("shared/src/main"),
+            root.resolve("core/src/main/kotlin/com/dscorp/wispadmin/servicehealth"),
+        )
+        val violations = sources.flatMap { src ->
             if (!Files.isDirectory(src)) return@flatMap emptyList()
             Files.walk(src).use { stream ->
                 stream.asSequence()
@@ -54,7 +54,7 @@ class LayeringTest {
             }
         }
         assertTrue(violations.isEmpty()) {
-            "L1/L2 no pueden importar com.dscorp.wispadmin.wispadmin:\n${violations.joinToString("\n")}"
+            "L1 y servicehealth no pueden importar com.dscorp.wispadmin.wispadmin:\n${violations.joinToString("\n")}"
         }
     }
 
@@ -67,7 +67,7 @@ class LayeringTest {
 
     private fun projectDeps(module: String): List<String> {
         val text = root.resolve("$module/build.gradle.kts").readText()
-        return Regex("""(?:implementation|api|testImplementation)\(project\(":([^"]+)"\)\)""")
+        return Regex("""(?:implementation|api|runtimeOnly|testImplementation)\(project\(":([^"]+)"\)\)""")
             .findAll(text)
             .map { it.groupValues[1] }
             .toList()

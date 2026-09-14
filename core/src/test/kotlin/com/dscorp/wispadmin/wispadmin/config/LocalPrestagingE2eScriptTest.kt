@@ -35,7 +35,7 @@ class LocalPrestagingE2eScriptTest {
         assertTrue(script.contains("NAP_BOX_ID=\"\${NAP_BOX_ID:-42}\""), script)
         assertTrue(script.contains("ispadmin_prestaging"), script)
         assertTrue(script.contains("prestaging_oltgateway"), script)
-        assertTrue(script.contains("app/src/main/resources/application-local-prestaging.secrets.properties"), script)
+        assertTrue(script.contains("core/src/main/resources/application-local-prestaging.secrets.properties"), script)
         assertTrue(script.contains("/subscription"), script)
         assertTrue(script.contains("registration-progress"), script)
         assertTrue(script.contains("tr069ProvisionStatus"), script)

@@ -8,8 +8,8 @@ class HttpClientCoreIsolationTest {
     @Test
     fun healthAndNetdiagHttpClientsDoNotImportCoreDomain() {
         val violations = listOf(
-            "servicehealth/src/main/kotlin/com/dscorp/wispadmin/servicehealth/client",
-            "netdiag/src/main/kotlin/com/dscorp/wispadmin/netdiag/client",
+            "core/src/main/kotlin/com/dscorp/wispadmin/servicehealth/client",
+            "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/client",
         ).flatMap { folder ->
             val dir = File(folder)
             if (!dir.exists()) return@flatMap emptyList()

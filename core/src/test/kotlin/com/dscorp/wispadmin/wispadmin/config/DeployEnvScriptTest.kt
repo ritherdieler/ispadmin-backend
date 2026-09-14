@@ -244,17 +244,44 @@ class DeployEnvScriptTest {
             "models must live on disk, not inside the WAR",
         )
         assertTrue(
-            script.contains("WEB-INF/lib/core.jar") && script.contains("PytorchNativeHelper"),
-            "helper in core.jar loads JNI in the webapp classloader",
+            script.contains("WEB-INF/classes/com/dscorp/wispadmin/wispadmin/util/PytorchNativeHelper.class") &&
+                script.contains("PytorchNativeHelper"),
+            "helper in WEB-INF/classes loads JNI in the webapp classloader",
         )
+    }
+
+    @Test
+    fun prestaging_never_deploys_to_the_vps() {
+        val root = root()
+        val deploy = Files.readString(root.resolve("scripts/deploy.sh"))
+        val verify = Files.readString(root.resolve("scripts/verify-war.sh"))
+        val war = Files.readString(root.resolve("core/build.gradle.kts"))
+        assertTrue(deploy.contains("refuse_prestaging_on_vps"), deploy)
+        assertTrue(deploy.contains("local-prestaging no se despliega al VPS"), deploy)
+        assertFalse(deploy.contains("--env prestaging"), deploy)
+        listOf("full)", "deploy)", "war-only)", "setup)").forEach { mode ->
+            val modeBlock = deploy.substringAfter("  $mode").substringBefore("    ;;")
+            assertTrue(modeBlock.contains("refuse_prestaging_on_vps"), "$mode must refuse prestaging")
+        }
+        assertTrue(verify.contains("application-local-prestaging"), verify)
+        assertTrue(
+            war.contains("application-local-prestaging.properties"),
+            war,
+        )
+        assertTrue(war.contains("application-local-prestaging.secrets.properties"), war)
     }
 
     @Test
     fun verify_war_sh_accepts_module_jars_in_web_inf_lib() {
         val script = Files.readString(root().resolve("scripts/verify-war.sh"))
-        listOf("core.jar", "acs.jar", "oltgateway.jar", "traffic.jar").forEach { jar ->
+        listOf("acs.jar", "oltgateway.jar", "traffic.jar").forEach { jar ->
             assertTrue(script.contains("WEB-INF/lib/$jar"), jar)
         }
+        assertTrue(script.contains("WEB-INF/classes/com/dscorp/wispadmin/wispadmin/"), script)
+        assertTrue(script.contains("WEB-INF/classes/com/dscorp/wispadmin/servicehealth/"), script)
+        assertTrue(script.contains("WEB-INF/classes/com/dscorp/wispadmin/netdiag/"), script)
+        assertTrue(script.contains("WEB-INF/classes/com/dscorp/wispadmin/observability/"), script)
+        assertTrue(script.contains("WEB-INF/classes/com/dscorp/wispadmin/routeros/"), script)
     }
 
     @Test

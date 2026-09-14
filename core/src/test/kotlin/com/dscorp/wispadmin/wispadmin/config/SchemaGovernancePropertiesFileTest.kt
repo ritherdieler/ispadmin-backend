@@ -21,7 +21,7 @@ class SchemaGovernancePropertiesFileTest {
 
     @Test
     fun applicationProd_valida_el_esquema_en_vez_de_alterarlo() {
-        val prod = read("app/src/main/resources/application-prod.properties")
+        val prod = read("core/src/main/resources/application-prod.properties")
         assertTrue(
             Regex("""^spring\.jpa\.hibernate\.ddl-auto=validate\s*$""", RegexOption.MULTILINE)
                 .containsMatchIn(prod),
@@ -43,7 +43,7 @@ class SchemaGovernancePropertiesFileTest {
 
     @Test
     fun applicationDev_tambien_activa_flyway_con_el_mismo_baseline() {
-        val dev = read("app/src/main/resources/application-dev.properties")
+        val dev = read("core/src/main/resources/application-dev.properties")
         assertTrue(
             Regex("""^spring\.flyway\.enabled=true\s*$""", RegexOption.MULTILINE)
                 .containsMatchIn(dev)
@@ -80,7 +80,7 @@ class SchemaGovernancePropertiesFileTest {
 
     @Test
     fun el_datasource_de_telemetria_esta_declarado_aparte() {
-        val prod = read("app/src/main/resources/application-prod.properties")
+        val prod = read("core/src/main/resources/application-prod.properties")
         assertTrue(
             Regex("""^telemetry\.datasource\.url=""", RegexOption.MULTILINE)
                 .containsMatchIn(prod)

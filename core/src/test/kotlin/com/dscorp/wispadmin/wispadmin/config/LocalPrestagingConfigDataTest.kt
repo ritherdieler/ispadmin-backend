@@ -14,7 +14,7 @@ class LocalPrestagingConfigDataTest {
 
     private fun prestaging(): Properties {
         val properties = Properties()
-        Files.newInputStream(root.resolve("app/src/main/resources/application-local-prestaging.properties")).use {
+        Files.newInputStream(root.resolve("core/src/main/resources/application-local-prestaging.properties")).use {
             properties.load(it)
         }
         return properties

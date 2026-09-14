@@ -64,7 +64,7 @@ class CrossSchemaJdbcForbiddenTest {
 
     @Test
     fun applicationPropertiesDoNotPointAcsAtCoreCatalog() {
-        val acs = Files.readString(root.resolve("app/src/main/resources/application-acs.properties"))
+        val acs = Files.readString(root.resolve("core/src/main/resources/application-acs.properties"))
         assertTrue(!catalogLeak.containsMatchIn(acs), acs)
         val catalog = Files.readString(root.resolve("gradle/libs.versions.toml"))
         assertTrue(!catalog.contains("acs.profiles.catalog"), catalog)
@@ -118,8 +118,7 @@ class CrossSchemaJdbcForbiddenTest {
     }
 
     private fun modules(): List<String> = listOf(
-        "shared", "events", "transport", "routeros", "servicehealth",
-        "acs", "oltgateway", "traffic", "core", "netdiag", "observability", "app",
+        "shared", "acs", "oltgateway", "traffic", "core",
     )
 
     private fun scan(start: Path, accept: (Path) -> Boolean): List<String> {

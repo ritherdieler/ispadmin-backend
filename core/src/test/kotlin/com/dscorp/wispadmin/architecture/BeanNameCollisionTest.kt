@@ -13,9 +13,7 @@ class BeanNameCollisionTest {
     private val root = Path.of(System.getProperty("user.dir"))
 
     private val modules = listOf(
-        "shared", "events", "transport", "routeros",
-        "servicehealth", "acs", "oltgateway", "traffic", "core",
-        "netdiag", "observability", "app",
+        "shared", "acs", "oltgateway", "traffic", "core",
     )
 
     private val excludedPath = "/wispadmin/service/genieacs/"

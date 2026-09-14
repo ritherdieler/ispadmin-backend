@@ -74,7 +74,7 @@ object DjlNativeBootstrap {
         if (nativeJars.isEmpty()) {
             logger.error(
                 "No pytorch-native-cpu jar found on classpath. " +
-                    "Rebuild with: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux (x86_64) " +
+                    "Rebuild with: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux (x86_64) " +
                     "or -Pdjl.linux.aarch64 (ARM Debian)."
             )
         }
@@ -83,8 +83,8 @@ object DjlNativeBootstrap {
         ) {
             logger.error(
                 "External Tomcat requires Linux DJL natives in the WAR and DJL jars in CATALINA_HOME/lib. " +
-                    "For the Debian x86_64 VPS, rebuild with: ./gradlew :app:war :app:tomcatLibs -Pdjl.linux; " +
-                    "run: bash scripts/verify-djl-war.sh; then copy app/build/tomcat-lib/*.jar to CATALINA_HOME/lib, " +
+                    "For the Debian x86_64 VPS, rebuild with: ./gradlew :core:war :core:tomcatLibs -Pdjl.linux; " +
+                    "run: bash scripts/verify-djl-war.sh; then copy core/build/tomcat-lib/*.jar to CATALINA_HOME/lib, " +
                     "including ispadmin-djl-native-helper.jar."
             )
         }

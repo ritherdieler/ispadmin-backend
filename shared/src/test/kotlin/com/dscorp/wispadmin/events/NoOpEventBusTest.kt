@@ -49,7 +49,7 @@ class NoOpEventBusTest {
     fun fallbackConfigIsOffWhenRedisIsOn() {
         val root = java.nio.file.Path.of(System.getProperty("user.dir"))
         val source = java.nio.file.Files.readString(
-            root.resolve("events/src/main/kotlin/com/dscorp/wispadmin/events/RedisEventBusConfig.kt")
+            root.resolve("shared/src/main/kotlin/com/dscorp/wispadmin/events/RedisEventBusConfig.kt")
         )
         assertTrue(!source.contains("class EventBusFallbackConfig"), source)
         assertTrue(source.contains("@ConditionalOnMissingBean(EventBusPort::class)"), source)

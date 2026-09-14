@@ -29,7 +29,7 @@ class OltGatewaySnmpTimeoutPropertiesTest {
     fun `prod and dev bake timeout 20s retries 2 and shared poll lock`() {
         val root = Path.of(System.getProperty("user.dir"))
         listOf("application-prod.properties", "application-dev.properties").forEach { name ->
-            val text = Files.readString(root.resolve("app/src/main/resources/$name"))
+            val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             assertTrue(
                 text.contains("olt.gateway.snmp.timeout-ms=\${OLT_GATEWAY_SNMP_TIMEOUT_MS:20000}"),
                 "$name timeout: $text",
@@ -108,7 +108,7 @@ class OltGatewaySnmpTimeoutPropertiesTest {
     @Test
     fun `staging gateway overlay does not pin parallel 1 or per-port true`() {
         val staging = Files.readString(
-            Path.of(System.getProperty("user.dir")).resolve("app/src/main/resources/application-staging.properties"),
+            Path.of(System.getProperty("user.dir")).resolve("core/src/main/resources/application-staging.properties"),
         )
         assertFalse(staging.contains("optical-parallel-ports=1"), staging)
         assertFalse(staging.contains("optical-per-port-walks=true"), staging)

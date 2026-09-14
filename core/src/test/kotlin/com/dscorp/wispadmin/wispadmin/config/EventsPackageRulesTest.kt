@@ -12,7 +12,7 @@ import kotlin.streams.asSequence
 class EventsPackageRulesTest {
 
     private val root: Path = Path.of(System.getProperty("user.dir"))
-    private val eventsKotlin: Path = root.resolve("events/src/main/kotlin")
+    private val eventsKotlin: Path = root.resolve("shared/src/main/kotlin")
 
     @Test
     fun eventsDoesNotImportDomainPackages() {

@@ -25,16 +25,16 @@ El backend está configurado para usar diferentes ambientes (profiles) de Spring
 ### **Opción 1: Gradle**
 ```bash
 # Desarrollo
-./gradlew :app:bootRun
+./gradlew :core:bootRun
 
 # Producción (empaquetar WAR)
-./gradlew :app:war
+./gradlew :core:war
 ```
 
 ### **Opción 2: Profiles**
 ```bash
 # Desarrollo (default en application.properties)
-./gradlew :app:bootRun
+./gradlew :core:bootRun
 
 # Prestaging de lab
 ./scripts/run-local-prestaging.sh start

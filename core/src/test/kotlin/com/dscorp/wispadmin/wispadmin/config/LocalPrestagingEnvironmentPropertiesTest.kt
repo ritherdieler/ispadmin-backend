@@ -11,7 +11,7 @@ class LocalPrestagingEnvironmentPropertiesTest {
     private val root: Path = Path.of(System.getProperty("user.dir"))
 
     private fun prestaging(): String {
-        return Files.readString(root.resolve("app/src/main/resources/application-local-prestaging.properties"))
+        return Files.readString(root.resolve("core/src/main/resources/application-local-prestaging.properties"))
     }
 
     @Test
@@ -112,7 +112,7 @@ class LocalPrestagingEnvironmentPropertiesTest {
             "application-acs.properties",
             "application-oltgateway.properties",
         ).forEach { name ->
-            val text = Files.readString(root.resolve("app/src/main/resources/$name"))
+            val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             forbidden.forEach { token ->
                 assertFalse(text.contains(token), "$name must not contain $token")
             }
@@ -121,7 +121,7 @@ class LocalPrestagingEnvironmentPropertiesTest {
 
     @Test
     fun satellite_entrypoints_are_configuration_not_boot_apps() {
-        val application = Files.readString(root.resolve("app/src/main/resources/application.properties"))
+        val application = Files.readString(root.resolve("core/src/main/resources/application.properties"))
         assertTrue(
             Regex("""^spring\.profiles\.active=dev,local\s*$""", RegexOption.MULTILINE).containsMatchIn(application),
             application,
@@ -142,11 +142,11 @@ class LocalPrestagingEnvironmentPropertiesTest {
     fun secrets_overlay_is_gitignored_and_example_has_no_values() {
         val gitignore = Files.readString(root.resolve(".gitignore"))
         assertTrue(
-            gitignore.lineSequence().any { it.trim() == "/app/src/main/resources/application-local-prestaging.secrets.properties" },
+            gitignore.lineSequence().any { it.trim() == "/core/src/main/resources/application-local-prestaging.secrets.properties" },
             gitignore,
         )
         val example = Files.readString(
-            root.resolve("app/src/main/resources/application-local-prestaging.secrets.properties.example"),
+            root.resolve("core/src/main/resources/application-local-prestaging.secrets.properties.example"),
         )
         assertTrue(example.contains("spring.datasource.password="), example)
         assertTrue(example.contains("olt.gateway.password="), example)
@@ -163,7 +163,7 @@ class LocalPrestagingEnvironmentPropertiesTest {
     @Test
     fun opt_in_script_activates_local_prestaging_without_changing_vps_defaults() {
         val script = Files.readString(root.resolve("scripts/run-local-prestaging.sh"))
-        assertTrue(script.contains(":app:bootRun"), script)
+        assertTrue(script.contains(":core:bootRun"), script)
         assertTrue(script.contains("dev,local-prestaging"), script)
         assertTrue(script.contains("8082"), script)
         assertFalse(script.contains("AcsApplicationKt"), script)

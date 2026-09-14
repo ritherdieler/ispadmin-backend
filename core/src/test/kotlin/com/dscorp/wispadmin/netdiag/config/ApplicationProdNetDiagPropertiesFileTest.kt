@@ -10,7 +10,7 @@ class ApplicationProdNetDiagPropertiesFileTest {
     @Test
     fun applicationProd_declares_netdiag_and_router_os_client_with_env_placeholders() {
         val root = Path.of(System.getProperty("user.dir"))
-        val prod = Files.readString(root.resolve("app/src/main/resources/application-prod.properties"))
+        val prod = Files.readString(root.resolve("core/src/main/resources/application-prod.properties"))
         assertTrue(prod.contains("net.diag.enabled=\${NET_DIAG_ENABLED:"), prod)
         assertTrue(prod.contains("net.diag.api-key=\${NET_DIAG_API_KEY:"), prod)
         assertTrue(prod.contains("router.os.client.rest.trust-store=classpath:routeros-mk-truststore.jks"), prod)

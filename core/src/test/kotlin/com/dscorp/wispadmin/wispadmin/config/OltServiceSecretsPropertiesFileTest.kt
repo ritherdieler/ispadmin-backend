@@ -18,7 +18,7 @@ class OltServiceSecretsPropertiesFileTest {
 
     @Test
     fun applicationProd_toma_la_api_key_de_smartolt_del_entorno() {
-        val prod = read("app/src/main/resources/application-prod.properties")
+        val prod = read("core/src/main/resources/application-prod.properties")
 
         assertTrue(
             Regex("""^olt\.service\.api-key=\$\{OLT_SERVICE_API_KEY""", RegexOption.MULTILINE)
@@ -34,7 +34,7 @@ class OltServiceSecretsPropertiesFileTest {
 
     @Test
     fun applicationProd_toma_la_password_de_mysql_del_entorno() {
-        val prod = read("app/src/main/resources/application-prod.properties")
+        val prod = read("core/src/main/resources/application-prod.properties")
 
         assertTrue(
             Regex("""^spring\.datasource\.password=\$\{DB_PASSWORD""", RegexOption.MULTILINE)
@@ -45,7 +45,7 @@ class OltServiceSecretsPropertiesFileTest {
 
     @Test
     fun applicationDev_toma_la_api_key_de_smartolt_del_entorno() {
-        val dev = read("app/src/main/resources/application-dev.properties")
+        val dev = read("core/src/main/resources/application-dev.properties")
 
         assertTrue(
             Regex("""^olt\.service\.api-key=\$\{OLT_SERVICE_API_KEY""", RegexOption.MULTILINE)
@@ -87,7 +87,7 @@ class OltServiceSecretsPropertiesFileTest {
 
     @Test
     fun applicationOltgateway_toma_la_api_key_y_el_toggle_de_smartolt_del_entorno() {
-        val gateway = read("app/src/main/resources/application-oltgateway.properties")
+        val gateway = read("core/src/main/resources/application-oltgateway.properties")
 
         assertTrue(
             Regex("""^olt\.service\.api-key=\$\{OLT_SERVICE_API_KEY""", RegexOption.MULTILINE)

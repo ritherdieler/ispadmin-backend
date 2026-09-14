@@ -10,7 +10,7 @@ class StagingEnvironmentPropertiesTest {
 
     private fun staging(): String {
         val root = Path.of(System.getProperty("user.dir"))
-        return Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))
+        return Files.readString(root.resolve("core/src/main/resources/application-staging.properties"))
     }
 
     @Test
@@ -79,8 +79,8 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun staging_and_prod_use_satellite_datasources_in_the_single_war() {
         val root = Path.of(System.getProperty("user.dir"))
-        val staging = Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))
-        val prod = Files.readString(root.resolve("app/src/main/resources/application-prod.properties"))
+        val staging = Files.readString(root.resolve("core/src/main/resources/application-staging.properties"))
+        val prod = Files.readString(root.resolve("core/src/main/resources/application-prod.properties"))
         assertTrue(staging.contains("jdbc:mysql://mysql:3306/stg_traffic?"), staging)
         assertTrue(staging.contains("jdbc:mysql://mysql:3306/stg_oltgateway?"), staging)
         assertTrue(staging.contains("jdbc:mysql://mysql:3306/stg_acs?"), staging)
@@ -106,7 +106,7 @@ class StagingEnvironmentPropertiesTest {
             "application-acs.properties",
             "application-oltgateway.properties",
         ).forEach { name ->
-            val text = Files.readString(root.resolve("app/src/main/resources/$name"))
+            val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             assertTrue(
                 Regex("""^spring\.jpa\.hibernate\.ddl-auto=update\s*$""", RegexOption.MULTILINE)
                     .containsMatchIn(text),
@@ -118,8 +118,8 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun satellite_jpa_uses_hibernate_update() {
         val root = Path.of(System.getProperty("user.dir"))
-        val prod = Files.readString(root.resolve("app/src/main/resources/application-prod.properties"))
-        val staging = Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))
+        val prod = Files.readString(root.resolve("core/src/main/resources/application-prod.properties"))
+        val staging = Files.readString(root.resolve("core/src/main/resources/application-staging.properties"))
         listOf("acs.jpa.hibernate.ddl-auto=update", "oltgateway.jpa.hibernate.ddl-auto=update", "traffic.jpa.hibernate.ddl-auto=update").forEach { line ->
             assertTrue(prod.contains(line), "$line missing in prod: $prod")
             assertTrue(staging.contains(line), "$line missing in staging: $staging")
@@ -135,7 +135,7 @@ class StagingEnvironmentPropertiesTest {
             "application-acs.properties",
             "application-oltgateway.properties",
         ).forEach { name ->
-            val text = Files.readString(root.resolve("app/src/main/resources/$name"))
+            val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             assertTrue(
                 text.contains("spring.jpa.properties.hibernate.dialect=$nonSpatial"),
                 "$name must override spatial dialect (hibernate-spatial is excluded from satellite WARs): $text",
@@ -150,7 +150,7 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun traffic_profile_file_does_not_set_active_profiles() {
         val root = Path.of(System.getProperty("user.dir"))
-        val traffic = Files.readString(root.resolve("app/src/main/resources/application-traffic.properties"))
+        val traffic = Files.readString(root.resolve("core/src/main/resources/application-traffic.properties"))
         assertFalse(traffic.contains("spring.profiles.active="), traffic)
         assertTrue(traffic.contains("stg_traffic") || traffic.contains("prod_traffic"), traffic)
         assertTrue(traffic.contains("createDatabaseIfNotExist=true"), traffic)
@@ -161,7 +161,7 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun oltgateway_profile_file_does_not_set_active_profiles() {
         val root = Path.of(System.getProperty("user.dir"))
-        val gateway = Files.readString(root.resolve("app/src/main/resources/application-oltgateway.properties"))
+        val gateway = Files.readString(root.resolve("core/src/main/resources/application-oltgateway.properties"))
         assertFalse(gateway.contains("spring.profiles.active="), gateway)
         assertTrue(gateway.contains("stg_oltgateway") || gateway.contains("prod_oltgateway"), gateway)
         assertTrue(gateway.contains("createDatabaseIfNotExist=true"), gateway)
@@ -174,7 +174,7 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun prod_defaults_redis_disabled_via_env() {
         val root = Path.of(System.getProperty("user.dir"))
-        val prod = Files.readString(root.resolve("app/src/main/resources/application-prod.properties"))
+        val prod = Files.readString(root.resolve("core/src/main/resources/application-prod.properties"))
         assertTrue(prod.contains("gigafiber.redis.enabled=\${REDIS_ENABLED:false}"), prod)
         assertFalse(prod.contains("gigafiber.redis.enabled=false\n"), prod)
     }
@@ -182,7 +182,7 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun staging_enables_redis_for_the_single_war() {
         val root = Path.of(System.getProperty("user.dir"))
-        val staging = Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))
+        val staging = Files.readString(root.resolve("core/src/main/resources/application-staging.properties"))
         assertTrue(staging.contains("gigafiber.redis.enabled=\${REDIS_ENABLED:true}"), staging)
         assertTrue(staging.contains("gigafiber.redis.host=\${REDIS_HOST:redis}"), staging)
         assertTrue(staging.contains("gigafiber.redis.namespace=stg"), staging)
@@ -203,7 +203,7 @@ class StagingEnvironmentPropertiesTest {
     fun satellite_profiles_disable_spring_redis_health() {
         val root = Path.of(System.getProperty("user.dir"))
         listOf("application-traffic.properties", "application-oltgateway.properties", "application-acs.properties").forEach { name ->
-            val text = Files.readString(root.resolve("app/src/main/resources/$name"))
+            val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             assertTrue(
                 Regex("""^management\.health\.redis\.enabled=false\s*$""", RegexOption.MULTILINE).containsMatchIn(text),
                 "$name must not fail actuator because Spring Redis auto-config is unused: $text",
@@ -214,8 +214,8 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun acs_flyway_owns_its_schema_not_core_catalog() {
         val root = Path.of(System.getProperty("user.dir"))
-        val prod = Files.readString(root.resolve("app/src/main/resources/application-prod.properties"))
-        val staging = Files.readString(root.resolve("app/src/main/resources/application-staging.properties"))
+        val prod = Files.readString(root.resolve("core/src/main/resources/application-prod.properties"))
+        val staging = Files.readString(root.resolve("core/src/main/resources/application-staging.properties"))
         val persistence = Files.readString(
             root.resolve("acs/src/main/kotlin/com/dscorp/wispadmin/acs/config/AcsPersistenceConfig.kt"),
         )
@@ -225,7 +225,7 @@ class StagingEnvironmentPropertiesTest {
         assertFalse(prod.contains("acs.profiles.catalog"), prod)
         assertFalse(staging.contains("acs.profiles.catalog"), staging)
         assertTrue(staging.contains("gigafiber.redis.namespace=stg"), staging)
-        val acsProps = Files.readString(root.resolve("app/src/main/resources/application-acs.properties"))
+        val acsProps = Files.readString(root.resolve("core/src/main/resources/application-acs.properties"))
         assertTrue(
             Regex("""^genieacs\.vparams\.enabled=\$\{GENIEACS_VPARAMS_ENABLED:false\}\s*$""", RegexOption.MULTILINE)
                 .containsMatchIn(acsProps),
