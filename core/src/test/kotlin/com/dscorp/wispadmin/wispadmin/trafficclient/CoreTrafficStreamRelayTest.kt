@@ -33,7 +33,7 @@ class CoreTrafficStreamRelayTest {
         verify(exactly=1) { upstream.stop(7) }
     }
 
-    @Test fun `frontend static ip wins over leftover directory pppoe on the socket start`() {
+    @Test fun `a start command with only ip is forwarded without mixing a directory username`() {
         val upstream=mockk<TrafficStreamTransport>(relaxed=true)
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()

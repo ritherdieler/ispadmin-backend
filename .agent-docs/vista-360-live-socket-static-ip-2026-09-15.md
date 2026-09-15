@@ -12,7 +12,7 @@ Tras pasar #5 a `STATIC_IP` / cola `[stg] id:5` / `192.168.250.20`, el gráfico 
 
 - `STATIC_IP` / `PPPOE_FIXED`: solo `ip` (cola `target=IP/32`).
 - `PPPOE_DYNAMIC`: solo `pppoeUsername`.
-- Una IP en el comando gana frente a un username residual del directorio.
+- Un `accessMode` a la vez. El start lleva una sola identidad; si llegan las dos, Core/Traffic usan el directorio (ya XOR por `accessMode`).
 
 Flujo: backoffice (IP del 360) → Core `CoreTrafficStreamRelay` (rellena desde `TrafficDirectoryService`) → Traffic `SubscriptionTrafficWebSocket` (`SubscriptionLiveMonitorTarget`) → `/queue/simple` cada 2 s → ticks.
 

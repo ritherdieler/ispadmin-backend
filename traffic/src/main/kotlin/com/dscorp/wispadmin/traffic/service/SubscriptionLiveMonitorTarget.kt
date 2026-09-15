@@ -30,10 +30,6 @@ object SubscriptionLiveMonitorTarget {
                 ip = ""
                 pppoe = requestPppoe
             }
-            requestIp != null -> {
-                ip = requestIp
-                pppoe = requestPppoe
-            }
             else -> {
                 ip = directory?.ip?.trim().orEmpty()
                 pppoe = directory?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }

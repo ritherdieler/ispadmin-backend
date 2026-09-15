@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 class SubscriptionLiveMonitorTargetTest {
 
     @Test
-    fun `request static ip wins over stale directory pppoe leftover`() {
+    fun `a start command with only ip does not merge a directory username`() {
         val directory = TrafficDirectoryTarget(
             subscriptionId = 5,
             ip = "",
@@ -26,6 +26,29 @@ class SubscriptionLiveMonitorTargetTest {
         assertNull(target?.pppoeUsername)
         assertEquals(8, target?.routerHint)
         assertEquals("192.168.250.20", TrafficTargetKey.of(target?.ip, target?.pppoeUsername))
+    }
+
+    @Test
+    fun `a mixed start command uses the directory identity of one access mode`() {
+        val directory = TrafficDirectoryTarget(
+            subscriptionId = 5,
+            ip = "192.168.250.20",
+            routerHint = 8,
+            pppoeUsername = null,
+        )
+
+        val target = SubscriptionLiveMonitorTarget.resolve(
+            subscriptionId = 5,
+            request = mapOf(
+                "subscriptionId" to 5,
+                "ip" to "192.168.250.20",
+                "pppoeUsername" to "gf5",
+            ),
+            directory = directory,
+        )
+
+        assertEquals("192.168.250.20", target?.ip)
+        assertNull(target?.pppoeUsername)
     }
 
     @Test
