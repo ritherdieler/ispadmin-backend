@@ -166,8 +166,17 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         LEFT JOIN FETCH s.plan
         WHERE s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
         AND (
-            (s.ip IS NOT NULL AND s.ip <> '')
-            OR (s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> '')
+            (
+                s.accessMode IN (
+                    com.dscorp.wispadmin.wispadmin.data.model.AccessMode.STATIC_IP,
+                    com.dscorp.wispadmin.wispadmin.data.model.AccessMode.PPPOE_FIXED
+                )
+                AND s.ip IS NOT NULL AND s.ip <> ''
+            )
+            OR (
+                s.accessMode = com.dscorp.wispadmin.wispadmin.data.model.AccessMode.PPPOE_DYNAMIC
+                AND s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> ''
+            )
         )
         AND s.hostDevice IS NOT NULL
         """
@@ -181,8 +190,17 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
         WHERE s.id > :after
         AND s.serviceStatus IN ('ACTIVE', 'CUT_OFF', 'SUSPENDED')
         AND (
-            (s.ip IS NOT NULL AND s.ip <> '')
-            OR (s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> '')
+            (
+                s.accessMode IN (
+                    com.dscorp.wispadmin.wispadmin.data.model.AccessMode.STATIC_IP,
+                    com.dscorp.wispadmin.wispadmin.data.model.AccessMode.PPPOE_FIXED
+                )
+                AND s.ip IS NOT NULL AND s.ip <> ''
+            )
+            OR (
+                s.accessMode = com.dscorp.wispadmin.wispadmin.data.model.AccessMode.PPPOE_DYNAMIC
+                AND s.pppoeUsername IS NOT NULL AND s.pppoeUsername <> ''
+            )
         )
         AND s.hostDevice IS NOT NULL
         ORDER BY s.id
