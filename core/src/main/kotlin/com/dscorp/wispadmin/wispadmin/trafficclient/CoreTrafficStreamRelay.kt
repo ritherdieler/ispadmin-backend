@@ -14,6 +14,7 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent
 
 interface TrafficStreamTransport {
     fun start(subscriptionId: Int,receive: (Any)->Unit)
+    fun start(command: Map<String,Any>,receive: (Any)->Unit)
     fun stop(subscriptionId: Int)
 }
 
@@ -23,6 +24,7 @@ class CoreTrafficStreamRelay(
     private val upstream: TrafficStreamTransport,
     @Lazy private val messaging: SimpMessagingTemplate,
     private val subscriptions: SubscriptionRepository,
+    private val directory: TrafficDirectoryService,
 ) : ChannelInterceptor {
     private val sessions=mutableMapOf<Int,MutableSet<String>>()
 
@@ -33,7 +35,38 @@ class CoreTrafficStreamRelay(
         require(subscriptions.existsById(id)) { "Subscription not found" }
         val session=requireNotNull(headers.sessionId)
         val watchers=sessions.getOrPut(id) { mutableSetOf() }
-        if(watchers.add(session) && watchers.size==1) upstream.start(id) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
+        if(watchers.add(session) && watchers.size==1) {
+            upstream.start(liveStartCommand(id, request)) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
+        }
+    }
+
+    private fun liveStartCommand(id: Int, request: Map<String, Any>): Map<String, Any> {
+        val command = mutableMapOf<String, Any>("subscriptionId" to id)
+        val entry = directory.list().firstOrNull { it.subscriptionId == id }
+        val requestIp = stringValue(request["ip"])
+        val requestPppoe = stringValue(request["pppoeUsername"])
+        val routerHint = intValue(request["routerHint"]) ?: entry?.routerHint
+        when {
+            requestIp != null && requestPppoe == null -> command["ip"] = requestIp
+            requestPppoe != null && requestIp == null -> command["pppoeUsername"] = requestPppoe
+            requestIp != null -> {
+                command["ip"] = requestIp
+                command["pppoeUsername"] = requestPppoe
+            }
+            else -> {
+                entry?.ip?.trim()?.takeIf { it.isNotEmpty() }?.let { command["ip"] = it }
+                entry?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }?.let { command["pppoeUsername"] = it }
+            }
+        }
+        routerHint?.let { command["routerHint"] = it }
+        return command
+    }
+
+    private fun stringValue(value: Any?): String? = (value as? String)?.trim()?.takeIf { it.isNotEmpty() }
+    private fun intValue(value: Any?): Int? = when (value) {
+        is Number -> value.toInt()
+        is String -> value.trim().toIntOrNull()
+        else -> null
     }
     @MessageMapping("/subscription-traffic/stop")
     @Synchronized fun stop(request: Map<String,Any>,headers: SimpMessageHeaderAccessor) {

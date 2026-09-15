@@ -21,6 +21,7 @@
 | **Diagrama 3 WARs — detalle por rectángulo** | [arquitectura-3-wars-detalle.md](./arquitectura-3-wars-detalle.md) |
 | **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
 | **WiFi-on-Inform — flujo ACS → Gateway → Core (canónico)** | [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md) |
+| **Reloj Wi-Fi 360 = Inform (una perilla, lab 60 s)** | [wifi-inform-clock-una-perilla-2026-09-15.md](./wifi-inform-clock-una-perilla-2026-09-15.md) |
 | **Óptica SNMP push — Gateway → Redis → Core (canónico)** | [optical-push-gateway-core.md](./optical-push-gateway-core.md) |
 | **Óptica diaria — roll-up y retención (raw 90d / daily 730d)** | [optical-daily-rollup-retention.md](./optical-daily-rollup-retention.md) |
 | **Contención SNMP óptica (lock Redis + timeout 15s)** | [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md) |
@@ -37,8 +38,14 @@
 | **360: refrescos manuales Wi‑Fi/óptica sin cooldown** | [service-health-manual-refresh-no-cooldown-2026-09-03.md](./service-health-manual-refresh-no-cooldown-2026-09-03.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
+| **Directorio tráfico por accessMode (PPPoE vs IP)** | [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md) |
+| **360 identity PPPOE (consumo sin IP)** | [service-health-identity-pppoe-2026-09-15.md](./service-health-identity-pppoe-2026-09-15.md) |
+| **Deploy staging 360 PPPoE + STATIC_IP 2026-09-15** | [deploy-staging-360-pppoe-static-2026-09-15.md](./deploy-staging-360-pppoe-static-2026-09-15.md) |
+| **Deploy staging tráfico accessMode 2026-09-15** | [deploy-staging-traffic-access-mode-2026-09-15.md](./deploy-staging-traffic-access-mode-2026-09-15.md) |
 | **Vista 360 lecturas en vivo (cola + pppoe-in)** | [vista-360-live-readings-2026-09-15.md](./vista-360-live-readings-2026-09-15.md) |
+| **Vista 360 actividad en vivo por socket (STATIC_IP)** | [vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md) |
 | **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
+| **#5 ZTE STATIC_IP real, live-readings QUEUE** | [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md) |
 | **#5 ZTE vivo lee gf5, no cola vacía** | [staging-zte-5-pppoe-live-readings-2026-09-15.md](./staging-zte-5-pppoe-live-readings-2026-09-15.md) |
 | **Deploy staging lecturas en vivo 2026-09-15** | [deploy-staging-live-readings-2026-09-15.md](./deploy-staging-live-readings-2026-09-15.md) |
 | **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |

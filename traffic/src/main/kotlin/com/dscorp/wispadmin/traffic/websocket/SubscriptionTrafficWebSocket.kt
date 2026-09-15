@@ -6,9 +6,9 @@ import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
 import com.dscorp.wispadmin.traffic.entity.TrafficRouter
 import com.dscorp.wispadmin.traffic.port.TrafficDirectoryPort
 import com.dscorp.wispadmin.traffic.repository.TrafficRouterRepository
+import com.dscorp.wispadmin.traffic.service.SubscriptionLiveMonitorTarget
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickBuilder
 import com.dscorp.wispadmin.traffic.service.SubscriptionTrafficLiveTickState
-import com.dscorp.wispadmin.traffic.service.TrafficTargetKey
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -63,19 +63,20 @@ class SubscriptionTrafficWebSocket(
             sessionActivity[sessionId] = System.currentTimeMillis()
             return
         }
-        val target = try {
+        val directoryTarget = try {
             directory.list().firstOrNull { it.subscriptionId == subscriptionId }
         } catch (ex: Exception) {
             logger.warn("Live traffic directory failed for {}: {}", subscriptionId, ex.message)
             null
         }
-        val ip = target?.ip?.trim().orEmpty()
-        val pppoeUsername = target?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
-        if (TrafficTargetKey.of(ip, pppoeUsername) == null) {
+        val target = SubscriptionLiveMonitorTarget.resolve(subscriptionId, request, directoryTarget)
+        if (target == null) {
             logger.warn("Subscription {} missing ip and pppoe username for live traffic", subscriptionId)
             return
         }
-        val deviceId = target?.routerHint ?: routerRepository.findByEnabledTrue().firstOrNull()?.id ?: return
+        val ip = target.ip
+        val pppoeUsername = target.pppoeUsername
+        val deviceId = target.routerHint ?: routerRepository.findByEnabledTrue().firstOrNull()?.id ?: return
         activeSessions.computeIfAbsent(subscriptionId) { mutableSetOf() }.add(sessionId)
         sessionActivity[sessionId] = System.currentTimeMillis()
         subscriptionTargets[subscriptionId] = SubscriptionMonitorTarget(subscriptionId, ip, pppoeUsername, deviceId)

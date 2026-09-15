@@ -24,17 +24,25 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
         defaultHeartbeat=longArrayOf(10000,10000)
     }
     private val receivers=mutableMapOf<Int,(Any)->Unit>()
+    private val commands=mutableMapOf<Int,Map<String,Any>>()
     private val bindings=mutableMapOf<Int,StompSession.Subscription>()
     private var session: StompSession?=null
     private var connecting=false
 
     @Synchronized override fun start(subscriptionId: Int,receive: (Any)->Unit) {
+        start(mapOf("subscriptionId" to subscriptionId),receive)
+    }
+
+    @Synchronized override fun start(command: Map<String,Any>,receive: (Any)->Unit) {
+        val subscriptionId=(command["subscriptionId"] as? Number)?.toInt() ?: return
         receivers[subscriptionId]=receive
+        commands[subscriptionId]=command
         session?.takeIf { it.isConnected }?.let { bind(it,subscriptionId) }
         reconnect()
     }
     @Synchronized override fun stop(subscriptionId: Int) {
         receivers.remove(subscriptionId)
+        commands.remove(subscriptionId)
         runCatching { bindings.remove(subscriptionId)?.unsubscribe() }
         runCatching { session?.takeIf { it.isConnected }?.send("/app/subscription-traffic/stop",mapOf("subscriptionId" to subscriptionId)) }
     }
@@ -43,7 +51,7 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
         if(receivers.isEmpty() || connecting) return
         session?.takeIf { it.isConnected }?.let { connected ->
             receivers.keys.forEach { id ->
-                runCatching { connected.send("/app/subscription-traffic/start",mapOf("subscriptionId" to id)) }
+                runCatching { connected.send("/app/subscription-traffic/start",startCommand(id)) }
                     .onFailure { session=null;bindings.clear() }
             }
             return
@@ -82,8 +90,9 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
                 if(payload!=null) receiver?.invoke(payload)
             }
         })
-        connected.send("/app/subscription-traffic/start",mapOf("subscriptionId" to id))
+        connected.send("/app/subscription-traffic/start",startCommand(id))
     }
+    private fun startCommand(id: Int)=commands[id] ?: mapOf("subscriptionId" to id)
     @PreDestroy @Synchronized fun close() {
         receivers.clear();bindings.clear()
         runCatching { session?.disconnect() };session=null
