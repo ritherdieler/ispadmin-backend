@@ -33,22 +33,44 @@ class CoreTrafficStreamRelayTest {
         verify(exactly=1) { upstream.stop(7) }
     }
 
-    @Test fun `a start command with only ip is forwarded without mixing a directory username`() {
+    @Test fun `core start identity comes only from the directory accessMode`() {
         val upstream=mockk<TrafficStreamTransport>(relaxed=true)
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()
         every { subscriptions.existsById(5) } returns true
         every { directory.list() } returns listOf(
-            TrafficDirectoryEntryDto(subscriptionId = 5, ip = "", routerHint = 8, pppoeUsername = "gf5"),
+            TrafficDirectoryEntryDto(subscriptionId = 5, ip = "192.168.250.20", routerHint = 8, pppoeUsername = null),
         )
         val relay=CoreTrafficStreamRelay(upstream,mockk(relaxed=true),subscriptions,directory)
-        relay.start(mapOf("subscriptionId" to 5, "ip" to "192.168.250.20"),headers("a","TECHNICIAN"))
+        relay.start(mapOf("subscriptionId" to 5, "ip" to "10.1.1.1", "pppoeUsername" to "gf5"),headers("a","TECHNICIAN"))
         verify {
             upstream.start(
                 match<Map<String, Any>> {
                     it["subscriptionId"] == 5 &&
                         it["ip"] == "192.168.250.20" &&
                         !it.containsKey("pppoeUsername")
+                },
+                any(),
+            )
+        }
+    }
+
+    @Test fun `core forwards PPPOE_DYNAMIC username without an ip`() {
+        val upstream=mockk<TrafficStreamTransport>(relaxed=true)
+        val subscriptions=mockk<SubscriptionRepository>()
+        val directory=mockk<TrafficDirectoryService>()
+        every { subscriptions.existsById(6) } returns true
+        every { directory.list() } returns listOf(
+            TrafficDirectoryEntryDto(subscriptionId = 6, ip = "", routerHint = 8, pppoeUsername = "gf6"),
+        )
+        val relay=CoreTrafficStreamRelay(upstream,mockk(relaxed=true),subscriptions,directory)
+        relay.start(mapOf("subscriptionId" to 6),headers("a","TECHNICIAN"))
+        verify {
+            upstream.start(
+                match<Map<String, Any>> {
+                    it["subscriptionId"] == 6 &&
+                        it["pppoeUsername"] == "gf6" &&
+                        !it.containsKey("ip")
                 },
                 any(),
             )

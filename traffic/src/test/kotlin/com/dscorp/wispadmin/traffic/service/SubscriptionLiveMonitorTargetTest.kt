@@ -8,18 +8,11 @@ import org.junit.jupiter.api.Test
 class SubscriptionLiveMonitorTargetTest {
 
     @Test
-    fun `a start command with only ip does not merge a directory username`() {
-        val directory = TrafficDirectoryTarget(
-            subscriptionId = 5,
-            ip = "",
-            routerHint = 8,
-            pppoeUsername = "gf5",
-        )
-
+    fun `static ip command uses only the ip`() {
         val target = SubscriptionLiveMonitorTarget.resolve(
             subscriptionId = 5,
-            request = mapOf("subscriptionId" to 5, "ip" to "192.168.250.20"),
-            directory = directory,
+            request = mapOf("subscriptionId" to 5, "ip" to "192.168.250.20", "routerHint" to 8),
+            directory = null,
         )
 
         assertEquals("192.168.250.20", target?.ip)
@@ -29,26 +22,16 @@ class SubscriptionLiveMonitorTargetTest {
     }
 
     @Test
-    fun `a mixed start command uses the directory identity of one access mode`() {
-        val directory = TrafficDirectoryTarget(
-            subscriptionId = 5,
-            ip = "192.168.250.20",
-            routerHint = 8,
-            pppoeUsername = null,
-        )
-
+    fun `pppoe command uses only the username`() {
         val target = SubscriptionLiveMonitorTarget.resolve(
-            subscriptionId = 5,
-            request = mapOf(
-                "subscriptionId" to 5,
-                "ip" to "192.168.250.20",
-                "pppoeUsername" to "gf5",
-            ),
-            directory = directory,
+            subscriptionId = 6,
+            request = mapOf("subscriptionId" to 6, "pppoeUsername" to "gf6", "routerHint" to 8),
+            directory = null,
         )
 
-        assertEquals("192.168.250.20", target?.ip)
-        assertNull(target?.pppoeUsername)
+        assertEquals("", target?.ip)
+        assertEquals("gf6", target?.pppoeUsername)
+        assertEquals("pppoe:gf6", TrafficTargetKey.of(target?.ip, target?.pppoeUsername))
     }
 
     @Test

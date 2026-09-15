@@ -18,15 +18,18 @@ object SubscriptionLiveMonitorTarget {
     ): ResolvedLiveMonitorTarget? {
         val requestIp = stringValue(request["ip"])
         val requestPppoe = stringValue(request["pppoeUsername"])
+        require(requestIp == null || requestPppoe == null) {
+            "Live start cannot carry ip and pppoeUsername together"
+        }
         val requestHint = intValue(request["routerHint"])
         val ip: String
         val pppoe: String?
         when {
-            requestIp != null && requestPppoe == null -> {
+            requestIp != null -> {
                 ip = requestIp
                 pppoe = null
             }
-            requestPppoe != null && requestIp == null -> {
+            requestPppoe != null -> {
                 ip = ""
                 pppoe = requestPppoe
             }
@@ -34,6 +37,9 @@ object SubscriptionLiveMonitorTarget {
                 ip = directory?.ip?.trim().orEmpty()
                 pppoe = directory?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
             }
+        }
+        require(ip.isEmpty() || pppoe == null) {
+            "Live monitor identity must be ip or pppoe, not both"
         }
         if (TrafficTargetKey.of(ip, pppoe) == null) return null
         return ResolvedLiveMonitorTarget(

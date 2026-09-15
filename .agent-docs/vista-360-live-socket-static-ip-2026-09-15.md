@@ -8,13 +8,14 @@ Tras pasar #5 a `STATIC_IP` / cola `[stg] id:5` / `192.168.250.20`, el gráfico 
 
 ## Contrato del start
 
-`{ subscriptionId, ip?, pppoeUsername?, routerHint? }`
+El browser solo manda `{ subscriptionId }`. Core arma el resto desde `TrafficDirectoryService` (XOR por `accessMode`):
 
-- `STATIC_IP` / `PPPOE_FIXED`: solo `ip` (cola `target=IP/32`).
-- `PPPOE_DYNAMIC`: solo `pppoeUsername`.
-- Un `accessMode` a la vez. El start lleva una sola identidad; si llegan las dos, Core/Traffic usan el directorio (ya XOR por `accessMode`).
+- `STATIC_IP` / `PPPOE_FIXED`: `{ subscriptionId, ip, routerHint }`
+- `PPPOE_DYNAMIC`: `{ subscriptionId, pppoeUsername, routerHint }`
 
-Flujo: backoffice (IP del 360) → Core `CoreTrafficStreamRelay` (rellena desde `TrafficDirectoryService`) → Traffic `SubscriptionTrafficWebSocket` (`SubscriptionLiveMonitorTarget`) → `/queue/simple` cada 2 s → ticks.
+No existe un comando con IP y username. El directorio no emite los dos.
+
+Flujo: backoffice `{subscriptionId}` → Core (directorio) → Traffic → `/queue/simple` cada 2 s → ticks.
 
 ## Tests
 

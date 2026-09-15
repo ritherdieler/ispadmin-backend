@@ -36,33 +36,20 @@ class CoreTrafficStreamRelay(
         val session=requireNotNull(headers.sessionId)
         val watchers=sessions.getOrPut(id) { mutableSetOf() }
         if(watchers.add(session) && watchers.size==1) {
-            upstream.start(liveStartCommand(id, request)) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
+            upstream.start(liveStartCommand(id)) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
         }
     }
 
-    private fun liveStartCommand(id: Int, request: Map<String, Any>): Map<String, Any> {
+    private fun liveStartCommand(id: Int): Map<String, Any> {
         val command = mutableMapOf<String, Any>("subscriptionId" to id)
-        val entry = directory.list().firstOrNull { it.subscriptionId == id }
-        val requestIp = stringValue(request["ip"])
-        val requestPppoe = stringValue(request["pppoeUsername"])
-        val routerHint = intValue(request["routerHint"]) ?: entry?.routerHint
-        when {
-            requestIp != null && requestPppoe == null -> command["ip"] = requestIp
-            requestPppoe != null && requestIp == null -> command["pppoeUsername"] = requestPppoe
-            else -> {
-                entry?.ip?.trim()?.takeIf { it.isNotEmpty() }?.let { command["ip"] = it }
-                entry?.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }?.let { command["pppoeUsername"] = it }
-            }
-        }
-        routerHint?.let { command["routerHint"] = it }
+        val entry = directory.list().firstOrNull { it.subscriptionId == id } ?: return command
+        val ip = entry.ip.trim().takeIf { it.isNotEmpty() }
+        val pppoe = entry.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        check(ip == null || pppoe == null) { "Traffic directory emitted ip and pppoeUsername for $id" }
+        ip?.let { command["ip"] = it }
+        pppoe?.let { command["pppoeUsername"] = it }
+        entry.routerHint?.let { command["routerHint"] = it }
         return command
-    }
-
-    private fun stringValue(value: Any?): String? = (value as? String)?.trim()?.takeIf { it.isNotEmpty() }
-    private fun intValue(value: Any?): Int? = when (value) {
-        is Number -> value.toInt()
-        is String -> value.trim().toIntOrNull()
-        else -> null
     }
     @MessageMapping("/subscription-traffic/stop")
     @Synchronized fun stop(request: Map<String,Any>,headers: SimpMessageHeaderAccessor) {
