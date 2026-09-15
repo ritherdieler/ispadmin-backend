@@ -36,6 +36,10 @@ class CpeFacadeService(
     private val namedProvisioner: NamedCpeProvisioner? = null,
     private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) {
+    private companion object {
+        const val WIFI_TELEMETRY_PROVISION = "gigafiber-wifi-telemetry"
+    }
+
     fun provision(command: CpeProvisionCommand): CpeProvisionResult {
         val record = records.findById(command.sn).orElseGet { CpeRecord(sn = command.sn) }
         record.uniqueExternalId = command.uniqueExternalId ?: record.uniqueExternalId
@@ -185,24 +189,18 @@ class CpeFacadeService(
         return provisioner.setWifi(sn, command.ssid24, command.ssid5, command.passphrase.orEmpty())
     }
 
+    /**
+     * A manual refresh does not read anything. It forces a Connection Request
+     * that runs the Inform provision, and the resulting session delivers the
+     * data through the same path as a periodic Inform. Parallel GPV reads would
+     * see the previous session's tree and compete with the one source of truth.
+     */
     fun wifiRefresh(sn: String): CpeCommandResult {
         val record = records.findById(sn).orElse(null)
             ?: return CpeCommandResult(false, CpeStatus.FAILED, "unknown SN")
         val deviceId = record.deviceId ?: return CpeCommandResult(false, CpeStatus.FAILED, "unknown device")
         return try {
-            val result = if (properties.vparams.enabled) {
-                client.getParameterValues(
-                    deviceId,
-                    listOf(GfVirtualParameters.WIFI_STATUS),
-                    connectionRequest = true,
-                )
-            } else {
-                client.refreshObject(
-                    deviceId,
-                    "InternetGatewayDevice.LANDevice.1.WLANConfiguration",
-                    connectionRequest = true,
-                )
-            }
+            val result = client.enqueueProvisions(deviceId, WIFI_TELEMETRY_PROVISION, connectionRequest = true)
             CpeCommandResult(result.accepted, if (result.accepted) CpeStatus.PENDING else CpeStatus.FAILED, result.body)
         } catch (ex: Exception) {
             CpeCommandResult(false, CpeStatus.FAILED, ex.message)

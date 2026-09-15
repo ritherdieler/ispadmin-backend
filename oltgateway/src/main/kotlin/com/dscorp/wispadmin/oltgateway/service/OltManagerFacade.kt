@@ -124,7 +124,7 @@ open class OltManagerFacade(
         val vlan = request.vlan.toIntOrNull() ?: 0
         val existing = onuRepository.findBySnAndDeletedAtIsNull(request.sn)
         val ontId = existing.map { it.onuIndex }
-            .orElseGet { onuRepository.findMaxOnuIndex(olt.id!!, board, port) + 1 }
+            .orElseGet { nextFreeOntId(olt.id!!, board, port) }
         val profiles = profileResolver.resolve(
             customProfile = request.custom_profile,
             vlan = vlan,
@@ -204,7 +204,7 @@ open class OltManagerFacade(
         val board = request.board.toInt()
         val port = request.port.toInt()
         val vlan = request.vlan.toIntOrNull() ?: 0
-        val nextOntId = onuRepository.findMaxOnuIndex(olt.id!!, board, port) + 1
+        val nextOntId = nextFreeOntId(olt.id!!, board, port)
         val zone = resolveZone(request.zone)
         val onuType = resolveOnuType(request.onu_type)
 
@@ -500,6 +500,12 @@ open class OltManagerFacade(
         val suffix = id?.toString() ?: Instant.now().toEpochMilli().toString()
         val base = sn.takeWhile { it != '#' }.take(48)
         return "$base#del#$suffix"
+    }
+
+    private fun nextFreeOntId(oltId: Long, board: Int, port: Int): Int {
+        val dbMax = onuRepository.findMaxOnuIndex(oltId, board, port)
+        val liveOccupied = queryFacade.occupiedOntIds(board, port)
+        return OntIdAllocator.nextFree(liveOccupied = liveOccupied, dbMax = dbMax)
     }
 
     private fun requireOlt(): OltMgrOlt {

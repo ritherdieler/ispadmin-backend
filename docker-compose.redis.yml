@@ -3,7 +3,9 @@ services:
     image: redis:7-alpine
     container_name: ispadmin-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
+    # 3000 ONUs informing every 30 min fill cpe.inform faster than 128mb allows,
+    # and noeviction means a full instance rejects XADD instead of dropping data.
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "6379:6379"
     volumes:

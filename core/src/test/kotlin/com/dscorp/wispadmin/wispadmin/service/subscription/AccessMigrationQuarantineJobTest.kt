@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.service.subscription
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMigrationStage
 import com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAccessMigration
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAccessMigrationRepository
+import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -39,5 +40,16 @@ class AccessMigrationQuarantineJobTest {
 
         assertEquals(1, processed)
         verify { service.finishQuarantine(due) }
+    }
+
+    @Test
+    fun `scheduled cron is a no-op when operational jobs are off`() {
+        val repository = mockk<SubscriptionAccessMigrationRepository>(relaxed = true)
+        val service = mockk<AccessMigrationService>(relaxed = true)
+        val job = AccessMigrationQuarantineJob(repository, service, operationalJobsEnabled = false)
+
+        assertEquals(0, job.scheduledFinishDueQuarantines())
+        verify { repository wasNot Called }
+        verify { service wasNot Called }
     }
 }

@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Lab local: Core + Gateway + ACS VPS",
+    "output": "lab-local.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "alta-olt",
+        "label": "Alta OLT",
+        "focus": ["client", "core", "gateway", "olt"],
+        "note": "Cliente solo habla con Core; Gateway ejecuta authorize/activate por SSH en la OLT."
+      },
+      {
+        "id": "tr069",
+        "label": "Provision TR-069",
+        "focus": ["gateway", "acs", "genieacs", "onu"],
+        "note": "Gateway provisiona via ACS staging; ACS usa NBI GenieACS hacia la ONU lab."
+      },
+      {
+        "id": "mikrotik",
+        "label": "IP y cola MK2",
+        "focus": ["core", "mk2"],
+        "note": "Core configura MK2 id 8 VLAN 100; no MK1 ni mikrotik_test."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Cliente",
+      "sublabel": "App / curl / script",
+      "pos": [40, 280],
+      "size": [130, 64]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Core WAR",
+      "sublabel": "Mac :8082 /ispadmin",
+      "tag": "fachada",
+      "pos": [260, 280],
+      "size": [150, 64]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "Gateway WAR",
+      "sublabel": "Mac :8080 /ispadmin",
+      "pos": [500, 280],
+      "size": [150, 64]
+    },
+    {
+      "id": "acs",
+      "type": "cloud",
+      "label": "ACS staging",
+      "sublabel": "tunel :8091",
+      "pos": [740, 280],
+      "size": [150, 64]
+    },
+    {
+      "id": "genieacs",
+      "type": "cloud",
+      "label": "GenieACS NBI",
+      "sublabel": "tunel :7557",
+      "pos": [980, 280],
+      "size": [150, 64]
+    },
+    {
+      "id": "mk2",
+      "type": "external",
+      "label": "MikroTik MK2",
+      "sublabel": "id 8 · VLAN 100",
+      "pos": [260, 100],
+      "size": [150, 64]
+    },
+    {
+      "id": "olt",
+      "type": "external",
+      "label": "OLT MA5608T",
+      "sublabel": "10.11.104.2",
+      "pos": [500, 460],
+      "size": [150, 64]
+    },
+    {
+      "id": "onu",
+      "type": "external",
+      "label": "ONU lab",
+      "sublabel": "ZTEGDC47BFFD",
+      "tag": "tag lab",
+      "pos": [980, 460],
+      "size": [150, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Mac local",
+      "wraps": ["core", "gateway"]
+    },
+    {
+      "kind": "region",
+      "label": "VPS por tunel SSH",
+      "wraps": ["acs", "genieacs"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Campo lab (solo ONU tag lab)",
+      "wraps": ["olt", "onu", "mk2"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-to-core",
+      "from": "client",
+      "to": "core",
+      "label": "HTTP JWT",
+      "variant": "emphasis"
+    },
+    {
+      "id": "core-to-gateway",
+      "from": "core",
+      "to": "gateway",
+      "label": "activate"
+    },
+    {
+      "id": "core-to-mk2",
+      "from": "core",
+      "to": "mk2",
+      "label": "HTTP API",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "gateway-to-olt",
+      "from": "gateway",
+      "to": "olt",
+      "label": "SSH CLI",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "gateway-to-acs",
+      "from": "gateway",
+      "to": "acs",
+      "label": "provision"
+    },
+    {
+      "id": "acs-to-genieacs",
+      "from": "acs",
+      "to": "genieacs",
+      "label": "NBI"
+    },
+    {
+      "id": "genieacs-to-onu",
+      "from": "genieacs",
+      "to": "onu",
+      "label": "TR-069",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Fachada",
+      "items": [
+        "Clientes solo hablan con Core :8082",
+        "Core orquesta Gateway y MK2"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "OLT y TR-069",
+      "items": [
+        "Gateway SSH a OLT 10.11.104.2",
+        "ACS VPS + GenieACS por tuneles :8091 / :7557"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Restricciones lab",
+      "items": [
+        "Solo ONU con tag GenieACS lab",
+        "MK2 id 8 VLAN 100; no ACS Application local"
+      ]
+    }
+  ]
+}

@@ -59,6 +59,7 @@ class SubscriptionController(
     private val gatewayCpe: ObjectProvider<GatewayOnuActivationClient>,
     private val accessMigrationService: com.dscorp.wispadmin.wispadmin.service.subscription.AccessMigrationService? = null,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
+    private val subscriptionAcsRepository: SubscriptionAcsRepository? = null,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -205,18 +206,19 @@ class SubscriptionController(
         val subscription = repository.findById(subscriptionId).orElse(null)
             ?: return ResponseEntity.notFound().build()
         val sn = subscription.fiberOnuSn ?: return ResponseEntity.notFound().build()
+        val stored = subscriptionAcsRepository?.findById(subscriptionId)?.orElse(null)?.toDto()
         val telemetry = gatewayCpe.ifAvailable?.telemetry(sn)
         return ResponseEntity.ok(
-            SubscriptionAcsDto(
-                subscriptionId = subscriptionId,
-                smartoltSerial = sn,
+            (stored ?: SubscriptionAcsDto(subscriptionId = subscriptionId)).copy(
+                smartoltSerial = stored?.smartoltSerial ?: sn,
                 provisionStatus = subscription.tr069ProvisionStatus,
-                lastError = subscription.tr069LastError,
-                productClass = telemetry?.productClass,
-                wanIpCache = telemetry?.wanIp,
-                ssid24 = telemetry?.ssid24,
-                ssid5 = telemetry?.ssid5,
-                softwareVersion = telemetry?.softwareVersion,
+                tr069RequiresManualConfig = subscription.tr069ProvisionStatus == Tr069ProvisionStatus.MANUAL_REQUIRED,
+                lastError = subscription.tr069LastError ?: stored?.lastError,
+                productClass = telemetry?.productClass ?: stored?.productClass,
+                wanIpCache = telemetry?.wanIp ?: stored?.wanIpCache,
+                ssid24 = telemetry?.ssid24 ?: stored?.ssid24,
+                ssid5 = telemetry?.ssid5 ?: stored?.ssid5,
+                softwareVersion = telemetry?.softwareVersion ?: stored?.softwareVersion,
             )
         )
     }

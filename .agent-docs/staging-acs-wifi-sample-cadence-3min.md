@@ -1,5 +1,11 @@
 # Staging — cadencia ACS Wi‑Fi 3 min (2026-09-03)
 
+> **Superseded parcialmente.** `service.health.acs-gpv-cooldown-seconds` se retiró
+> junto con el GPV de lectura. La cadencia ya no es una propiedad de Core sino
+> `PeriodicInformInterval` en `gigafiber-bootstrap.js` (1800 s + jitter); en staging
+> se baja ese intervalo, no un cooldown. `acs-wifi-sample-target-seconds` sigue
+> siendo el umbral de frescura del 360. Ver [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md).
+
 ## Decisión
 
 En **staging** el watcher ACS pide GPV de Wi‑Fi (conteos + estaciones) con objetivo de **3 minutos**, no los 30 min de prod.

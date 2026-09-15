@@ -1,5 +1,10 @@
 # ACS Wi-Fi GPV automático — 2026-08-31
 
+> **Superseded.** El watcher ACS, `AcsWifiRefreshPlanner`, los cursores `acs-gpv:*`
+> y `service.health.acs-gpv-cooldown-seconds` ya no existen. El Inform es la única
+> fuente de verdad y el dato llega en el payload del `ext`; ver [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md).
+> Se conserva como evidencia del porqué del desfase `PARAMETERS_NOT_REFRESHED_FOR_INFORM`.
+
 ## Problema
 
 El watcher ACS leía GenieACS cada ~2 min, pero con inform fresco y hojas WLAN con `_timestamp` anterior al inform no persistía (`PARAMETERS_NOT_REFRESHED_FOR_INFORM`). Runs: `written≈0`, `missing` alto. Conteos/RSSI quedaban STALE/MISSING en la UI 360.

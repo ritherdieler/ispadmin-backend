@@ -1,9 +1,5 @@
 package com.dscorp.wispadmin.traffic.service
 
-import com.dscorp.wispadmin.events.EventBusPort
-import com.dscorp.wispadmin.events.NoOpEventBus
-import com.dscorp.wispadmin.events.PlatformEvent
-import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.traffic.config.TrafficProperties
 import com.dscorp.wispadmin.traffic.entity.*
 import com.dscorp.wispadmin.traffic.repository.*
@@ -11,7 +7,6 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
-import java.time.ZoneId
 import kotlin.math.abs
 
 @Service
@@ -21,7 +16,6 @@ open class TrafficAnomalyService(
     private val sourceRunRepository: TrafficSourceRunRepository,
     private val anomalyRepository: TrafficAnomalyEventRepository,
     private val properties: TrafficProperties,
-    private val eventBus: EventBusPort = NoOpEventBus(),
 ) {
     @Scheduled(fixedDelayString = "\${traffic.poll.interval-ms:300000}", initialDelayString = "\${traffic.poll.initial-delay-ms:120000}")
     fun scheduledEvaluate() { if (properties.anomaly.enabled) evaluate() }
@@ -109,24 +103,13 @@ open class TrafficAnomalyService(
             val key = "${properties.anomaly.ruleVersion}:$type:$scope:${now.toLocalDate()}:${now.hour}:${now.minute}"
             val event = existing ?: TrafficAnomalyEvent(dedupeKey = key, anomalyType = type, subscriptionId = subscriptionId, hostDeviceId = routerId, startedAt = now)
             event.eventStatus = TrafficAnomalyStatus.OPEN; event.endedAt = null; event.lastEvaluatedAt = now; event.baselineValue = baseline; event.observedValue = observed; event.deviationValue = deviation; event.coveragePct = coverage.coerceIn(0.0, 100.0); event.confidence = confidence.coerceIn(0.0, 1.0); event.ruleVersion = properties.anomaly.ruleVersion; event.evidenceJson = evidence
-            val created = existing == null
             anomalyRepository.save(event)
-            if (created) publishAnomaly(PlatformEventTypes.TRAFFIC_ANOMALY_OPENED, event, now)
         } else if (existing?.eventStatus == TrafficAnomalyStatus.OPEN) {
             existing.eventStatus = TrafficAnomalyStatus.CLOSED; existing.endedAt = now; existing.lastEvaluatedAt = now; anomalyRepository.save(existing)
-            publishAnomaly(PlatformEventTypes.TRAFFIC_ANOMALY_CLEARED, existing, now)
         }
-    }
-
-    private fun publishAnomaly(type: String, event: TrafficAnomalyEvent, now: LocalDateTime) {
-        eventBus.publish(
-            PlatformEvent(
-                type = type,
-                subscriptionId = event.subscriptionId,
-                occurredAt = now.atZone(ZoneId.of("America/Lima")).toInstant(),
-                payloadJson = """{"anomalyType":"${event.anomalyType.name}","hostDeviceId":${event.hostDeviceId}}""",
-            )
-        )
+        // Anomaly state lives in traffic_anomaly_event and is read from there.
+        // Nothing subscribes to traffic.anomaly-*, so publishing only fills the
+        // stream that cpe.inform needs.
     }
 
     private fun List<Double>.median(): Double { if (isEmpty()) return 0.0; val s = sorted(); val m = s.size / 2; return if (s.size % 2 == 0) (s[m - 1] + s[m]) / 2 else s[m] }

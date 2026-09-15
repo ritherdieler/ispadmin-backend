@@ -56,6 +56,32 @@ Cuando el usuario pida **pruebas en local** (alta FIBER, authorize/activate/dele
 5. Usuario e2e local: `scripts/local-e2e-ensure-catalog.sh` (`dscorp` / `nohacker`, ADMIN, `verified=1`, hash compatible con SHA-384 de la app). Place `9 de octubre`, NAP `NO-001`, plan FIBER, MK2 id 8. Core: `olt.service.mock.enabled=false` (si no, `/onu/unconfigured_onus` devuelve `ALCL*`).
 6. Alta: `POST /subscription` en el Core (VLAN 100, NAP 42, `hostDeviceId` 8, WiFi passphrase **≥ 8**). Poll `registration-progress` hasta `tr069ProvisionStatus=COMPLETE` y entregar SSID **y** password.
 
+### 360 local (Redis)
+
+Prestaging recolecta series Wi‑Fi 360 por Redis (`gigafiber.redis.enabled=true`, namespace `lpstg`, host `127.0.0.1:6379`). `start` arranca `docker-compose.redis.yml` si hace falta. El consumer de streams **no** depende de `gigafiber.scheduling.enabled` (sigue `false` para no disparar billing/OLT).
+
+GenieACS del VPS notifica al ACS del VPS, no al WAR local. Tras el alta (o cuando haya Inform en NBI):
+
+```bash
+./scripts/run-local-prestaging.sh inform-notify ZTEGDC47BFFD
+```
+
+ACS local lee la caché NBI (`:7557`), POST al Gateway in-process, XADD `cpe.inform`. Óptica SNMP sigue apagada en este overlay (VTY).
+
+Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
+
+### OLT SSH: matar sesiones previas (obligatorio)
+
+Antes de **abrir cualquier SSH** hacia la OLT lab (`10.11.104.2:22`) — arranque de prestaging/Gateway, live smoke, e2e, o SSH manual de diagnóstico — **matar primero** las conexiones TCP ya establecidas desde esta Mac hacia ese host:22.
+
+Motivo: la MA5608T tiene pocos VTY; sesiones huérfanas (bootRun anterior, `ssh` manual, health fallido) provocan `oltReachable=false` y lockout `Reenter times have reached the upper limit`.
+
+Cómo:
+
+1. `./scripts/run-local-prestaging.sh free-olt-ssh` (o `start`/`restart`, que ya lo invocan).
+2. Prohibido abrir un segundo `ssh`/`sshpass` a la OLT **en paralelo** al Gateway. Si hace falta CLI manual: `free-olt-ssh`, un solo SSH, cerrarlo, luego relanzar el WAR.
+3. Si ya hubo lockout: esperar a que la OLT libere VTY; no martillar más intentos.
+
 Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
 
 ### Pruebas largas: notificación de fin (obligatorio)

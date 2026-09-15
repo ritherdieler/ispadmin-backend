@@ -47,5 +47,5 @@ class AcsCpeController(
 
     @PostMapping("/cpe/inform-notify")
     fun informNotify(@RequestBody body: com.dscorp.wispadmin.acs.CpeInformNotifyRequest): CpeCommandResult =
-        wifiInformNotify.notify(deviceId = body.deviceId, serial = body.serial)
+        wifiInformNotify.notify(deviceId = body.deviceId, serial = body.serial, payload = body.payload)
 }

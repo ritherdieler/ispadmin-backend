@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.ScheduledTaskType
 import com.dscorp.wispadmin.wispadmin.service.ScheduledTaskLogService
 import com.dscorp.wispadmin.wispadmin.service.SubscriptionService
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Clock
@@ -12,6 +13,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 @Component
+@ConditionalOnProperty(name = ["gigafiber.scheduling.operational-jobs"], havingValue = "true", matchIfMissing = true)
 class CutServiceMonthlyTaskScheduler(
     private val subscriptionService: SubscriptionService,
     private val scheduledTaskLogService: ScheduledTaskLogService,

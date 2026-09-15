@@ -391,6 +391,105 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
+    fun `refreshTr069FromGateway persists ACS deviceId and upserts subscription_acs`() {
+        val acsSync = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsSyncService>(relaxed = true)
+        val tagger = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsSubscriptionTagger>(relaxed = true)
+        val wired = SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository,
+            gatewayActivation = gatewayActivation,
+            pppoeAccessService = pppoeAccessService,
+            cpeEnabled = false,
+            acsSyncService = acsSync,
+            acsTagger = tagger,
+        )
+        val subscription = baseSubscription().apply {
+            id = 42
+            installationType = InstallationType.FIBER
+            fiberOnuSn = "ZTEGDC47BFFD"
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+        }
+        every { gatewayActivation.ifAvailable } returns gatewayClient
+        every { gatewayClient.activationBySn("ZTEGDC47BFFD") } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "ext-1",
+            sn = "ZTEGDC47BFFD",
+            oltStatus = "COMPLETE",
+            cpeStatus = "COMPLETE",
+            deviceId = "5872C9-F6600R-ZTEGDC47BFFD",
+        )
+        every { repository.save(subscription) } returns subscription
+
+        val result = wired.refreshTr069FromGateway(subscription)
+
+        assertEquals(Tr069ProvisionStatus.COMPLETE, result.tr069ProvisionStatus)
+        assertEquals("5872C9-F6600R-ZTEGDC47BFFD", result.tr069DeviceId)
+        verify {
+            acsSync.upsertFromProvision(
+                42,
+                match {
+                    it.deviceId == "5872C9-F6600R-ZTEGDC47BFFD" &&
+                        it.status == Tr069ProvisionStatus.COMPLETE
+                },
+                "ZTEGDC47BFFD",
+            )
+        }
+        verify {
+            tagger.apply(
+                deviceId = "5872C9-F6600R-ZTEGDC47BFFD",
+                subscriptionId = 42,
+                kind = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsServiceKind.INTERNET,
+                fullName = "Ana Lopez",
+                previousDeviceId = null,
+            )
+        }
+    }
+
+    @Test
+    fun `refreshTr069FromGateway fills deviceId even when TR-069 already COMPLETE`() {
+        val acsSync = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsSyncService>(relaxed = true)
+        val wired = SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository,
+            gatewayActivation = gatewayActivation,
+            pppoeAccessService = pppoeAccessService,
+            cpeEnabled = false,
+            acsSyncService = acsSync,
+        )
+        val subscription = baseSubscription().apply {
+            id = 3
+            installationType = InstallationType.FIBER
+            fiberOnuSn = "VSOL0031C0B6"
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
+            tr069DeviceId = null
+        }
+        every { gatewayActivation.ifAvailable } returns gatewayClient
+        every { gatewayClient.activationBySn("VSOL0031C0B6") } returns GatewayOnuActivateResponse(
+            sn = "VSOL0031C0B6",
+            oltStatus = "COMPLETE",
+            cpeStatus = "COMPLETE",
+            deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+        )
+        every { repository.save(subscription) } returns subscription
+
+        val result = wired.refreshTr069FromGateway(subscription)
+
+        assertEquals("B46415-V2804AX15T-12345B4641531C0B6", result.tr069DeviceId)
+        verify(exactly = 1) {
+            acsSync.upsertFromProvision(3, any(), "VSOL0031C0B6")
+        }
+    }
+
+    @Test
     fun `retryTr069 reapplies provision when MANUAL_REQUIRED and OLT COMPLETE`() {
         val subscription = baseSubscription().apply {
             id = 42

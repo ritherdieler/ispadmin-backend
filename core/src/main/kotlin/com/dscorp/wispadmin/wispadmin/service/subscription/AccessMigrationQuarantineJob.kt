@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.service.subscription
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMigrationStage
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionAccessMigrationRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.time.Clock
@@ -14,11 +15,18 @@ import java.time.ZoneId
 class AccessMigrationQuarantineJob(
     private val migrationRepository: SubscriptionAccessMigrationRepository,
     private val accessMigrationService: AccessMigrationService,
+    @Value("\${gigafiber.scheduling.operational-jobs:true}")
+    private val operationalJobsEnabled: Boolean = true,
 ) {
     var clock: Clock = Clock.systemDefaultZone()
     private val logger = LoggerFactory.getLogger(AccessMigrationQuarantineJob::class.java)
 
     @Scheduled(cron = "0 15 3 * * *", zone = "America/Lima")
+    fun scheduledFinishDueQuarantines(): Int {
+        if (!operationalJobsEnabled) return 0
+        return finishDueQuarantines()
+    }
+
     fun finishDueQuarantines(): Int {
         val now = LocalDateTime.ofInstant(Instant.now(clock), ZoneId.of("America/Lima"))
         val due = migrationRepository.findByStageAndQuarantineUntilLessThanEqual(

@@ -2,6 +2,27 @@
 
 **Doc canónico** (cómo funciona el camino). Las notas con fecha son evidencia operativa; no sustituyen este documento.
 
+## 0. Principio: el Inform es la única fuente de verdad
+
+El Inform de cada ONU, al intervalo que tenga configurado, es la única fuente de
+verdad para todo lo que consuma datos de ONUs. No hay polls, ni sweeps, ni GPV
+de lectura en paralelo. Una acción manual **no lee**: fuerza un Connection
+Request, que produce un Inform, que entrega el dato por el camino normal.
+
+De ahí salen tres consecuencias que contradicen versiones anteriores de este doc:
+
+- **El `ext` va después de los `declare`**, no antes, porque ahora lleva los
+  valores en el payload en vez de pedirle al ACS que lea el NBI.
+- **El ACS no lee el NBI** en el camino feliz. GenieACS hace commit del árbol de
+  parámetros al cerrar la sesión, así que cualquier lectura del NBI durante la
+  sesión ve la sesión *anterior*. El payload del `ext` elimina ese desfase por
+  construcción. El `readDeviceCache` queda solo como fallback.
+- **`PeriodicInformInterval` es la única perilla de cadencia viva.** Vive en
+  `gf-inform-interval` (canal `inform`, cada sesión). Lab 4 s; flota 1800 s +
+  jitter. El preset `bootstrap` es solo `0 BOOTSTRAP` (factory): `clear()` +
+  credenciales. Un reboot (`1 BOOT` / `M Reboot`) no corre bootstrap; el
+  intervalo nuevo se toma en el próximo Inform.
+
 Desacople de transporte (HTTP / Redis Streams; ACS **no** XADD): [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md).  
 Secretos (solo nombres): [vps-secrets-management.md](./vps-secrets-management.md).  
 Diagramas sin cruces: [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md).
@@ -17,11 +38,11 @@ ONU (VSOL lab)
  │ CWMP Inform
  ▼
 GenieACS
- │ declare WiFi + ext wifi-inform-notify
+ │ declare WiFi, luego ext wifi-inform-notify(payload)
  │ (HTTP, header X-Acs-Key)
  ▼
 ACS WAR
- │ parse NBI → last-state en cpe_record
+ │ parse payload → last-state en cpe_record
  │ (HTTP, header X-Acs-To-Gateway-Key)
  ▼
 Gateway
@@ -49,14 +70,19 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 | # | Pieza | Qué hace |
 |---|--------|----------|
 | 1 | ONU | Envía CWMP Inform (PERIODIC, CONNECTION REQUEST u otro evento). |
-| 2 | GenieACS | Provision piloto `gigafiber-wifi-telemetry`: `ext("wifi-inform-notify", …)` **antes** de los `declare` WLAN; luego refresca TotalAssociations / AssociatedDevice. |
-| 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS WAR. |
-| 4 | ACS `WifiInformNotifyService` | Lee caché NBI, parsea `WifiNbiTelemetry`, upsert **last-state** en `cpe_record`, POST al Gateway. |
+| 2 | GenieACS | Provision `gigafiber-wifi-telemetry`: refresca TotalAssociations / AssociatedDevice / Hosts con wildcards contra el reloj de la sesión y **después** llama `ext("wifi-inform-notify", serial, deviceId, payload)` con las hojas crudas. |
+| 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS WAR con el payload en el body. Timeout 2500 ms, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
+| 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
 | 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
-| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Idempotente; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample`, `acs_wifi_status_current`; y `telemetry_source_run` (`source=ACS`, `equipmentKey=gateway-cpe`) para el collector 360. |
+| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Gate `ServiceHealthScope.collects`; idempotente; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC) y `acs_wifi_status_current`. |
 | 7 | Backoffice 360 | `GET …/service-health/series` → `WifiCharts` / estaciones. |
 
-Poll Core `AcsTelemetryService` / `SERVICE_HEALTH_ACS_POLL_ENABLED`: default **false** cuando este consumer está cableado. `ACS/collector` del 360 no depende de ese poll: se refresca con cada Inform persistido (misma clave `gateway-cpe` que miraba el poller).
+`ACS/collector` del 360 sale de `acs_wifi_status_current.observedAt` de la suscripción,
+con umbral `service.health.acs-wifi-sample-target-seconds * 2`. **Ya no se inserta
+`telemetry_source_run` por Inform**: no hay run, y la clave global `equipmentKey=gateway-cpe`
+tapaba el staleness por dispositivo.
+
+En **local-prestaging** el ext de GenieACS sigue pegando al ACS del VPS. Para llenar Redis `lpstg` hay que `POST /api/acs/v1/cpe/inform-notify` al WAR local (`./scripts/run-local-prestaging.sh inform-notify`).
 
 ## 2. Qué significa “Inform”
 
@@ -70,7 +96,7 @@ En TR-069, un **Inform** es la sesión CWMP en la que la ONU reporta eventos al 
 
 El preset piloto usa canal `inform` con `events: {}`: **cualquier** Inform del allowlist ejecuta el script (no solo `2 PERIODIC`).
 
-`PeriodicInformInterval` (piloto **180 s**) **solo agenda** Informs de tipo PERIODIC. No limita CONNECTION REQUEST ni otros eventos: un CR puede producir un Inform inmediato aunque el intervalo PERIODIC no haya vencido.
+`PeriodicInformInterval` (**1800 s + jitter derivado del serial**) **solo agenda** Informs de tipo PERIODIC. No limita CONNECTION REQUEST ni otros eventos: un CR puede producir un Inform inmediato aunque el intervalo PERIODIC no haya vencido.
 
 ## 3. Alcance del piloto (VSOL lab)
 
@@ -81,7 +107,7 @@ El preset piloto usa canal `inform` con `events: {}`: **cualquier** Inform del a
 | ProductClass | `V2804AX15T` |
 | Tag | `lab` |
 | Suscripción staging (evidencia) | `subscription_id=2389` |
-| `PeriodicInformInterval` | **180 s** solo ese serial (declare en el provision piloto; bootstrap de flota sigue en 3600) |
+| `PeriodicInformInterval` | Lab: **5 s** (tag `lab` o serial de banco). Flota: **1800 s + jitter**. Todo en `gigafiber-bootstrap.js`; el provision de telemetría ya no escribe cadencia |
 | Radios VSOL | WLAN **1** (5 GHz), WLAN **5** (2.4 GHz) |
 
 No se toca el preset/provision global `inform` / `inform.js` de flota. Allowlist = Serial + ProductClass del `_id` anterior.
@@ -92,8 +118,8 @@ Detalle apply/rollback: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-
 
 | Capa | Hace | No hace |
 |------|------|---------|
-| GenieACS provision + ext | Declarar WiFi fresco; notificar ACS por HTTP | Persistir series Core; XADD Redis |
-| ACS WAR | Parse NBI; **last-state** en `cpe_record`; forward HTTP al Gateway | XADD Redis; escribir `acs_wifi_*` del Core |
+| GenieACS provision + ext | Declarar WiFi fresco y serializar las hojas al `ext` | Decidir qué es válido o fresco; persistir series; XADD Redis |
+| ACS WAR | Parsear el payload (rangos, MAC, quality, `complete`); **last-state** en `cpe_record`; forward HTTP al Gateway | XADD Redis; escribir `acs_wifi_*` del Core; leer el NBI salvo fallback |
 | Gateway | Ingest HTTP → **solo** XADD `cpe.inform` | Parse WiFi profundo; tablas de series |
 | Core service-health | Consumer Redis; persistir series + `status_current` | Hablar GenieACS/ACS WAR en este camino |
 | Backoffice | Leer series vía Core | Llamar ACS/Gateway/GenieACS |
@@ -108,7 +134,6 @@ Detalle apply/rollback: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-
 | `GENIEACS_TO_ACS_NOTIFY_URL` | Base URL ACS vista desde GenieACS | `/opt/gigafiber/genieacs/.env` |
 | `ACS_TO_GATEWAY_API_KEY` | ACS → Gateway (`X-Acs-To-Gateway-Key`) | Pareja ACS ↔ Gateway |
 | `ACS_GATEWAY_BASE_URL` | Base URL Gateway desde ACS → `acs.gateway.internal-base-url` | **Hornear por WAR**; no `.env` compartido |
-| `SERVICE_HEALTH_ACS_POLL_ENABLED` | Poll legado Core; default `false` con consumer Inform | `/opt/gigafiber/.env` / properties |
 
 Catálogo: [vps-secrets-management.md](./vps-secrets-management.md). No documentar ni commitear valores.
 
@@ -130,20 +155,24 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | Pitfall | Efecto | Mitigación |
 |---------|--------|------------|
 | `try/catch` vacío alrededor de `declare` / `ext` en GenieACS | Traga Symbols `EXT`/`COMMIT`; el auto-notify no se programa | **Nunca** try/catch ahí; ver [wifi-inform-auto-ext-vsol-2026-09-08.md](./wifi-inform-auto-ext-vsol-2026-09-08.md) |
-| `ext` **después** de muchos `declare` WLAN | Notify depende de GPV largos / `too_many_commits` | `ext` **antes** de declares WLAN (código actual) |
+| `ext` **antes** de los `declare` | El payload sale vacío y el ACS tiene que leer el NBI, que en esa sesión todavía tiene los valores de la anterior | `ext` **después** de los declares (código actual); el orden lo fija `wifi-inform-notify-ext.test.cjs` |
+| Declarar índices fijos (`AssociatedDevice.1..32`, `Hosts.Host.1..64`) | Las instancias ausentes nunca resuelven y queman iteraciones de commit hasta `too_many_commits` | Wildcards para descubrir; acotar el payload a `TotalAssociations` en el provision y a `MAX_STATIONS` en Kotlin |
+| Declarar el árbol que el CPE no expone (`Device.*` en un TR-098 como `productClass=IGD`) | `too_many_commits` en el canal, y un fault en el canal `inform` deja al equipo sin producir verdad | Probar `declare(root + ".ManagementServer.URL", {value: 1}).size` antes de declarar; medir con `scripts/genieacs/inform-channel-coverage.py` |
+| Proyectar el nodo `WLANConfiguration.N` completo en el NBI | Devuelve `SSID` y `KeyPassphrase` en claro | Proyectar solo `.TotalAssociations` y `.AssociatedDevice` |
 | Lookup JPA `Instant` justo tras upsert SQL | Count sí; stations/`status_current` no (early return) | `AcsWifiSampleLookup.idAfterUpsert` ([fix stations](./wifi-on-inform-fix-stations-status-2026-09-08.md)) |
 | UI `WifiCharts` formatea ticks en **HH:mm** (`formatHealthTime`) | Varios samples en el mismo minuto colapsan visualmente el eje | Tooltip / rango; no asumir un tick = un sample |
-| `refreshObject` de `WLANConfiguration` en ráfaga | GenieACS `too_many_commits`; sesión CWMP saturada | Cooldown GPV; preferir declare en Inform + notify; no refrescar WLAN en bucle |
+| Leer con GPV / `refreshObject` en paralelo al Inform | Compite con la fuente única y devuelve la sesión anterior | `POST /cpe/{sn}/wifi-refresh` es **solo** un Connection Request que reencola el provision; no hay cooldown de GPV que mantener |
 | Keys GenieACS ↔ Tomcat desalineadas | Auto-ext 401; Inform sí, Core no | Sync + recreate contenedores |
-| Poll Core encendido en paralelo | Doble camino / ruido | `SERVICE_HEALTH_ACS_POLL_ENABLED=false` |
 
 ## 8. Artefactos de código (referencia)
 
 | Pieza | Ubicación |
 |-------|-----------|
-| Provision | `scripts/genieacs/provisions/gigafiber-wifi-telemetry.js` |
+| Provision telemetría | `scripts/genieacs/provisions/gigafiber-wifi-telemetry.js` |
+| Provisions de flota | `scripts/genieacs/provisions/{inform,default,gigafiber-bootstrap}.js` (fuente de verdad; los applies los leen de ahí) |
 | Ext | `scripts/genieacs/ext/wifi-inform-notify.js` |
-| Apply | `scripts/genieacs/apply-wifi-telemetry.py` |
+| Apply | `scripts/genieacs/apply-wifi-telemetry.py` (`--device-id` para el escalón, `--all-models` para la flota) |
+| Cobertura / faults | `scripts/genieacs/inform-channel-coverage.py` |
 | ACS notify | `WifiInformNotifyService`, `POST /api/acs/v1/cpe/inform-notify` |
 | Gateway ingest | `CpeInformIngestService`, `POST /api/olt-gateway/acs/cpe-inform` |
 | Core persist | `CpeInformPersistService` / `HealthSnapshotIngestService` |

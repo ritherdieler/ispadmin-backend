@@ -33,21 +33,36 @@ def precondition(device_ids):
     return " OR ".join(clauses)
 
 
-def preset(device_ids):
-    if not device_ids:
-        raise ValueError("At least one explicit pilot device ID is required")
-    return {"weight": 20, "channel": "inform", "events": {},
-            "precondition": precondition(device_ids),
+def fleet_precondition():
+    """Every CPE whose radios WifiNbiTelemetry.radios() understands.
+
+    Staging the rollout past this point is Core's job, via
+    service.health.pilot-subscription-ids: an extra Inform costs one ext call,
+    while editing this preset per batch means touching the fleet's inform
+    channel each time.
+    """
+    return " OR ".join(f'DeviceID.ProductClass = "{model}"' for model in sorted(SUPPORTED_MODELS))
+
+
+def preset(device_ids, fleet=False):
+    if fleet and device_ids:
+        raise ValueError("--all-models covers every supported product class; drop --device-id")
+    if not fleet and not device_ids:
+        raise ValueError("At least one explicit pilot device ID is required, or --all-models")
+    return {"weight": 20, "channel": NAME, "events": {},
+            "precondition": fleet_precondition() if fleet else precondition(device_ids),
             "configurations": [{"type": "provision", "name": NAME, "args": []}]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device-id", action="append", default=[])
+    parser.add_argument("--all-models", action="store_true",
+                        help=f"target every {'/'.join(sorted(SUPPORTED_MODELS))} instead of an explicit list")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--disable", action="store_true")
     args = parser.parse_args()
-    config = None if args.disable else preset(args.device_id)
+    config = None if args.disable else preset(args.device_id, fleet=args.all_models)
     if not args.apply:
         print(json.dumps({"dry_run": True, "disable": args.disable, "preset": config}, indent=2))
         return

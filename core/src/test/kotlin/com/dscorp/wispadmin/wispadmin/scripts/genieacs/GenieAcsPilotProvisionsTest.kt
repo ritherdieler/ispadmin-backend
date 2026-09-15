@@ -41,18 +41,14 @@ class GenieAcsPilotProvisionsTest {
     }
 
     @Test
-    fun nbi_apply_script_matches_light_inform_and_default() {
+    fun nbi_apply_script_pushes_the_repo_provisions_instead_of_its_own_copies() {
         val nbi = read("scripts/genieacs/apply-provisions-via-nbi.sh")
-        val inform = nbi.substringAfter("def provision_inform").substringBefore("def provision_bootstrap")
-        val default = nbi.substringAfter("DEFAULT = ").substringBefore("def put_provision")
-        assertFalse(inform.contains("value: now"), inform)
-        assertTrue(inform.contains("value: 1"), inform)
-        assertFalse(inform.contains("PeriodicInformInterval"), inform)
-        assertFalse(inform.contains("PeriodicInformEnable"), inform)
-        assertFalse(inform.contains("PeriodicInformTime"), inform)
-        assertTrue(nbi.contains("PeriodicInformInterval"), nbi)
-        assertFalse(default.contains("Hosts.Host"), default)
-        assertTrue(default.contains("ExternalIPAddress"), default)
+        for (file in listOf("inform.js", "gigafiber-bootstrap.js", "default.js", "gf-inform-interval.js")) {
+            assertTrue(nbi.contains(file), "apply-provisions-via-nbi.sh must push provisions/$file: $nbi")
+        }
+        // Embedded copies drift from provisions/*.js; there must be none.
+        assertFalse(nbi.contains("declare("), nbi)
+        assertTrue(read("scripts/genieacs/apply-provisions.sh").contains("provisions/default.js"))
     }
 
     @Test
@@ -64,6 +60,64 @@ class GenieAcsPilotProvisionsTest {
         assertFalse(inform.contains("PeriodicInformInterval"), inform)
         assertFalse(inform.contains("PeriodicInformEnable"), inform)
         assertFalse(inform.contains("PeriodicInformTime"), inform)
+    }
+
+    /**
+     * 36 of the 67 NBI faults were `too_many_commits` on productClass IGD,
+     * which exposes only the TR-098 root. Declaring the other root can never
+     * resolve, so it retries until GenieACS gives up on the channel.
+     */
+    @Test
+    fun fleet_provisions_declare_only_the_root_the_cpe_exposes() {
+        val pilot = read("scripts/genieacs/configure-genieacs-pilot.sh")
+        val sources = listOf("inform.js", "gigafiber-bootstrap.js", "default.js")
+            .map { read("scripts/genieacs/provisions/$it") } + listOf(pilot)
+        for (source in sources) {
+            assertTrue(source.contains("probe.size"), "must probe the root before declaring: $source")
+            assertFalse(
+                source.contains("declare(\"Device.ManagementServer"),
+                "unconditional Device.* declare: $source",
+            )
+        }
+    }
+
+    @Test
+    fun default_pins_wan_indices_to_stay_inside_the_script_budget() {
+        val default = read("scripts/genieacs/provisions/default.js")
+        assertFalse(default.contains("Hosts.Host"), default)
+        assertTrue(default.contains("ExternalIPAddress"), default)
+        assertFalse(default.contains("WANDevice.*"), "nested wildcards cost a GPN per level: $default")
+        assertFalse(default.contains("LANDevice.*"), default)
+    }
+
+    @Test
+    fun bootstrap_preset_matches_only_factory_bootstrap_event() {
+        val configure = read("scripts/genieacs/configure-genieacs-pilot.sh")
+        val apply = read("scripts/genieacs/apply-provisions.sh")
+        for (source in listOf(configure, apply)) {
+            assertTrue(source.contains("\"0 BOOTSTRAP\": true"), source)
+            assertFalse(source.contains("\"0 BOOT\": true"), "0 BOOT is not a TR-069 event: $source")
+            assertFalse(
+                source.contains("\"1 BOOT\": true"),
+                "1 BOOT must not be AND-ed into bootstrap: $source",
+            )
+        }
+    }
+
+    @Test
+    fun bootstrap_sets_the_inform_interval_to_the_360_cadence_with_jitter() {
+        for (source in listOf(
+            read("scripts/genieacs/provisions/gigafiber-bootstrap.js"),
+            read("scripts/genieacs/configure-genieacs-pilot.sh"),
+            read("scripts/genieacs/provisions/gf-inform-interval.js"),
+        )) {
+            assertTrue(source.contains("1800 + jitter"), "interval must be 1800 s plus jitter: $source")
+            assertTrue(source.contains("isLab ? 30"), "lab CPEs must Inform every 30 s: $source")
+            assertTrue(source.contains("12345B4641531C0B6"), "VSOL lab serial must be allowlisted: $source")
+            assertTrue(source.contains("ZTEGDC47BFFD"), "ZTE lab serial must be allowlisted: $source")
+            assertTrue(source.contains("serial === \"ZTEGDC47BFFD\""), "lab detection must compare ZTE serial: $source")
+            assertFalse(source.contains("informInterval = 3600"), source)
+        }
     }
 
     @Test

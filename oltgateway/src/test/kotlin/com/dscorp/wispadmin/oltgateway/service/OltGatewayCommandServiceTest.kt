@@ -23,11 +23,7 @@ class OltGatewayCommandServiceTest {
         service = OltGatewayCommandService(
             runCommand = { cmd ->
                 commands.add(cmd)
-                if (cmd.startsWith("ont delete")) {
-                    "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"
-                } else {
-                    "Success\nMA5608T#"
-                }
+                cliOk(cmd)
             },
             properties = properties
         )
@@ -66,11 +62,7 @@ class OltGatewayCommandServiceTest {
         val split = OltGatewayCommandService(
             runCommand = { cmd ->
                 commands.add(cmd)
-                if (cmd.startsWith("ont delete")) {
-                    "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"
-                } else {
-                    "Success\nMA5608T#"
-                }
+                cliOk(cmd)
             },
             properties = properties,
             inWriteJob = { block ->
@@ -264,6 +256,37 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `authorize lanza si ont add choca con un ONT ya ocupado`() {
+        val colliding = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("ont add")) {
+                    "  Failure: The ONT ID already exists\nMA5608T#"
+                } else {
+                    "Success\nMA5608T#"
+                }
+            },
+            properties = properties,
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            colliding.authorize(
+                AuthorizeCliRequest(
+                    board = 1,
+                    port = 6,
+                    ontId = 1,
+                    sn = "VSOL0031C0B6",
+                    lineProfileId = 12,
+                    serviceProfileId = 13,
+                    description = "lab_vsol",
+                    vlan = 100,
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("ONT ID already exists"))
+    }
+
+    @Test
     fun `planAuthorize no toca la OLT ni exige escrituras habilitadas`() {
         properties.writes.enabled = false
 
@@ -314,5 +337,13 @@ class OltGatewayCommandServiceTest {
             service-port 18 vlan 100 gpon 0/0/1 ont 5 gemport 2 multi-service user-vlan 100
         """.trimIndent()
         assertEquals(setOf(1, 100), service.parseServicePortVlans(output))
+    }
+
+    private fun cliOk(cmd: String): String = when {
+        cmd.startsWith("ont delete") ->
+            "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"
+        cmd.startsWith("ont add") ->
+            "  Number of ONTs that can be added: 1, success: 1\nMA5608T#"
+        else -> "Success\nMA5608T#"
     }
 }

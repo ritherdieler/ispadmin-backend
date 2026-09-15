@@ -18,6 +18,18 @@ class LocalPrestagingEnvironmentPropertiesTest {
     fun prestaging_uses_lpstg_tag_lan_olt_and_local_acs() {
         val prestaging = prestaging()
         assertTrue(prestaging.contains("gigafiber.environment.tag=lpstg"), prestaging)
+        assertTrue(
+            Regex("""^gigafiber\.redis\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prestaging),
+            prestaging,
+        )
+        assertTrue(
+            Regex("""^gigafiber\.redis\.namespace=lpstg\s*$""", RegexOption.MULTILINE).containsMatchIn(prestaging),
+            prestaging,
+        )
+        assertTrue(
+            Regex("""^gigafiber\.scheduling\.enabled=false\s*$""", RegexOption.MULTILINE).containsMatchIn(prestaging),
+            prestaging,
+        )
         assertTrue(prestaging.contains("olt.gateway.host=10.11.104.2"), prestaging)
         assertTrue(
             Regex("""^olt\.provider\.authorize=GATEWAY\s*$""", RegexOption.MULTILINE).containsMatchIn(prestaging),
@@ -166,6 +178,12 @@ class LocalPrestagingEnvironmentPropertiesTest {
         assertTrue(script.contains(":core:bootRun"), script)
         assertTrue(script.contains("dev,local-prestaging"), script)
         assertTrue(script.contains("8082"), script)
+        assertTrue(script.contains("free_olt_ssh"), script)
+        assertTrue(script.contains("free-olt-ssh"), script)
+        assertTrue(script.contains("ensure_redis"), script)
+        assertTrue(script.contains("inform-notify"), script)
+        assertTrue(script.contains("redis-local.sh"), script)
+        assertTrue(script.contains("10.11.104.2"), script)
         assertFalse(script.contains("AcsApplicationKt"), script)
         assertFalse(script.contains("OltGatewayApplicationKt"), script)
         assertFalse(script.contains("mvnw"), script)

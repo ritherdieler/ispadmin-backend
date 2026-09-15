@@ -249,12 +249,12 @@ class CpeFacadeServiceTest {
     }
 
     @Test
-    fun `vparams wifi-refresh GPVs GfWifiStatus and does not refresh WLAN object`() {
+    fun `wifi-refresh only forces a connection request and never reads in parallel`() {
         val records = mockk<CpeRecordRepository>()
         every { records.findById("SN1") } returns Optional.of(CpeRecord(sn = "SN1", deviceId = "dev-1"))
         val client = mockk<GenieAcsClient>()
         every {
-            client.getParameterValues("dev-1", listOf("VirtualParameters.GfWifiStatus"), connectionRequest = true)
+            client.enqueueProvisions("dev-1", "gigafiber-wifi-telemetry", emptyList(), connectionRequest = true)
         } returns GenieAcsTaskResult(statusCode = 202, body = "queued", accepted = true)
         val service = CpeFacadeService(
             records,
@@ -271,6 +271,7 @@ class CpeFacadeServiceTest {
         assertEquals(true, result.accepted)
         assertEquals(CpeStatus.PENDING, result.status)
         verify(exactly = 0) { client.refreshObject(any(), any(), any()) }
+        verify(exactly = 0) { client.getParameterValues(any(), any(), any()) }
     }
 
     @Test

@@ -93,7 +93,7 @@ curl -s -H "X-Olt-Gateway-Key: $GKEY" \
 # esperado: "status":"UP","oltReachable":true
 ```
 
-Si `oltReachable=false` con ping OK: parar Gateway, esperar **~8 s** (VTY Huawei), relanzar. No abrir SSH extra “de diagnóstico” (lockout `Reenter times have reached the upper limit`).
+Si `oltReachable=false` con ping OK: `./scripts/run-local-prestaging.sh free-olt-ssh`, esperar **~8 s** (VTY Huawei), relanzar. **Antes de cualquier SSH nuevo** a `10.11.104.2:22`, matar conexiones TCP previas desde esta Mac (`free-olt-ssh`). No abrir SSH extra “de diagnóstico” en paralelo al Gateway (lockout `Reenter times have reached the upper limit`).
 
 ### 4. Arrancar Core WAR local → Gateway local
 
@@ -347,7 +347,7 @@ Gateway: --spring.profiles.active=oltgateway,local-prestaging --server.port=8080
 ACS:     --spring.profiles.active=acs,local-prestaging --server.port=8090
 ```
 
-Antes de un alta: `ping -c 1 10.11.104.2` y health del Gateway con `oltReachable=true`. El log debe mostrar SSH a `10.11.104.2`. Si `oltReachable=false` con ping OK: esperar ~8 s VTY y relanzar **este** Gateway local. ONU `lab` only.
+Antes de un alta: `ping -c 1 10.11.104.2` y health del Gateway con `oltReachable=true`. El log debe mostrar SSH a `10.11.104.2`. Si `oltReachable=false` con ping OK: `./scripts/run-local-prestaging.sh free-olt-ssh` (solo con el WAR caído; si el Java está up, eso mata el proceso), esperar ~8 s VTY y relanzar **este** Gateway/prestaging local. ONU `lab` only. Antes de cualquier SSH nuevo a la OLT: matar TCP previos (`free-olt-ssh` / `start`).
 
 Schemas locales: `ispadmin_prestaging`, `prestaging_oltgateway`, `prestaging_acs` (el JDBC lleva `createDatabaseIfNotExist=true`). El catálogo e2e de `scripts/local-e2e-ensure-catalog.sh` apunta a `ispadmin_dev`; este schema nace vacío hasta que se copie o se siembre.
 
@@ -369,7 +369,19 @@ WARs ya arriba (`./scripts/run-local-prestaging.sh core|gateway|acs`) y túnel N
   --cleanup-mode ask
 ```
 
-`--cleanup-mode skip` es el default (no borra la suscripción). `auto` limpia solo la ONU lab. Poll `GET /subscription/{id}/registration-progress` hasta `tr069ProvisionStatus=COMPLETE`. Si COMPLETE, imprime SSID **y** password 2.4 y 5 GHz (`{ssid} - 5G`). Wrapper fino Android (opcional): `IpsAdmin-android app/scripts/e2e_register_fiber_local_prestaging.sh` (delega al backend; no cambia espresso local/staging).
+`--cleanup-mode skip` es el default (no borra la suscripción). `auto` limpia solo la ONU lab. Poll `GET /subscription/{id}/registration-progress` hasta `tr069ProvisionStatus=COMPLETE`. Si COMPLETE, imprime SSID **y** password 2.4 y 5 GHz (`{ssid} - 5G`), marca `subscription_acs.lab=1` y dispara `POST /api/acs/v1/cpe/inform-notify` (series 360 vía Redis `lpstg`). Wrapper fino Android (opcional): `IpsAdmin-android app/scripts/e2e_register_fiber_local_prestaging.sh` (delega al backend; no cambia espresso local/staging).
+
+### 360 Wi‑Fi con Redis (prestaging)
+
+El overlay `local-prestaging` deja `gigafiber.redis.enabled=true` y namespace `lpstg`. Redis local: `./scripts/redis-local.sh` (`127.0.0.1:6379`, sin password). `run-local-prestaging.sh start` lo levanta si `:6379` está caído. El consumer 360 corre con Redis ON aunque `gigafiber.scheduling.enabled=false`.
+
+Camino: `POST /api/acs/v1/cpe/inform-notify` (NBI túnel `:7557`) → Gateway XADD `cpe.inform` → `HealthSnapshotConsumer` → `acs_wifi_*`. El ext de GenieACS en el VPS **no** llega al ACS local; hay que notificar a `:8082`:
+
+```bash
+./scripts/run-local-prestaging.sh inform-notify ZTEGDC47BFFD
+```
+
+`GET /subscription/{id}/service-health` (JWT) lee series. Óptica/tráfico siguen vacíos aquí (SNMP y Traffic apagados).
 
 ---
 

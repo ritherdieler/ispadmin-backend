@@ -70,6 +70,7 @@ class HttpAcsCpeClient(
             wifiAssociatedTotal = node.path("wifiAssociatedTotal").takeIf { it.isNumber }?.asInt(),
             wifiObservedAt = node.path("wifiObservedAt").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
             wifiQualityStatus = node.path("wifiQualityStatus").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            deviceId = node.path("deviceId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 

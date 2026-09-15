@@ -83,7 +83,14 @@ class OltGatewayCommandService(
         inAuthorizeJob {
             planned.forEach { cmd ->
                 executed.add(cmd)
-                runCommand(cmd)
+                val output = runCommand(cmd)
+                if (cmd.startsWith("ont add")) {
+                    requireOntAddOk(output, cmd)
+                } else if (cmd.startsWith("service-port")) {
+                    if (looksLikeCliFailure(output)) {
+                        throw IllegalStateException("OLT CLI failed for '$cmd': ${output.takeLast(300)}")
+                    }
+                }
             }
         }
         return AuthorizeCliResult(ontId = request.ontId, commands = executed)
@@ -160,6 +167,16 @@ class OltGatewayCommandService(
             throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(300)}")
         }
         return output
+    }
+
+    private fun requireOntAddOk(output: String, command: String) {
+        if (looksLikeCliFailure(output)) {
+            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(400)}")
+        }
+        val confirmed = output.contains(Regex("(?i)success:\\s*[1-9]\\d*"))
+        if (!confirmed) {
+            throw IllegalStateException("OLT CLI did not confirm ont add for '$command': ${output.takeLast(400)}")
+        }
     }
 
     private fun requireCliOk(output: String, command: String) {

@@ -101,7 +101,7 @@ Por ONU: **`onuExternalId` + `polledAt`** (mismo Instant → no inserta sample d
 |------|---------|-----------|
 | `SERVICE_HEALTH_OPTICAL_PULL_ENABLED` | **`false`** | `service.health.optical-pull-enabled` |
 
-`HealthOltOpticalPullService` solo corre si health + optical + **opticalPullEnabled**. Con el consumer batch cableado, el pull HTTP permanece off (mismo patrón que `SERVICE_HEALTH_ACS_POLL_ENABLED` / WiFi-on-Inform).
+`HealthOltOpticalPullService` solo corre si health + optical + **opticalPullEnabled**. Con el consumer batch cableado, el pull HTTP permanece off (WiFi 360 tampoco hace poll: solo `cpe.inform`).
 
 `OLT/collector` del 360 lee `telemetry_source_run` (`source=OLT_OPTICAL`). Lo escribe **`OpticalBatchPersistService`** al persistir cada `onu.optical-batch` (un run por puerto). No hace falta encender el pull HTTP.
 

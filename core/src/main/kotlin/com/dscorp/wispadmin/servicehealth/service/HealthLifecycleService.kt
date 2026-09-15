@@ -23,7 +23,7 @@ class HealthLifecycleService(private val properties: ServiceHealthProperties, pr
         if(properties.enabled && (properties.acsEnabled || properties.actionsEnabled)) {
             require(properties.stationHmacKey.toByteArray().size>=32) { "SERVICE_HEALTH_STATION_HMAC_KEY (32+ bytes) requerido para telemetría/acciones" }
         }
-        for(key in listOf("acs-watcher","traffic-consumer","evaluation","actions","blast-radius","olt-events","wifi-hourly-rollup","optical-daily-rollup")) {
+        for(key in listOf("traffic-consumer","evaluation","actions","blast-radius","olt-events","wifi-hourly-rollup","optical-daily-rollup")) {
             if(!cursors.existsById(key)) try { cursors.saveAndFlush(HealthCursor(cursorKey=key,observedAt=if(key=="olt-events") Instant.now() else null)) }
             catch (_: DataIntegrityViolationException) { /* Another instance seeded the same lock. */ }
         }

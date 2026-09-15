@@ -63,6 +63,8 @@ data class CpeTelemetryResult(
 data class CpeInformNotifyRequest(
     val deviceId: String? = null,
     val serial: String? = null,
+    /** Leaves the Inform provision declared in this CWMP session; absent means read the NBI. */
+    val payload: String? = null,
 )
 
 data class CpeAccessLayout(

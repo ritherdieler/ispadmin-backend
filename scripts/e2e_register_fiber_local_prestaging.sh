@@ -41,11 +41,15 @@ Alta FIBER lab contra Core local-prestaging (no Gateway directo, no ACS VPS).
 
 Prerrequisitos (WAR único ya arriba):
   ./scripts/run-local-prestaging.sh check
-  ./scripts/run-local-prestaging.sh start
+  ./scripts/run-local-prestaging.sh start   # free 8082 + free-olt-ssh (mata TCP previos a OLT:22) + bootRun
 
-Stack: WAR único :8082 /ispadmin (Core+Gateway+ACS), NBI 127.0.0.1:7557,
-OLT $OLT_HOST, ONU lab $E2E_ONU_SN, MK2 hostDeviceId $HOST_DEVICE_ID, VLAN $VLAN, NAP $NAP_BOX_ID
+No abrir ssh/sshpass a $OLT_HOST en paralelo al WAR (VTY lockout). Si hace falta CLI manual:
+  ./scripts/run-local-prestaging.sh stop && ./scripts/run-local-prestaging.sh free-olt-ssh
+
+Stack: WAR único :8082 /ispadmin (Core+Gateway+ACS), Redis 127.0.0.1:6379 (namespace lpstg),
+NBI 127.0.0.1:7557, OLT $OLT_HOST, ONU lab $E2E_ONU_SN, MK2 hostDeviceId $HOST_DEVICE_ID, VLAN $VLAN, NAP $NAP_BOX_ID
 (board 1 / port 6). Schema ispadmin_prestaging. 5 GHz SSID = "{ssid} - 5G".
+GenieACS ext notifica al ACS del VPS; el e2e dispara POST local inform-notify para series 360.
 
 --cleanup-mode ask|auto|skip (default skip). Aliases: --ask-cleanup, --auto-cleanup, --no-cleanup.
 Solo limpia la ONU lab. Carpeta /scripts/ está gitignored: al commitear usa git add -f.
@@ -157,6 +161,10 @@ run_check() {
     || { echo "NBI 127.0.0.1:7557 down (start-genieacs-tunnel.sh)" >&2; exit 1; }
   echo "nbi=up $NBI"
 
+  nc -z 127.0.0.1 6379 >/dev/null 2>&1 \
+    || { echo "Redis 127.0.0.1:6379 down (./scripts/redis-local.sh o start de prestaging)" >&2; exit 1; }
+  echo "redis=up 127.0.0.1:6379"
+
   ping -c 1 -W 2 "$OLT_HOST" >/dev/null \
     || { echo "ping OLT $OLT_HOST failed" >&2; exit 1; }
   echo "olt ping ok $OLT_HOST"
@@ -225,6 +233,41 @@ if "lab" not in tags:
     raise SystemExit("_tags missing lab: %s" % tags)
 print("ok genieacs", items[0].get("_id"), "_tags", tags)
 ' || { echo "ONU $E2E_ONU_SN sin tag lab en NBI" >&2; exit 1; }
+}
+
+ensure_subscription_acs_lab() {
+  local sub_id="$1"
+  [[ -n "${MYSQL_PWD:-}" && -x "$MYSQL" ]] || {
+    echo "skip subscription_acs.lab (mysql not available)" >&2
+    return 0
+  }
+  python3 - "$MYSQL" "$sub_id" "$E2E_ONU_SN" <<'PY'
+import os, subprocess, sys
+mysql, sub_id, sn = sys.argv[1], sys.argv[2], sys.argv[3]
+sql = f"""
+INSERT INTO subscription_acs (subscription_id, smartolt_serial, lab, updated_at)
+SELECT {sub_id}, '{sn}', 1, UTC_TIMESTAMP()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM subscription_acs WHERE subscription_id={sub_id});
+UPDATE subscription_acs
+SET lab=1,
+    smartolt_serial=IFNULL(NULLIF(smartolt_serial,''), '{sn}'),
+    updated_at=UTC_TIMESTAMP()
+WHERE subscription_id={sub_id};
+SELECT subscription_id, genieacs_device_id, lab FROM subscription_acs WHERE subscription_id={sub_id};
+"""
+subprocess.check_call([mysql, "-uroot", "ispadmin_prestaging", "-e", sql])
+PY
+}
+
+inform_notify_local() {
+  local sn="${1:-$E2E_ONU_SN}"
+  echo "== ACS inform-notify (NBI → Gateway XADD cpe.inform → Redis lpstg) =="
+  curl -sS --fail --max-time 45 -X POST "$ACS/api/acs/v1/cpe/inform-notify" \
+    -H "Content-Type: application/json" \
+    -H "X-Acs-Key: ${ACS_API_KEY:-}" \
+    -d "{\"serial\":\"$sn\"}"
+  echo
 }
 
 core_onu_external_id() {
@@ -519,6 +562,9 @@ if [[ "$TEST_EXIT" -eq 0 ]]; then
   echo "== WiFi credentials (before cleanup) =="
   echo "wifi_24 ssid=$E2E_WIFI_SSID password=$E2E_WIFI_PASS"
   echo "wifi_5 ssid=$E2E_WIFI_SSID_5 password=$E2E_WIFI_PASS"
+  echo "== seed subscription_acs.lab + inform-notify 360 =="
+  ensure_subscription_acs_lab "$SUB_ID"
+  inform_notify_local "$E2E_ONU_SN" || echo "inform-notify failed (NBI cache / keys); series 360 pueden quedar vacías" >&2
 fi
 
 should_run_post_cleanup() {

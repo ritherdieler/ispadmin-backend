@@ -319,14 +319,8 @@ open class SubscriptionTrafficPollService(
         run.durationMs = ChronoUnit.MILLIS.between(run.startedAt, completed)
         run.errorMessage = error?.take(500)
         sourceRunRepository.save(run)
-        eventBus.publish(
-            PlatformEvent(
-                type = PlatformEventTypes.TRAFFIC_POLL_RUN,
-                subscriptionId = null,
-                occurredAt = limaInstant(completed),
-                payloadJson = """{"hostDeviceId":${run.hostDeviceId},"status":"${run.status.name}","writtenCount":${run.writtenCount}}""",
-            )
-        )
+        // The run is already in traffic_source_run; nothing consumes the event,
+        // and every unread entry competes with cpe.inform for the stream budget.
     }
 
     private fun publishLatest(observation: SubscriptionTrafficSample) {

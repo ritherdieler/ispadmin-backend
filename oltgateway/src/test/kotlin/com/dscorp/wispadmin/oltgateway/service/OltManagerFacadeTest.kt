@@ -83,6 +83,7 @@ class OltManagerFacadeTest {
             properties = properties
         )
         every { oltRepository.findByName("gigafiber-ma5608t") } returns Optional.of(olt)
+        every { queryFacade.occupiedOntIds(any(), any()) } returns emptySet()
         every { taskRepository.save(any()) } answers { firstArg<OltMgrTask>().also { if (it.id == null) it.id = 99L } }
         every { auditLogRepository.save(any()) } answers { firstArg<OltMgrAuditLog>().also { if (it.id == null) it.id = 88L } }
         every { statusRepository.save(any()) } answers { firstArg() }
@@ -268,6 +269,41 @@ class OltManagerFacadeTest {
         verify { commandService.authorize(any()) }
         verify { taskRepository.save(match { it.type == "authorize" && it.status == "success" }) }
         verify { auditLogRepository.save(match { it.action == "authorize_onu" && it.onu?.id == 20L }) }
+    }
+
+    @Test
+    fun `authorizeOnu no reutiliza ontId ocupado en la OLT live`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("VSOL0031C0B6") } returns Optional.empty()
+        every { onuRepository.findBySn("VSOL0031C0B6") } returns Optional.empty()
+        every { zoneRepository.findByName(any()) } returns Optional.of(OltMgrZone(id = 2L, name = "Zone 1"))
+        every { onuTypeRepository.findByName(any()) } returns Optional.of(OltMgrOnuType(id = 3L, name = "VSOLVA74"))
+        every { onuRepository.findMaxOnuIndex(1L, 1, 6) } returns 0
+        every { queryFacade.occupiedOntIds(1, 6) } returns setOf(0, 1)
+        val savedOnu = slot<OltMgrOnu>()
+        every { onuRepository.save(capture(savedOnu)) } answers {
+            firstArg<OltMgrOnu>().also { it.id = 21L }
+        }
+        val cli = slot<AuthorizeCliRequest>()
+        every { commandService.authorize(capture(cli)) } returns AuthorizeCliResult(ontId = 2, commands = emptyList())
+
+        val response = facade.authorizeOnu(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "1",
+                port = "6",
+                sn = "VSOL0031C0B6",
+                vlan = "100",
+                onu_type = "VSOLVA74",
+                zone = "Zone 1",
+                name = "EEEFIBER PRUEBAVSOL",
+                onu_mode = "Routing",
+                custom_profile = "Generic_1"
+            )
+        )
+
+        assertEquals(2, cli.captured.ontId)
+        assertEquals(2, savedOnu.captured.onuIndex)
+        assertEquals("gigafiber-ma5608t_1_6_2", response.unique_external_id)
     }
 
     @Test

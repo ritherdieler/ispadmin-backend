@@ -27,4 +27,11 @@ interface OltGatewayQueryFacade {
     fun listOnus(): OnuSummaryListDto
     fun onuDetail(slot: Int, port: Int, ontId: Int): OnuDetailDto
     fun optical(slot: Int, port: Int, ontId: Int): OpticalInfoDto
+
+    fun occupiedOntIds(board: Int, port: Int): Set<Int> =
+        listOnusParsed()
+            .asSequence()
+            .filter { it.slot == board && it.port == port }
+            .map { it.ontId }
+            .toSet()
 }

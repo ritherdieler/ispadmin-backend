@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.events
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
+import com.fasterxml.jackson.databind.node.ObjectNode
 import java.time.Instant
 
 object WifiNbiTelemetry {
@@ -22,15 +24,21 @@ object WifiNbiTelemetry {
         else -> emptyMap()
     }
 
+    /**
+     * Fallback read for when the Inform carried no payload. One NBI request
+     * instead of the 43 that enumerating every leaf used to cost.
+     *
+     * Projects the `AssociatedDevice` and `Hosts.Host` subtrees, never the
+     * `WLANConfiguration.N` node itself: that one also returns SSID and
+     * KeyPassphrase in cleartext.
+     */
     fun projection(): String = (
         listOf("_id", "_lastInform", "_lastBoot", "_deviceId",
-            "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
-            hostLeaves(MAX_HOSTS) +
+            "InternetGatewayDevice.DeviceInfo.SoftwareVersion",
+            "$ROOT.Hosts.HostNumberOfEntries", "$ROOT.Hosts.Host") +
             listOf(1, 5).flatMap { radio ->
                 val p = "$ROOT.WLANConfiguration.$radio"
-                listOf("$p.TotalAssociations") + (1..MAX_STATIONS).flatMap { index ->
-                    stationFields.map { "$p.AssociatedDevice.$index.$it" }
-                }
+                listOf("$p.TotalAssociations", "$p.AssociatedDevice")
             }
         ).joinToString(",")
 
@@ -39,6 +47,54 @@ object WifiNbiTelemetry {
         return (1..n).flatMap { index ->
             listOf("$ROOT.Hosts.Host.$index.MACAddress", "$ROOT.Hosts.Host.$index.HostName")
         }
+    }
+
+    const val PAYLOAD_VERSION = 1
+    const val MAX_LEAVES = 1200
+    private val SENSITIVE = Regex("SSID|KeyPassphrase|PreSharedKey|Password|WEPKey", RegexOption.IGNORE_CASE)
+    private val SEGMENT = Regex("^[A-Za-z0-9_-]+$")
+
+    /**
+     * Rebuild the NBI-shaped tree from the flat leaves the Inform provision
+     * carried, so [parsePayload] stays the single place that decides what is
+     * valid, fresh and complete.
+     *
+     * The provision declared every leaf against the session clock, so the
+     * values belong to this CWMP session by construction and all share `at` as
+     * their timestamp. That is a stronger guarantee than inspecting the NBI
+     * cache, which only ever holds the previous session.
+     *
+     * Returns null when the payload is unusable, which sends the caller to the
+     * NBI fallback rather than persisting something half-parsed.
+     */
+    fun expandInformLeaves(payload: JsonNode): JsonNode? {
+        if (payload.path("v").asInt(-1) != PAYLOAD_VERSION) return null
+        if (payload.path("root").asText() != ROOT) return null
+        val at = payload.path("at").takeIf { it.isNumber }?.asLong()?.takeIf { it > 0 } ?: return null
+        val leaves = payload.path("leaves").takeIf { it.isObject } ?: return null
+        if (leaves.size() > MAX_LEAVES) return null
+
+        val factory = JsonNodeFactory.instance
+        val root = factory.objectNode()
+        root.put("_lastInform", at)
+        payload.path("deviceId").takeIf { it.isTextual }?.let { root.put("_id", it.asText()) }
+
+        var kept = 0
+        for ((key, value) in leaves.fields().asSequence().toList()) {
+            if (SENSITIVE.containsMatchIn(key)) continue
+            val segments = key.split('.')
+            if (segments.isEmpty() || segments.any { !SEGMENT.matches(it) }) continue
+            var cursor = root
+            for (segment in (ROOT.split('.') + segments.dropLast(1))) {
+                val child = cursor.get(segment)
+                cursor = if (child is ObjectNode) child else cursor.putObject(segment)
+            }
+            val leaf = cursor.putObject(segments.last())
+            leaf.set<JsonNode>("_value", value)
+            leaf.put("_timestamp", at)
+            kept += 1
+        }
+        return if (kept == 0 && leaves.size() > 0) null else root
     }
 
     fun node(root: JsonNode, path: String): JsonNode {

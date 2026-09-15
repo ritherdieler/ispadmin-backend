@@ -28,6 +28,7 @@ class LocalPrestagingConfigDataTest {
         assertTrue(url.contains("ispadmin_prestaging"), url)
         assertFalse(url.contains("mysql:3306"), url)
         assertEquals("10.11.104.2", properties.getProperty("olt.gateway.host"))
+        assertEquals("1", properties.getProperty("olt.gateway.session.pool-size"))
         assertEquals("GATEWAY", properties.getProperty("olt.provider.authorize"))
         assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("olt.gateway.internal-base-url"))
         assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("olt.gateway.acs.internal-base-url"))
@@ -42,6 +43,10 @@ class LocalPrestagingConfigDataTest {
         assertEquals("\${spring.datasource.password}", properties.getProperty("traffic.datasource.password"))
         assertEquals("8082", properties.getProperty("server.port"))
         assertEquals("lpstg", properties.getProperty("gigafiber.environment.tag"))
+        assertEquals("true", properties.getProperty("gigafiber.redis.enabled"))
+        assertEquals("127.0.0.1", properties.getProperty("gigafiber.redis.host"))
+        assertEquals("lpstg", properties.getProperty("gigafiber.redis.namespace"))
+        assertEquals("false", properties.getProperty("gigafiber.scheduling.enabled"))
         assertEquals("false", properties.getProperty("spring.flyway.enabled"))
         assertEquals("http://127.0.0.1:7557", properties.getProperty("genieacs.nbi-base-url"))
     }

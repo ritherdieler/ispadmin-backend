@@ -41,6 +41,9 @@ class LocalPrestagingE2eScriptTest {
         assertTrue(script.contains("tr069ProvisionStatus"), script)
         assertTrue(script.contains("oltReachable"), script)
         assertTrue(script.contains("/api/acs/v1/health"), script)
+        assertTrue(script.contains("127.0.0.1:6379"), script)
+        assertTrue(script.contains("inform-notify"), script)
+        assertTrue(script.contains("subscription_acs"), script)
         assertTrue(script.contains("run-local-prestaging.sh"), script)
     }
 

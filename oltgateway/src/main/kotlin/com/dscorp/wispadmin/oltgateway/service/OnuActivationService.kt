@@ -54,11 +54,16 @@ class OnuActivationService(
             val remote=runCatching { acsCpeClient.status(request.sn) }.getOrNull()
             if(remote!=null && remote.status!=CpeProvisionStatus.NA) {
                 if(remote.status==CpeProvisionStatus.PENDING) {
+                    operation.status=operation.status.copy(
+                        deviceId=remote.deviceId ?: operation.status.deviceId,
+                        message=remote.message ?: operation.status.message,
+                        updatedAtEpochMs=Instant.now().toEpochMilli(),
+                    )
                     operation.leaseUntil=System.currentTimeMillis()+30_000
                     journal.save(operation)
                     return response(operation.status)
                 }
-                operation.status=operation.status.copy(cpeStatus=remote.status,message=remote.message,updatedAtEpochMs=Instant.now().toEpochMilli())
+                operation.status=operation.status.copy(cpeStatus=remote.status,message=remote.message,deviceId=remote.deviceId ?: operation.status.deviceId,updatedAtEpochMs=Instant.now().toEpochMilli())
                 operation.stage="DONE"
                 journal.save(operation)
                 publishPending()
@@ -77,7 +82,18 @@ class OnuActivationService(
         return pending
     }
 
-    fun statusBySn(sn: String): OnuActivationStatusDto? = journal.bySn(sn.trim().uppercase())?.status
+    fun statusBySn(sn: String): OnuActivationStatusDto? {
+        val normalized = sn.trim().uppercase()
+        val operation = journal.bySn(normalized) ?: return null
+        val stored = operation.status
+        if (!stored.deviceId.isNullOrBlank()) return stored
+        val remote = runCatching { acsCpeClient.status(normalized) }.getOrNull() ?: return stored
+        val deviceId = remote.deviceId?.takeIf { it.isNotBlank() } ?: return stored
+        val updated = stored.copy(deviceId = deviceId, updatedAtEpochMs = Instant.now().toEpochMilli())
+        operation.status = updated
+        journal.save(operation)
+        return updated
+    }
     fun statusByExternalId(externalId: String): OnuActivationStatusDto? = journal.byExternalId(externalId)?.status
 
     fun clearJournal(sn: String) {
@@ -92,7 +108,7 @@ class OnuActivationService(
         publishPending()
     }
 
-    private fun response(status: OnuActivationStatusDto)=OnuActivateResponseDto(status.uniqueExternalId,status.sn,status.oltStatus,status.cpeStatus,status.message)
+    private fun response(status: OnuActivationStatusDto)=OnuActivateResponseDto(status.uniqueExternalId,status.sn,status.oltStatus,status.cpeStatus,status.message,status.deviceId)
 
     fun reboot(sn: String): CpeCommandResponseDto {
         val ack = acsCpeClient.reboot(sn)
@@ -147,7 +163,7 @@ class OnuActivationService(
                 wifiSsid5=request.wifiSsid5,wifiPassword5=request.wifiPassword5,
                 pppoeUsername=request.pppoeUsername,pppoePassword=request.pppoePassword))
             }
-            operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,updatedAtEpochMs=Instant.now().toEpochMilli())
+            operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,deviceId=outcome.deviceId ?: operation.status.deviceId,updatedAtEpochMs=Instant.now().toEpochMilli())
             operation.stage=if(outcome.status==CpeProvisionStatus.PENDING) "ACS_STATUS" else "DONE"
             operation.leaseUntil=System.currentTimeMillis()+30_000
             journal.save(operation)

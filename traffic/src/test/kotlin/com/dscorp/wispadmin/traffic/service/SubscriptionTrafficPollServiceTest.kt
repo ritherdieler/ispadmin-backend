@@ -137,7 +137,11 @@ class SubscriptionTrafficPollServiceTest {
         publishing.pollTraffic()
 
         assertEquals(1, bus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.TRAFFIC_LATEST && it.subscriptionId == 42 })
-        assertEquals(1, bus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.TRAFFIC_POLL_RUN })
+        assertEquals(
+            0,
+            bus.published.count { it.type == com.dscorp.wispadmin.events.PlatformEventTypes.TRAFFIC_POLL_RUN },
+            "traffic.poll-run has no consumer; the run is already in traffic_source_run",
+        )
     }
 
     @Test

@@ -16,6 +16,7 @@ import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.parser.AutofindParser
 import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
+import com.dscorp.wispadmin.oltgateway.parser.OnuSummaryParser
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuBySn
@@ -39,7 +40,8 @@ class OltGatewayQueryService(
     private val autofindParser: AutofindParser,
     private val onuInfoBySnParser: OnuInfoBySnParser,
     private val opticalInfoParser: OpticalInfoParser,
-    private val snmpClient: OltSnmpClient? = null
+    private val snmpClient: OltSnmpClient? = null,
+    private val onuSummaryParser: OnuSummaryParser = OnuSummaryParser(),
 ) : OltGatewayQueryFacade {
 
     companion object {
@@ -157,6 +159,23 @@ class OltGatewayQueryService(
             )
         }
         return OnuSummaryListDto(items = items, total = items.size)
+    }
+
+    override fun occupiedOntIds(board: Int, port: Int): Set<Int> {
+        if (snmpReady()) {
+            return snmpClient!!.listConfiguredOnus()
+                .asSequence()
+                .filter { it.slot == board && it.port == port }
+                .map { it.ontId }
+                .toSet()
+        }
+        requireSshInventoryFallback("occupiedOntIds")
+        val output = commandExecutor.run("display ont info 0 $board $port all")
+        return onuSummaryParser.parse(output)
+            .asSequence()
+            .filter { it.slot == board && it.port == port }
+            .map { it.ontId }
+            .toSet()
     }
 
     override fun onuDetail(slot: Int, port: Int, ontId: Int): OnuDetailDto {

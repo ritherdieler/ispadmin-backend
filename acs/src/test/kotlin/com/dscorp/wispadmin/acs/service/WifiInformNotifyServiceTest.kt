@@ -59,4 +59,49 @@ class WifiInformNotifyServiceTest {
         assertEquals(now, record.lastInformAt)
         assertTrue(!record.wifiSnapshotJson.isNullOrBlank())
     }
+
+    private fun informPayload(): String = json.writeValueAsString(
+        mapOf(
+            "v" to 1,
+            "serial" to "12345B4641531C0B6",
+            "deviceId" to "B46415-V2804AX15T-12345B4641531C0B6",
+            "model" to "V2804AX15T",
+            "at" to now.toEpochMilli(),
+            "root" to WifiNbiTelemetry.ROOT,
+            "leaves" to mapOf(
+                "WLANConfiguration.1.TotalAssociations" to "1",
+                "WLANConfiguration.5.TotalAssociations" to "0",
+                "WLANConfiguration.1.AssociatedDevice.1.AssociatedDeviceMACAddress" to "aa:bb:cc:dd:ee:ff",
+                "WLANConfiguration.1.AssociatedDevice.1.X_HW_RSSI" to "-42",
+            ),
+        ),
+    )
+
+    @Test
+    fun `inform payload is used without reading the nbi`() {
+        val record = CpeRecord(sn = "12345B4641531C0B6", deviceId = "B46415-V2804AX15T-12345B4641531C0B6", productClass = "V2804AX15T")
+        every { records.findById("12345B4641531C0B6") } returns Optional.of(record)
+        every { records.save(any()) } answers { firstArg() }
+        val result = service.notify(deviceId = record.deviceId, serial = record.sn, payload = informPayload())
+        assertTrue(result.accepted)
+        verify(exactly = 0) { client.readDeviceCache(any(), any()) }
+        verify {
+            gateway.postInform(
+                match<CpeInformPayload> {
+                    it.complete && it.associated5g == 1 && it.stations.single().macNormalized == "AABBCCDDEEFF"
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `unusable payload falls back to the nbi read`() {
+        val record = CpeRecord(sn = "12345B4641531C0B6", deviceId = "B46415-V2804AX15T-12345B4641531C0B6", productClass = "V2804AX15T")
+        every { records.findById("12345B4641531C0B6") } returns Optional.of(record)
+        every { records.save(any()) } answers { firstArg() }
+        every { client.readDeviceCache(listOf(record.deviceId!!), any()) } returns listOf(deviceTree())
+        val result = service.notify(deviceId = record.deviceId, serial = record.sn, payload = "{\"v\":99}")
+        assertTrue(result.accepted)
+        verify(exactly = 1) { client.readDeviceCache(listOf(record.deviceId!!), any()) }
+    }
 }

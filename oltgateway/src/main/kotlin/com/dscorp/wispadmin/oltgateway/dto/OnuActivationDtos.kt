@@ -41,6 +41,7 @@ data class OnuActivateResponseDto(
     val oltStatus: OltActivationStatus,
     val cpeStatus: CpeProvisionStatus,
     val message: String? = null,
+    val deviceId: String? = null,
 )
 
 data class OnuActivationStatusDto(
@@ -50,6 +51,7 @@ data class OnuActivationStatusDto(
     val cpeStatus: CpeProvisionStatus,
     val message: String? = null,
     val updatedAtEpochMs: Long = 0,
+    val deviceId: String? = null,
 )
 
 data class CpeCommandResponseDto(
@@ -73,6 +75,7 @@ data class CpeTelemetryDto(
     val wifiAssociatedTotal: Int? = null,
     val wifiObservedAt: String? = null,
     val wifiQualityStatus: String? = null,
+    val deviceId: String? = null,
 )
 
 data class CpeWifiRequestDto(

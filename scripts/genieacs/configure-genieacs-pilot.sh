@@ -51,17 +51,19 @@ db.provisions.updateOne(
 const acsPass = "\${acsPass}";
 const acsUrl = "\${acsUrl}";
 
-declare("InternetGatewayDevice.ManagementServer.Username", {value: 1}, {value: acsUser});
-declare("InternetGatewayDevice.ManagementServer.Password", null, {value: acsPass});
-declare("InternetGatewayDevice.ManagementServer.URL", {value: 1}, {value: acsUrl});
-declare("InternetGatewayDevice.ManagementServer.ConnectionRequestUsername", {value: 1}, {value: acsUser});
-declare("InternetGatewayDevice.ManagementServer.ConnectionRequestPassword", null, {value: acsPass});
-
-declare("Device.ManagementServer.Username", {value: 1}, {value: acsUser});
-declare("Device.ManagementServer.Password", null, {value: acsPass});
-declare("Device.ManagementServer.URL", {value: 1}, {value: acsUrl});
-declare("Device.ManagementServer.ConnectionRequestUsername", {value: 1}, {value: acsUser});
-declare("Device.ManagementServer.ConnectionRequestPassword", null, {value: acsPass});
+// Only the data model root the CPE exposes. Declaring the absent root
+// (Device.* on a TR-098-only CPE such as productClass IGD) never resolves and
+// burns commit iterations until GenieACS aborts with too_many_commits.
+const roots = ["InternetGatewayDevice", "Device"];
+for (const root of roots) {
+  const probe = declare(root + ".ManagementServer.URL", {value: 1});
+  if (!probe || !probe.size) continue;
+  declare(root + ".ManagementServer.Username", {value: 1}, {value: acsUser});
+  declare(root + ".ManagementServer.Password", null, {value: acsPass});
+  declare(root + ".ManagementServer.URL", {value: 1}, {value: acsUrl});
+  declare(root + ".ManagementServer.ConnectionRequestUsername", {value: 1}, {value: acsUser});
+  declare(root + ".ManagementServer.ConnectionRequestPassword", null, {value: acsPass});
+}
 \`,
     },
   },
@@ -75,28 +77,37 @@ db.provisions.updateOne(
       script: \`const acsUser = "\${acsUser}";
 const acsPass = "\${acsPass}";
 const acsUrl = "\${acsUrl}";
-const informInterval = 3600;
 const now = Date.now();
+
+// The Inform interval is the only cadence knob: the 360 wants a sample every
+// 30 min and each Inform is one sample. Jitter is derived from the serial so it
+// is stable per CPE and the fleet does not converge on the same second.
+// Lab serials use 30 s. This script runs only on 0 BOOTSTRAP (preset events).
+// Ongoing cadence changes go through gf-inform-interval on the inform channel.
+const serial = declare("DeviceID.SerialNumber", {value: 1}).value[0] || "";
+let jitter = 0;
+for (let i = 0; i < serial.length; i++) jitter = (jitter * 31 + serial.charCodeAt(i)) % 300;
+const isLab = serial === "ZTEGDC47BFFD" || serial === "12345B4641531C0B6";
+const informInterval = isLab ? 30 : (1800 + jitter);
+log("gigafiber-bootstrap serial=" + serial + " isLab=" + isLab + " interval=" + informInterval);
 
 clear("Device", now);
 clear("InternetGatewayDevice", now);
-declare("Tags", {value: now}, {value: ["gigafiber"]});
+declare("Tags.gigafiber", {value: now}, {value: true});
+if (isLab) declare("Tags.lab", {value: now}, {value: true});
 
-declare("InternetGatewayDevice.ManagementServer.Username", {value: now}, {value: acsUser});
-declare("InternetGatewayDevice.ManagementServer.Password", {value: now}, {value: acsPass});
-declare("InternetGatewayDevice.ManagementServer.URL", {value: now}, {value: acsUrl});
-declare("InternetGatewayDevice.ManagementServer.ConnectionRequestUsername", {value: now}, {value: acsUser});
-declare("InternetGatewayDevice.ManagementServer.ConnectionRequestPassword", {value: now}, {value: acsPass});
-declare("InternetGatewayDevice.ManagementServer.PeriodicInformEnable", {value: now}, {value: true});
-declare("InternetGatewayDevice.ManagementServer.PeriodicInformInterval", {value: now}, {value: informInterval});
-
-declare("Device.ManagementServer.Username", {value: now}, {value: acsUser});
-declare("Device.ManagementServer.Password", {value: now}, {value: acsPass});
-declare("Device.ManagementServer.URL", {value: now}, {value: acsUrl});
-declare("Device.ManagementServer.ConnectionRequestUsername", {value: now}, {value: acsUser});
-declare("Device.ManagementServer.ConnectionRequestPassword", {value: now}, {value: acsPass});
-declare("Device.ManagementServer.PeriodicInformEnable", {value: now}, {value: true});
-declare("Device.ManagementServer.PeriodicInformInterval", {value: now}, {value: informInterval});\`,
+const roots = ["InternetGatewayDevice", "Device"];
+for (const root of roots) {
+  const probe = declare(root + ".ManagementServer.URL", {value: 1});
+  if (!probe || !probe.size) continue;
+  declare(root + ".ManagementServer.Username", {value: now}, {value: acsUser});
+  declare(root + ".ManagementServer.Password", {value: now}, {value: acsPass});
+  declare(root + ".ManagementServer.URL", {value: now}, {value: acsUrl});
+  declare(root + ".ManagementServer.ConnectionRequestUsername", {value: now}, {value: acsUser});
+  declare(root + ".ManagementServer.ConnectionRequestPassword", {value: now}, {value: acsPass});
+  declare(root + ".ManagementServer.PeriodicInformEnable", {value: now}, {value: true});
+  declare(root + ".ManagementServer.PeriodicInformInterval", {value: now}, {value: informInterval});
+}\`,
     },
   },
   { upsert: true }
@@ -108,17 +119,27 @@ db.provisions.updateOne(
     \$set: {
       script: \`const hourly = Date.now(3600000);
 
-declare("InternetGatewayDevice.DeviceInfo.HardwareVersion", {path: hourly, value: hourly});
-declare("InternetGatewayDevice.DeviceInfo.SoftwareVersion", {path: hourly, value: hourly});
-declare("InternetGatewayDevice.WANDevice.*.WANConnectionDevice.*.WANIPConnection.*.MACAddress", {path: hourly, value: hourly});
-declare("InternetGatewayDevice.WANDevice.*.WANConnectionDevice.*.WANIPConnection.*.ExternalIPAddress", {path: hourly, value: hourly});
-declare("InternetGatewayDevice.LANDevice.*.WLANConfiguration.*.SSID", {path: hourly, value: hourly});
-declare("InternetGatewayDevice.LANDevice.*.WLANConfiguration.*.KeyPassphrase", {path: hourly, value: 1});
-// CPEs report blank ACS/CR passwords; never overwrite GenieACS stored values.
-declare("InternetGatewayDevice.ManagementServer.Password", {path: hourly, value: 1});
-declare("InternetGatewayDevice.ManagementServer.ConnectionRequestPassword", {path: hourly, value: 1});
-declare("Device.ManagementServer.Password", {path: hourly, value: 1});
-declare("Device.ManagementServer.ConnectionRequestPassword", {path: hourly, value: 1});\`,
+// Pinned instance indices instead of three levels of wildcard: every wildcard
+// level costs a GetParameterNames round trip, and the MitraStar XC220-G3v fleet
+// was exceeding the 50 ms per-revision script budget (script.Error) on them.
+const WAN = "WANDevice.1.WANConnectionDevice.1.WANIPConnection.*";
+const WLAN = "LANDevice.1.WLANConfiguration.*";
+
+const roots = ["InternetGatewayDevice", "Device"];
+for (const root of roots) {
+  const probe = declare(root + ".DeviceInfo.SoftwareVersion", {value: 1});
+  if (!probe || !probe.size) continue;
+  declare(root + ".DeviceInfo.HardwareVersion", {path: hourly, value: hourly});
+  declare(root + ".DeviceInfo.SoftwareVersion", {path: hourly, value: hourly});
+  // CPEs report blank ACS/CR passwords; never overwrite GenieACS stored values.
+  declare(root + ".ManagementServer.Password", {path: hourly, value: 1});
+  declare(root + ".ManagementServer.ConnectionRequestPassword", {path: hourly, value: 1});
+  if (root !== "InternetGatewayDevice") continue;
+  declare(root + "." + WAN + ".MACAddress", {path: hourly, value: hourly});
+  declare(root + "." + WAN + ".ExternalIPAddress", {path: hourly, value: hourly});
+  declare(root + "." + WLAN + ".SSID", {path: hourly, value: hourly});
+  declare(root + "." + WLAN + ".KeyPassphrase", {path: hourly, value: 1});
+}\`,
     },
   },
   { upsert: true }
@@ -158,10 +179,12 @@ db.presets.updateOne(
     \$set: {
       weight: 0,
       channel: "bootstrap",
-      events: { "0 BOOTSTRAP": true, "0 BOOT": true, "1 BOOT": true },
+      // GenieACS seed + docs: events are AND. Official bootstrap is 0 BOOTSTRAP
+      // only (factory / first ACS contact). "0 BOOT" is not a TR-069 event;
+      // requiring it together with 1 BOOT made reboot and factory never match.
+      events: { "0 BOOTSTRAP": true },
       precondition: "",
       configurations: [
-        { type: "provision", name: "bootstrap", args: null },
         { type: "provision", name: "gigafiber-bootstrap", args: null },
       ],
     },

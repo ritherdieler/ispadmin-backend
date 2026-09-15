@@ -13,63 +13,10 @@ object WifiTelemetry {
     const val MAX_STATIONS = 32
     const val MAX_HOSTS = 64
     const val INFORM_PARAM_MAX_LAG_SECONDS = 300L
-    val stationFields = listOf("AssociatedDeviceMACAddress", "AssociatedDeviceRssi", "AssociatedDeviceRate",
-        "AssociatedDeviceName", "X_ZTE-COM_AssociatedDeviceName",
-        "X_ZTE-COM_WLAN_SNR", "X_ZTE-COM_WLAN_Noise", "X_ZTE-COM_WLAN_PacketSend", "X_ZTE-COM_WLAN_PacketReceived",
-        "X_HW_RSSI", "X_HW_SNR", "X_HW_Noise", "X_HW_RxRate", "X_HW_TxRate")
     fun radios(model: String): Map<Int,String> = when(model.uppercase()) {
         "F6600R" -> mapOf(1 to "2.4", 5 to "5")
         "V2804AX15T" -> mapOf(1 to "5", 5 to "2.4")
         else -> emptyMap()
-    }
-    fun hostLeaves(hostCount: Int): List<String> {
-        val n = hostCount.coerceIn(0, MAX_HOSTS)
-        return (1..n).flatMap { index ->
-            listOf("$ROOT.Hosts.Host.$index.MACAddress", "$ROOT.Hosts.Host.$index.HostName")
-        }
-    }
-    fun projection(): String = (listOf("_id","_lastInform","_lastBoot","_deviceId",
-        "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
-        hostLeaves(MAX_HOSTS) +
-        listOf(1,5).flatMap { radio ->
-            val p="$ROOT.WLANConfiguration.$radio"
-            listOf("$p.TotalAssociations") + (1..MAX_STATIONS).flatMap { index ->
-                stationFields.map { "$p.AssociatedDevice.$index.$it" }
-            }
-        }).joinToString(",")
-    fun countProjection(): String = (listOf("_id","_lastInform","_lastBoot","_deviceId",
-        "InternetGatewayDevice.DeviceInfo.SoftwareVersion", "$ROOT.Hosts.HostNumberOfEntries") +
-        listOf(1, 5).map { "$ROOT.WLANConfiguration.$it.TotalAssociations" }).joinToString(",")
-    fun stationProjection(model: String, associated2g: Int, associated5g: Int, hostCount: Int = 0): String {
-        val radioMap = radios(model)
-        if (radioMap.isEmpty()) return (listOf("_id", "_lastInform", "$ROOT.Hosts.HostNumberOfEntries") + hostLeaves(hostCount)).joinToString(",")
-        val byBand = mapOf("2.4" to associated2g.coerceIn(0, MAX_STATIONS), "5" to associated5g.coerceIn(0, MAX_STATIONS))
-        return (listOf("_id", "_lastInform", "$ROOT.Hosts.HostNumberOfEntries") + hostLeaves(hostCount) + radioMap.flatMap { (radio, band) ->
-            val n = byBand.getValue(band)
-            val p = "$ROOT.WLANConfiguration.$radio"
-            listOf("$p.TotalAssociations") + (1..n).flatMap { index -> stationFields.map { "$p.AssociatedDevice.$index.$it" } }
-        }).joinToString(",")
-    }
-
-    fun gpvPaths(root: JsonNode, model: String): List<String> {
-        return radios(model).keys.map { radio -> "$ROOT.WLANConfiguration.$radio.TotalAssociations" }
-    }
-    fun gpvStationPaths(model: String, associated2g: Int?, associated5g: Int?, hostCount: Int? = null): List<String> {
-        val radioMap = radios(model)
-        if (radioMap.isEmpty()) return emptyList()
-        val counts = mapOf("2.4" to (associated2g ?: 0), "5" to (associated5g ?: 0))
-        val stationPaths = radioMap.flatMap { (radio, band) ->
-            val n = counts.getValue(band).coerceIn(0, MAX_STATIONS)
-            val base = "$ROOT.WLANConfiguration.$radio"
-            (1..n).flatMap { index -> stationFields.map { "$base.AssociatedDevice.$index.$it" } }
-        }
-        return stationPaths + hostLeaves(hostCount ?: 0)
-    }
-    fun gpvRefreshPaths(root: JsonNode, model: String, subscriptionId: Int, now: Instant, secret: String): List<String> {
-        val totals = gpvPaths(root, model)
-        val reading = parse(root, subscriptionId, model, now, secret) ?: return totals
-        if (!reading.complete) return totals
-        return totals + gpvStationPaths(model, reading.count.associated2g, reading.count.associated5g, reading.count.lanDeviceCount)
     }
 
     fun node(root: JsonNode, path: String): JsonNode {

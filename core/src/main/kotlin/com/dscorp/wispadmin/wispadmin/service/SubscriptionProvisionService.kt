@@ -15,6 +15,10 @@ import com.dscorp.wispadmin.wispadmin.repository.PlanRepository
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.SubscriptionRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
+import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsSubscriptionTagger
+import com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsSubscriptionTags
+import com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsSyncService
+import com.dscorp.wispadmin.wispadmin.service.genieacs.Tr069ProvisionOutcome
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeAccessService
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
@@ -36,6 +40,8 @@ class SubscriptionProvisionService(
     private val gatewayActivation: ObjectProvider<GatewayOnuActivationClient>,
     private val pppoeAccessService: PppoeAccessService,
     @Value("\${olt.gateway.client-enabled:false}") private val cpeEnabled: Boolean = false,
+    private val acsSyncService: SubscriptionAcsSyncService? = null,
+    private val acsTagger: GenieAcsSubscriptionTagger? = null,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionProvisionService::class.java)
 
@@ -223,14 +229,16 @@ class SubscriptionProvisionService(
     fun refreshTr069FromGateway(subscription: Subscription): Subscription {
         if (!isTr069Eligible(subscription)) return subscription
         if (subscription.oltProvisionStatus != OltProvisionStatus.COMPLETE) return subscription
-        if (subscription.tr069ProvisionStatus != Tr069ProvisionStatus.PENDING &&
-            subscription.tr069ProvisionStatus != Tr069ProvisionStatus.FAILED
-        ) {
-            return subscription
-        }
-        val before = subscription.tr069ProvisionStatus
+        val needsStatus = subscription.tr069ProvisionStatus == Tr069ProvisionStatus.PENDING ||
+            subscription.tr069ProvisionStatus == Tr069ProvisionStatus.FAILED
+        val needsDevice = subscription.tr069DeviceId.isNullOrBlank()
+        if (!needsStatus && !needsDevice) return subscription
+        val beforeStatus = subscription.tr069ProvisionStatus
+        val beforeDevice = subscription.tr069DeviceId
         pullTr069FromGateway(subscription)
-        if (subscription.tr069ProvisionStatus != before) {
+        if (subscription.tr069ProvisionStatus != beforeStatus ||
+            subscription.tr069DeviceId != beforeDevice
+        ) {
             repository.save(subscription)
         }
         return subscription
@@ -243,6 +251,11 @@ class SubscriptionProvisionService(
             val status = gateway.activationBySn(sn)
             mapCpeStatus(subscription, status.cpeStatus)
             status.message?.let { subscription.tr069LastError = it.take(500) }
+            persistAcsLink(
+                subscription,
+                status.deviceId,
+                subscription.tr069ProvisionStatus ?: Tr069ProvisionStatus.PENDING,
+            )
         } catch (ex: Exception) {
             logger.warn("Fallo consulta estado CPE para suscripción ${subscription.id}", ex)
             persistProvisionError(ex)
@@ -319,6 +332,12 @@ class SubscriptionProvisionService(
 
         val current = subscription.tr069ProvisionStatus
         if (current == Tr069ProvisionStatus.COMPLETE) {
+            if (subscription.tr069DeviceId.isNullOrBlank()) {
+                pullTr069FromGateway(subscription)
+                if (!subscription.tr069DeviceId.isNullOrBlank()) {
+                    repository.save(subscription)
+                }
+            }
             return subscription.toDto()
         }
         if (current != Tr069ProvisionStatus.MANUAL_REQUIRED &&
@@ -347,8 +366,50 @@ class SubscriptionProvisionService(
         )
         mapCpeStatus(subscription, outcome.status)
         outcome.message?.let { subscription.tr069LastError = it.take(500) }
+        persistAcsLink(
+            subscription,
+            outcome.deviceId,
+            subscription.tr069ProvisionStatus ?: Tr069ProvisionStatus.PENDING,
+        )
         repository.save(subscription)
         return subscription.toDto()
+    }
+
+    private fun persistAcsLink(
+        subscription: Subscription,
+        deviceId: String?,
+        status: Tr069ProvisionStatus,
+    ) {
+        val id = deviceId?.takeIf { it.isNotBlank() } ?: return
+        val previous = subscription.tr069DeviceId?.takeIf { it.isNotBlank() && it != id }
+        subscription.tr069DeviceId = id
+        val subscriptionId = subscription.id ?: return
+        try {
+            acsSyncService?.upsertFromProvision(
+                subscriptionId = subscriptionId,
+                outcome = Tr069ProvisionOutcome(status = status, deviceId = id),
+                smartoltSerial = subscription.fiberOnuSn,
+            )
+        } catch (ex: Exception) {
+            logger.warn("No se pudo upsert subscription_acs para {}: {}", subscriptionId, ex.message)
+        }
+        try {
+            acsTagger?.apply(
+                deviceId = id,
+                subscriptionId = subscriptionId,
+                kind = GenieAcsSubscriptionTags.serviceKind(
+                    installationType = subscription.installationType,
+                    planType = subscription.plan?.type,
+                    planName = subscription.plan?.name,
+                ),
+                fullName = listOf(subscription.firstName, subscription.lastName)
+                    .mapNotNull { it?.trim()?.takeIf { part -> part.isNotBlank() && part != "null" } }
+                    .joinToString(" "),
+                previousDeviceId = previous,
+            )
+        } catch (ex: Exception) {
+            logger.warn("Fallo no bloqueante al etiquetar device {} de {}: {}", id, subscriptionId, ex.message)
+        }
     }
 
     private fun isTr069Eligible(subscription: Subscription): Boolean {

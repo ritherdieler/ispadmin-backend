@@ -45,8 +45,8 @@ class AcsSubscriptionAdapter(
     ) {
         val entry = acs.findById(subscriptionId).orElse(null) ?: return
         entry.lastInformAt = lastInformAt
-        entry.productClass = productClass
-        entry.softwareVersion = softwareVersion
+        if (productClass.isNotBlank()) entry.productClass = productClass
+        if (softwareVersion.isNotBlank()) entry.softwareVersion = softwareVersion
         entry.updatedAt = updatedAt
         acs.save(entry)
     }

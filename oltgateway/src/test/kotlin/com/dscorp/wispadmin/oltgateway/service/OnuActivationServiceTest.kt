@@ -161,6 +161,47 @@ class OnuActivationServiceTest {
     }
 
     @Test
+    fun `ACS completion stores genieacs deviceId on activation status`() {
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_0_5",
+        )
+        every { acs.provision(any()) } returns AcsCpeProvisionResponse(
+            status = CpeProvisionStatus.COMPLETE,
+            sn = "ALCL12345678",
+            deviceId = "5872C9-F6600R-ZTEGDC47BFFD",
+        )
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+        service.activate(activateRequest())
+
+        assertEquals("5872C9-F6600R-ZTEGDC47BFFD", service.statusBySn("ALCL12345678")!!.deviceId)
+    }
+
+    @Test
+    fun `statusBySn fills deviceId from ACS when journal omitted it`() {
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_0_5",
+        )
+        every { acs.provision(any()) } returns AcsCpeProvisionResponse(
+            status = CpeProvisionStatus.COMPLETE,
+            sn = "ALCL12345678",
+        )
+        every { acs.status("ALCL12345678") } returns AcsCpeProvisionResponse(
+            sn = "ALCL12345678",
+            status = CpeProvisionStatus.COMPLETE,
+            deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+        )
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+        service.activate(activateRequest())
+
+        assertEquals(
+            "B46415-V2804AX15T-12345B4641531C0B6",
+            service.statusBySn("ALCL12345678")!!.deviceId,
+        )
+    }
+
+    @Test
     fun `provisionCpe calls ACS without OLT authorize`() {
         every { acs.provision(any()) } returns AcsCpeProvisionResponse(
             sn = "VSOL0031C0B6",

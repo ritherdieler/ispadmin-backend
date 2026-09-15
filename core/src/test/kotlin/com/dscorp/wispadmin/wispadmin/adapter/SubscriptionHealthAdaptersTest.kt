@@ -94,6 +94,24 @@ class SubscriptionHealthAdaptersTest {
     }
 
     @Test
+    fun `recordInform no pisa firmware si viene vacio`() {
+        val existing = SubscriptionAcs(
+            subscriptionId = 7,
+            genieacsDeviceId = "dev-1",
+            softwareVersion = "keep-me",
+            productClass = "F6600R",
+        )
+        every { acsRepository.findById(7) } returns Optional.of(existing)
+        val saved = slot<SubscriptionAcs>()
+        every { acsRepository.save(capture(saved)) } answers { firstArg() }
+
+        acsAdapter.recordInform(7, LocalDateTime.of(2026, 9, 15, 0, 0), "F6600R", "", LocalDateTime.of(2026, 9, 15, 0, 1))
+
+        assertEquals("keep-me", saved.captured.softwareVersion)
+        assertEquals("F6600R", saved.captured.productClass)
+    }
+
+    @Test
     fun `no crea registro ACS cuando la suscripcion no lo tiene`() {
         every { acsRepository.findById(11) } returns Optional.empty()
 

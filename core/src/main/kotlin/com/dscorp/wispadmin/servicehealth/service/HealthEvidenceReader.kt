@@ -94,9 +94,16 @@ class HealthEvidenceReader(
             else -> qualityAt(wifiObserved, now, properties.wifiSampleFreshSeconds())
         }
         sources+=Evidence("ACS","associated_device_count",wifiObserved,associatedCount,wifiQuality,w?.countSampleId?.toString())
-        val acsRun=runs.findTopBySourceAndEquipmentKeyOrderByStartedAtDesc("ACS","gateway-cpe")
-        sources+=Evidence("ACS","collector",acsRun?.completedAt,acsRun?.qualityStatus?.name,
-            if(acsRun?.qualityStatus==Quality.ERROR) Quality.ERROR else qualityAt(acsRun?.completedAt,now,300),acsRun?.id?.toString())
+        // Collection freshness is per device, not per run: there is no run any
+        // more, only this subscription's last Inform. The key stays "collector"
+        // so the UI and DiagnosisEngine do not change.
+        val collectorAt=w?.observedAt
+        val collectorQuality=when {
+            !wifiSupported -> Quality.UNSUPPORTED
+            collectorAt==null -> Quality.MISSING
+            else -> qualityAt(collectorAt,now,properties.wifiSampleFreshSeconds())
+        }
+        sources+=Evidence("ACS","collector",collectorAt,w?.qualityStatus?.name,collectorQuality,w?.countSampleId?.toString())
         val liveTraffic = liveTelemetry.ifUnique?.traffic(id)
         val t = liveTraffic?.let {
             HealthTrafficSample(

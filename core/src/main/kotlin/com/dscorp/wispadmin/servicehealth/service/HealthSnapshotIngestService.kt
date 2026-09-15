@@ -22,15 +22,32 @@ class HealthSnapshotIngestService(
 ) {
     private val logger = LoggerFactory.getLogger(HealthSnapshotIngestService::class.java)
 
+    /**
+     * 3000 ONUs at a 30 min Inform interval is 1.67 events/s, so the whole
+     * budget for one event is 600 ms on a single consumer thread. Log the ones
+     * that eat a meaningful share of it, otherwise the stream silently lags.
+     */
+    private fun reevaluate(subscriptionId: Int, event: PlatformEvent) {
+        val startedAt = System.nanoTime()
+        try {
+            summaries.reevaluate(subscriptionId, event.occurredAt)
+        } catch (ex: Exception) {
+            logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
+            return
+        }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        if (elapsedMs >= SLOW_REEVALUATE_MS) {
+            logger.warn("Slow reevaluate subscription={} type={} elapsedMs={}", subscriptionId, event.type, elapsedMs)
+        } else {
+            logger.debug("reevaluate subscription={} type={} elapsedMs={}", subscriptionId, event.type, elapsedMs)
+        }
+    }
+
     fun apply(event: PlatformEvent) {
         if (event.type == PlatformEventTypes.CPE_INFORM) {
             putCpeInform(event)
             val subscriptionId = event.subscriptionId ?: event.sn?.let { identity.resolveOnu(it) } ?: return
-            try {
-                summaries.reevaluate(subscriptionId, event.occurredAt)
-            } catch (ex: Exception) {
-                logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
-            }
+            reevaluate(subscriptionId, event)
             return
         }
         if (event.type == PlatformEventTypes.ONU_OPTICAL_BATCH) {
@@ -43,11 +60,7 @@ class HealthSnapshotIngestService(
             PlatformEventTypes.ONU_OPTICAL, PlatformEventTypes.ONU_STATE -> putOnu(subscriptionId, event)
             PlatformEventTypes.CPE_PROVISIONING -> putCpe(event)
         }
-        try {
-            summaries.reevaluate(subscriptionId, event.occurredAt)
-        } catch (ex: Exception) {
-            logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
-        }
+        reevaluate(subscriptionId, event)
     }
 
     private fun putOpticalBatch(event: PlatformEvent) {
@@ -59,11 +72,7 @@ class HealthSnapshotIngestService(
             return
         }
         for (subscriptionId in subscriptionIds) {
-            try {
-                summaries.reevaluate(subscriptionId, event.occurredAt)
-            } catch (ex: Exception) {
-                logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
-            }
+            reevaluate(subscriptionId, event)
         }
     }
 
@@ -109,5 +118,9 @@ class HealthSnapshotIngestService(
                 updateKind = if (event.type == PlatformEventTypes.ONU_OPTICAL) "optical" else "state",
             ),
         )
+    }
+
+    private companion object {
+        const val SLOW_REEVALUATE_MS = 250L
     }
 }

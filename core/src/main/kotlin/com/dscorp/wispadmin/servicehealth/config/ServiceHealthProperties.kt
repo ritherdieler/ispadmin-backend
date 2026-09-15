@@ -19,7 +19,8 @@ class ServiceHealthProperties {
     var pilotAcsDeviceIds: List<String> = emptyList()
     var pilotSubscriptionIds: Set<Int> = emptySet()
     var stationHmacKey = ""
-    var periodicInformSeconds = 3600L
+    /** Must track PeriodicInformInterval in gigafiber-bootstrap.js; evidence is stale after two missed Informs. */
+    var periodicInformSeconds = 1800L
     var snapshotFreshSeconds = 60L
     var opticalFreshSeconds = 2400L
     var stateFreshSeconds = 1200L
@@ -38,9 +39,7 @@ class ServiceHealthProperties {
     var runRetentionDays = 30L
     var eventRetentionDays = 180L
     var actionCooldownSeconds = 600L
-    var acsGpvCooldownSeconds = 1800L
     var acsWifiSampleTargetSeconds = 1800L
-    var acsPollEnabled = false
     var opticalPullEnabled = false
     fun wifiSampleFreshSeconds() = acsWifiSampleTargetSeconds.coerceAtLeast(1) * 2
     var crConcurrency = 3

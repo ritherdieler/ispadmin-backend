@@ -54,8 +54,8 @@ class ServiceHealthPropertiesTest {
     fun `wifi sample cadence defaults to 30 minutes and freshness to an hour`() {
         val p = ServiceHealthProperties()
         assertEquals(1800L, p.acsWifiSampleTargetSeconds)
-        assertEquals(1800L, p.acsGpvCooldownSeconds)
         assertEquals(3600L, p.wifiSampleFreshSeconds())
+        assertEquals(1800L, p.periodicInformSeconds, "must track PeriodicInformInterval in gigafiber-bootstrap.js")
         assertEquals(7L, p.stationSeriesRawMaxDays)
         assertEquals(90L, p.stationHourlyRetentionDays)
         assertEquals(14L, p.stationRetentionDays)
@@ -68,10 +68,8 @@ class ServiceHealthPropertiesTest {
     fun `staging wifi sample cadence is three minutes`() {
         val p = ServiceHealthProperties().apply {
             acsWifiSampleTargetSeconds = 180
-            acsGpvCooldownSeconds = 180
         }
         assertEquals(180L, p.acsWifiSampleTargetSeconds)
-        assertEquals(180L, p.acsGpvCooldownSeconds)
         assertEquals(360L, p.wifiSampleFreshSeconds())
     }
 }

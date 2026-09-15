@@ -27,18 +27,36 @@ class StagingEnvironmentPropertiesTest {
     }
 
     @Test
-    fun staging_disables_collectors_whatsapp_and_udp_binds_by_default() {
+    fun staging_enables_360_collectors_and_keeps_operational_jobs_off() {
         val staging = staging()
-        assertTrue(staging.contains("gigafiber.scheduling.enabled=false"), staging)
+        assertTrue(staging.contains("gigafiber.scheduling.enabled=true"), staging)
+        assertTrue(staging.contains("gigafiber.scheduling.operational-jobs=false"), staging)
         assertTrue(staging.contains("gigafiber.environment.tag=stg"), staging)
         assertTrue(staging.contains("gigafiber.registration.timing.enabled=true"), staging)
-        assertTrue(staging.contains("gigafiber.subsystems.servicehealth.enabled=false"), staging)
+        assertTrue(staging.contains("gigafiber.subsystems.servicehealth.enabled=true"), staging)
         assertTrue(staging.contains("gigafiber.subsystems.observability.enabled=false"), staging)
-        assertTrue(staging.contains("service.health.enabled=false"), staging)
-        assertTrue(staging.contains("service.health.optical-enabled=false"), staging)
-        assertTrue(staging.contains("service.health.acs-enabled=false"), staging)
-        assertTrue(staging.contains("olt.gateway.enabled=false"), staging)
+        assertTrue(staging.contains("service.health.enabled=true"), staging)
+        assertTrue(staging.contains("service.health.optical-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.optical-pull-enabled=false"), staging)
+        assertTrue(staging.contains("service.health.acs-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.actions-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.config-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.correlation-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.shared-incidents-enabled=true"), staging)
+        assertTrue(staging.contains("service.health.shared-incident-notifications-enabled=false"), staging)
+        assertTrue(staging.contains("acs.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
+        assertTrue(staging.contains("acs.genieacs-to-acs-api-key=\${GENIEACS_TO_ACS_API_KEY:}"), staging)
+        assertTrue(
+            staging.contains("olt.gateway.acs-to-gateway-api-key=\${ACS_TO_GATEWAY_API_KEY:}"),
+            staging,
+        )
+        assertTrue(staging.contains("olt.gateway.enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.writes.enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.sync.signal-enabled=true"), staging)
+        assertTrue(staging.contains("olt.gateway.sync.inventory-enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.sync.alarm-enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.sync.lab-optical-ssh-enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.snmp.enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.snmp.trap.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.snmp.trap.udp-enabled=false"), staging)
@@ -46,6 +64,7 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("whatsapp.welcome-on-registration.enabled=false"), staging)
         assertTrue(staging.contains("whatsapp.retention.enabled=false"), staging)
         assertTrue(staging.contains("whatsapp.inbound-alert.enabled=false"), staging)
+        assertTrue(staging.contains("crm.csat.enabled=false"), staging)
         assertTrue(staging.contains("traffic.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("traffic.core-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)

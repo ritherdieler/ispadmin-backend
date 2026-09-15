@@ -28,6 +28,7 @@ data class GatewayOnuActivateResponse(
     val oltStatus: String = "FAILED",
     val cpeStatus: String = "NA",
     val message: String? = null,
+    val deviceId: String? = null,
 )
 
 data class GatewayCpeCommandResponse(
@@ -46,6 +47,7 @@ data class GatewayCpeTelemetry(
     val ssid24: String? = null,
     val ssid5: String? = null,
     val softwareVersion: String? = null,
+    val deviceId: String? = null,
 )
 
 data class GatewayServicePortsDto(

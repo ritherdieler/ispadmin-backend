@@ -44,10 +44,16 @@ class HealthSummaryQueryService(
         return decorate(id, evaluated)
     }
 
+    /**
+     * Write path for the Inform stream: evaluates and persists, but does not
+     * decorate. Callers are the stream consumers, which discard the return
+     * value, and `decorate` costs a subscription-context read plus an open-event
+     * query per Inform. At 3000 ONUs that is once every 600 ms.
+     */
     fun reevaluate(id: Int, now: Instant = Instant.now()): HealthSummary {
         val evaluated = engine.evaluate(reader.read(id, now))
         persist(id, evaluated, now)
-        return decorate(id, evaluated)
+        return evaluated
     }
 
     private fun persist(id: Int, summary: HealthSummary, now: Instant) {

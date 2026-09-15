@@ -88,13 +88,6 @@ class WifiTelemetryTest {
     }
     @Test fun `V2804AX15T maps radio 1 to 5 GHz and radio 5 to 2_4 like TR069 profile`() {
         assertEquals(mapOf(1 to "5", 5 to "2.4"), WifiTelemetry.radios("V2804AX15T"))
-        assertEquals(
-            listOf(
-                "${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations",
-                "${WifiTelemetry.ROOT}.WLANConfiguration.5.TotalAssociations",
-            ),
-            WifiTelemetry.gpvPaths(ObjectMapper().createObjectNode(), "V2804AX15T"),
-        )
     }
 
     @Test fun `V2804AX15T parse labels WLAN1 stations as 5 GHz and WLAN5 as 2_4`() {
@@ -146,66 +139,5 @@ class WifiTelemetryTest {
     @Test fun `unknown model exposes unsupported rather than zero`() {
         val reading=WifiTelemetry.parse(device(),1,"HG8145X6",now,secret)!!
         assertEquals(Quality.UNSUPPORTED,reading.count.qualityStatus); assertNull(reading.count.associatedDeviceCount)
-    }
-    @Test fun `projection excludes credentials and byte counters but allows host display names`() {
-        val projection=WifiTelemetry.projection()
-        listOf("SSID","Password","KeyPassphrase","BytesSent","BytesReceived").forEach { assertFalse(projection.contains(it),it) }
-        assertTrue(projection.contains("Hosts.HostNumberOfEntries"))
-        assertTrue(projection.contains("Hosts.Host.1.HostName"))
-        assertTrue(projection.contains("Hosts.Host.1.MACAddress"))
-        assertTrue(projection.contains("AssociatedDeviceName") || projection.contains("X_ZTE-COM_AssociatedDeviceName"))
-    }
-    @Test fun `count projection is a single NBI chunk of totals without station leaves`() {
-        val projection=WifiTelemetry.countProjection()
-        assertTrue(projection.contains("WLANConfiguration.1.TotalAssociations"))
-        assertTrue(projection.contains("WLANConfiguration.5.TotalAssociations"))
-        assertFalse(projection.contains("AssociatedDevice"))
-        assertTrue(projection.split(',').size <= 24)
-    }
-    @Test fun `station projection covers only 1 to N leaves for the fresh counts`() {
-        val projection=WifiTelemetry.stationProjection("F6600R", 1, 2, 0)
-        assertTrue(projection.contains("AssociatedDevice.1.AssociatedDeviceRssi"))
-        assertTrue(projection.contains("WLANConfiguration.5.AssociatedDevice.2.AssociatedDeviceRssi"))
-        assertFalse(projection.contains("AssociatedDevice.3."))
-        assertFalse(projection.contains("AssociatedDevice.32."))
-        assertFalse(projection.contains("Hosts.Host."))
-    }
-    @Test fun `V2804AX15T station projection puts 5 GHz count on radio 1 and 2_4 on radio 5`() {
-        val projection=WifiTelemetry.stationProjection("V2804AX15T", associated2g=1, associated5g=3, hostCount=0)
-        assertTrue(projection.contains("WLANConfiguration.1.AssociatedDevice.3.AssociatedDeviceRssi"))
-        assertTrue(projection.contains("WLANConfiguration.5.AssociatedDevice.1.AssociatedDeviceMACAddress"))
-        assertFalse(projection.contains("WLANConfiguration.1.AssociatedDevice.4."))
-        assertFalse(projection.contains("WLANConfiguration.5.AssociatedDevice.2."))
-    }
-    @Test fun `station projection includes host name leaves for the reported host count`() {
-        val projection=WifiTelemetry.stationProjection("F6600R", 1, 0, 2)
-        assertTrue(projection.contains("Hosts.Host.1.HostName"))
-        assertTrue(projection.contains("Hosts.Host.2.MACAddress"))
-        assertFalse(projection.contains("Hosts.Host.3."))
-    }
-    @Test fun `station gpv uses radio counts not ghost cache indices`() {
-        val paths=WifiTelemetry.gpvStationPaths("F6600R", 1, 2, 1)
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.1.AssociatedDeviceRssi"))
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.5.AssociatedDevice.2.AssociatedDeviceMACAddress"))
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.Hosts.Host.1.HostName"))
-        assertFalse(paths.any { it.contains("AssociatedDevice.3.") })
-        assertFalse(paths.any { it.contains("WLANConfiguration.1.AssociatedDevice.2.") })
-        assertTrue(WifiTelemetry.gpvStationPaths("F6600R", 0, 0, 0).isEmpty())
-        assertTrue(WifiTelemetry.gpvStationPaths("HG8145X6", 4, 4, 4).isEmpty())
-    }
-    @Test fun `refresh gpv adds station leaves only when totals are complete`() {
-        val stale=device(); counts(stale,1,2,now.minusSeconds(3600))
-        assertEquals(
-            listOf(
-                "${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations",
-                "${WifiTelemetry.ROOT}.WLANConfiguration.5.TotalAssociations",
-            ),
-            WifiTelemetry.gpvRefreshPaths(stale,"F6600R",1,now,secret),
-        )
-        val fresh=device(); counts(fresh,1,0)
-        val paths=WifiTelemetry.gpvRefreshPaths(fresh,"F6600R",1,now,secret)
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.1.TotalAssociations"))
-        assertTrue(paths.contains("${WifiTelemetry.ROOT}.WLANConfiguration.1.AssociatedDevice.1.AssociatedDeviceRssi"))
-        assertFalse(paths.any { it.contains("WLANConfiguration.5.AssociatedDevice.") })
     }
 }

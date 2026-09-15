@@ -2,6 +2,11 @@
 
 **Canónico (cómo funciona el push ACS→Gateway→Core):** [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md). Esta nota es alcance/allowlist/apply del piloto GenieACS.
 
+> El allowlist por serial sigue siendo válido como escalón, pero el piloto ya no
+> escribe `PeriodicInformInterval`: lab = 5 s (tag `lab` / serial de banco),
+> flota = 1800 s + jitter, ambos en `gigafiber-bootstrap.js`.
+> `apply-wifi-telemetry.py --all-models` cubre la flota por `ProductClass`.
+
 ## Alcance
 
 Solo el CPE de laboratorio:
@@ -26,7 +31,7 @@ No se modificó el preset/provision global `inform` / `inform.js`.
 | Frescura | `Date.now()` (sin periodo horario) |
 | Radios VSOL | WLAN **1** (5 GHz) y **5** (2.4 GHz) |
 | Allowlist | precondition Serial+ProductClass del `_id` anterior |
-| PeriodicInformInterval | **180 s** solo serial `12345B4641531C0B6` (declare en el provision piloto; no en `inform.js` de flota). Bootstrap global sigue en 3600. |
+| PeriodicInformInterval | **5 s** para lab (serial `12345B4641531C0B6` o tag `lab`) desde `gigafiber-bootstrap.js`. Flota: 1800 s + jitter. El provision de telemetría no escribe cadencia. |
 
 ## Allowlist anterior (restaurar si hace falta)
 
@@ -78,7 +83,7 @@ Tests: `node scripts/tests/wifi-telemetry-provision.test.cjs` → PASS.
 
 | Campo | Antes | Después |
 |-------|--------|---------|
-| `PeriodicInformInterval` | 3600 | **180** |
+| `PeriodicInformInterval` | 3600 | **5** (lab via bootstrap) |
 | `PeriodicInformEnable` | true | true |
 | Próximo Inform (máx.) | 60 min | **3 min** |
 

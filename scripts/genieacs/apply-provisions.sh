@@ -28,8 +28,36 @@ put_preset() {
 echo "GenieACS NBI: ${NBI_URL}"
 
 put_provision "inform" "${ROOT}/provisions/inform.js"
+put_provision "default" "${ROOT}/provisions/default.js"
 put_provision "gigafiber-bootstrap" "${ROOT}/provisions/gigafiber-bootstrap.js"
+put_provision "gf-inform-interval" "${ROOT}/provisions/gf-inform-interval.js"
 put_provision "huawei-writeonly-acs-credentials" "${ROOT}/provisions/huawei-writeonly-acs-credentials.js"
+
+put_preset "bootstrap" "$(cat <<'EOF'
+{
+  "weight": 0,
+  "channel": "bootstrap",
+  "events": { "0 BOOTSTRAP": true },
+  "precondition": "",
+  "configurations": [
+    { "type": "provision", "name": "gigafiber-bootstrap", "args": null }
+  ]
+}
+EOF
+)"
+
+put_preset "gf-inform-interval" "$(cat <<'EOF'
+{
+  "weight": 5,
+  "channel": "inform",
+  "events": {},
+  "precondition": "DeviceID.SerialNumber = \"ZTEGDC47BFFD\" OR DeviceID.SerialNumber = \"12345B4641531C0B6\"",
+  "configurations": [
+    { "type": "provision", "name": "gf-inform-interval", "args": [] }
+  ]
+}
+EOF
+)"
 
 put_preset "huawei-acs-credentials" "$(cat <<'EOF'
 {

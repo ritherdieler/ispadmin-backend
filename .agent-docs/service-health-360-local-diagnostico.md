@@ -24,7 +24,7 @@
 
 - `CpeFacadeService.telemetry`: enriquece `lastInformAt` desde GenieACS `_lastInform` y lo persiste.
 - `HealthEvidenceReader`: ignora `lastInformAt` futuro (> now+60s) y cae a `acs_wifi_status_current`.
-- `AcsTelemetryService`: no pisa `inform_at` con null / futuro inválido.
+- `CpeInformPersistService`: escribe `inform_at` desde el payload de `cpe.inform`; no hay poll ACS en Core.
 
 Test: `CpeFacadeServiceTest` (`telemetry enriches lastInformAt…`).
 

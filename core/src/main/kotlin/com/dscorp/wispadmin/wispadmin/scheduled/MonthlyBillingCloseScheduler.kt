@@ -2,10 +2,12 @@ package com.dscorp.wispadmin.wispadmin.scheduled
 
 import com.dscorp.wispadmin.wispadmin.service.MonthlyBillingCloseOrchestrator
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 @Component
+@ConditionalOnProperty(name = ["gigafiber.scheduling.operational-jobs"], havingValue = "true", matchIfMissing = true)
 class MonthlyBillingCloseScheduler(
     private val monthlyBillingCloseOrchestrator: MonthlyBillingCloseOrchestrator,
 ) {

@@ -33,7 +33,8 @@ class HealthWiringTest {
     @Autowired lateinit var cursors: HealthCursorRepository
     @Test fun `complete service health graph starts with collectors disabled and NetDiag absent`() {
         assertNotNull(context.getBean(ServiceHealthController::class.java))
-        assertNotNull(context.getBean(AcsTelemetryService::class.java))
+        assertNotNull(context.getBean(CpeInformPersistService::class.java))
+        assertNotNull(context.getBean(HealthSnapshotIngestService::class.java))
         assertNotNull(context.getBean(IdentityChangeObserver::class.java))
         assertNotNull(context.getBean(RemoteActionService::class.java))
         assertTrue(cursors.existsById("actions"))

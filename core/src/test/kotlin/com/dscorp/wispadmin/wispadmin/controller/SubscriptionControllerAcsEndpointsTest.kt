@@ -34,6 +34,7 @@ class SubscriptionControllerAcsEndpointsTest {
     private val repository = mockk<SubscriptionRepository>()
     private val gateway = mockk<GatewayOnuActivationClient>()
     private val gatewayCpe = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+    private val acsRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository>()
     private val subscriptionProvisionService = mockk<com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService>()
     private val controller = SubscriptionController(
         repository = repository,
@@ -50,6 +51,7 @@ class SubscriptionControllerAcsEndpointsTest {
         ipConflictNocNotifier = mockk(relaxed = true),
         subscriptionProvisionService = subscriptionProvisionService,
         gatewayCpe = gatewayCpe,
+        subscriptionAcsRepository = acsRepository,
     )
 
     init {
@@ -59,6 +61,7 @@ class SubscriptionControllerAcsEndpointsTest {
                 tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
             }
         )
+        every { acsRepository.findById(42) } returns Optional.empty()
     }
 
     @Test
@@ -71,6 +74,28 @@ class SubscriptionControllerAcsEndpointsTest {
         assertEquals(42, response.body?.subscriptionId)
         assertEquals(Tr069ProvisionStatus.COMPLETE, response.body?.provisionStatus)
         assertEquals("V2804", response.body?.productClass)
+        assertEquals(false, response.body?.lab)
+        assertEquals(null, response.body?.genieacsDeviceId)
+    }
+
+    @Test
+    fun `GET acs keeps subscription_acs device id and lab`() {
+        every { gateway.telemetry("SN1") } returns GatewayCpeTelemetry(sn = "SN1", productClass = "F6600R")
+        every { acsRepository.findById(42) } returns Optional.of(
+            com.dscorp.wispadmin.wispadmin.data.model.SubscriptionAcs(
+                subscriptionId = 42,
+                genieacsDeviceId = "5872C9-F6600R-ZTEGDC47BFFD",
+                lab = true,
+                productClass = "F6600R",
+            )
+        )
+
+        val response = controller.getSubscriptionAcs(42)
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals("5872C9-F6600R-ZTEGDC47BFFD", response.body?.genieacsDeviceId)
+        assertEquals(true, response.body?.lab)
+        assertEquals("F6600R", response.body?.productClass)
     }
 
     @Test

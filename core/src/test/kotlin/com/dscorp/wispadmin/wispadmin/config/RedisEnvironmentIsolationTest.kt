@@ -10,5 +10,7 @@ class RedisEnvironmentIsolationTest {
         assertEquals("prod",props("prod").getProperty("gigafiber.redis.namespace"))
         assertEquals("stg",props("staging").getProperty("gigafiber.redis.namespace"))
         assertEquals("dev",props("dev").getProperty("gigafiber.redis.namespace"))
+        assertEquals("lpstg",props("local-prestaging").getProperty("gigafiber.redis.namespace"))
+        assertEquals("true",props("local-prestaging").getProperty("gigafiber.redis.enabled"))
     }
 }

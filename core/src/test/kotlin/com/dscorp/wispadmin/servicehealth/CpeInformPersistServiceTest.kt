@@ -5,16 +5,15 @@ import com.dscorp.wispadmin.events.CpeInformStation
 import com.dscorp.wispadmin.events.PlatformEvent
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.Quality
-import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
 import com.dscorp.wispadmin.servicehealth.domain.WifiCountSample
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
 import com.dscorp.wispadmin.servicehealth.domain.WifiStationSample
-import com.dscorp.wispadmin.servicehealth.repository.TelemetryRunRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCountSampleRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCurrentRepository
-import com.dscorp.wispadmin.servicehealth.repository.WifiStationSampleRepository
 import com.dscorp.wispadmin.servicehealth.service.CpeInformPersistService
+import com.dscorp.wispadmin.servicehealth.service.WifiStationSampleWriter
 import com.dscorp.wispadmin.servicehealth.service.HealthSnapshotIngestService
 import com.dscorp.wispadmin.servicehealth.service.HealthSummaryQueryService
 import com.dscorp.wispadmin.servicehealth.service.IdentityService
@@ -39,14 +38,26 @@ private fun informMapper(): ObjectMapper =
 class CpeInformPersistServiceTest {
     private val identity = mockk<IdentityService>()
     private val counts = mockk<WifiCountSampleRepository>(relaxed = true)
-    private val stations = mockk<WifiStationSampleRepository>(relaxed = true)
+    private val stations = mockk<WifiStationSampleWriter>(relaxed = true)
     private val current = mockk<WifiCurrentRepository>(relaxed = true)
-    private val runs = mockk<TelemetryRunRepository>(relaxed = true)
+    private val scope = mockk<ServiceHealthScope>()
     private val properties = ServiceHealthProperties().apply {
         stationHmacKey = "test-only-key-of-at-least-32-bytes-long"
     }
     private val json = informMapper()
-    private val service = CpeInformPersistService(identity, counts, stations, current, runs, properties, json)
+    private val acsRegistry = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
+    private val service = CpeInformPersistService(identity, counts, stations, current, scope, properties, json, acsRegistry)
+
+    private val inserted = mutableListOf<List<WifiStationSample>>()
+
+    @org.junit.jupiter.api.BeforeEach
+    fun allowCollection() {
+        every { scope.collects(any()) } returns true
+        inserted.clear()
+        every { stations.insertAll(any()) } answers { inserted += firstArg<List<WifiStationSample>>(); Unit }
+    }
+
+    private fun stationRows(): List<WifiStationSample> = inserted.flatten()
 
     private val informAt = Instant.parse("2026-09-08T18:00:00Z")
     private val observedAt = Instant.parse("2026-09-08T17:59:50Z")
@@ -67,7 +78,7 @@ class CpeInformPersistServiceTest {
         )
         verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { current.save(any()) }
-        verify(exactly = 0) { runs.save(any()) }
+        verify(exactly = 0) { acsRegistry.recordInform(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -93,8 +104,7 @@ class CpeInformPersistServiceTest {
             )
         )
         verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
-        verify(exactly = 0) { stations.save(any()) }
-        verify(exactly = 0) { runs.save(any()) }
+        assertEquals(emptyList<WifiStationSample>(), stationRows())
     }
 
     @Test
@@ -110,7 +120,6 @@ class CpeInformPersistServiceTest {
         } returns 11L
         every { current.findById(42) } returns Optional.of(WifiCurrent(subscriptionId = 42))
         every { current.save(any()) } answers { firstArg() }
-        every { runs.save(any()) } answers { firstArg() }
         service.persist(
             CpeInformPayload(
                 sn = "12345B4641531C0B6",
@@ -142,15 +151,9 @@ class CpeInformPersistServiceTest {
                 errorReason = null,
             )
         }
-        verify(exactly = 0) { stations.save(any()) }
+        assertEquals(emptyList<WifiStationSample>(), stationRows())
         verify { current.save(match { it.associatedDeviceCount == 0 && it.qualityStatus == Quality.FRESH }) }
-        val run = slot<TelemetryRun>()
-        verify { runs.save(capture(run)) }
-        assertEquals("ACS", run.captured.source)
-        assertEquals("gateway-cpe", run.captured.equipmentKey)
-        assertEquals(informAt, run.captured.startedAt)
-        assertEquals(Quality.FRESH, run.captured.qualityStatus)
-        assertNotNull(run.captured.completedAt)
+        verify { acsRegistry.recordInform(42, any(), "V2804AX15T", "", any()) }
     }
 
     @Test
@@ -176,8 +179,6 @@ class CpeInformPersistServiceTest {
         } returns 3422L
         every { current.findById(2389) } returns Optional.of(WifiCurrent(subscriptionId = 2389))
         every { current.save(any()) } answers { firstArg() }
-        every { stations.save(any()) } answers { firstArg() }
-        every { runs.save(any()) } answers { firstArg() }
 
         service.persist(
             CpeInformPayload(
@@ -198,13 +199,13 @@ class CpeInformPersistServiceTest {
             )
         )
 
-        verify(exactly = 2) { stations.save(any()) }
-        verify {
-            stations.save(match { it.countSampleId == 3422L && it.band == "5" && it.rssi == -40.0 })
-        }
-        verify {
-            stations.save(match { it.countSampleId == 3422L && it.band == "2.4" && it.rssi == -55.0 })
-        }
+        assertEquals(1, inserted.size, "one batch per Inform, not one insert per station")
+        assertEquals(2, stationRows().size)
+        assertEquals(
+            setOf("5" to -40.0, "2.4" to -55.0),
+            stationRows().map { it.band to it.rssi }.toSet(),
+        )
+        assertEquals(setOf(3422L), stationRows().map { it.countSampleId }.toSet())
         verify {
             current.save(
                 match {
@@ -216,7 +217,6 @@ class CpeInformPersistServiceTest {
                 }
             )
         }
-        verify { runs.save(match { it.source == "ACS" && it.equipmentKey == "gateway-cpe" }) }
     }
 
     @Test
@@ -230,8 +230,6 @@ class CpeInformPersistServiceTest {
             WifiCountSample(id = 3422, subscriptionId = 2389, deviceId = "dev", informAt = informAt, observedAt = observedAt)
         every { current.findById(2389) } returns Optional.empty()
         every { current.save(any()) } answers { firstArg() }
-        every { stations.save(any()) } answers { firstArg() }
-        every { runs.save(any()) } answers { firstArg() }
 
         service.persist(
             CpeInformPayload(
@@ -251,8 +249,34 @@ class CpeInformPersistServiceTest {
             )
         )
 
-        verify { stations.save(match { it.countSampleId == 3422L }) }
+        assertEquals(listOf(3422L), stationRows().map { it.countSampleId })
         verify { current.save(match { it.countSampleId == 3422L && it.associatedDeviceCount == 3 }) }
+    }
+
+    @Test
+    fun `subscription outside the collection scope is discarded without writes`() {
+        every { identity.resolveOnu("12345B4641531C0B6") } returns 77
+        every { scope.collects(77) } returns false
+        service.persist(
+            CpeInformPayload(
+                sn = "12345B4641531C0B6",
+                deviceId = "dev",
+                informAt = informAt,
+                model = "V2804AX15T",
+                complete = true,
+                associatedDeviceCount = 1,
+                associated5g = 1,
+                associated2g = 0,
+                qualityStatus = "FRESH",
+                observedAt = observedAt,
+                stations = listOf(
+                    CpeInformStation(macNormalized = "AABBCCDDEEFF", band = "5", observedAt = observedAt, rssi = -40.0),
+                ),
+            )
+        )
+        verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { current.save(any()) }
+        assertEquals(emptyList<WifiStationSample>(), stationRows())
     }
 }
 
