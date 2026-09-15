@@ -1,20 +1,15 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 
 @Service
-class NetworkDeviceConnectionService {
-
-    @Autowired
-    private lateinit var mikrotikConnectionService: MikroTikConnectionService
+class NetworkDeviceConnectionService(
+    private val mikrotikConnectionService: MikroTikConnectionService
+) {
 
     fun getDeviceInterfaces(device: NetworkDevice): List<Map<String, String>> {
         return mikrotikConnectionService.printOnDevice(device, "/interface")
-            .filter { interfaceInfo ->
-                interfaceInfo["type"] != "pppoe-in"
-            }
             .map { interfaceInfo ->
                 mapOf(
                     "name" to (interfaceInfo["name"] ?: ""),
@@ -23,7 +18,9 @@ class NetworkDeviceConnectionService {
                     "macAddress" to (interfaceInfo["mac-address"] ?: ""),
                     "running" to (interfaceInfo["running"] ?: ""),
                     "disabled" to (interfaceInfo["disabled"] ?: ""),
-                    "comment" to (interfaceInfo["comment"] ?: "")
+                    "comment" to (interfaceInfo["comment"] ?: ""),
+                    "rxBytes" to (interfaceInfo["rx-byte"] ?: "0"),
+                    "txBytes" to (interfaceInfo["tx-byte"] ?: "0")
                 )
             }
     }

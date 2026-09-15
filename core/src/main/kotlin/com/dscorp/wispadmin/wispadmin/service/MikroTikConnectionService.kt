@@ -78,6 +78,19 @@ class MikroTikConnectionService(
                     "tx-packet" to "510000",
                     "mtu" to "1500",
                     "mac-address" to "AA:BB:CC:DD:EE:02"
+                ),
+                mapOf(
+                    ".id" to "*3",
+                    "name" to "<pppoe-gf6>",
+                    "type" to "pppoe-in",
+                    "running" to "true",
+                    "disabled" to "false",
+                    "rx-byte" to "2147483648",
+                    "tx-byte" to "152043520",
+                    "rx-packet" to "8000",
+                    "tx-packet" to "2100",
+                    "mtu" to "1480",
+                    "mac-address" to "AA:BB:CC:DD:EE:03"
                 )
             )
             path == "/ip/firewall/address-list" && query["list"] == "deudores" -> listOf(
