@@ -32,18 +32,25 @@ class IdentityServiceTest {
         return provider
     }
 
-    private fun ref(id: Int, tr069DeviceId: String? = null, onuSn: String? = null) = SubscriptionHealthRef(
+    private fun ref(
+        id: Int,
+        tr069DeviceId: String? = null,
+        onuSn: String? = null,
+        hostDeviceId: Int? = null,
+        pppoeUsername: String? = null,
+    ) = SubscriptionHealthRef(
         id = id,
         onuSn = onuSn,
         ip = null,
         vlan = null,
-        hostDeviceId = null,
+        hostDeviceId = hostDeviceId,
         planId = null,
         planDownloadMbps = null,
         planUploadMbps = null,
         napBoxId = null,
         serviceStatus = "ACTIVE",
         tr069DeviceId = tr069DeviceId,
+        pppoeUsername = pppoeUsername,
     )
 
     @Test
@@ -66,6 +73,14 @@ class IdentityServiceTest {
         every { directory.findIdsByTr069DeviceId(any()) } returns emptyList()
         assertNull(service.resolveAcs("sub-1-device"))
         verify(exactly = 0) { directory.find(any()) }
+    }
+
+    @Test
+    fun `snapshot includes PPPoE username without requiring IP`() {
+        val map = service.snapshot(ref(6, hostDeviceId = 8, pppoeUsername = "gf6"))
+        assertEquals("gf6", map["PPPOE"])
+        assertEquals("8", map["ROUTER"])
+        assertNull(map["IP"])
     }
 
     @Test

@@ -124,13 +124,32 @@ class SubscriptionAcsSyncServiceTest {
     }
 
     @Test
-    fun `NA skips upsert`() {
+    fun `NA without deviceId skips upsert`() {
         service.upsertFromProvision(
             subscriptionId = 1,
             outcome = Tr069ProvisionOutcome(status = Tr069ProvisionStatus.NA),
             smartoltSerial = null,
         )
         verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `NA with deviceId upserts and copies lab tag`() {
+        every { client.listTags("B46415-V2804AX15T-12345B4641531C0B6") } returns listOf("lab", "sub-2349")
+        service.upsertFromProvision(
+            subscriptionId = 6,
+            outcome = Tr069ProvisionOutcome(
+                status = Tr069ProvisionStatus.NA,
+                deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+            ),
+            smartoltSerial = "VSOL0031C0B6",
+        )
+        verify(exactly = 1) { repository.save(any()) }
+        assertEquals(6, saved.captured.subscriptionId)
+        assertEquals("B46415-V2804AX15T-12345B4641531C0B6", saved.captured.genieacsDeviceId)
+        assertEquals("VSOL0031C0B6", saved.captured.smartoltSerial)
+        assertEquals(Tr069ProvisionStatus.NA, saved.captured.provisionStatus)
+        assertTrue(saved.captured.lab)
     }
 
     @Test

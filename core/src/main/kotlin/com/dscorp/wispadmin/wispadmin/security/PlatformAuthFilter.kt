@@ -34,6 +34,7 @@ class PlatformAuthFilter(
         if (path.startsWith("/api/acs") || path.contains("/api/acs/")) return true
         if (path.startsWith("/api/netdiag") || path.contains("/api/netdiag/")) return true
         if (path.startsWith("/internal/traffic") || path.contains("/internal/traffic/")) return true
+        if (path.startsWith("/api/traffic") || path.contains("/api/traffic/")) return true
         if (path.contains("/ws")) return true
         return isPublicPath(path)
     }

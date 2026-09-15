@@ -150,6 +150,25 @@ class SubscriptionHealthAdaptersTest {
     }
 
     @Test
+    fun `el directorio proyecta usuario PPPoE sin IP`() {
+        val subscription = Subscription(
+            id = 6,
+            ip = null,
+            pppoeUsername = "gf6",
+            hostDevice = NetworkDevice(id = 8),
+            serviceStatus = ServiceStatus.ACTIVE,
+            equipmentCondition = EquipmentCondition.LOAN
+        )
+        every { subscriptionRepository.findById(6) } returns Optional.of(subscription)
+
+        val ref = directoryAdapter.find(6)
+
+        assertEquals("gf6", ref?.pppoeUsername)
+        assertNull(ref?.ip)
+        assertEquals(8, ref?.hostDeviceId)
+    }
+
+    @Test
     fun `el directorio resuelve identidad ONU por serial exacto y por sufijo`() {
         every { subscriptionRepository.findByExactOnuSerial("HWTC0086CD49") } returns
             listOf(Subscription(id = 5, equipmentCondition = EquipmentCondition.LOAN))

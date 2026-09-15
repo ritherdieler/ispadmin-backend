@@ -15,7 +15,7 @@ for (var i = 0; i < serial.length; i++) jitter = (jitter * 31 + serial.charCodeA
 // lookups; keep lab detection as plain string compares. Tags.lab is set for
 // humans/UI; serials are the source of truth for the lab cadence.
 var isLab = serial === "ZTEGDC47BFFD" || serial === "12345B4641531C0B6";
-var informInterval = isLab ? 30 : (1800 + jitter);
+var informInterval = isLab ? 60 : (1800 + jitter);
 log("gigafiber-bootstrap serial=" + serial + " isLab=" + isLab + " interval=" + informInterval);
 
 clear("Device", now);

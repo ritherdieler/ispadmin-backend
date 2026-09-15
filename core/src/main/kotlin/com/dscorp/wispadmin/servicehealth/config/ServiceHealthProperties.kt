@@ -21,6 +21,7 @@ class ServiceHealthProperties {
     var stationHmacKey = ""
     /** Must track PeriodicInformInterval in gigafiber-bootstrap.js; evidence is stale after two missed Informs. */
     var periodicInformSeconds = 1800L
+    var labPeriodicInformSeconds = 30L
     var snapshotFreshSeconds = 60L
     var opticalFreshSeconds = 2400L
     var stateFreshSeconds = 1200L

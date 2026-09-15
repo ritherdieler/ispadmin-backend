@@ -4,11 +4,23 @@ Estado: **CUMPLE** secciones 4, 15, 16 (lag/backlog), 17 (resolución por rango)
 
 As-built del Documento 1 (arquitectura, anomalías, APIs): [01-implementacion-analitica-consumo-ancho-banda.md](./01-implementacion-analitica-consumo-ancho-banda.md).
 
+Identidad del directorio Core (`GET /internal/traffic/targets`): la elige `accessMode`, no el medio FIBER/WIRELESS.
+
+| `accessMode` | Clave en `client_ip` | Cola MikroTik |
+|--------------|----------------------|---------------|
+| `PPPOE_DYNAMIC` (FIBER nuevo) | `pppoe:{username}` | Dinámica `<pppoe-{user}>` (perfil con `rate-limit`) |
+| `STATIC_IP` (FIBER legado o WIRELESS) | IP `/32` | Simple `target=IP/32` |
+| `PPPOE_FIXED` | IP `/32` | Simple `target=IP/32` (`usesSimpleQueue`) |
+
+El directorio emite **un** lado: PPPoE dinámico no manda IP; estático/fijo no manda `pppoeUsername` (aunque quede residual). Sin sesión PPPoE no hay cola dinámica → `QUEUE_NOT_FOUND`.
+
+Nota 2026-09-15: [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md). La vista 360 no debe exigir IP para PPPoE: el snapshot expone `PPPOE` ([service-health-identity-pppoe-2026-09-15.md](./service-health-identity-pppoe-2026-09-15.md)).
+
 ## Capas
 
 | Capa | Resolución | Retención | Fuente | Job |
 |------|------------|-----------|--------|-----|
-| RAW | 1 minuto | 72 h (`traffic.retention.raw-days=3`) | MikroTik `/queue/simple` | `SubscriptionTrafficPollScheduler` cada 60 s |
+| RAW | 1 minuto | 72 h (`traffic.retention.raw-days=3`) | MikroTik `/queue/simple` (clave según `accessMode`) | `SubscriptionTrafficPollScheduler` cada 60 s |
 | 5 min | 5 minutos | 30 d | RAW | Post-poll + cada 5 min (`TrafficAggregationJobService.catchUpFiveMinute`) |
 | 1 h | 1 hora | 24 meses (730 d) | 5 min | Cada 5 min + cron `5 0 * * * *` America/Lima |
 | 1 d | 1 día | 5 años (1825 d) | 1 h | Cron `0 30 3 * * *` America/Lima |

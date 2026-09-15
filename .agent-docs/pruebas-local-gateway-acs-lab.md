@@ -381,7 +381,18 @@ Camino: `POST /api/acs/v1/cpe/inform-notify` (NBI túnel `:7557`) → Gateway XA
 ./scripts/run-local-prestaging.sh inform-notify ZTEGDC47BFFD
 ```
 
-`GET /subscription/{id}/service-health` (JWT) lee series. Óptica/tráfico siguen vacíos aquí (SNMP y Traffic apagados).
+`GET /subscription/{id}/service-health` (JWT) lee series. Óptica SNMP sigue apagada. Tráfico **sí** corre in-process (`gigafiber.subsystems.traffic.enabled=true`); el scheduler de billing sigue off — el poll es `POST /api/traffic/v1/admin/poll`.
+
+### Tráfico STATIC_IP (wireless, MK2)
+
+Cola simple `target=IP/32`. No usa ONU ni OLT. Fixture:
+
+```bash
+./scripts/run-local-prestaging.sh start
+./scripts/prestaging-static-ip-traffic-lab.sh all
+```
+
+El script siembra un plan `WIRELESS` en `ispadmin_prestaging`, da de alta `LAB` / `STATICIP` en MK2 (`hostDeviceId` 8), comprueba que el directorio emite **solo IP** y dispara un poll. No MK1. Detalle: [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md).
 
 ---
 

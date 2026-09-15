@@ -96,7 +96,7 @@ class CpeInformPersistService(
                     stationKey = key,
                     band = station.band,
                     displayName = station.displayName,
-                    observedAt = station.observedAt,
+                    observedAt = payload.informAt,
                     collectedAt = now,
                     rssi = station.rssi,
                     snr = station.snr,
@@ -108,13 +108,23 @@ class CpeInformPersistService(
                 )
             },
         )
+        refreshLive(subscriptionId, payload, countId, now)
+    }
+
+    @Transactional
+    fun persistFromEventJson(payloadJson: String) {
+        val payload = objectMapper.readValue(payloadJson, CpeInformPayload::class.java)
+        persist(payload)
+    }
+
+    private fun refreshLive(subscriptionId: Int, payload: CpeInformPayload, countSampleId: Long?, now: Instant) {
         val status = current.findById(subscriptionId).orElse(WifiCurrent(subscriptionId = subscriptionId))
         status.deviceId = payload.deviceId
         status.model = payload.model
         status.informAt = payload.informAt
         status.observedAt = payload.observedAt
         status.associatedDeviceCount = payload.associatedDeviceCount
-        status.countSampleId = countId
+        status.countSampleId = countSampleId
         status.qualityStatus = runCatching { Quality.valueOf(payload.qualityStatus) }.getOrDefault(Quality.FRESH)
         status.updatedAt = now
         current.save(status)
@@ -125,15 +135,5 @@ class CpeInformPersistService(
             "",
             LocalDateTime.ofInstant(now, ZoneOffset.UTC),
         )
-        // No telemetry_source_run row: there is no run. The freshness of the
-        // collection is acs_wifi_status_current.observedAt, per device, which is
-        // what HealthEvidenceReader now reads. A global "gateway-cpe" key only
-        // masked per-device staleness.
-    }
-
-    @Transactional
-    fun persistFromEventJson(payloadJson: String) {
-        val payload = objectMapper.readValue(payloadJson, CpeInformPayload::class.java)
-        persist(payload)
     }
 }

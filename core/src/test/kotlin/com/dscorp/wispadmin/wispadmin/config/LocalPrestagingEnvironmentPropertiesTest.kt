@@ -66,6 +66,24 @@ class LocalPrestagingEnvironmentPropertiesTest {
                 .containsMatchIn(prestaging),
             prestaging,
         )
+        assertTrue(
+            Regex("""^gigafiber\.subsystems\.traffic\.enabled=true\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prestaging),
+            prestaging,
+        )
+        assertTrue(
+            Regex("""^traffic\.client-enabled=true\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prestaging),
+            prestaging,
+        )
+        assertTrue(
+            prestaging.contains("traffic.internal-base-url=http://127.0.0.1:8082/ispadmin"),
+            prestaging,
+        )
+        assertTrue(
+            prestaging.contains("traffic.core-base-url=http://127.0.0.1:8082/ispadmin"),
+            prestaging,
+        )
         assertFalse(
             Regex("""^mikrotik\.connection\.override\.ip=.+$""", RegexOption.MULTILINE)
                 .containsMatchIn(prestaging),

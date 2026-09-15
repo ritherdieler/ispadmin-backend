@@ -53,6 +53,7 @@ class CpeInformPersistServiceTest {
     @org.junit.jupiter.api.BeforeEach
     fun allowCollection() {
         every { scope.collects(any()) } returns true
+        every { scope.lab(any()) } returns false
         inserted.clear()
         every { stations.insertAll(any()) } answers { inserted += firstArg<List<WifiStationSample>>(); Unit }
     }
@@ -206,6 +207,7 @@ class CpeInformPersistServiceTest {
             stationRows().map { it.band to it.rssi }.toSet(),
         )
         assertEquals(setOf(3422L), stationRows().map { it.countSampleId }.toSet())
+        assertEquals(setOf(informAt), stationRows().map { it.observedAt }.toSet())
         verify {
             current.save(
                 match {
@@ -217,6 +219,47 @@ class CpeInformPersistServiceTest {
                 }
             )
         }
+    }
+
+    @Test
+    fun `station samples stamp observedAt from informAt not leaf times`() {
+        val leafA = Instant.parse("2026-09-08T17:59:40Z")
+        val leafB = Instant.parse("2026-09-08T17:59:55Z")
+        every { identity.resolveOnu("12345B4641531C0B6") } returns 2389
+        every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 2389, informAt) } returns null
+        every { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 1
+        every { counts.findByDeviceIdAndSubscriptionIdAndObservedAt("dev", 2389, observedAt) } returns null
+        every {
+            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(
+                "dev",
+                2389,
+                com.dscorp.wispadmin.servicehealth.domain.UtcInstantText.format(observedAt),
+            )
+        } returns 3422L
+        every { current.findById(2389) } returns Optional.of(WifiCurrent(subscriptionId = 2389))
+        every { current.save(any()) } answers { firstArg() }
+
+        service.persist(
+            CpeInformPayload(
+                sn = "12345B4641531C0B6",
+                deviceId = "dev",
+                informAt = informAt,
+                model = "V2804AX15T",
+                complete = true,
+                associatedDeviceCount = 2,
+                associated2g = 1,
+                associated5g = 1,
+                qualityStatus = "FRESH",
+                observedAt = observedAt,
+                stations = listOf(
+                    CpeInformStation(macNormalized = "AABBCCDDEEFF", band = "5", observedAt = leafA, rssi = -40.0),
+                    CpeInformStation(macNormalized = "112233445566", band = "2.4", observedAt = leafB, rssi = -55.0),
+                ),
+            )
+        )
+
+        assertEquals(2, stationRows().size)
+        assertEquals(setOf(informAt), stationRows().map { it.observedAt }.toSet())
     }
 
     @Test
@@ -277,6 +320,115 @@ class CpeInformPersistServiceTest {
         verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { current.save(any()) }
         assertEquals(emptyList<WifiStationSample>(), stationRows())
+    }
+
+    @Test
+    fun `complete inform persists a series sample even inside PeriodicInformInterval`() {
+        val lastAt = informAt.minusSeconds(5)
+        every { identity.resolveOnu("12345B4641531C0B6") } returns 42
+        every { scope.lab(42) } returns true
+        every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 42, informAt) } returns null
+        every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 42) } returns
+            WifiCountSample(id = 88, subscriptionId = 42, deviceId = "dev", informAt = lastAt, observedAt = lastAt)
+        every { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 1
+        every {
+            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(
+                "dev",
+                42,
+                com.dscorp.wispadmin.servicehealth.domain.UtcInstantText.format(observedAt),
+            )
+        } returns 99L
+        every { current.findById(42) } returns Optional.of(WifiCurrent(subscriptionId = 42, countSampleId = 88))
+        every { current.save(any()) } answers { firstArg() }
+        service.persist(
+            CpeInformPayload(
+                sn = "12345B4641531C0B6",
+                deviceId = "dev",
+                informAt = informAt,
+                model = "V2804AX15T",
+                complete = true,
+                associatedDeviceCount = 2,
+                associated2g = 2,
+                associated5g = 0,
+                qualityStatus = "FRESH",
+                observedAt = observedAt,
+                stations = listOf(
+                    CpeInformStation(macNormalized = "AABBCCDDEEFF", band = "2.4", observedAt = observedAt, rssi = -40.0),
+                ),
+            )
+        )
+        verify(exactly = 1) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+        assertEquals(listOf(informAt), stationRows().map { it.observedAt })
+        verify { acsRegistry.recordInform(42, any(), "V2804AX15T", "", any()) }
+    }
+
+    @Test
+    fun `lab inform at PeriodicInformInterval persists a series sample`() {
+        val lastAt = informAt.minusSeconds(30)
+        every { identity.resolveOnu("12345B4641531C0B6") } returns 42
+        every { scope.lab(42) } returns true
+        every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 42, informAt) } returns null
+        every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 42) } returns
+            WifiCountSample(id = 88, subscriptionId = 42, deviceId = "dev", informAt = lastAt, observedAt = lastAt)
+        every {
+            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(
+                "dev",
+                42,
+                com.dscorp.wispadmin.servicehealth.domain.UtcInstantText.format(observedAt),
+            )
+        } returns 99L
+        every { current.findById(42) } returns Optional.of(WifiCurrent(subscriptionId = 42))
+        every { current.save(any()) } answers { firstArg() }
+        service.persist(
+            CpeInformPayload(
+                sn = "12345B4641531C0B6",
+                deviceId = "dev",
+                informAt = informAt,
+                model = "V2804AX15T",
+                complete = true,
+                associatedDeviceCount = 2,
+                associated2g = 2,
+                associated5g = 0,
+                qualityStatus = "FRESH",
+                observedAt = observedAt,
+            )
+        )
+        verify(exactly = 1) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `fleet complete inform persists a series sample even inside PeriodicInformInterval`() {
+        val lastAt = informAt.minusSeconds(60)
+        every { identity.resolveOnu("ZTEG12345678") } returns 7
+        every { scope.lab(7) } returns false
+        every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 7, informAt) } returns null
+        every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 7) } returns
+            WifiCountSample(id = 3, subscriptionId = 7, deviceId = "dev", informAt = lastAt, observedAt = lastAt)
+        every { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 1
+        every {
+            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(
+                "dev",
+                7,
+                com.dscorp.wispadmin.servicehealth.domain.UtcInstantText.format(observedAt),
+            )
+        } returns 4L
+        every { current.findById(7) } returns Optional.of(WifiCurrent(subscriptionId = 7, countSampleId = 3))
+        every { current.save(any()) } answers { firstArg() }
+        service.persist(
+            CpeInformPayload(
+                sn = "ZTEG12345678",
+                deviceId = "dev",
+                informAt = informAt,
+                model = "F6600R",
+                complete = true,
+                associatedDeviceCount = 1,
+                associated2g = 1,
+                associated5g = 0,
+                qualityStatus = "FRESH",
+                observedAt = observedAt,
+            )
+        )
+        verify(exactly = 1) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 }
 

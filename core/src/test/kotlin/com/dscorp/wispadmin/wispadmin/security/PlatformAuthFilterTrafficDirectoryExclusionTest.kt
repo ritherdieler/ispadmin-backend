@@ -31,4 +31,20 @@ class PlatformAuthFilterTrafficDirectoryExclusionTest {
         assertEquals(request, chain.request)
         verify(exactly = 0) { sessionTokenService.verifyAccess(any()) }
     }
+
+    @Test
+    fun `excluye api traffic in-process del platform auth`() {
+        val request = MockHttpServletRequest("GET", "/ispadmin/api/traffic/v1/by-subscription/12/latest")
+        request.contextPath = "/ispadmin"
+        request.servletPath = "/api/traffic/v1/by-subscription/12/latest"
+        request.requestURI = "/ispadmin/api/traffic/v1/by-subscription/12/latest"
+        val response = MockHttpServletResponse()
+        val chain = MockFilterChain()
+
+        filter.doFilter(request, response, chain)
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+        assertEquals(request, chain.request)
+        verify(exactly = 0) { sessionTokenService.verifyAccess(any()) }
+    }
 }

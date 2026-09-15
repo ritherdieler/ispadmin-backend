@@ -148,4 +148,29 @@ class OpticalBatchPersistServiceTest {
         assertEquals(1, run.captured.readCount)
         assertEquals(0, run.captured.writtenCount)
     }
+
+    @Test
+    fun `out of collection scope does not persist sample`() {
+        every { scope.collects(2389) } returns false
+        val touched = service.persist(
+            OnuOpticalBatchPayload(
+                oltId = 2L,
+                slot = 1,
+                port = 6,
+                polledAt = polledAt,
+                onus = listOf(
+                    OnuOpticalBatchItem(
+                        sn = "VSOL0031C0B6",
+                        onuExternalId = "gigafiber-ma5608t_1_6_10",
+                        onuRxDbm = -19.46,
+                        onuTxDbm = 2.2,
+                        oltRxDbm = -24.56,
+                        polledAt = polledAt,
+                    ),
+                ),
+            ),
+        )
+        assertEquals(emptyList<Int>(), touched)
+        verify(exactly = 0) { optical.save(any()) }
+    }
 }

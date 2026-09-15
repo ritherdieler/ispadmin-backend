@@ -30,3 +30,5 @@ WAN ACS en GenieACS: `192.168.255.236` (mgmt, no plano de cliente).
 `source=QUEUE`, `pppoe=null` en 6/6. bps 0/0, `rxBytes`/`txBytes` 0. Eso es la cola `*8A2` vacía, no residual de otra persona (`*89A` tenía ~100 KB; Cintia ~106 GB).
 
 La sesión ZTE está idle (interfaz `<pppoe-gf5>` rx=0, tx~211 KB). No hay YouTube en este CPE. `#6` `gf6` sí tiene caudal PPPoE, otro cliente.
+
+Cierre real (sin PPPoE, cola con tráfico): [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md).

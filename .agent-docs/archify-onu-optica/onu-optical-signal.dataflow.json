@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Señal óptica ONU — 360",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 520]
+  },
+  "stages": [
+    { "label": "Campo" },
+    { "label": "Gateway" },
+    { "label": "Bus" },
+    { "label": "Core" },
+    { "label": "Backoffice" }
+  ],
+  "nodes": [
+    {
+      "id": "olt",
+      "type": "external",
+      "label": "OLT MA5608T",
+      "sublabel": "Rx / Tx / OLT Rx",
+      "tag": "SNMP",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "poll",
+      "type": "backend",
+      "label": "Poll SNMP",
+      "sublabel": "GETBULK por puerto",
+      "tag": "~5 min",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "stream",
+      "type": "messagebus",
+      "label": "onu.optical-batch",
+      "sublabel": "stg:gigafiber.events",
+      "tag": "XADD",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "samples",
+      "type": "database",
+      "label": "optical_sample",
+      "sublabel": "persist in-scope",
+      "tag": "90 días",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "chart",
+      "type": "frontend",
+      "label": "OpticalChart",
+      "sublabel": "GET …/series",
+      "tag": "360",
+      "stage": 4,
+      "row": 0
+    }
+  ],
+  "flows": [
+    {
+      "from": "olt",
+      "to": "poll",
+      "label": "SNMP GETBULK",
+      "classification": "tres potencias",
+      "variant": "emphasis"
+    },
+    {
+      "from": "poll",
+      "to": "stream",
+      "label": "XADD batch / puerto",
+      "classification": "async Redis",
+      "variant": "dashed"
+    },
+    {
+      "from": "stream",
+      "to": "samples",
+      "label": "snapshot-core",
+      "classification": "async Redis",
+      "variant": "dashed"
+    },
+    {
+      "from": "samples",
+      "to": "chart",
+      "label": "GET /service-health/series",
+      "classification": "HTTP JSON",
+      "variant": "emphasis",
+      "labelDy": 53
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Camino feliz",
+      "items": [
+        "El Gateway publica un onu.optical-batch por puerto GPON",
+        "El Core escribe olt_mgr_onu_optical_sample; el 360 solo lee HTTP"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Qué entra al batch",
+      "items": [
+        "Solo ONUs con Rx + Tx + OLT Rx; si falta una, no hay serie",
+        "Actualizar óptica por SSH confirma live; no escribe la serie"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Scope 360",
+      "items": [
+        "Staging y prestaging: solo subscription_acs.lab=1",
+        "Prod: no-lab; sin deviceId en ACS no se proyecta lab"
+      ]
+    }
+  ]
+}

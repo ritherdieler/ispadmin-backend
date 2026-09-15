@@ -25,8 +25,6 @@ class SubscriptionAcsSyncService(
         outcome: Tr069ProvisionOutcome,
         smartoltSerial: String?,
     ) {
-        // COMPLETE o MANUAL_REQUIRED solo si ya hay deviceId (match parcial / total).
-        if (outcome.status == Tr069ProvisionStatus.NA) return
         if (outcome.deviceId.isNullOrBlank()) return
 
         try {

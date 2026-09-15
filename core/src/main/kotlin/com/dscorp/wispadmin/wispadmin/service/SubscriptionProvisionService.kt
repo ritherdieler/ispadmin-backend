@@ -232,7 +232,14 @@ class SubscriptionProvisionService(
         val needsStatus = subscription.tr069ProvisionStatus == Tr069ProvisionStatus.PENDING ||
             subscription.tr069ProvisionStatus == Tr069ProvisionStatus.FAILED
         val needsDevice = subscription.tr069DeviceId.isNullOrBlank()
-        if (!needsStatus && !needsDevice) return subscription
+        if (!needsStatus && !needsDevice) {
+            persistAcsLink(
+                subscription,
+                subscription.tr069DeviceId,
+                subscription.tr069ProvisionStatus ?: Tr069ProvisionStatus.COMPLETE,
+            )
+            return subscription
+        }
         val beforeStatus = subscription.tr069ProvisionStatus
         val beforeDevice = subscription.tr069DeviceId
         pullTr069FromGateway(subscription)

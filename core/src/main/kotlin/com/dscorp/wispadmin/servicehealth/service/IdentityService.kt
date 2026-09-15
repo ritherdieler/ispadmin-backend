@@ -102,6 +102,7 @@ class IdentityService(
             sn?.let { if (resolveOnu(it) == id) put("ONU", it) }
             canonical?.let { if (resolveAcs(it) == id) put("ACS", it) }
             s.ip?.let { put("IP", it) }
+            s.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }?.let { put("PPPOE", it) }
             s.hostDeviceId?.let { put("ROUTER", it.toString()) }
             s.planId?.let { put("PLAN", it.toString()) }
             s.napBoxId?.let { put("NAP", it.toString()) }

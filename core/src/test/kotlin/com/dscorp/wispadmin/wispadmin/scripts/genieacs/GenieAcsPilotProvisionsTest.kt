@@ -112,7 +112,7 @@ class GenieAcsPilotProvisionsTest {
             read("scripts/genieacs/provisions/gf-inform-interval.js"),
         )) {
             assertTrue(source.contains("1800 + jitter"), "interval must be 1800 s plus jitter: $source")
-            assertTrue(source.contains("isLab ? 30"), "lab CPEs must Inform every 30 s: $source")
+            assertTrue(source.contains("isLab ? 60"), "lab CPEs must Inform every 60 s: $source")
             assertTrue(source.contains("12345B4641531C0B6"), "VSOL lab serial must be allowlisted: $source")
             assertTrue(source.contains("ZTEGDC47BFFD"), "ZTE lab serial must be allowlisted: $source")
             assertTrue(source.contains("serial === \"ZTEGDC47BFFD\""), "lab detection must compare ZTE serial: $source")

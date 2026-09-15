@@ -113,6 +113,32 @@ class Tr069PostInstallProvisionerAcsSyncTest {
         }
     }
 
+    @Test
+    fun `NA with known deviceId still upserts so lab membership is projected`() {
+        val outcome = Tr069ProvisionOutcome(
+            status = Tr069ProvisionStatus.NA,
+            deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+        )
+        every { provisioningService.provision(any()) } returns outcome
+
+        provisioner.apply(
+            SubscriptionDto(
+                id = 10,
+                installationType = InstallationType.FIBER,
+                oltProvisionStatus = OltProvisionStatus.COMPLETE,
+            ),
+            fiberRequest(),
+        )
+
+        verify(exactly = 1) {
+            acsSyncService.upsertFromProvision(
+                subscriptionId = 10,
+                outcome = outcome,
+                smartoltSerial = "VSOL0031C0B6",
+            )
+        }
+    }
+
     private fun fiberRequest() = SubscriptionRequest(
         firstName = "Juan",
         lastName = "Perez",
