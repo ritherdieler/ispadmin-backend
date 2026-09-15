@@ -28,6 +28,14 @@ class SubscriptionLiveReadingService(
             if (!subscription.accessMode.usesSimpleQueue()) {
                 return readPppoeInterface(subscriptionId, subscription, host)
             }
+            val assignedIps = listOfNotNull(
+                subscription.ip?.trim()?.takeIf { it.isNotEmpty() },
+                subscription.pppoeLastIp?.trim()?.takeIf { it.isNotEmpty() },
+            )
+            val livePppoe = findPppoeInterfaceByAssignedIp(host, assignedIps)
+            if (livePppoe != null) {
+                return fromPppoe(subscriptionId, host, livePppoe)
+            }
             val queues = mikrotikConnectionService.printOnDevice(host, "/queue/simple")
             val queue = pickQueue(queues, subscription)
             if (queue != null) {
@@ -131,6 +139,24 @@ class SubscriptionLiveReadingService(
     private fun matchesOwnedQueue(queue: Map<String, String>, subscription: Subscription): Boolean {
         val owner = SimpleQueueNameParser.owner(queue["name"]) ?: return false
         return owner.subscriptionId == subscription.id && owner.envTag == environment.normalizedTag()
+    }
+
+    private fun findPppoeInterfaceByAssignedIp(
+        host: NetworkDevice,
+        ips: List<String>,
+    ): Map<String, String>? {
+        if (ips.isEmpty()) return null
+        val sessions = try {
+            mikrotikConnectionService.printOnDevice(host, "/ppp/active")
+        } catch (_: Exception) {
+            return null
+        }
+        val username = sessions.firstOrNull { session ->
+            val address = RouterOsTrafficCounterParser.normalizeTarget(session["address"])
+            address != null && ips.any { it == address }
+        }?.get("name")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val interfaces = mikrotikConnectionService.printOnDevice(host, "/interface")
+        return interfaces.firstOrNull { matchesPppoeInterface(it, username) }
     }
 
     private fun matchesPppoeInterface(iface: Map<String, String>, username: String?): Boolean {

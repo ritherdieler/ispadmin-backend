@@ -57,10 +57,44 @@ class SubscriptionLiveReadingServiceTest {
     }
 
     @Test
+    fun `static ip leftover pppoe session at same ip reads pppoe-in not empty queue`() {
+        every { repository.findById(5) } returns Optional.of(
+            subscription(id = 5, ip = "10.64.0.11", pppoeUsername = null, accessMode = AccessMode.STATIC_IP)
+        )
+        every { mikrotik.printOnDevice(host, "/ppp/active") } returns listOf(
+            mapOf("name" to "gf5", "address" to "10.64.0.11"),
+        )
+        every { mikrotik.printOnDevice(host, "/interface") } returns listOf(
+            mapOf("name" to "<pppoe-gf5>", "type" to "pppoe-in", "rx-byte" to "14946412", "tx-byte" to "212694048"),
+        )
+        every {
+            mikrotik.callOnDevice(
+                host,
+                "/interface/monitor-traffic",
+                mapOf("interface" to "<pppoe-gf5>", "once" to ""),
+            )
+        } returns listOf(
+            mapOf("rx-bits-per-second" to "25096", "tx-bits-per-second" to "29848"),
+        )
+
+        val reading = service.read(5)
+
+        assertTrue(reading.available)
+        assertEquals("PPPOE", reading.source)
+        assertEquals("gf5", reading.pppoe)
+        assertEquals(29848L, reading.downloadBps)
+        assertEquals(25096L, reading.uploadBps)
+        assertEquals(212694048L, reading.rxBytes)
+        assertEquals(14946412L, reading.txBytes)
+        verify(exactly = 0) { mikrotik.printOnDevice(host, "/queue/simple") }
+    }
+
+    @Test
     fun `static ip queue matched by ip returns queue rates`() {
         every { repository.findById(7) } returns Optional.of(
             subscription(id = 7, ip = "192.168.250.16", pppoeUsername = null, accessMode = AccessMode.STATIC_IP)
         )
+        every { mikrotik.printOnDevice(host, "/ppp/active") } returns emptyList()
         every { mikrotik.printOnDevice(host, "/queue/simple") } returns listOf(
             mapOf(
                 "name" to "id:7, usuario:Static",
@@ -219,6 +253,7 @@ class SubscriptionLiveReadingServiceTest {
         every { repository.findById(7) } returns Optional.of(
             subscription(id = 7, ip = "192.168.250.99", pppoeUsername = null, accessMode = AccessMode.STATIC_IP)
         )
+        every { mikrotik.printOnDevice(host, "/ppp/active") } returns emptyList()
         every { mikrotik.printOnDevice(host, "/queue/simple") } returns emptyList()
         every { mikrotik.printOnDevice(host, "/interface") } returns listOf(
             mapOf("name" to "ether1", "type" to "ether", "rx-byte" to "9", "tx-byte" to "3"),
@@ -247,6 +282,7 @@ class SubscriptionLiveReadingServiceTest {
         every { repository.findById(8) } returns Optional.of(
             subscription(id = 8, ip = "10.64.0.20", pppoeUsername = "gf8", accessMode = AccessMode.PPPOE_FIXED)
         )
+        every { mikrotik.printOnDevice(host, "/ppp/active") } returns emptyList()
         every { mikrotik.printOnDevice(host, "/queue/simple") } returns listOf(
             mapOf(
                 "name" to "[stg] id:8, usuario:Fixed",
