@@ -66,6 +66,32 @@ class MikroTikConnectionServiceTest {
     }
 
     @Test
+    fun `callOnDevice delegates to MikrotikClient session call`() {
+        val session = mockk<MikrotikSession>()
+        every {
+            session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
+        } returns listOf(mapOf("tx-bits-per-second" to "8500000", "rx-bits-per-second" to "145000"))
+        every {
+            mikrotikClient.withSession(any(), any<(MikrotikSession) -> List<Map<String, String>>>())
+        } answers {
+            val block = arg<(MikrotikSession) -> List<Map<String, String>>>(1)
+            block(session)
+        }
+
+        val result = service.callOnDevice(
+            sampleDevice(),
+            "/interface/monitor-traffic",
+            mapOf("interface" to "<pppoe-gf6>", "once" to ""),
+        )
+
+        assertEquals(1, result.size)
+        assertEquals("8500000", result.first()["tx-bits-per-second"])
+        verify(exactly = 1) {
+            session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
+        }
+    }
+
+    @Test
     fun `setOnDevice delegates to session set`() {
         val session = mockk<MikrotikSession>(relaxed = true)
         every {

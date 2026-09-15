@@ -35,10 +35,22 @@ class ServiceHealthPropertiesTest {
     }
 
     @Test
-    fun `disabled never collects`() {
+    fun `prestaging and any tagged env collect only lab`() {
+        val p = props()
+        assertTrue(p.collects(99, lab = true, environmentTag = "lpstg"))
+        assertFalse(p.collects(6, lab = false, environmentTag = "lpstg"))
+        assertTrue(p.collects(99, lab = true, environmentTag = "dev"))
+        assertFalse(p.collects(6, lab = false, environmentTag = "dev"))
+    }
+
+    @Test
+    fun `disabled still collects lab in tagged env`() {
         val p = props().apply { enabled = false }
-        assertFalse(p.collects(99, lab = true, environmentTag = "stg"))
+        assertTrue(p.collects(99, lab = true, environmentTag = "stg"))
+        assertTrue(p.collects(99, lab = true, environmentTag = "lpstg"))
+        assertFalse(p.collects(6, lab = false, environmentTag = "stg"))
         assertFalse(p.collects(2328, lab = false, environmentTag = ""))
+        assertFalse(p.collects(99, lab = true, environmentTag = ""))
     }
 
     @Test
@@ -48,6 +60,14 @@ class ServiceHealthPropertiesTest {
         assertEquals(setOf(10, 20), p.collectionSubscriptionIds(listOf(77), "", listOf(10, 20, 77)))
         val restricted = props().apply { pilotSubscriptionIds = setOf(2310, 2328) }
         assertEquals(setOf(2310), restricted.collectionSubscriptionIds(listOf(2328), "", listOf(10, 20, 77)))
+    }
+
+    @Test
+    fun `disabled tagged env still returns lab collection ids`() {
+        val p = props().apply { enabled = false }
+        assertEquals(setOf(77), p.collectionSubscriptionIds(listOf(77), "stg", listOf(10, 20, 77)))
+        assertEquals(setOf(5, 6), p.collectionSubscriptionIds(listOf(5, 6), "lpstg", listOf(5, 6, 7)))
+        assertEquals(emptySet<Int>(), p.collectionSubscriptionIds(listOf(77), "", listOf(10, 20, 77)))
     }
 
     @Test

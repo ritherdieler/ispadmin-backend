@@ -44,20 +44,19 @@ class ServiceHealthProperties {
     fun wifiSampleFreshSeconds() = acsWifiSampleTargetSeconds.coerceAtLeast(1) * 2
     var crConcurrency = 3
     fun collects(id: Int?, lab: Boolean = false, environmentTag: String = ""): Boolean {
-        if (!enabled || id == null) return false
-        return when {
-            environmentTag.isNotBlank() -> lab
-            lab -> false
-            pilotSubscriptionIds.isEmpty() -> true
-            else -> id in pilotSubscriptionIds
-        }
+        if (id == null) return false
+        if (environmentTag.isNotBlank()) return lab
+        if (!enabled) return false
+        if (lab) return false
+        return if (pilotSubscriptionIds.isEmpty()) true else id in pilotSubscriptionIds
     }
     fun collectionSubscriptionIds(labSubscriptionIds: Collection<Int>, environmentTag: String, allSubscriptionIds: Collection<Int>): Set<Int> {
+        if (environmentTag.isNotBlank()) return labSubscriptionIds.toSet()
         if (!enabled) return emptySet()
-        return when {
-            environmentTag.isNotBlank() -> labSubscriptionIds.toSet()
-            pilotSubscriptionIds.isEmpty() -> allSubscriptionIds.toSet() - labSubscriptionIds.toSet()
-            else -> pilotSubscriptionIds - labSubscriptionIds.toSet()
+        return if (pilotSubscriptionIds.isEmpty()) {
+            allSubscriptionIds.toSet() - labSubscriptionIds.toSet()
+        } else {
+            pilotSubscriptionIds - labSubscriptionIds.toSet()
         }
     }
 }

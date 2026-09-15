@@ -78,6 +78,19 @@ class MikroTikConnectionService(
                     "tx-packet" to "510000",
                     "mtu" to "1500",
                     "mac-address" to "AA:BB:CC:DD:EE:02"
+                ),
+                mapOf(
+                    ".id" to "*3",
+                    "name" to "<pppoe-gf6>",
+                    "type" to "pppoe-in",
+                    "running" to "true",
+                    "disabled" to "false",
+                    "rx-byte" to "2147483648",
+                    "tx-byte" to "152043520",
+                    "rx-packet" to "8000",
+                    "tx-packet" to "2100",
+                    "mtu" to "1480",
+                    "mac-address" to "AA:BB:CC:DD:EE:03"
                 )
             )
             path == "/ip/firewall/address-list" && query["list"] == "deudores" -> listOf(
@@ -109,6 +122,19 @@ class MikroTikConnectionService(
         }
     }
 
+    private fun getMockCall(path: String, args: Map<String, String> = emptyMap()): List<Map<String, String>> {
+        return when (path) {
+            "/interface/monitor-traffic" -> listOf(
+                mapOf(
+                    "name" to (args["interface"] ?: "<pppoe-gf6>"),
+                    "rx-bits-per-second" to "145000",
+                    "tx-bits-per-second" to "1800000"
+                )
+            )
+            else -> emptyList()
+        }
+    }
+
     fun printOnDevice(
         device: NetworkDevice,
         path: String,
@@ -127,6 +153,28 @@ class MikroTikConnectionService(
             }
         } catch (e: Exception) {
             logger.error("❌ [DISPOSITIVO-${device.id}] Error en print: ${e.message}")
+            throw e
+        }
+    }
+
+    fun callOnDevice(
+        device: NetworkDevice,
+        path: String,
+        args: Map<String, String> = emptyMap()
+    ): List<Map<String, String>> {
+        logger.info("🔧 [DISPOSITIVO-${device.id}] REST call $path args=$args")
+        if (isMockModeEnabled()) {
+            return getMockCall(path, args)
+        }
+        return try {
+            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+            mikrotikClient.withSession(deviceRef) { session ->
+                session.call(path, args)
+            }.also { result ->
+                logger.info("✅ [DISPOSITIVO-${device.id}] call OK - ${result.size} resultados")
+            }
+        } catch (e: Exception) {
+            logger.error("❌ [DISPOSITIVO-${device.id}] Error en call: ${e.message}")
             throw e
         }
     }

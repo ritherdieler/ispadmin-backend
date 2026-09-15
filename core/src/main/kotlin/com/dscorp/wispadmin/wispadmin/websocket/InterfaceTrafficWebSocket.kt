@@ -146,20 +146,7 @@ class InterfaceTrafficWebSocket(
                 onData = { interfaceData ->
                     // Verificar si aún hay sesiones activas para este dispositivo
                     if (activeSessions[device.id]?.isNotEmpty() == true) {
-                        val traffic = interfaceData
-                            .filter { it["type"] != "pppoe-in" }
-                            .map { interfaceInfo ->
-                                mapOf(
-                                    "name" to (interfaceInfo["name"] ?: ""),
-                                    "type" to (interfaceInfo["type"] ?: ""),
-                                    "rxBytes" to (interfaceInfo["rx-byte"] ?: "0"),
-                                    "txBytes" to (interfaceInfo["tx-byte"] ?: "0"),
-                                    "rxPackets" to (interfaceInfo["rx-packet"] ?: "0"),
-                                    "txPackets" to (interfaceInfo["tx-packet"] ?: "0"),
-                                    "running" to (interfaceInfo["running"] ?: ""),
-                                    "disabled" to (interfaceInfo["disabled"] ?: "")
-                                )
-                            }
+                        val traffic = interfaceData.map { InterfaceTrafficMapper.toWsRow(it) }
                         
                         // --- INICIO BLOQUE LOG LAN ---
                         val lan = interfaceData.find { (it["name"] ?: "").toString().equals("lan", ignoreCase = true) }
