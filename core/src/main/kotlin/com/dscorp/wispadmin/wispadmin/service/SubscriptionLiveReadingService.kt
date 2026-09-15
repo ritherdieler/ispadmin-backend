@@ -14,15 +14,7 @@ class SubscriptionLiveReadingService(
     private val subscriptionRepository: SubscriptionRepository,
     private val mikrotikConnectionService: MikroTikConnectionService,
 ) {
-    private var clock: Clock = Clock.systemUTC()
-
-    internal constructor(
-        subscriptionRepository: SubscriptionRepository,
-        mikrotikConnectionService: MikroTikConnectionService,
-        clock: Clock,
-    ) : this(subscriptionRepository, mikrotikConnectionService) {
-        this.clock = clock
-    }
+    internal var clock: Clock = Clock.systemUTC()
 
     fun read(subscriptionId: Int): SubscriptionLiveReadingDto {
         val subscription = subscriptionRepository.findById(subscriptionId).orElse(null)

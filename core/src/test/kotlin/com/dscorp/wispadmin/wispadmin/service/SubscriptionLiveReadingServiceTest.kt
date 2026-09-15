@@ -22,7 +22,7 @@ class SubscriptionLiveReadingServiceTest {
     private val repository = mockk<SubscriptionRepository>()
     private val mikrotik = mockk<MikroTikConnectionService>()
     private val clock = Clock.fixed(Instant.parse("2026-09-15T17:40:00Z"), ZoneOffset.UTC)
-    private val service = SubscriptionLiveReadingService(repository, mikrotik, clock)
+    private val service = SubscriptionLiveReadingService(repository, mikrotik).also { it.clock = clock }
     private val host = NetworkDevice(
         id = 8,
         name = "MK2",
