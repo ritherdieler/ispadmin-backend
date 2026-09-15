@@ -14,4 +14,6 @@ Start: `{ "subscriptionId": 5 }` solamente. Topic `/topic/subscription-traffic/5
 | Ticks | 3 en ~4 s, `queueFound=true` |
 | Mbps | 0/0 (lab idle; la cola existe) |
 
+`#6` PPPoE (`gf6`): 2 ticks, `queueFound=true`, ~56 Mbps down.
+
 Causa previa: `StompTrafficStreamTransport` loopback al mismo `/ws` sin `SubscriptionTrafficWebSocket`. Fix: `SubscriptionTrafficLiveMonitor` in-process.
