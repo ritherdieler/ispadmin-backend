@@ -51,7 +51,7 @@ class CoreTrafficStreamRelay(
             requestPppoe != null && requestIp == null -> command["pppoeUsername"] = requestPppoe
             requestIp != null -> {
                 command["ip"] = requestIp
-                command["pppoeUsername"] = requestPppoe
+                requestPppoe?.let { command["pppoeUsername"] = it }
             }
             else -> {
                 entry?.ip?.trim()?.takeIf { it.isNotEmpty() }?.let { command["ip"] = it }
