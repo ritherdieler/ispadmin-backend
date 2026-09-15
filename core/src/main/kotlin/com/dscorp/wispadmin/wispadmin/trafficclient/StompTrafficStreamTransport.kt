@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.trafficclient
 
+import com.dscorp.wispadmin.transport.LiveTrafficStreamPort
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.messaging.converter.MappingJackson2MessageConverter
 import org.springframework.messaging.simp.stomp.*
@@ -15,7 +17,8 @@ import javax.annotation.PreDestroy
 
 @Component
 @ConditionalOnProperty(prefix="traffic",name=["client-enabled"],havingValue="true")
-class StompTrafficStreamTransport(private val properties: TrafficClientProperties) : TrafficStreamTransport {
+@ConditionalOnMissingBean(LiveTrafficStreamPort::class)
+class StompTrafficStreamTransport(private val properties: TrafficClientProperties) : LiveTrafficStreamPort {
     private val log=LoggerFactory.getLogger(javaClass)
     private val scheduler=ThreadPoolTaskScheduler().apply { poolSize=1;setThreadNamePrefix("traffic-heartbeat-");initialize() }
     private val client=WebSocketStompClient(StandardWebSocketClient()).apply {

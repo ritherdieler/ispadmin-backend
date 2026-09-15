@@ -40,6 +40,7 @@
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
 | **Directorio tráfico por accessMode (PPPoE vs IP)** | [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md) |
 | **360 identity PPPOE (consumo sin IP)** | [service-health-identity-pppoe-2026-09-15.md](./service-health-identity-pppoe-2026-09-15.md) |
+| **Live socket in-process (WAR único)** | [vista-360-live-socket-inprocess-2026-09-15.md](./vista-360-live-socket-inprocess-2026-09-15.md) |
 | **Deploy staging live-socket STATIC_IP 2026-09-15** | [deploy-staging-live-socket-static-ip-2026-09-15.md](./deploy-staging-live-socket-static-ip-2026-09-15.md) |
 | **Deploy staging 360 PPPoE + STATIC_IP 2026-09-15** | [deploy-staging-360-pppoe-static-2026-09-15.md](./deploy-staging-360-pppoe-static-2026-09-15.md) |
 | **Deploy staging tráfico accessMode 2026-09-15** | [deploy-staging-traffic-access-mode-2026-09-15.md](./deploy-staging-traffic-access-mode-2026-09-15.md) |
