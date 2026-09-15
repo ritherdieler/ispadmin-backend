@@ -2,6 +2,8 @@
 
 `GET /subscription/{id}/live-readings` en Core. WS y GET de interfaces incluyen `pppoe-in` + `rxBytes`/`txBytes`.
 
+Staging y prod comparten MK2. La cola `id:6` es Cintia Escobal (prod, `192.168.30.23`). El lab #6 es `<pppoe-gf6>` (`*89C`). El matcher prioriza el nombre PPPoE y solo acepta `id:{n}` si el tag de ambiente coincide (`stg` vs prod vacío).
+
 ## Contrato
 
 Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o `/ispadmin/subscription/{id}/live-readings` (local/prod). Auth igual que el resto de `/subscription/**`. Siempre 200: sin host/IP/sesión → `available: false`, `source: NONE`.

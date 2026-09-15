@@ -12,6 +12,6 @@ El primer intento (`5236043`) dejó el context en 404: constructor secundario de
 
 `GET https://api.gigafiberperu.cloud/ispadmin-staging/subscription/6/live-readings` con JWT.
 
-Sin token: 401. Con ADMIN: 200, `available: true`, `source: QUEUE`, `pppoe: null`, `rate`/`bytes` de `/queue/simple`.
+Sin token: 401. Con ADMIN: 200. El primer matcher leía `id:6` de prod (Cintia, ~kbps). Tras el fix debe leer `<pppoe-gf6>` `*89C`.
 
 Backoffice: `VITE_API_BASE_URL=https://api.gigafiberperu.cloud/ispadmin-staging` ([PR #2](https://github.com/ritherdieler/ispadmin-backoffice/pull/2) poll 2s). Vista 360 de #6 debe dejar de mostrar “aún no hay lecturas en vivo”.
