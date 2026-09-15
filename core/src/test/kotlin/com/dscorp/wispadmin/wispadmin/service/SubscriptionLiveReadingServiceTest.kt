@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
+import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
@@ -22,7 +23,8 @@ class SubscriptionLiveReadingServiceTest {
     private val repository = mockk<SubscriptionRepository>()
     private val mikrotik = mockk<MikroTikConnectionService>()
     private val clock = Clock.fixed(Instant.parse("2026-09-15T17:40:00Z"), ZoneOffset.UTC)
-    private val service = SubscriptionLiveReadingService(repository, mikrotik).also { it.clock = clock }
+    private val environment = GigafiberEnvironmentProperties()
+    private val service = SubscriptionLiveReadingService(repository, mikrotik, environment).also { it.clock = clock }
     private val host = NetworkDevice(
         id = 8,
         name = "MK2",
@@ -118,6 +120,57 @@ class SubscriptionLiveReadingServiceTest {
         assertEquals(1000L, reading.uploadBps)
         assertEquals(20L, reading.rxBytes)
         assertEquals(10L, reading.txBytes)
+    }
+
+    @Test
+    fun `prefers dynamic pppoe queue over prod id queue with same numeric id`() {
+        every { repository.findById(6) } returns Optional.of(subscription())
+        every { mikrotik.printOnDevice(host, "/queue/simple") } returns listOf(
+            mapOf(
+                "name" to "id:6, usuario:CINTIA ESCOBAL",
+                "target" to "192.168.30.23/32",
+                "rate" to "840/560",
+                "bytes" to "6975054651/106361469423",
+            ),
+            mapOf(
+                "name" to "<pppoe-gf6>",
+                "target" to "<pppoe-gf6>",
+                "rate" to "157592/268136",
+                "bytes" to "847948720/3127948252",
+            ),
+        )
+
+        val reading = service.read(6)
+
+        assertEquals("QUEUE", reading.source)
+        assertEquals(268136L, reading.downloadBps)
+        assertEquals(157592L, reading.uploadBps)
+        assertEquals(3_127_948_252L, reading.rxBytes)
+        assertEquals(847_948_720L, reading.txBytes)
+    }
+
+    @Test
+    fun `staging tag ignores untagged prod id queue and falls back to pppoe-in`() {
+        environment.tag = "stg"
+        every { repository.findById(6) } returns Optional.of(subscription())
+        every { mikrotik.printOnDevice(host, "/queue/simple") } returns listOf(
+            mapOf(
+                "name" to "id:6, usuario:CINTIA ESCOBAL",
+                "target" to "192.168.30.23/32",
+                "rate" to "840/560",
+                "bytes" to "6975054651/106361469423",
+            ),
+        )
+        every { mikrotik.printOnDevice(host, "/interface") } returns listOf(
+            mapOf("name" to "<pppoe-gf6>", "type" to "pppoe-in", "rx-byte" to "851540868", "tx-byte" to "3134442266"),
+        )
+
+        val reading = service.read(6)
+
+        assertEquals("PPPOE", reading.source)
+        assertEquals("gf6", reading.pppoe)
+        assertEquals(851_540_868L, reading.rxBytes)
+        assertEquals(3_134_442_266L, reading.txBytes)
     }
 
     @Test

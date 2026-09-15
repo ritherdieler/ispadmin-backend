@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.routeros.RouterOsTrafficCounterParser
+import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionLiveReadingDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
@@ -13,6 +14,7 @@ import java.time.Instant
 class SubscriptionLiveReadingService(
     private val subscriptionRepository: SubscriptionRepository,
     private val mikrotikConnectionService: MikroTikConnectionService,
+    private val environment: GigafiberEnvironmentProperties,
 ) {
     internal var clock: Clock = Clock.systemUTC()
 
@@ -22,7 +24,7 @@ class SubscriptionLiveReadingService(
         val host = subscription.hostDevice ?: return unavailable(subscriptionId)
         return try {
             val queues = mikrotikConnectionService.printOnDevice(host, "/queue/simple")
-            val queue = queues.firstOrNull { matchesQueue(it, subscription) }
+            val queue = pickQueue(queues, subscription)
             if (queue != null) {
                 return fromQueue(subscriptionId, queue)
             }
@@ -81,17 +83,29 @@ class SubscriptionLiveReadingService(
         )
     }
 
-    private fun matchesQueue(queue: Map<String, String>, subscription: Subscription): Boolean {
-        val name = queue["name"]
-        val target = RouterOsTrafficCounterParser.normalizeTarget(queue["target"])
+    private fun pickQueue(
+        queues: List<Map<String, String>>,
+        subscription: Subscription,
+    ): Map<String, String>? {
+        val username = subscription.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        if (username != null) {
+            queues.firstOrNull { extractPppoeUsername(it["name"]).equals(username, ignoreCase = true) }
+                ?.let { return it }
+        }
         val ips = listOfNotNull(
             subscription.ip?.trim()?.takeIf { it.isNotEmpty() },
             subscription.pppoeLastIp?.trim()?.takeIf { it.isNotEmpty() },
         )
-        if (target != null && ips.any { it == target }) return true
-        if (SimpleQueueNameParser.subscriptionId(name) == subscription.id) return true
-        val username = subscription.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() } ?: return false
-        return extractPppoeUsername(name).equals(username, ignoreCase = true)
+        queues.firstOrNull { queue ->
+            val target = RouterOsTrafficCounterParser.normalizeTarget(queue["target"])
+            target != null && ips.any { it == target }
+        }?.let { return it }
+        return queues.firstOrNull { matchesOwnedQueue(it, subscription) }
+    }
+
+    private fun matchesOwnedQueue(queue: Map<String, String>, subscription: Subscription): Boolean {
+        val owner = SimpleQueueNameParser.owner(queue["name"]) ?: return false
+        return owner.subscriptionId == subscription.id && owner.envTag == environment.normalizedTag()
     }
 
     private fun matchesPppoeInterface(iface: Map<String, String>, username: String?): Boolean {
