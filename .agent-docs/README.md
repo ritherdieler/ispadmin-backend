@@ -38,6 +38,7 @@
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
 | **Vista 360 lecturas en vivo (cola + pppoe-in)** | [vista-360-live-readings-2026-09-15.md](./vista-360-live-readings-2026-09-15.md) |
+| **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
 | **Deploy staging lecturas en vivo 2026-09-15** | [deploy-staging-live-readings-2026-09-15.md](./deploy-staging-live-readings-2026-09-15.md) |
 | **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
 | **OLT Gateway WAR (staging primero)** | [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) |

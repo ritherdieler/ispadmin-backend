@@ -28,7 +28,7 @@ class HealthEvaluationService(
     @Scheduled(fixedDelayString="\${service.health.evaluation-interval-ms:60000}",initialDelayString="\${service.health.evaluation-initial-delay-ms:60000}")
     fun evaluate() {
         val collectIds=scope.collectionSubscriptionIds()
-        if(!properties.enabled || collectIds.isEmpty()) return
+        if(collectIds.isEmpty()) return
         tx.executeWithoutResult {
             val cursor=cursors.lock("traffic-consumer") ?: return@executeWithoutResult
             val now=Instant.now()

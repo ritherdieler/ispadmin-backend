@@ -87,4 +87,11 @@ class DiagnosisEngineTest {
         assertFalse(staging.evaluate(customer).pilotEnabled)
         assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
     }
+    @Test fun `staging lab stays pilot when health enabled is off`() {
+        val props=ServiceHealthProperties().apply { enabled=false; correlationEnabled=true }
+        val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
+        val customer=input(listOf(source("run_state","online")))
+        assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
+        assertFalse(staging.evaluate(customer).pilotEnabled)
+    }
 }

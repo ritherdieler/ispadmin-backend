@@ -47,4 +47,27 @@ class ServiceHealthScopeTest {
         assertFalse(prod.collects(99))
         assertEquals(setOf(2310, 2328), prod.collectionSubscriptionIds())
     }
+
+    @Test
+    fun `prestaging collects lab row and skips the rest`() {
+        every { directory.allIds() } returns listOf(2310, 2328, 99)
+        val prestaging = scope("lpstg")
+        assertTrue(prestaging.collects(99))
+        assertFalse(prestaging.collects(2310))
+        assertEquals(setOf(99), prestaging.collectionSubscriptionIds())
+    }
+
+    @Test
+    fun `tagged env keeps lab collection when health enabled is off`() {
+        properties.enabled = false
+        every { directory.allIds() } returns listOf(2310, 2328, 99)
+        val staging = scope("stg")
+        assertTrue(staging.collects(99))
+        assertFalse(staging.collects(2328))
+        assertEquals(setOf(99), staging.collectionSubscriptionIds())
+        val prod = scope("")
+        assertFalse(prod.collects(99))
+        assertFalse(prod.collects(2328))
+        assertEquals(emptySet<Int>(), prod.collectionSubscriptionIds())
+    }
 }
