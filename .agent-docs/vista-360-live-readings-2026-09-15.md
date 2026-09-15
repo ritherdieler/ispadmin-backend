@@ -16,6 +16,8 @@ Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o
 
 Validar #6 (`pppoe:gf6`): cola `<pppoe-gf6>` o `id:6`; si no hay cola, interfaz `<pppoe-gf6>`.
 
+`SubscriptionLiveReadingService` tiene un solo constructor Spring (`repository` + `MikroTikConnectionService`). Un constructor secundario de `Clock` rompe el arranque en Tomcat (`No default constructor`).
+
 ## Tests
 
 13 JUnit/MockK en `:core`: `SubscriptionLiveReadingServiceTest`, `SubscriptionLiveReadingControllerTest`, `NetworkDeviceConnectionServiceTest`, `InterfaceTrafficMapperTest`.
