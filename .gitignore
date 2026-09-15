@@ -75,3 +75,6 @@ build/
 /_propuesta_extract.txt
 /keystore.p12
 *.class
+
+# Local Redis snapshot
+dump.rdb
