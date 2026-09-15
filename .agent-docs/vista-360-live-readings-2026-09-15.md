@@ -2,24 +2,22 @@
 
 `GET /subscription/{id}/live-readings` en Core. WS y GET de interfaces incluyen `pppoe-in` + `rxBytes`/`txBytes`.
 
-Staging y prod comparten MK2. La cola `id:6` es Cintia Escobal (prod, `192.168.30.23`). El lab #6 es `<pppoe-gf6>` (`*89C`). El matcher prioriza el nombre PPPoE y solo acepta `id:{n}` si el tag de ambiente coincide (`stg` vs prod vacío).
+Staging y prod comparten MK2. La cola `id:6` (`*9`, Cintia Escobal, `192.168.30.23`) no es el lab. El lab #6 es `PPPOE_DYNAMIC` `gf6`: interfaz `pppoe-in` `<pppoe-gf6>` (y cola dinámica `*89C` solo como objeto residual).
 
 ## Contrato
 
-Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o `/ispadmin/subscription/{id}/live-readings` (local/prod). Auth igual que el resto de `/subscription/**`. Siempre 200: sin host/IP/sesión → `available: false`, `source: NONE`.
+Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o `/ispadmin/subscription/{id}/live-readings` (local/prod). Auth igual que el resto de `/subscription/**`. Siempre 200: sin host/sesión → `available: false`, `source: NONE`.
 
-| source | Cómo | bps | bytes | pppoe |
-|--------|------|-----|-------|-------|
-| `QUEUE` | `/queue/simple` por IP, `pppoeLastIp`, nombre `<pppoe-{user}>` o `id:{subscriptionId}` | `rate` upload/download | `bytes` upload/download | `null` |
-| `PPPOE` | fallback `/interface` type `pppoe-in` | 0 | `rx-byte` / `tx-byte` | user extraído |
-| `NONE` | nada de lo anterior | 0 | 0 | `null` |
+| source | Cuándo | Cómo | bps | bytes | pppoe |
+|--------|--------|------|-----|-------|-------|
+| `PPPOE` | `PPPOE_DYNAMIC` | `/interface` type `pppoe-in` + `/interface/monitor-traffic once` | `tx-bits-per-second` = download, `rx-bits-per-second` = upload | `tx-byte` = rxBytes (hacia el cliente), `rx-byte` = txBytes | user extraído |
+| `QUEUE` | `STATIC_IP` / `PPPOE_FIXED` | `/queue/simple` por IP, `pppoeLastIp`, nombre `<pppoe-{user}>` o `id:{subscriptionId}` con tag de ambiente | `rate` upload/download | `bytes` upload/download | `null` |
+| `NONE` | nada de lo anterior | — | 0 | 0 | `null` |
 
-`rate`/`bytes` MikroTik = `upload/download`. El DTO mapea download = 2.º, upload = 1.º.
+`PPPOE_DYNAMIC` no lee `rate` de simple queue. En `pppoe-in` el RX del router es upload del cliente y el TX es download.
 
-Validar #6 (`pppoe:gf6`): cola `<pppoe-gf6>` o `id:6`; si no hay cola, interfaz `<pppoe-gf6>`.
-
-`SubscriptionLiveReadingService` tiene un solo constructor Spring (`repository` + `MikroTikConnectionService`). Un constructor secundario de `Clock` rompe el arranque en Tomcat (`No default constructor`).
+`SubscriptionLiveReadingService` tiene un solo constructor Spring (`repository` + `MikroTikConnectionService` + `GigafiberEnvironmentProperties`). `Clock` es `internal var`. `MikroTikConnectionService.callOnDevice` delega a `MikrotikSession.call`.
 
 ## Tests
 
-13 JUnit/MockK en `:core`: `SubscriptionLiveReadingServiceTest`, `SubscriptionLiveReadingControllerTest`, `NetworkDeviceConnectionServiceTest`, `InterfaceTrafficMapperTest`.
+JUnit/MockK en `:core`: `SubscriptionLiveReadingServiceTest`, `SubscriptionLiveReadingControllerTest`, `MikroTikConnectionServiceTest`, `NetworkDeviceConnectionServiceTest`, `InterfaceTrafficMapperTest`.

@@ -2,7 +2,9 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.routeros.RouterOsTrafficCounterParser
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
+import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.usesSimpleQueue
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionLiveReadingDto
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.SimpleQueueNameParser
@@ -23,20 +25,29 @@ class SubscriptionLiveReadingService(
             ?: return unavailable(subscriptionId)
         val host = subscription.hostDevice ?: return unavailable(subscriptionId)
         return try {
+            if (!subscription.accessMode.usesSimpleQueue()) {
+                return readPppoeInterface(subscriptionId, subscription, host)
+            }
             val queues = mikrotikConnectionService.printOnDevice(host, "/queue/simple")
             val queue = pickQueue(queues, subscription)
             if (queue != null) {
                 return fromQueue(subscriptionId, queue)
             }
-            val interfaces = mikrotikConnectionService.printOnDevice(host, "/interface")
-            val pppoe = interfaces.firstOrNull { matchesPppoeInterface(it, subscription.pppoeUsername) }
-            if (pppoe != null) {
-                return fromPppoe(subscriptionId, pppoe)
-            }
             unavailable(subscriptionId)
         } catch (_: Exception) {
             unavailable(subscriptionId)
         }
+    }
+
+    private fun readPppoeInterface(
+        subscriptionId: Int,
+        subscription: Subscription,
+        host: NetworkDevice,
+    ): SubscriptionLiveReadingDto {
+        val interfaces = mikrotikConnectionService.printOnDevice(host, "/interface")
+        val pppoe = interfaces.firstOrNull { matchesPppoeInterface(it, subscription.pppoeUsername) }
+            ?: return unavailable(subscriptionId)
+        return fromPppoe(subscriptionId, host, pppoe)
     }
 
     private fun fromQueue(subscriptionId: Int, queue: Map<String, String>): SubscriptionLiveReadingDto {
@@ -55,16 +66,30 @@ class SubscriptionLiveReadingService(
         )
     }
 
-    private fun fromPppoe(subscriptionId: Int, iface: Map<String, String>): SubscriptionLiveReadingDto {
+    private fun fromPppoe(
+        subscriptionId: Int,
+        host: NetworkDevice,
+        iface: Map<String, String>,
+    ): SubscriptionLiveReadingDto {
+        val name = iface["name"].orEmpty()
+        val monitor = try {
+            mikrotikConnectionService.callOnDevice(
+                host,
+                MONITOR_TRAFFIC_PATH,
+                mapOf("interface" to name, "once" to ""),
+            ).firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
         return SubscriptionLiveReadingDto(
             subscriptionId = subscriptionId,
             available = true,
-            pppoe = extractPppoeUsername(iface["name"]),
+            pppoe = extractPppoeUsername(name),
             timestamp = Instant.now(clock).toString(),
-            downloadBps = 0,
-            uploadBps = 0,
-            rxBytes = iface["rx-byte"]?.toLongOrNull() ?: 0L,
-            txBytes = iface["tx-byte"]?.toLongOrNull() ?: 0L,
+            downloadBps = parseBits(monitor?.get("tx-bits-per-second")),
+            uploadBps = parseBits(monitor?.get("rx-bits-per-second")),
+            rxBytes = iface["tx-byte"]?.toLongOrNull() ?: 0L,
+            txBytes = iface["rx-byte"]?.toLongOrNull() ?: 0L,
             source = SOURCE_PPPOE,
         )
     }
@@ -119,12 +144,18 @@ class SubscriptionLiveReadingService(
         const val SOURCE_PPPOE = "PPPOE"
         const val SOURCE_NONE = "NONE"
         private const val TYPE_PPPOE_IN = "pppoe-in"
+        private const val MONITOR_TRAFFIC_PATH = "/interface/monitor-traffic"
         private val PPPOE_NAME = Regex("^<?pppoe-([^>]+)>?$", RegexOption.IGNORE_CASE)
 
         fun extractPppoeUsername(name: String?): String? {
             val trimmed = name?.trim().orEmpty()
             if (trimmed.isEmpty()) return null
             return PPPOE_NAME.find(trimmed)?.groupValues?.get(1)?.takeIf { it.isNotEmpty() }
+        }
+
+        private fun parseBits(value: String?): Long {
+            if (value.isNullOrBlank()) return 0L
+            return value.toLongOrNull() ?: value.toDoubleOrNull()?.toLong() ?: 0L
         }
     }
 }
