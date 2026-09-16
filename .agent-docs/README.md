@@ -55,6 +55,7 @@
 | **Gate de recolección 360 eliminado (prod + staging)** | [remove-collection-gate-2026-09-15.md](./remove-collection-gate-2026-09-15.md) |
 | **Banner recolección desactivada post-e2e (histórico)** | [staging-e2e-collection-banner-false-2026-09-15.md](./staging-e2e-collection-banner-false-2026-09-15.md) |
 | **Deploy staging decorate 360 recolección on** | [deploy-staging-360-collect-banner-2026-09-15.md](./deploy-staging-360-collect-banner-2026-09-15.md) |
+| **Deploy staging WAR acumulado + logs e2e 2026-09-16** | [deploy-staging-e2e-console-logs-2026-09-16.md](./deploy-staging-e2e-console-logs-2026-09-16.md) |
 | **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
 | **Staging VSOL `#11` FIBER STATIC_IP 2026-09-15** | [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md) |
 | **WAN2 se reemplaza en alta STATIC/PPPoE 2026-09-16** | [wan-internet-replace-static-2026-09-16.md](./wan-internet-replace-static-2026-09-16.md) |
