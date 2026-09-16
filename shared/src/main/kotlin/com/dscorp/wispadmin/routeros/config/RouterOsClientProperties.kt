@@ -5,12 +5,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "router.os.client")
 class RouterOsClientProperties {
 
+    @Deprecated("Classic RouterOS API is unused; REST is the only transport")
     var adapter: String = "rest"
 
+    @Deprecated("Classic RouterOS API is unused; REST is the only transport")
+    @Suppress("DEPRECATION")
     val classic: ClassicProperties = ClassicProperties()
 
     val rest: RestProperties = RestProperties()
 
+    @Deprecated("Classic RouterOS API is unused; REST is the only transport")
     class ClassicProperties {
         var port: Int = 8728
         var timeoutMs: Long = 10000

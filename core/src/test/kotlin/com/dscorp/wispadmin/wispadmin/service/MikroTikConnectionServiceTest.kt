@@ -18,7 +18,7 @@ class MikroTikConnectionServiceTest {
 
     private val mikrotikClient = mockk<MikrotikClient>(relaxed = true)
     private val properties = RouterOsClientProperties().apply {
-        classic.port = 8728
+        rest.port = 443
     }
 
     private lateinit var service: MikroTikConnectionService
@@ -44,7 +44,7 @@ class MikroTikConnectionServiceTest {
 
         assertEquals(listOf(mapOf("name" to "MK1")), result)
         assertEquals("1", deviceRefSlot.captured.id)
-        assertEquals(8728, deviceRefSlot.captured.port)
+        assertEquals(443, deviceRefSlot.captured.port)
         verify(exactly = 1) { session.print("/system/identity", emptyMap()) }
     }
 

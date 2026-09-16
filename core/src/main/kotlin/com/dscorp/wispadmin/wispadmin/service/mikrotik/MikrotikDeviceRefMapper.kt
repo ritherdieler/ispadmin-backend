@@ -9,7 +9,7 @@ object MikrotikDeviceRefMapper {
 
     fun toDeviceRef(
         device: NetworkDeviceConnection,
-        classicPort: Int,
+        port: Int,
         applyDevConnectionOverride: Boolean = true
     ): MikrotikDeviceRef {
         val connectionData = if (applyDevConnectionOverride) {
@@ -24,7 +24,7 @@ object MikrotikDeviceRefMapper {
         return MikrotikDeviceRef(
             id = deviceId,
             host = requireNotNull(connectionData.ipAddress) { "MikroTik host is required" },
-            port = classicPort,
+            port = port,
             username = requireNotNull(connectionData.username) { "MikroTik username is required" },
             password = requireNotNull(connectionData.password) { "MikroTik password is required" }
         )

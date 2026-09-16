@@ -40,8 +40,20 @@ class RouterOsClientConfigTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `default adapter property is rest`() {
         assertEquals("rest", RouterOsClientProperties().adapter)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun `warns when classic adapter leftover is not rest`() {
+        val properties = RouterOsClientProperties().apply {
+            adapter = "classic"
+        }
+        val message = RouterOsClientConfig.classicAdapterDeprecatedWarning(properties)
+        assertNotNull(message)
+        assertTrue(message!!.contains("adapter=classic"))
     }
 
     @Test

@@ -32,7 +32,7 @@ OBS_API_KEY=
 # NET_DIAG_ENABLED=true
 # NET_DIAG_API_KEY=
 # NET_DIAG_WHATSAPP_NOC_PHONE=519XXXXXXXX
-# RouterOS REST desde Tomcat (obligatorio rest en prod; ver .agent-docs/router-os-rest-prod-fix.md)
+# RouterOS REST desde Tomcat (unico transporte). ROUTER_OS_CLIENT_ADAPTER esta deprecado.
 # ROUTER_OS_CLIENT_ADAPTER=rest
 # ROUTER_OS_REST_TRUSTSTORE_PASSWORD=
 # OLT_GATEWAY_ENABLED=true

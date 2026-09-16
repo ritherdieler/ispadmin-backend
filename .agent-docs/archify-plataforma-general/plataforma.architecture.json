@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plataforma Gigafiber",
+    "quality_profile": "showcase",
+    "viewBox": [1360, 780],
+    "views": [
+      {
+        "id": "fachada",
+        "label": "Fachada pública",
+        "focus": ["clientes", "core"],
+        "note": "Android y Backoffice solo entran por el Core WAR."
+      },
+      {
+        "id": "subsistemas",
+        "label": "Subsistemas",
+        "focus": ["core", "traffic", "gateway", "acs"],
+        "note": "Core orquesta por HTTP. Cada WAR tiene su schema MySQL."
+      },
+      {
+        "id": "campo",
+        "label": "Campo y bus",
+        "focus": ["traffic", "gateway", "acs", "redis", "mikrotik", "olt", "genieacs"],
+        "note": "Traffic y Gateway publican hechos a Redis. ACS no hace XADD."
+      }
+    ]
+  },
+  "components": [
+    { "id": "clientes", "type": "frontend", "label": "Clientes", "sublabel": "Android · Backoffice", "pos": [48, 48], "size": [180, 56] },
+    { "id": "core", "type": "backend", "label": "Core WAR", "sublabel": "fachada JWT · 360 · BFF", "pos": [500, 48], "size": [220, 56], "tag": "público" },
+    { "id": "traffic", "type": "backend", "label": "Traffic WAR", "sublabel": "poll + rollups", "pos": [48, 230], "size": [180, 56] },
+    { "id": "redis", "type": "messagebus", "label": "Redis Streams", "sublabel": "gigafiber.events", "brand": "redis", "pos": [500, 230], "size": [220, 56] },
+    { "id": "gateway", "type": "backend", "label": "OLT Gateway", "sublabel": "SNMP · authorize", "pos": [860, 230], "size": [190, 56] },
+    { "id": "acs", "type": "backend", "label": "ACS WAR", "sublabel": "TR-069", "pos": [1140, 230], "size": [180, 56] },
+    { "id": "mikrotik", "type": "external", "label": "MikroTik", "sublabel": "RouterOS REST", "pos": [48, 410], "size": [180, 56] },
+    { "id": "olt", "type": "external", "label": "OLT MA5608T", "sublabel": "GPON", "pos": [860, 410], "size": [190, 56] },
+    { "id": "genieacs", "type": "external", "label": "GenieACS", "sublabel": "NBI TR-069", "pos": [1140, 410], "size": [180, 56] }
+  ],
+  "connections": [
+    { "id": "jwt", "from": "clientes", "to": "core", "label": "HTTP JWT", "variant": "emphasis" },
+    { "id": "core-traffic", "from": "core", "to": "traffic", "label": "HTTP /api/traffic", "fromSide": "left", "toSide": "top" },
+    { "id": "core-gateway", "from": "core", "to": "gateway", "label": "HTTP olt-gateway", "fromSide": "right", "toSide": "top" },
+    { "id": "core-acs", "from": "core", "to": "acs", "label": "HTTP ACS", "fromSide": "right", "toSide": "top" },
+    { "id": "poll-mk", "from": "traffic", "to": "mikrotik", "label": "REST /queue/simple", "labelDy": 24 },
+    { "id": "gpon", "from": "gateway", "to": "olt", "label": "SNMP · CLI", "labelDy": 24 },
+    { "id": "nbi", "from": "acs", "to": "genieacs", "label": "NBI + inform", "labelDy": 24 },
+    { "id": "acs-gw", "from": "acs", "to": "gateway", "label": "HTTP cpe-inform", "fromSide": "left", "toSide": "right" },
+    { "id": "xadd-traffic", "from": "traffic", "to": "redis", "label": "XADD traffic.*", "variant": "dashed" },
+    { "id": "xadd-gw", "from": "gateway", "to": "redis", "label": "XADD onu.* · cpe.*", "variant": "dashed" },
+    { "id": "xread", "from": "redis", "to": "core", "label": "XREADGROUP", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Fachada",
+      "items": [
+        "Clientes externos solo hablan con el Core WAR",
+        "Service-health, snapshot 360 y el consumer viven dentro del Core"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Subsistemas",
+      "items": [
+        "Traffic, Gateway y ACS son WARs hermanos con schema MySQL propio",
+        "Entre WARs solo HTTP o Redis Streams; sin JDBC cruzado"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Campo y bus",
+      "items": [
+        "Traffic polléa MikroTik; Gateway habla con la OLT; ACS habla con GenieACS",
+        "ACS no publica Redis: Gateway hace XADD de cpe.inform / cpe.provisioning"
+      ]
+    }
+  ]
+}

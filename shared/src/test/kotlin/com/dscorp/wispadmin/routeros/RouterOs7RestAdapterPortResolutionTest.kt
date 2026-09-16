@@ -13,27 +13,21 @@ import org.junit.jupiter.api.Test
 class RouterOs7RestAdapterPortResolutionTest {
 
     private lateinit var restServer: MockWebServer
-    private lateinit var wrongPortServer: MockWebServer
 
     @BeforeEach
     fun setUp() {
         restServer = MockWebServer()
-        wrongPortServer = MockWebServer()
         restServer.start()
-        wrongPortServer.start()
     }
 
     @AfterEach
     fun tearDown() {
         restServer.shutdown()
-        wrongPortServer.shutdown()
     }
 
     @Test
-    fun `classic adapter still uses REST port when device ref carries API port 8728`() {
+    fun `uses rest port when device ref omits port`() {
         val properties = RouterOsClientProperties().apply {
-            adapter = "classic"
-            classic.port = 8728
             rest.port = restServer.port
             rest.scheme = "http"
             rest.verifySsl = false
@@ -49,7 +43,7 @@ class RouterOs7RestAdapterPortResolutionTest {
         val device = MikrotikDeviceRef(
             id = "prod-like",
             host = "127.0.0.1",
-            port = 8728,
+            port = 0,
             username = "admin",
             password = "secret"
         )
@@ -60,10 +54,25 @@ class RouterOs7RestAdapterPortResolutionTest {
 
         val recorded = restServer.takeRequest()
         assertEquals(restServer.port, recorded.requestUrl?.port)
-        assertEquals(0, wrongPortServer.requestCount)
     }
 
     @Test
+    fun resolveRestPort_mapsMissingPortToRestPort() {
+        val properties = RouterOsClientProperties().apply {
+            rest.port = 443
+        }
+        val device = MikrotikDeviceRef(
+            id = "x",
+            host = "10.0.0.1",
+            port = 0,
+            username = "u",
+            password = "p"
+        )
+        assertEquals(443, RouterOs7RestAdapter.resolveRestPort(device, properties))
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
     fun resolveRestPort_mapsClassicApiPortToRestPort() {
         val properties = RouterOsClientProperties().apply {
             classic.port = 8728
@@ -80,9 +89,8 @@ class RouterOs7RestAdapterPortResolutionTest {
     }
 
     @Test
-    fun resolveRestPort_keepsCustomNonClassicPort() {
+    fun resolveRestPort_keepsExplicitRestPort() {
         val properties = RouterOsClientProperties().apply {
-            classic.port = 8728
             rest.port = 443
         }
         val device = MikrotikDeviceRef(

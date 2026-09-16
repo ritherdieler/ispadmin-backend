@@ -19,7 +19,8 @@ import org.springframework.test.context.TestPropertySource
         "net.diag.poll.jitter-ms=5000",
         "net.diag.retention.probe-run-days=30",
         "net.diag.alert.cooldown-minutes=15",
-        "net.diag.alert.min-duration-seconds=120"
+        "net.diag.alert.min-duration-seconds=120",
+        "net.diag.mikrotik.fallback-classic=true"
     ]
 )
 class NetDiagPropertiesTest {
@@ -42,6 +43,8 @@ class NetDiagPropertiesTest {
         assertNotNull(properties.alert)
         assertEquals(15, properties.alert.cooldownMinutes)
         assertEquals(120, properties.alert.minDurationSeconds)
+        @Suppress("DEPRECATION")
+        assertTrue(properties.mikrotik.fallbackClassic)
     }
 
     @Test

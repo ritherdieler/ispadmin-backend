@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Conexiones reales a MikroTik",
+    "quality_profile": "showcase",
+    "viewBox": [1360, 720],
+    "views": [
+      {
+        "id": "hoy",
+        "label": "Hoy: tres REST",
+        "focus": ["core", "netdiag", "traffic", "mikrotik"],
+        "note": "Core, NetDiag y Traffic abren HTTPS :443 por separado."
+      },
+      {
+        "id": "live",
+        "label": "Live 360",
+        "focus": ["clientes", "core", "mikrotik"],
+        "note": "GET live-readings sale del Core directo al router."
+      },
+      {
+        "id": "patron",
+        "label": "Patrón Gateway",
+        "focus": ["gateway", "olt"],
+        "note": "La OLT solo la toca el Gateway. MikroTik debería ser igual vía Traffic."
+      }
+    ]
+  },
+  "components": [
+    { "id": "clientes", "type": "frontend", "label": "Clientes", "sublabel": "Android · Backoffice", "pos": [48, 48], "size": [180, 56] },
+    { "id": "core", "type": "backend", "label": "Core wispadmin", "sublabel": "live · colas · PPP · cortes", "pos": [400, 48], "size": [220, 56] },
+    { "id": "traffic", "type": "backend", "label": "Traffic WAR", "sublabel": "poll + live monitor", "pos": [860, 48], "size": [200, 56] },
+    { "id": "gateway", "type": "backend", "label": "OLT Gateway", "sublabel": "única fachada OLT", "pos": [1140, 48], "size": [180, 56] },
+    { "id": "netdiag", "type": "backend", "label": "NetDiag", "sublabel": "health · netwatch", "pos": [400, 230], "size": [220, 56] },
+    { "id": "mikrotik", "type": "external", "label": "MikroTik", "sublabel": "RouterOS REST :443", "pos": [860, 230], "size": [200, 56], "tag": "3 clientes" },
+    { "id": "olt", "type": "external", "label": "OLT MA5608T", "sublabel": "solo Gateway", "pos": [1140, 230], "size": [180, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "WAR Core", "wraps": ["core", "netdiag"] }
+  ],
+  "connections": [
+    { "id": "jwt", "from": "clientes", "to": "core", "label": "HTTP JWT", "variant": "emphasis" },
+    { "id": "core-mk", "from": "core", "to": "mikrotik", "label": "REST live · colas · cortes · PPP", "variant": "emphasis", "fromSide": "right", "toSide": "top" },
+    { "id": "nd-mk", "from": "netdiag", "to": "mikrotik", "label": "REST health · netwatch" },
+    { "id": "tr-mk", "from": "traffic", "to": "mikrotik", "label": "REST /queue/simple", "labelDy": 24 },
+    { "id": "gw-olt", "from": "gateway", "to": "olt", "label": "SNMP · CLI", "labelDy": 24 }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Hoy",
+      "items": [
+        "Tres clientes REST: Core @Primary, netDiagMikrotikClient, trafficPollMikrotikClient",
+        "live-readings, WS, alta de cola/PPPoE y cortes salen del Core"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Traffic ya pega",
+      "items": [
+        "Poll 60 s y live monitor: solo /queue/simple",
+        "No cubre escrituras ni el live 360 del Core"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Objetivo",
+      "items": [
+        "Como Gateway con la OLT: una sola flecha Traffic → MikroTik",
+        "Core y NetDiag solo HTTP a Traffic; nada directo a :443"
+      ]
+    }
+  ]
+}

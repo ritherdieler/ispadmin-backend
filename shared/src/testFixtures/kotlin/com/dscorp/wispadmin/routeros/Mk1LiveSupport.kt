@@ -20,6 +20,7 @@ object Mk1LiveSupport {
         )
     }
 
+    @Deprecated("Classic API live fixture is unused; use restDevice()")
     fun classicDevice(): MikrotikDeviceRef {
         requireCredentials()
         return MikrotikDeviceRef(
@@ -40,11 +41,6 @@ object Mk1LiveSupport {
             username = System.getenv("ROUTEROS_MK1_USER")!!,
             password = System.getenv("ROUTEROS_MK1_PASSWORD")!!
         )
-    }
-
-    fun authFailClassicDevice(): MikrotikDeviceRef {
-        val base = classicDevice()
-        return base.copy(username = "netdiag-invalid-user", password = "netdiag-invalid-pass")
     }
 
     fun authFailRestDevice(): MikrotikDeviceRef {

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Vista 360",
+    "quality_profile": "showcase",
+    "viewBox": [1360, 700],
+    "views": [
+      {
+        "id": "lectura",
+        "label": "Lectura de la vista",
+        "focus": ["operador", "vista360", "coreApi", "mysql"],
+        "note": "GET service-health lee HealthCurrent. Sin I/O a equipos."
+      },
+      {
+        "id": "recoleccion",
+        "label": "Recolección",
+        "focus": ["onu", "acs", "olt", "gateway", "redis", "evaluacion", "mysql"],
+        "note": "Inform y SNMP entran por Redis. La evaluación escribe el snapshot."
+      },
+      {
+        "id": "en-vivo",
+        "label": "Actividad en vivo",
+        "focus": ["vista360", "coreApi", "mikrotik"],
+        "note": "GET live-readings abre socket al MikroTik. No usa Redis."
+      }
+    ]
+  },
+  "components": [
+    { "id": "operador", "type": "external", "label": "Operador", "sublabel": "Backoffice", "pos": [48, 40], "size": [140, 56] },
+    { "id": "vista360", "type": "frontend", "label": "Vista 360", "sublabel": "ServiceHealthPage", "pos": [420, 40], "size": [190, 56] },
+    { "id": "coreApi", "type": "backend", "label": "Core API", "sublabel": "GET service-health", "pos": [822, 40], "size": [190, 56] },
+    { "id": "mysql", "type": "database", "label": "MySQL ispadmin", "sublabel": "HealthCurrent + series", "pos": [1140, 40], "size": [180, 56] },
+    { "id": "mikrotik", "type": "external", "label": "MikroTik", "sublabel": "poll + live-readings", "pos": [48, 200], "size": [190, 56] },
+    { "id": "evaluacion", "type": "backend", "label": "Evaluación", "sublabel": "HealthEvaluationService", "pos": [822, 200], "size": [190, 56] },
+    { "id": "acs", "type": "backend", "label": "ACS", "sublabel": "Inform TR-069", "pos": [420, 380], "size": [190, 56] },
+    { "id": "redis", "type": "messagebus", "label": "Redis Streams", "sublabel": "gigafiber.events", "brand": "redis", "pos": [822, 380], "size": [190, 56], "tag": "cpe.inform · onu.optical-batch" },
+    { "id": "gateway", "type": "backend", "label": "OLT Gateway", "sublabel": "SNMP push", "pos": [1140, 380], "size": [180, 56] },
+    { "id": "onu", "type": "external", "label": "ONU / CPE", "sublabel": "GenieACS", "pos": [420, 540], "size": [190, 56] },
+    { "id": "olt", "type": "external", "label": "OLT MA5608T", "sublabel": "óptica SNMP", "pos": [1140, 540], "size": [180, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "WAR Core", "wraps": ["coreApi", "evaluacion"] }
+  ],
+  "connections": [
+    { "id": "abre-360", "from": "operador", "to": "vista360", "label": "abre /subscriptions/{id}/service-health", "variant": "emphasis" },
+    { "id": "get-health", "from": "vista360", "to": "coreApi", "label": "GET /subscription/{id}/service-health", "variant": "emphasis" },
+    { "id": "lee-snapshot", "from": "coreApi", "to": "mysql", "label": "lee HealthCurrent" },
+    {
+      "id": "live-socket",
+      "from": "coreApi",
+      "to": "mikrotik",
+      "label": "GET /subscription/{id}/live-readings",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [[917, 148], [143, 148]]
+    },
+    { "id": "escribe-snapshot", "from": "evaluacion", "to": "mysql", "label": "escribe snapshot", "fromSide": "right", "toSide": "bottom" },
+    { "id": "poll-trafico", "from": "mikrotik", "to": "evaluacion", "label": "poll tráfico" },
+    { "id": "inform", "from": "onu", "to": "acs", "label": "TR-069 Inform" },
+    { "id": "xadd-wifi", "from": "acs", "to": "redis", "label": "XADD cpe.inform", "variant": "dashed" },
+    { "id": "snmp", "from": "olt", "to": "gateway", "label": "SNMP" },
+    { "id": "xadd-optica", "from": "gateway", "to": "redis", "label": "XADD onu.optical-batch", "variant": "dashed" },
+    { "id": "consume", "from": "redis", "to": "evaluacion", "label": "consume streams", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Lectura",
+      "items": [
+        "GET /subscription/{id}/service-health no habla con ONU, OLT ni MikroTik",
+        "HealthEvidenceReader solo consulta repos y HealthCurrent"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Recolección",
+      "items": [
+        "Wi‑Fi entra por cpe.inform; óptica solo por onu.optical-batch",
+        "HealthEvaluationService recorre directory.allIds() y escribe el snapshot"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "En vivo",
+      "items": [
+        "GET /subscription/{id}/live-readings abre socket al MikroTik",
+        "Ese panel no pasa por Redis ni por HealthCurrent"
+      ]
+    }
+  ]
+}

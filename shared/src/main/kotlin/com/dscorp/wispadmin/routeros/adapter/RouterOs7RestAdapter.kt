@@ -56,6 +56,7 @@ class RouterOs7RestAdapter(
     companion object {
 
         fun resolveRestPort(device: MikrotikDeviceRef, properties: RouterOsClientProperties): Int {
+            @Suppress("DEPRECATION")
             if (device.port <= 0 || device.port == properties.classic.port) {
                 return properties.rest.port
             }

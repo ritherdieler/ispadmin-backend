@@ -25,6 +25,16 @@ class NetDiagProperties {
 
     val llm: LlmProperties = LlmProperties()
 
+    @Deprecated("Classic RouterOS API fallback is unused; NetDiag uses REST only")
+    @Suppress("DEPRECATION")
+    val mikrotik: MikrotikProperties = MikrotikProperties()
+
+    @Deprecated("Classic RouterOS API fallback is unused; NetDiag uses REST only")
+    class MikrotikProperties {
+        @Deprecated("Classic RouterOS API fallback is unused; NetDiag uses REST only")
+        var fallbackClassic: Boolean = false
+    }
+
     class LlmProperties {
         var webhookEnabled: Boolean = false
         var webhookUrl: String = ""

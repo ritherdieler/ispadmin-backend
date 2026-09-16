@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Traffic en la plataforma",
+    "quality_profile": "showcase",
+    "viewBox": [1360, 720],
+    "views": [
+      {
+        "id": "fachada",
+        "label": "Fachada HTTP",
+        "focus": ["clientes", "core-bff", "traffic"],
+        "note": "Android y Backoffice solo hablan con el Core. El BFF pide series a Traffic."
+      },
+      {
+        "id": "recoleccion",
+        "label": "Recolección",
+        "focus": ["traffic", "mikrotik", "mysql"],
+        "note": "Traffic hace poll REST a MikroTik y persiste samples y rollups."
+      },
+      {
+        "id": "bus",
+        "label": "Bus async",
+        "focus": ["traffic", "redis", "consumer", "snapshot"],
+        "note": "XADD a gigafiber.events. El Consumer del Core actualiza el snapshot 360."
+      }
+    ]
+  },
+  "components": [
+    { "id": "clientes", "type": "frontend", "label": "Clientes", "sublabel": "Android · Backoffice", "pos": [48, 48], "size": [160, 56] },
+    { "id": "core-bff", "type": "backend", "label": "Core BFF", "sublabel": "TrafficFacade + 360 miss", "pos": [400, 48], "size": [210, 56] },
+    { "id": "traffic", "type": "backend", "label": "Traffic WAR", "sublabel": "poll + rollups", "pos": [860, 48], "size": [200, 56], "tag": "REST :443" },
+    { "id": "mikrotik", "type": "external", "label": "MikroTik", "sublabel": "RouterOS /queue/simple", "pos": [1140, 48], "size": [190, 56] },
+    { "id": "consumer", "type": "backend", "label": "Consumer", "sublabel": "XREADGROUP snapshot-core", "pos": [400, 230], "size": [210, 56] },
+    { "id": "redis", "type": "messagebus", "label": "Redis Streams", "sublabel": "gigafiber.events", "brand": "redis", "pos": [860, 230], "size": [200, 56], "tag": "traffic.latest" },
+    { "id": "mysql", "type": "database", "label": "MySQL traffic", "sublabel": "samples + rollups", "pos": [1140, 230], "size": [190, 56] },
+    { "id": "snapshot", "type": "database", "label": "Snapshot 360", "sublabel": "service_health_current", "pos": [400, 410], "size": [210, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "WAR Core", "wraps": ["core-bff", "consumer", "snapshot"] }
+  ],
+  "connections": [
+    { "id": "jwt-core", "from": "clientes", "to": "core-bff", "label": "HTTP JWT", "variant": "emphasis" },
+    { "id": "bff-traffic", "from": "core-bff", "to": "traffic", "label": "GET /api/traffic/v1", "variant": "emphasis" },
+    { "id": "poll-mk", "from": "traffic", "to": "mikrotik", "label": "REST poll 60s" },
+    { "id": "persist", "from": "traffic", "to": "mysql", "label": "JDBC persist", "fromSide": "right", "toSide": "top" },
+    { "id": "xadd", "from": "traffic", "to": "redis", "label": "XADD traffic.latest", "variant": "dashed", "labelDy": 24 },
+    { "id": "xread", "from": "redis", "to": "consumer", "label": "XREADGROUP", "variant": "dashed" },
+    { "id": "foto", "from": "consumer", "to": "snapshot", "label": "actualiza foto", "labelDy": 24 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Fachada",
+      "items": [
+        "Clientes nunca hablan con Traffic, Redis ni MikroTik",
+        "Core BFF y el miss 360 piden series por HTTP a Traffic"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Recolección",
+      "items": [
+        "Poll RouterOS REST cada 60 s; rollup 5 min / 1 h / 1 d",
+        "Directorio de colas: GET /internal/traffic/targets en el Core"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Bus",
+      "items": [
+        "Traffic publica traffic.latest, poll-run y anomalías",
+        "El live 360 (live-readings) va Core → MikroTik; no pasa por Traffic"
+      ]
+    }
+  ]
+}

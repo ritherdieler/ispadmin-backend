@@ -136,7 +136,7 @@ open class SubscriptionTrafficPollService(
         val deviceRef = MikrotikDeviceRef(
             id = router.id.toString(),
             host = router.host,
-            port = routerOsClientProperties.classic.port,
+            port = routerOsClientProperties.rest.port,
             username = router.username,
             password = router.password,
         )

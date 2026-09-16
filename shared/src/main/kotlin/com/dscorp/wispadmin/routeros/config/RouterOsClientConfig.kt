@@ -24,6 +24,9 @@ class RouterOsClientConfig(
         sslVerifyDisabledWarning(properties)?.let { warning ->
             logger.warn(warning)
         }
+        classicAdapterDeprecatedWarning(properties)?.let { warning ->
+            logger.warn(warning)
+        }
     }
 
     @Bean(destroyMethod = "close")
@@ -52,6 +55,14 @@ class RouterOsClientConfig(
         fun sslVerifyDisabledWarning(properties: RouterOsClientProperties): String? {
             if (!properties.rest.verifySsl) {
                 return "router.os.client.rest.verify-ssl=false: TLS certificate verification is disabled; use only in local lab profiles"
+            }
+            return null
+        }
+
+        fun classicAdapterDeprecatedWarning(properties: RouterOsClientProperties): String? {
+            @Suppress("DEPRECATION")
+            if (!properties.adapter.equals("rest", ignoreCase = true)) {
+                return "router.os.client.adapter=${properties.adapter} is deprecated; RouterOS REST is the only transport"
             }
             return null
         }

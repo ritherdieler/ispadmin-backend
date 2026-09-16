@@ -145,7 +145,7 @@ class MikroTikConnectionService(
             return getMockPrint(path, query)
         }
         return try {
-            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
             mikrotikClient.withSession(deviceRef) { session ->
                 session.print(path, query)
             }.also { result ->
@@ -167,7 +167,7 @@ class MikroTikConnectionService(
             return getMockCall(path, args)
         }
         return try {
-            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
             mikrotikClient.withSession(deviceRef) { session ->
                 session.call(path, args)
             }.also { result ->
@@ -184,7 +184,7 @@ class MikroTikConnectionService(
         if (isMockModeEnabled()) {
             return
         }
-        val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.classic.port)
+        val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
         mikrotikClient.withSession(deviceRef) { session ->
             session.set(path, id, args)
         }

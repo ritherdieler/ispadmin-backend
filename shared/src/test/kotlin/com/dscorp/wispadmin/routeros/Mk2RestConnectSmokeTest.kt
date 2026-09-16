@@ -25,7 +25,7 @@ class Mk2RestConnectSmokeTest {
         val device = MikrotikDeviceRef(
             id = "8",
             host = host,
-            port = 8728,
+            port = 443,
             username = user,
             password = password
         )

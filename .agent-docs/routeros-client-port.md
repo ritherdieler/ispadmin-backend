@@ -28,20 +28,19 @@ Registro en scan: `WispAdminApplication` incluye `com.dscorp.wispadmin.routeros`
 
 ## Properties (`application-dev.properties`)
 
+Único transporte: REST HTTPS `:443`. `adapter`, `classic.port` y `fallback-classic` siguen bindable como leftovers `@Deprecated`. Detalle: [remove-routeros-classic-api-2026-09-16.md](./remove-routeros-classic-api-2026-09-16.md).
+
 ```properties
-router.os.client.adapter=rest
 router.os.client.rest.port=443
 router.os.client.rest.verify-ssl=true
 router.os.client.rest.trust-store=classpath:routeros-mk-truststore.jks
 router.os.client.rest.timeout-ms=10000
-router.os.client.classic.port=8728
-router.os.client.classic.timeout-ms=10000
 ```
 
-- `adapter=classic` (**default**, `matchIfMissing=true`) → bean `@Primary` `LegrangeClassicAdapter` (wispadmin).
-- `adapter=rest` → bean `@Primary` `RouterOs7RestAdapter` (wispadmin).
-- Si `adapter=rest` y `verify-ssl=false`, `RouterOsClientConfig` emite **WARN** en arranque (solo lab).
-- `netdiag` **siempre** usa REST vía bean nombrado `netDiagMikrotikClient`, independiente de `router.os.client.adapter`.
+- Bean `@Primary` `RouterOs7RestAdapter` (wispadmin y traffic).
+- Si `verify-ssl=false`, `RouterOsClientConfig` emite **WARN** en arranque (solo lab).
+- `netdiag` usa REST vía bean nombrado `netDiagMikrotikClient`.
+- `ROUTER_OS_CLIENT_ADAPTER`, `router.os.client.classic.*` y `net.diag.mikrotik.fallback-classic` están **deprecados** (siguen bindable; no cambian el transporte).
 
 ## Truststore TLS (REST)
 

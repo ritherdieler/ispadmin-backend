@@ -37,7 +37,6 @@ class RouterOs7RestAdapterUnitTest {
         server = MockWebServer()
         server.start()
         val properties = RouterOsClientProperties().apply {
-            adapter = "rest"
             rest.port = server.port
             rest.timeoutMs = 1000
             rest.verifySsl = false

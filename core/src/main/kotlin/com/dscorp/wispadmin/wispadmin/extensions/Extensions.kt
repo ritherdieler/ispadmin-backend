@@ -111,8 +111,13 @@ object MikrotikClientAccessor {
         return client ?: throw IllegalStateException("MikrotikClient is not initialized")
     }
 
+    fun restPort(): Int {
+        return properties?.rest?.port ?: 443
+    }
+
+    @Deprecated("Classic API port is unused; REST remaps 8728 to rest.port", ReplaceWith("restPort()"))
     fun classicPort(): Int {
-        return properties?.classic?.port ?: 8728
+        return restPort()
     }
 }
 
@@ -130,7 +135,7 @@ fun NetworkDeviceConnection.executeCommand(block: (session: MikrotikSession) -> 
         return
     }
 
-    val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(this, MikrotikClientAccessor.classicPort())
+    val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(this, MikrotikClientAccessor.restPort())
     MikrotikClientAccessor.client().withSession(deviceRef) { session ->
         block(session)
     }
