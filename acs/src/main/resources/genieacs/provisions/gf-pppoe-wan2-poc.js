@@ -25,6 +25,7 @@ const VSOL_LAYOUT = {
   writeCtCom: true,
   writeZte: false,
   extraIpPaths: [],
+  extraPppPaths: [],
   gponVlanPath: WAN_DEVICE + ".WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig.VLANIDMark",
   wlan24: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
   wlan5: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
@@ -36,6 +37,7 @@ const F6600_LAYOUT = {
   pppPath: WAN_DEVICE + ".WANConnectionDevice.1.WANPPPConnection.2",
   ipPath: WAN_DEVICE + ".WANConnectionDevice.1.WANIPConnection.2",
   extraIpPaths: [WAN_DEVICE + ".WANConnectionDevice.1.WANIPConnection.3"],
+  extraPppPaths: [WAN_DEVICE + ".WANConnectionDevice.1.WANPPPConnection.3"],
   pppParent: WAN_DEVICE + ".WANConnectionDevice.1.WANPPPConnection",
   wcdPath: null,
   wcdParent: null,
@@ -84,6 +86,17 @@ function nextCount(size, invalidAs) {
   return current + 1;
 }
 
+function instanceIndex(path) {
+  const n = Number(String(path).split(".").pop());
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function desiredInstanceCount(size, slot) {
+  const n = Number(size);
+  const known = Number.isFinite(n) && n > 0 ? n : 0;
+  return Math.max(known, slot);
+}
+
 function addUntilCount(wildcard, desired) {
   declare(wildcard, { path: Date.now() }, { path: desired });
   commit();
@@ -127,6 +140,18 @@ function deleteInternetIpWan(layout) {
   }
 }
 
+function deleteExtraInternetPppWans(layout) {
+  const paths = layout.extraPppPaths || [];
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i];
+    if (!pathExists(path) || path === layout.pppPath) {
+      continue;
+    }
+    logStep("delete " + path);
+    deleteObject(path);
+  }
+}
+
 function ensureInternetPpp(layout) {
   if (pathExists(layout.pppPath)) {
     logStep(layout.pppPath + " exists, skip add");
@@ -134,7 +159,7 @@ function ensureInternetPpp(layout) {
   }
   const wildcard = layout.pppParent + ".*";
   const size = wildcardSize(wildcard);
-  const desired = nextCount(size, 0);
+  const desired = desiredInstanceCount(size, instanceIndex(layout.pppPath));
   logStep("add " + wildcard + " count=" + size + " -> " + desired);
   addUntilCount(wildcard, desired);
 }
@@ -217,6 +242,7 @@ function applyInternetPppoe() {
   // Orden: WCD de internet (VSOL), borrar WAN IP, crear PPP, hojas, Enable.
   ensureInternetWcd(layout);
   deleteInternetIpWan(layout);
+  deleteExtraInternetPppWans(layout);
   ensureInternetPpp(layout);
   setInternetPppLeaves(layout, {
     username: args[0],

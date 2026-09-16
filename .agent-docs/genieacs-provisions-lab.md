@@ -24,7 +24,7 @@ Product class fuera de `F6600R` / `V2804AX15T` / `VSOLVA74` (Huawei incluido): `
 
 | Id NBI | Archivo | Qué hace |
 |---|---|---|
-| `gf-pppoe-wan2-poc` | `scripts/genieacs/provisions/gf-pppoe-wan2-poc.js` | Sustituye la WAN IP de internet por PPPoE y, si vienen SSIDs, escribe WiFi |
+| `gf-pppoe-wan2-poc` | `scripts/genieacs/provisions/gf-pppoe-wan2-poc.js` | Sustituye la WAN IP de internet por PPPoE y, si vienen SSIDs, escribe WiFi. F6600: AddObject hasta `WANPPPConnection.2` aunque `wildcardSize` sea undefined. |
 | `gf-static-wan2-poc` | `scripts/genieacs/provisions/gf-static-wan2-poc.js` | Sustituye la WAN PPP leftover por STATIC y, si vienen SSIDs, escribe WiFi |
 | `gf-wifi-ssid-poc` | `scripts/genieacs/provisions/gf-wifi-ssid-poc.js` | Cambia SSID 2.4 y 5.8 con una passphrase |
 | `gf-reboot-poc` | `scripts/genieacs/provisions/gf-reboot-poc.js` | Reinicia la ONU (RPC CWMP `Reboot`) |

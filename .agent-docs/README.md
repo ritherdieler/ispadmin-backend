@@ -16,6 +16,7 @@
 | **Provisions nombrados cableados Core→Gateway→ACS** | [provisions-core-gateway-acs.md](./provisions-core-gateway-acs.md) |
 | **Provisions de lab: PPPoE, WiFi, reboot (args, layouts, curl, Core→Gateway→ACS)** | [genieacs-provisions-lab.md](./genieacs-provisions-lab.md) |
 | **GenieACS provisions F6600R/VSOL: `commit()`, AddObject, layouts, errores de POC, ver logs** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |
+| **F6600 PPPoE slot `.2` si `wildcardSize` undefined (2026-09-16)** | [gf-pppoe-f6600-slot2-undefined-2026-09-16.md](./gf-pppoe-f6600-slot2-undefined-2026-09-16.md) |
 | **Scripts GenieACS — clean code** (provisions / virtual-parameters) | [genieacs-scripts-cleancode.md](./genieacs-scripts-cleancode.md) |
 | **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
 | **Fix overlay client Gateway + security WAR 2026-09-04** | [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md) |
