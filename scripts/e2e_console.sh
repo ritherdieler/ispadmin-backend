@@ -70,39 +70,10 @@ e2e_http_status_color() {
   esac
 }
 
-e2e_now_ms() {
-  python3 -c 'import time; print(int(time.time() * 1000))'
-}
-
-e2e_dur_color() {
-  local ms="${1:-0}"
-  if [[ "$ms" -lt "${E2E_FAST_MS:-2000}" ]]; then
-    printf '%s' '\033[32m'
-  elif [[ "$ms" -lt "${E2E_SLOW_MS:-10000}" ]]; then
-    printf '%s' '\033[33m'
-  else
-    printf '%s' '\033[31m'
-  fi
-}
-
-e2e_fmt_dur() {
-  local ms="${1:-0}"
-  if [[ "$ms" -lt 1000 ]]; then
-    printf '%sms' "$ms"
-  else
-    printf '%d.%03ds' "$((ms / 1000))" "$((ms % 1000))"
-  fi
-}
-
-e2e_paint_dur() {
-  e2e_paint "$(e2e_dur_color "${1:-0}")" "$(e2e_fmt_dur "${1:-0}")"
-}
-
 e2e_fields() {
   local out=""
   local body=""
   local http_code=""
-  local dur_ms=""
   local pair key value
   for pair in "$@"; do
     [[ "$pair" == *=* ]] || continue
@@ -115,10 +86,6 @@ e2e_fields() {
     fi
     if [[ "$key" == "status" ]]; then
       http_code="$value"
-      continue
-    fi
-    if [[ "$key" == "dur" ]]; then
-      dur_ms="$value"
       continue
     fi
     if [[ -n "$out" ]]; then
@@ -134,15 +101,6 @@ e2e_fields() {
       out="$out  status=$painted"
     else
       out="status=$painted"
-    fi
-  fi
-  if [[ -n "$dur_ms" ]]; then
-    local painted_dur
-    painted_dur="$(e2e_paint_dur "$dur_ms")"
-    if [[ -n "$out" ]]; then
-      out="$out  dur=$painted_dur"
-    else
-      out="dur=$painted_dur"
     fi
   fi
   if [[ -n "$out" ]]; then
@@ -250,24 +208,16 @@ e2e_http() {
   local curl_ec=0
   local resp=""
   local had_e=0
-  local t0 t1 dur_ms
-  t0="$(e2e_now_ms)"
   case "$-" in *e*) had_e=1 ;; esac
   set +e
   resp="$(curl -sS -X "$method" -w $'\n%{http_code}' "$@" "$url" 2>&1)"
   curl_ec=$?
-  t1="$(e2e_now_ms)"
   if [[ "$had_e" -eq 1 ]]; then set -e; fi
-  dur_ms=$((t1 - t0))
-  if [[ "$dur_ms" -lt 0 ]]; then
-    dur_ms=0
-  fi
   E2E_HTTP_CODE="000"
   if [[ "$curl_ec" -ne 0 ]]; then
     e2e_hit fail fail "HTTP $method $path" \
       endpoint="$method $path" \
       status="000" \
-      dur="$dur_ms" \
       retry="${E2E_HTTP_RETRY:-}" \
       body="$(e2e_clip_body "$resp")"
     printf '%s' "$resp"
@@ -286,14 +236,12 @@ e2e_http() {
     e2e_hit "$phase" pass "HTTP $method $path" \
       endpoint="$method $path" \
       status="$code" \
-      dur="$dur_ms" \
       retry="${E2E_HTTP_RETRY:-}" \
       body="$clipped"
   else
     e2e_hit fail fail "HTTP $method $path" \
       endpoint="$method $path" \
       status="$code" \
-      dur="$dur_ms" \
       retry="${E2E_HTTP_RETRY:-}" \
       body="$clipped"
   fi
