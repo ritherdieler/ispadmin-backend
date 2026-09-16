@@ -113,23 +113,9 @@ Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gate
 
 Timeout Core→Gateway: `OltGatewayClientConfig.READ_TIMEOUT_MS = 180000` (cubre authorize SSH + ACS).
 
-### 5. Perfiles TR-069 en ACS VPS (dos imports)
+### 5. Provisions GenieACS (no CSV)
 
-`GET /api/acs/v1/profiles` debe listar `F6600R` (alias `F6600RV9.0.21`).
-
-Si falta, o si activate falla con *“No hay perfiles TR-069 importados…”* pese a que `GET /profiles` ya lista filas: importar el CSV **dos veces**.
-
-Causa: `Tr069ModelProfileImportService.importCsv` hace `registry.reload()` **dentro** de `@Transactional`; el primer import puede dejar el registry en memoria vacío.
-
-Fixture: `src/test/resources/genieacs-exports/zte-f6600r.csv`.
-
-```bash
-# body: { "csv": "<contenido>", "importedBy": "lab", "aliases": ["F6600RV9.0.21"] }
-curl -s -X POST -H "X-Acs-Key: $ACS_API_KEY" -H "Content-Type: application/json" \
-  --data-binary @/tmp/acs-import-f6600r.json \
-  http://127.0.0.1:8091/ispadmin-staging-acs/api/acs/v1/profiles/import
-# repetir el mismo POST una segunda vez
-```
+TR-069 ya no importa perfiles CSV. El ACS encola scripts por HTTP NBI (`NamedCpeProvisioner`): `gf-pppoe-wan2-poc` (PPPoE + WiFi) o `gf-wifi-ssid-poc` (STATIC_IP). Layouts: `F6600R`, `V2804AX15T`, `VSOLVA74`.
 
 ### 6. Limpiar la ONU lab (una pasada exige journal vacío + autofind)
 
@@ -247,9 +233,9 @@ No poner `mikrotik.connection.override.ip`: el alta usa `hostDeviceId` **8** (MK
 
 ## Criterio COMPLETE del ACS WAR
 
-`POST /api/acs/v1/cpe/provision` (lo llama el Gateway, no el Core) → `CpeFacadeService` → `Tr069ProvisioningService.provision`.
+`POST /api/acs/v1/cpe/provision` (lo llama el Gateway, no el Core) → `CpeFacadeService` → `NamedCpeProvisioner.provision`.
 
-Tras SPV (WAN cliente + WiFi) hace GPV y poll de caché GenieACS.
+El provisioner encola el script GenieACS por NBI HTTP y espera SSIDs / WAN según el layout.
 
 Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y** otra vez en verify. `GET /cpe/{sn}/status` lee BD ACS, no reconsulta Genie en vivo.
 

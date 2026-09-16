@@ -92,7 +92,7 @@ class VparamProvisioner(
             val segment = request.ipSegment?.trim().orEmpty()
             val payload = linkedMapOf(
                 "ip" to ip,
-                "subnetMask" to Tr069ProvisioningService.cidrToSubnetMask(segment.ifBlank { "/24" }),
+                "subnetMask" to GenieAcsValues.cidrToSubnetMask(segment.ifBlank { "/24" }),
                 "gateway" to (if (segment.isBlank()) "" else segment.getBaseIpFromRange() + "1"),
                 "dns" to properties.defaultDns,
                 "vlanId" to request.wanVlanId,
@@ -231,14 +231,14 @@ class VparamProvisioner(
 
     private fun snapshotFromDevice(device: GenieAcsDevice, request: Tr069ProvisionRequest) = Tr069AcsSnapshot(
         serialSuffix = Tr069SerialMatcher.normalizeSuffix(request.onuSerial),
-        lastInformAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastInform),
+        lastInformAt = GenieAcsValues.parseDateTime(device.lastInform),
         productClass = device.productClass,
         oui = device.oui,
         manufacturer = device.manufacturer,
         connectionRequestUrl = device.connectionRequestUrl,
         softwareVersion = device.softwareVersion,
         hardwareVersion = device.hardwareVersion,
-        lastBootAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastBoot),
+        lastBootAt = GenieAcsValues.parseDateTime(device.lastBoot),
         wanIpCache = request.ip?.trim()?.takeIf { it.isNotBlank() },
         ssid24 = request.wifiSsid24,
         ssid5 = request.wifiSsid5,

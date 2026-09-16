@@ -45,14 +45,14 @@ class SubscriptionAcsOpsService(
             serialSuffix = existing?.serialSuffix
                 ?: Tr069SerialMatcher.normalizeSuffix(subscription.fiberOnuSn)
                 ?: Tr069SerialMatcher.normalizeSuffix(device.serialNumber),
-            lastInformAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastInform),
+            lastInformAt = GenieAcsValues.parseDateTime(device.lastInform),
             productClass = device.productClass,
             oui = device.oui,
             manufacturer = device.manufacturer,
             connectionRequestUrl = device.connectionRequestUrl,
             softwareVersion = device.softwareVersion,
             hardwareVersion = device.hardwareVersion,
-            lastBootAt = Tr069ProvisioningService.parseGenieAcsDateTime(device.lastBoot),
+            lastBootAt = GenieAcsValues.parseDateTime(device.lastBoot),
             wanIpCache = subscription.ip ?: existing?.wanIpCache,
             ssid24 = existing?.ssid24,
             ssid5 = existing?.ssid5,

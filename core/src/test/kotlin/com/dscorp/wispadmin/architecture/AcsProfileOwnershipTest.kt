@@ -5,47 +5,89 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.relativeTo
+import kotlin.streams.asSequence
 
 class AcsProfileOwnershipTest {
 
-    private val root = Path.of(System.getProperty("user.dir"))
+    private val root: Path = generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
+        .first { Files.exists(it.resolve("settings.gradle.kts")) }
+
+    private val forbiddenSources = listOf(
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/controller/AcsProfileController.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/entity/Tr069ModelProfileRecord.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/GenieAcsCsvProfileExtractor.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069ModelProfile.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069ModelProfileImportService.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069ModelProfileRegistry.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069ProvisioningService.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069WifiSecurityPrepSpec.kt",
+        "acs/src/main/kotlin/com/dscorp/wispadmin/acs/repository/Tr069ModelProfileRepository.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/controller/Tr069ModelProfileController.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/GenieAcsCsvProfileExtractor.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069AsyncApplicator.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069ModelProfile.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069ModelProfileRegistry.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069PostInstallProvisioner.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069ProvisioningService.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/service/genieacs/Tr069WifiSecurityPrepSpec.kt",
+        "core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/config/Tr069AsyncConfig.kt",
+        "oltgateway/src/main/kotlin/com/dscorp/wispadmin/oltgateway/controller/AcsProfileProxyController.kt",
+        "scripts/sql/copy-tr069-profiles-to-acs.sql",
+        "scripts/sql/stg-acs-pppoe-wan-paths.sql",
+    )
+
+    private val forbiddenTokens = listOf(
+        "/api/acs/v1/profiles",
+        "/admin/tr069-profiles",
+        "/api/olt-gateway/acs/profiles",
+        "GenieAcsCsvProfileExtractor",
+        "Tr069ModelProfileImportService",
+        "class Tr069ProvisioningService",
+        "Tr069ModelProfileRegistry",
+        "Tr069ModelProfileController",
+        "AcsProfileController",
+        "AcsProfileProxyController",
+    )
 
     @Test
-    fun acsRegistryDoesNotReadCoreCatalog() {
-        val registry = Files.readString(
-            root.resolve("acs/src/main/kotlin/com/dscorp/wispadmin/acs/genieacs/Tr069ModelProfileRegistry.kt"),
-        )
-        assertFalse(registry.contains("acs.profiles.catalog"), registry)
-        assertFalse(registry.contains("ispadmin_staging"), registry)
-        assertFalse(registry.contains("\$catalog"), registry)
-        assertFalse(registry.contains("ACS_PROFILES_CATALOG"), registry)
-        assertTrue(registry.contains("FROM tr069_model_profile"), registry)
+    fun csvProfileMechanismIsGone() {
+        val leftovers = forbiddenSources.filter { Files.exists(root.resolve(it)) }
+        assertTrue(leftovers.isEmpty(), leftovers.joinToString("\n"))
     }
 
     @Test
-    fun coreDoesNotOwnTr069ModelProfileTable() {
-        val entityRoot = root.resolve("core/src/main/kotlin/com/dscorp/wispadmin/wispadmin")
-        val hits = Files.walk(entityRoot).use { paths ->
-            paths.filter { it.toString().endsWith(".kt") }
-                .filter { Files.readString(it).contains("@Table(name = \"tr069_model_profile\")") }
-                .map { it.toString() }
-                .toList()
+    fun productionKotlinDoesNotExposeCsvProfileEndpoints() {
+        val modules = listOf("acs", "core", "oltgateway")
+        val hits = modules.flatMap { module ->
+            val start = root.resolve("$module/src/main/kotlin")
+            if (!Files.isDirectory(start)) return@flatMap emptyList()
+            Files.walk(start).use { stream ->
+                stream.asSequence()
+                    .filter { it.isRegularFile() && it.toString().endsWith(".kt") }
+                    .flatMap { file ->
+                        Files.readAllLines(file).asSequence().mapIndexedNotNull { index, line ->
+                            val token = forbiddenTokens.firstOrNull { line.contains(it) } ?: return@mapIndexedNotNull null
+                            "${file.relativeTo(root)}:${index + 1}: $token"
+                        }
+                    }
+                    .toList()
+            }
         }
         assertTrue(hits.isEmpty(), hits.joinToString("\n"))
     }
 
     @Test
-    fun acsFlywayOwnsProfileTable() {
-        val sql = Files.readString(root.resolve("acs/src/main/resources/db/acs/V1__tr069_model_profile.sql"))
-        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS tr069_model_profile") || sql.contains("CREATE TABLE tr069_model_profile"), sql)
-        assertTrue(sql.contains("client_wan_ip_connection_path"), sql)
-        val acs = Files.readString(root.resolve("core/src/main/resources/application-acs.properties"))
-        assertTrue(
-            Regex("""^spring\.flyway\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(acs),
-            acs,
-        )
-        assertTrue(acs.contains("classpath:db/acs"), acs)
-        assertFalse(acs.contains("acs.profiles.catalog"), acs)
+    fun acsFlywayDropsAbandonedProfileTable() {
+        val sql = Files.readString(root.resolve("acs/src/main/resources/db/acs/V5__drop_tr069_model_profile.sql"))
+        assertTrue(sql.contains("DROP TABLE IF EXISTS tr069_model_profile"), sql)
+    }
+
+    @Test
+    fun coreFlywayStillDropsMovedProfileTable() {
+        val sql = Files.readString(root.resolve("core/src/main/resources/db/migration/V50__drop_tr069_model_profile.sql"))
+        assertTrue(sql.contains("DROP TABLE IF EXISTS tr069_model_profile"), sql)
     }
 
     @Test
@@ -57,24 +99,13 @@ class AcsProfileOwnershipTest {
                 .map { it.fileName.toString() }
                 .toList()
         }
-        assertTrue(
-            offenders.isEmpty(),
-            "tr069_model_profile belongs to the ACS schema and V50 dropped it from the core; " +
-                "these core migrations would fail on a clean staging: $offenders",
-        )
+        assertTrue(offenders.isEmpty(), offenders.joinToString("\n"))
     }
 
     @Test
-    fun acsFlywayOwnsThePppoeWanPath() {
-        val acsMigrations = Files.list(root.resolve("acs/src/main/resources/db/acs")).use { paths ->
-            paths.filter { it.fileName.toString().endsWith(".sql") }
-                .map { Files.readString(it) }
-                .toList()
-        }
-        assertTrue(
-            acsMigrations.any { it.contains("client_wan_ppp_connection_path") },
-            "the PPPoE WAN path column must be added by an ACS migration, not by the core",
-        )
+    fun catalogSqlDoesNotSeedCsvProfiles() {
+        val sql = Files.readString(root.resolve("scripts/sql/staging-e2e-registration-catalog.sql"))
+        assertFalse(sql.contains("tr069_model_profile"), sql)
     }
 
     @Test
@@ -97,61 +128,6 @@ class AcsProfileOwnershipTest {
         assertFalse(sql.contains("ADD COLUMN wifi_snapshot_json TEXT NULL,"), sql)
     }
 
-    @Test
-    fun thePppoeWanPathMigrationToleratesAnAlreadyPatchedSchema() {
-        val sql = Files.readString(root.resolve("acs/src/main/resources/db/acs/V3__tr069_client_wan_ppp_path.sql"))
-        assertTrue(
-            sql.contains("information_schema.COLUMNS"),
-            "stg_acs already got the column by hand, so the migration must check before adding it: $sql",
-        )
-        assertTrue(sql.contains("client_wan_ppp_connection_path"), sql)
-    }
-
-    @Test
-    fun acsFlywayOwnsKnownPppoeWanPaths() {
-        val sql = Files.readString(root.resolve("acs/src/main/resources/db/acs/V4__tr069_client_wan_ppp_paths.sql"))
-        assertTrue(sql.contains("V2804AX15T"), sql)
-        assertTrue(
-            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1"),
-            sql,
-        )
-        assertTrue(sql.contains("F6600R"), sql)
-        assertTrue(
-            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2"),
-            sql,
-        )
-        assertFalse(sql.contains("stg_acs."), sql)
-        assertFalse(sql.contains("ispadmin"), sql)
-    }
-
-    @Test
-    fun stagingOneShotSqlPopulatesPppoeWanPathsWithoutTouchingCore() {
-        val sql = Files.readString(root.resolve("scripts/sql/stg-acs-pppoe-wan-paths.sql"))
-        assertTrue(sql.contains("stg_acs.tr069_model_profile"), sql)
-        assertTrue(sql.contains("V2804AX15T"), sql)
-        assertTrue(
-            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANPPPConnection.1"),
-            sql,
-        )
-        assertTrue(sql.contains("F6600R"), sql)
-        assertTrue(
-            sql.contains("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2"),
-            sql,
-        )
-        assertFalse(sql.contains("ispadmin."), sql)
-        assertFalse(sql.contains("ispadmin_staging"), sql)
-    }
-
     private fun versionOf(fileName: String): Int =
         fileName.removePrefix("V").substringBefore("__").toIntOrNull() ?: 0
-
-    @Test
-    fun coreFlywayDropsMovedProfileTable() {
-        val sql = Files.readString(root.resolve("core/src/main/resources/db/migration/V50__drop_tr069_model_profile.sql"))
-        assertTrue(sql.contains("DROP TABLE IF EXISTS tr069_model_profile"), sql)
-        val copy = Files.readString(root.resolve("scripts/sql/copy-tr069-profiles-to-acs.sql"))
-        assertTrue(copy.contains("INSERT INTO prod_acs.tr069_model_profile"), copy)
-        assertTrue(copy.contains("INSERT INTO stg_acs.tr069_model_profile"), copy)
-        assertTrue(copy.contains("FROM ispadmin.tr069_model_profile"), copy)
-    }
 }

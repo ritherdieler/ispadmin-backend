@@ -1,5 +1,7 @@
 # Perfiles TR-069: gobierno del ACS WAR
 
+**Retirado (2026-09-15).** El import CSV / `tr069_model_profile` / `/admin/tr069-profiles` se eliminó. Camino vivo: [tr069-csv-profiles-removed-2026-09-15.md](./tr069-csv-profiles-removed-2026-09-15.md) y [provisions-core-gateway-acs.md](./provisions-core-gateway-acs.md).
+
 Fecha: 2026-09-11.
 
 Invariantes: sin JDBC Core↔ACS; clientes externos solo Core; ACS no importa `wispadmin.*`. Test: `CrossSchemaJdbcForbiddenTest`.

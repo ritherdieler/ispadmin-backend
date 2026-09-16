@@ -98,28 +98,6 @@ class HttpAcsCpeClient(
         )
     }
 
-    override fun listProfiles(): org.springframework.http.ResponseEntity<String> =
-        exchangeRaw("/api/acs/v1/profiles", HttpMethod.GET, HttpEntity<Void>(headers()))
-
-    override fun previewProfile(body: String): org.springframework.http.ResponseEntity<String> =
-        exchangeRaw("/api/acs/v1/profiles/preview", HttpMethod.POST, HttpEntity(body, headers()))
-
-    override fun importProfile(body: String): org.springframework.http.ResponseEntity<String> =
-        exchangeRaw("/api/acs/v1/profiles/import", HttpMethod.POST, HttpEntity(body, headers()))
-
-    override fun deleteProfile(productClass: String): org.springframework.http.ResponseEntity<String> {
-        val uri = com.dscorp.wispadmin.transport.InternalUris.path(base(), "api", "acs", "v1", "profiles", productClass)
-        val response = try {
-            restTemplate.exchange(uri, HttpMethod.DELETE, HttpEntity<Void>(headers()), String::class.java)
-        } catch (ex: org.springframework.web.client.HttpStatusCodeException) {
-            return org.springframework.http.ResponseEntity.status(ex.statusCode)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(ex.responseBodyAsString ?: """{"error":"ACS error"}""")
-        }
-        com.dscorp.wispadmin.transport.InternalJson.validate(response)
-        return response
-    }
-
     private fun statusOf(raw: String): CpeProvisionStatus =
         try { CpeProvisionStatus.valueOf(raw.uppercase()) }
         catch (_: IllegalArgumentException) { throw com.dscorp.wispadmin.transport.InvalidSubsystemResponse() }
@@ -153,24 +131,6 @@ class HttpAcsCpeClient(
         val node = objectMapper.readTree(response.body)
         if (node == null || !node.isObject) throw com.dscorp.wispadmin.transport.InvalidSubsystemResponse()
         return node
-    }
-
-    private fun exchangeRaw(
-        path: String,
-        method: HttpMethod,
-        entity: HttpEntity<*>,
-    ): org.springframework.http.ResponseEntity<String> {
-        val root = base()
-        if (root.isEmpty()) throw org.springframework.web.client.RestClientException("ACS URL is not configured")
-        val response = try {
-            restTemplate.exchange(java.net.URI.create("$root$path"), method, entity, String::class.java)
-        } catch (ex: org.springframework.web.client.HttpStatusCodeException) {
-            return org.springframework.http.ResponseEntity.status(ex.statusCode)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(ex.responseBodyAsString ?: """{"error":"ACS error"}""")
-        }
-        com.dscorp.wispadmin.transport.InternalJson.validate(response)
-        return response
     }
 
     companion object {

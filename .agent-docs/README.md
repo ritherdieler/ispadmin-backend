@@ -10,7 +10,8 @@
 | **VLAN 1 en desuso — destino VLAN 100** | [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
-| **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
+| **Perfiles TR-069 CSV retirados (2026-09-15)** | [tr069-csv-profiles-removed-2026-09-15.md](./tr069-csv-profiles-removed-2026-09-15.md) |
+| **Perfiles TR-069: gobierno ACS WAR (histórico)** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
 | **Provisions nombrados cableados Core→Gateway→ACS** | [provisions-core-gateway-acs.md](./provisions-core-gateway-acs.md) |
 | **Provisions de lab: PPPoE, WiFi, reboot (args, layouts, curl, Core→Gateway→ACS)** | [genieacs-provisions-lab.md](./genieacs-provisions-lab.md) |
 | **GenieACS provisions F6600R/VSOL: `commit()`, AddObject, layouts, errores de POC, ver logs** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |

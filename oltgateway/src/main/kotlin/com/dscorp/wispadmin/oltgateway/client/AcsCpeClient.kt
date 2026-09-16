@@ -2,9 +2,6 @@ package com.dscorp.wispadmin.oltgateway.client
 
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.CpeTelemetryDto
-import org.springframework.http.MediaType
-import org.springframework.http.ResponseEntity
-import org.springframework.web.client.RestClientException
 
 data class AcsCpeProvisionRequest(
     val sn: String,
@@ -42,10 +39,6 @@ interface AcsCpeClient {
     fun telemetry(sn: String): CpeTelemetryDto?
     fun status(sn: String): AcsCpeProvisionResponse?
     fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto?
-    fun listProfiles(): ResponseEntity<String>
-    fun previewProfile(body: String): ResponseEntity<String>
-    fun importProfile(body: String): ResponseEntity<String>
-    fun deleteProfile(productClass: String): ResponseEntity<String>
 }
 
 data class CpeCommandAck(
@@ -73,16 +66,4 @@ class NoOpAcsCpeClient : AcsCpeClient {
     override fun status(sn: String): AcsCpeProvisionResponse? = null
 
     override fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto? = null
-
-    override fun listProfiles(): ResponseEntity<String> =
-        ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body("[]")
-
-    override fun previewProfile(body: String): ResponseEntity<String> = acsDisabled()
-
-    override fun importProfile(body: String): ResponseEntity<String> = acsDisabled()
-
-    override fun deleteProfile(productClass: String): ResponseEntity<String> = acsDisabled()
-
-    private fun acsDisabled(): ResponseEntity<String> =
-        throw RestClientException("ACS client disabled")
 }

@@ -6,8 +6,8 @@ import com.dscorp.wispadmin.acs.entity.CpeRecord
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsTaskResult
+import com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner
 import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionOutcome
-import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisioningService
 import com.dscorp.wispadmin.acs.repository.CpeRecordRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -24,14 +24,14 @@ class CpeFacadeServiceTest {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("SN1") } returns Optional.empty()
         every { records.save(any()) } answers { firstArg() }
-        val provisioning = mockk<Tr069ProvisioningService>()
+        val named = mockk<NamedCpeProvisioner>()
         val properties = GenieAcsProperties().apply { enabled = false }
-        val service = CpeFacadeService(records, provisioning, mockk(relaxed = true), properties)
+        val service = CpeFacadeService(records, mockk(relaxed = true), properties, named)
 
         val result = service.provision(CpeProvisionCommand(sn = "SN1"))
 
         assertEquals(CpeStatus.NA, result.status)
-        verify(exactly = 0) { provisioning.provision(any()) }
+        verify(exactly = 0) { named.provision(any()) }
     }
 
     @Test
@@ -39,19 +39,13 @@ class CpeFacadeServiceTest {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("SN1") } returns Optional.of(CpeRecord(sn = "SN1"))
         every { records.save(any()) } answers { firstArg() }
-        val named = mockk<com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner>()
+        val named = mockk<NamedCpeProvisioner>()
         every { named.provision(any()) } returns Tr069ProvisionOutcome(
             status = CpeStatus.COMPLETE,
             deviceId = "dev-1",
         )
         val properties = GenieAcsProperties().apply { enabled = true }
-        val service = CpeFacadeService(
-            records,
-            mockk(relaxed = true),
-            mockk(relaxed = true),
-            properties,
-            namedProvisioner = named,
-        )
+        val service = CpeFacadeService(records, mockk(relaxed = true), properties, named)
 
         val result = service.provision(CpeProvisionCommand(sn = "SN1", uniqueExternalId = "ext-1"))
 
@@ -60,24 +54,20 @@ class CpeFacadeServiceTest {
     }
 
     @Test
-    fun `STATIC_IP provision routes to named provisioner not imported profiles`() {
+    fun `STATIC_IP provision routes to named provisioner`() {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("VSOL0031C0B6") } returns Optional.empty()
         every { records.save(any()) } answers { firstArg() }
-        val pathProvisioner = mockk<Tr069ProvisioningService>()
-        val vparamProvisioner = mockk<com.dscorp.wispadmin.acs.genieacs.VparamProvisioner>()
-        val named = mockk<com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner>()
+        val named = mockk<NamedCpeProvisioner>()
         every { named.provision(any()) } returns Tr069ProvisionOutcome(
             status = CpeStatus.COMPLETE,
             deviceId = "vsol-1",
         )
         val service = CpeFacadeService(
             records,
-            pathProvisioner,
             mockk(relaxed = true),
             GenieAcsProperties().apply { enabled = true },
-            vparamProvisioner = vparamProvisioner,
-            namedProvisioner = named,
+            named,
         )
 
         val result = service.provision(
@@ -95,8 +85,6 @@ class CpeFacadeServiceTest {
 
         assertEquals(CpeStatus.COMPLETE, result.status)
         verify(exactly = 1) { named.provision(any()) }
-        verify(exactly = 0) { vparamProvisioner.provision(any()) }
-        verify(exactly = 0) { pathProvisioner.provision(any()) }
     }
 
     @Test
@@ -104,7 +92,7 @@ class CpeFacadeServiceTest {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("VSOL0031C0B6") } returns Optional.empty()
         every { records.save(any()) } answers { firstArg() }
-        val named = mockk<com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner>()
+        val named = mockk<NamedCpeProvisioner>()
         val captured = slot<com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionRequest>()
         every { named.provision(capture(captured)) } returns Tr069ProvisionOutcome(
             status = CpeStatus.PENDING,
@@ -113,9 +101,8 @@ class CpeFacadeServiceTest {
         val service = CpeFacadeService(
             records,
             mockk(relaxed = true),
-            mockk(relaxed = true),
             GenieAcsProperties().apply { enabled = true },
-            namedProvisioner = named,
+            named,
         )
 
         service.provision(
@@ -145,12 +132,7 @@ class CpeFacadeServiceTest {
             body = "ok",
             accepted = true,
         )
-        val service = CpeFacadeService(
-            records,
-            mockk(relaxed = true),
-            client,
-            GenieAcsProperties(),
-        )
+        val service = CpeFacadeService(records, client, GenieAcsProperties())
 
         val result = service.reboot("SN1")
 
@@ -172,7 +154,7 @@ class CpeFacadeServiceTest {
                 lastInform = "2026-09-06T17:57:11.717Z",
             )
         )
-        val service = CpeFacadeService(records, mockk(relaxed = true), client, GenieAcsProperties().apply { enabled = true })
+        val service = CpeFacadeService(records, client, GenieAcsProperties().apply { enabled = true })
 
         val result = service.telemetry("ZTEGDC47BFFD")
 
@@ -182,7 +164,7 @@ class CpeFacadeServiceTest {
     }
 
     @Test
-    fun `accessLayout reports shared WAN slot from the TR-069 profile`() {
+    fun `accessLayout uses named layouts without CSV profile paths`() {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("VSOL0031C0B6") } returns Optional.empty()
         val client = mockk<GenieAcsClient>()
@@ -195,21 +177,10 @@ class CpeFacadeServiceTest {
                 connectionRequestUrl = "http://192.168.253.40:7547/",
             )
         )
-        val profiles = mockk<com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfileRegistry>()
-        every { profiles.resolve(null, "V2804AX15T") } returns com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfile(
-            productClass = "V2804AX15T",
-            wanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
-            wlan24Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
-            wlan5Path = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
-            clientWanIpConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1",
-            clientWanPppConnectionPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2",
-        )
         val service = CpeFacadeService(
             records,
-            mockk(relaxed = true),
             client,
             GenieAcsProperties().apply { enabled = true },
-            profiles,
         )
 
         val layout = service.accessLayout("VSOL0031C0B6")
@@ -217,32 +188,28 @@ class CpeFacadeServiceTest {
         assertEquals(true, layout.hasPppPath)
         assertEquals(false, layout.wanIpSharesPppSlot)
         assertEquals(null, layout.wanIpPath)
+        assertEquals(null, layout.wanPppPath)
         assertEquals("http://192.168.253.40:7547/", layout.connectionRequestUrl)
     }
 
     @Test
-    fun `pppoe provision routes to named provisioner not vparams`() {
+    fun `pppoe provision routes to named provisioner`() {
         val records = mockk<CpeRecordRepository>(relaxed = true)
         every { records.findById("VSOL0031C0B6") } returns Optional.empty()
         every { records.save(any()) } answers { firstArg() }
-        val pathProvisioner = mockk<Tr069ProvisioningService>()
-        val vparamProvisioner = mockk<com.dscorp.wispadmin.acs.genieacs.VparamProvisioner>()
-        val named = mockk<com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner>()
+        val named = mockk<NamedCpeProvisioner>()
         every { named.provision(any()) } returns Tr069ProvisionOutcome(
             status = CpeStatus.COMPLETE,
             deviceId = "vsol-1",
         )
-        val properties = GenieAcsProperties().apply {
-            enabled = true
-            this.vparams.enabled = true
-        }
         val service = CpeFacadeService(
             records,
-            pathProvisioner,
             mockk(relaxed = true),
-            properties,
-            vparamProvisioner = vparamProvisioner,
-            namedProvisioner = named,
+            GenieAcsProperties().apply {
+                enabled = true
+                this.vparams.enabled = true
+            },
+            named,
         )
 
         val result = service.provision(
@@ -255,43 +222,6 @@ class CpeFacadeServiceTest {
 
         assertEquals(CpeStatus.COMPLETE, result.status)
         verify(exactly = 1) { named.provision(any()) }
-        verify(exactly = 0) { vparamProvisioner.provision(any()) }
-        verify(exactly = 0) { pathProvisioner.provision(any()) }
-    }
-
-    @Test
-    fun `vparams accessLayout reports hasPppPath by product class with null paths`() {
-        val records = mockk<CpeRecordRepository>(relaxed = true)
-        every { records.findById("VSOL0031C0B6") } returns Optional.empty()
-        val client = mockk<GenieAcsClient>()
-        every { client.findDeviceBySerialSuffix("31C0B6") } returns listOf(
-            com.dscorp.wispadmin.acs.genieacs.GenieAcsDevice(
-                id = "vsol-1",
-                serialNumber = "VSOL0031C0B6",
-                productClass = "V2804AX15T",
-                lastInform = "2026-09-11T14:00:00Z",
-                connectionRequestUrl = "http://10.20.0.2:7547/",
-            )
-        )
-        val profiles = mockk<com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfileRegistry>(relaxed = true)
-        val service = CpeFacadeService(
-            records,
-            mockk(relaxed = true),
-            client,
-            GenieAcsProperties().apply {
-                enabled = true
-                vparams.enabled = true
-            },
-            profiles,
-        )
-
-        val layout = service.accessLayout("VSOL0031C0B6")
-
-        assertEquals(true, layout.hasPppPath)
-        assertEquals(null, layout.wanIpPath)
-        assertEquals(null, layout.wanPppPath)
-        assertEquals("http://10.20.0.2:7547/", layout.connectionRequestUrl)
-        verify(exactly = 0) { profiles.resolve(any(), any()) }
     }
 
     @Test
@@ -304,7 +234,6 @@ class CpeFacadeServiceTest {
         } returns GenieAcsTaskResult(statusCode = 202, body = "queued", accepted = true)
         val service = CpeFacadeService(
             records,
-            mockk(relaxed = true),
             client,
             GenieAcsProperties().apply {
                 enabled = true
@@ -330,7 +259,6 @@ class CpeFacadeServiceTest {
         } returns GenieAcsTaskResult(statusCode = 202, body = "ok", accepted = true)
         val service = CpeFacadeService(
             records,
-            mockk(relaxed = true),
             client,
             GenieAcsProperties().apply {
                 enabled = true
@@ -348,16 +276,15 @@ class CpeFacadeServiceTest {
 
     @Test
     fun `setWifi forwards to named provisioner`() {
-        val named = mockk<com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner>()
+        val named = mockk<NamedCpeProvisioner>()
         every {
             named.setWifi("VSOL0031C0B6", "lab-24", "lab-5", "11111111")
         } returns com.dscorp.wispadmin.acs.CpeCommandResult(true, CpeStatus.COMPLETE, "WiFi aplicado")
         val service = CpeFacadeService(
             mockk(relaxed = true),
             mockk(relaxed = true),
-            mockk(relaxed = true),
             GenieAcsProperties().apply { enabled = true },
-            namedProvisioner = named,
+            named,
         )
 
         val result = service.setWifi(

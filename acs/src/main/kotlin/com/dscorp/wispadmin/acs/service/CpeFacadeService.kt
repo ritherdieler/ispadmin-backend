@@ -10,16 +10,12 @@ import com.dscorp.wispadmin.acs.CpeWifiCommand
 import com.dscorp.wispadmin.acs.entity.CpeRecord
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
-import com.dscorp.wispadmin.acs.genieacs.GfVirtualParameters
 import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
 import com.dscorp.wispadmin.acs.genieacs.NamedCpeProvisioner
 import com.dscorp.wispadmin.acs.genieacs.NamedGenieAcsProvisions
 import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionOutcome
 import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionRequest
-import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisioningService
-import com.dscorp.wispadmin.acs.genieacs.Tr069ModelProfileRegistry
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
-import com.dscorp.wispadmin.acs.genieacs.VparamProvisioner
 import com.dscorp.wispadmin.acs.repository.CpeRecordRepository
 import com.dscorp.wispadmin.transport.RegistrationTiming
 import org.springframework.stereotype.Service
@@ -28,11 +24,8 @@ import java.time.Instant
 @Service
 class CpeFacadeService(
     private val records: CpeRecordRepository,
-    private val provisioningService: Tr069ProvisioningService,
     private val client: GenieAcsClient,
     private val properties: GenieAcsProperties,
-    private val profiles: Tr069ModelProfileRegistry? = null,
-    private val vparamProvisioner: VparamProvisioner? = null,
     private val namedProvisioner: NamedCpeProvisioner? = null,
     private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) {
@@ -132,34 +125,15 @@ class CpeFacadeService(
             null
         }
         val productClass = device?.productClass ?: record?.productClass
-        if (NamedCpeLayouts.supported(productClass) || properties.vparams.enabled) {
-            return CpeAccessLayout(
-                sn = sn,
-                productClass = productClass,
-                connectionRequestUrl = device?.connectionRequestUrl,
-                lastInformAt = device?.lastInform ?: record?.lastInformAt?.toString(),
-                wanIpPath = null,
-                wanPppPath = null,
-                hasPppPath = NamedCpeLayouts.supported(productClass),
-                wanIpSharesPppSlot = false,
-            )
-        }
-        val profile = profiles?.resolve(null, productClass)
-        val pppPath = profile?.clientWanPppConnectionPath?.takeIf { it.isNotBlank() }
-        val wanIpPath = profile?.forClientInternetWan(properties.clientWanIndex)?.wanIpConnectionPath
-        val wcdInstance = pppPath
-            ?.substringBefore(".WANIPConnection")
-            ?.substringBefore(".WANPPPConnection")
-        val shares = wanIpPath != null && wcdInstance != null && wanIpPath.startsWith("$wcdInstance.")
         return CpeAccessLayout(
             sn = sn,
             productClass = productClass,
             connectionRequestUrl = device?.connectionRequestUrl,
             lastInformAt = device?.lastInform ?: record?.lastInformAt?.toString(),
-            wanIpPath = wanIpPath,
-            wanPppPath = pppPath,
-            hasPppPath = pppPath != null,
-            wanIpSharesPppSlot = shares,
+            wanIpPath = null,
+            wanPppPath = null,
+            hasPppPath = NamedCpeLayouts.supported(productClass),
+            wanIpSharesPppSlot = false,
         )
     }
 
