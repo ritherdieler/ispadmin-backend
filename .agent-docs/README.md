@@ -125,6 +125,7 @@
 | **E2E TR-069 — validación de modelo (incl. lab HG8145X6 WAN)** | [tr069-e2e-validacion-modelo.md](./tr069-e2e-validacion-modelo.md) |
 | **Logs timing alta FIBER (`REG_TIMING`, no prod)** | [registration-timing-logs.md](./registration-timing-logs.md) |
 | **E2E Espresso — `--cleanup-mode` ask/auto/skip** | [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md) |
+| **Wipe lab staging a registros 0 (2026-09-15)** | [lab-wipe-zero-register-staging-2026-09-15.md](./lab-wipe-zero-register-staging-2026-09-15.md) |
 | **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |

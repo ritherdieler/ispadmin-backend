@@ -147,9 +147,12 @@ class DeployEnvScriptTest {
                 it.contains("\$MYSQL_SCHEMA") ||
                     it.contains("\"\$MYSQL_SCHEMA\"") ||
                     it.contains("\$OLT_GATEWAY_MYSQL_SCHEMA") ||
-                    it.contains("\"\$OLT_GATEWAY_MYSQL_SCHEMA\"")
+                    it.contains("\"\$OLT_GATEWAY_MYSQL_SCHEMA\"") ||
+                    it.contains("\$TRAFFIC_MYSQL_SCHEMA") ||
+                    it.contains("\"\$TRAFFIC_MYSQL_SCHEMA\"") ||
+                    it.contains("\$schema")
             },
-            "every mysql invocation must use MYSQL_SCHEMA or OLT_GATEWAY_MYSQL_SCHEMA, found $mysqlCalls"
+            "every mysql invocation must use a schema variable, found $mysqlCalls"
         )
         assertTrue(script.contains("OLT_GATEWAY_MYSQL_SCHEMA=\"stg_oltgateway\""))
         assertTrue(script.contains("OLT_GATEWAY_MYSQL_SCHEMA=\"prod_oltgateway\""))
@@ -189,6 +192,29 @@ class DeployEnvScriptTest {
             stagingSection.contains("gigafiberperu.smartolt.com"),
             "staging branch must not call SmartOLT cloud"
         )
+    }
+
+    @Test
+    fun tr069_e2e_hard_cleanup_does_not_delete_onu_tables_from_core_schema() {
+        val script = Files.readString(root().resolve("scripts/tr069-e2e-hard-cleanup.sh"))
+        val mysqlDelete = script.substringAfter("== MySQL delete").substringBefore("== Gateway inventory")
+        assertFalse(
+            mysqlDelete.contains("DELETE FROM onu"),
+            "core schema has no onu table; Gateway inventory lives in OLT_GATEWAY_MYSQL_SCHEMA",
+        )
+        assertFalse(
+            Regex("""DELETE FROM olt_mgr_onu\b(?!_)""").containsMatchIn(mysqlDelete),
+            "olt_mgr_onu inventory must not be deleted from core MYSQL_SCHEMA",
+        )
+        assertTrue(script.contains("TRAFFIC_MYSQL_SCHEMA"))
+        assertTrue(script.contains("stg_traffic"))
+        assertTrue(script.contains("prod_traffic"))
+        assertTrue(script.contains("gateway_mysql_q"))
+        assertTrue(script.contains("traffic_mysql_q"))
+        assertTrue(script.contains("subscription_traffic_sample"))
+        assertTrue(script.contains("olt_mgr_onu_optical_sample"))
+        assertTrue(script.contains("/rest/ppp/secret"))
+        assertTrue(script.contains("errors='replace'"), script)
     }
 
     @Test

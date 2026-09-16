@@ -39,10 +39,12 @@ case "$E2E_ENV" in
   prod)
     MYSQL_SCHEMA="ispadmin"
     OLT_GATEWAY_MYSQL_SCHEMA="prod_oltgateway"
+    TRAFFIC_MYSQL_SCHEMA="prod_traffic"
     ;;
   staging)
     MYSQL_SCHEMA="ispadmin_staging"
     OLT_GATEWAY_MYSQL_SCHEMA="stg_oltgateway"
+    TRAFFIC_MYSQL_SCHEMA="stg_traffic"
     ;;
   *) echo "Invalid --env $E2E_ENV (prod|staging)" >&2; exit 2 ;;
 esac
@@ -71,9 +73,22 @@ ssh_vps() {
     "${VPS_USER}@${VPS_HOST}" "$@"
 }
 
+mysql_schema_q() {
+  local schema="$1"
+  local sql="$2"
+  ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $schema -N -e $(printf '%q' "$sql")"
+}
+
 mysql_q() {
-  local sql="$1"
-  ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $MYSQL_SCHEMA -N -e $(printf '%q' "$sql")"
+  mysql_schema_q "$MYSQL_SCHEMA" "$1"
+}
+
+gateway_mysql_q() {
+  mysql_schema_q "$OLT_GATEWAY_MYSQL_SCHEMA" "$1"
+}
+
+traffic_mysql_q() {
+  mysql_schema_q "$TRAFFIC_MYSQL_SCHEMA" "$1"
 }
 
 echo "== resolve subscription env=$E2E_ENV schema=$MYSQL_SCHEMA =="
@@ -82,7 +97,7 @@ WHERE="1=0"
 [[ -n "$SN" ]] && WHERE="$WHERE OR fiber_onu_sn='${SN}'"
 [[ -n "$DNI" ]] && WHERE="$WHERE OR dni='${DNI}'"
 
-ROW="$(mysql_q "SELECT CONCAT_WS('|', id, IFNULL(fiber_onu_sn,''), IFNULL(ip,''), IFNULL(facade_photo_url,''), IFNULL(host_device_id,8), IFNULL(first_name,''), IFNULL(last_name,''), IFNULL(dni,'')) FROM subscription WHERE $WHERE ORDER BY id DESC LIMIT 1;" || true)"
+ROW="$(mysql_q "SELECT CONCAT_WS('|', id, IFNULL(fiber_onu_sn,''), IFNULL(ip,''), IFNULL(facade_photo_url,''), IFNULL(host_device_id,8), IFNULL(first_name,''), IFNULL(last_name,''), IFNULL(dni,''), IFNULL(pppoe_username,'')) FROM subscription WHERE $WHERE ORDER BY id DESC LIMIT 1;" || true)"
 if [[ -z "${ROW// }" ]]; then
   echo "No subscription row for id=$ID sn=$SN dni=$DNI"
   if [[ -z "$SN" ]]; then
@@ -99,9 +114,10 @@ if [[ -z "${ROW// }" ]]; then
   FIRST_NAME=""
   LAST_NAME=""
   ROW_DNI=""
+  SUB_PPPOE=""
 else
-  IFS='|' read -r SUB_ID SUB_SN SUB_IP FACADE_URL HOST_DEVICE_ID FIRST_NAME LAST_NAME ROW_DNI <<<"$ROW"
-  echo "id=$SUB_ID sn=$SUB_SN ip=$SUB_IP host=$HOST_DEVICE_ID name=$FIRST_NAME $LAST_NAME dni=$ROW_DNI"
+  IFS='|' read -r SUB_ID SUB_SN SUB_IP FACADE_URL HOST_DEVICE_ID FIRST_NAME LAST_NAME ROW_DNI SUB_PPPOE <<<"$ROW"
+  echo "id=$SUB_ID sn=$SUB_SN ip=$SUB_IP pppoe=$SUB_PPPOE host=$HOST_DEVICE_ID name=$FIRST_NAME $LAST_NAME dni=$ROW_DNI"
 fi
 
 is_lab_row() {
@@ -167,6 +183,34 @@ for a in json.loads(body):
     call('DELETE', f\"/rest/ip/firewall/address-list/{a['.id']}\")
     print('deudores_removed')
 print('MK_DONE')
+PY"
+fi
+
+if [[ -n "$SUB_PPPOE" ]]; then
+  echo "== MikroTik PPPoE secret ${SUB_PPPOE} =="
+  ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
+mapfile -t ROW < <(docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $MYSQL_SCHEMA -N -e \"SELECT ip_address, username, password FROM network_device WHERE id=${HOST_DEVICE_ID};\")
+MKIP=\$(echo \"\${ROW[0]}\" | awk '{print \$1}')
+USER=\$(echo \"\${ROW[0]}\" | awk '{print \$2}')
+PASS=\$(echo \"\${ROW[0]}\" | cut -f3)
+export MKIP USER PASS PPPOE='$SUB_PPPOE'
+python3 - <<'PY'
+import json, os, urllib.request, ssl, base64
+mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; name=os.environ['PPPOE']
+ctx=ssl._create_unverified_context()
+cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
+def call(method, path):
+  req=urllib.request.Request(f'https://{mkip}{path}', method=method)
+  req.add_header('Authorization', f'Basic {cred}')
+  with urllib.request.urlopen(req, context=ctx, timeout=45) as r:
+    return r.status, r.read().decode('utf-8', errors='replace')
+for path in ('/rest/ppp/active', '/rest/ppp/secret'):
+  st, body = call('GET', path)
+  for item in json.loads(body):
+    if item.get('name') == name:
+      print('deleting', path, item.get('.id'), name)
+      call('DELETE', f\"{path}/{item['.id']}\")
+print('PPPOE_DONE')
 PY"
 fi
 
@@ -281,23 +325,44 @@ fi
 
 if [[ -n "$SUB_ID" ]]; then
   echo "== MySQL delete id=$SUB_ID =="
-  SN_SQL="${SUB_SN:-__none__}"
+  for table in \
+    acs_wifi_station_sample acs_wifi_count_sample acs_wifi_station_hourly acs_wifi_status_current \
+    olt_mgr_onu_optical_sample olt_mgr_onu_optical_daily service_onu_state_event identity_link \
+    service_health_event service_health_current service_incident_subscription service_remote_action \
+    service_traffic_evidence subscription_access_migration subscription_reconnection \
+    collection_visit_log assistance_ticket subscription_log subscription_acs payment
+  do
+    mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || true
+  done
   mysql_q "
-DELETE FROM subscription_log WHERE subscription_id = ${SUB_ID};
-DELETE FROM subscription_acs WHERE subscription_id = ${SUB_ID};
-DELETE FROM payment WHERE subscription_id = ${SUB_ID};
 UPDATE subscription SET fiber_onu_sn = NULL WHERE id = ${SUB_ID};
 DELETE FROM subscription WHERE id = ${SUB_ID};
-DELETE FROM onu WHERE sn IN ('${SN_SQL}')
-  AND NOT EXISTS (SELECT 1 FROM subscription s WHERE s.fiber_onu_sn IN ('${SN_SQL}'));
-SET @onu_id := (SELECT id FROM olt_mgr_onu WHERE sn IN ('${SN_SQL}') LIMIT 1);
-DELETE FROM olt_mgr_onu_status_current WHERE onu_id = @onu_id;
-DELETE FROM olt_mgr_onu_service_port WHERE onu_id = @onu_id;
-DELETE FROM olt_mgr_onu_extra_vlan WHERE onu_id = @onu_id;
-DELETE FROM olt_mgr_audit_log WHERE onu_id = @onu_id;
-DELETE FROM olt_mgr_task WHERE onu_id = @onu_id;
-DELETE FROM olt_mgr_onu WHERE id = @onu_id;
 "
+  for table in \
+    subscription_traffic_sample subscription_traffic_hourly subscription_traffic_daily \
+    subscription_traffic_monthly subscription_traffic_five_minute subscription_traffic_counter_state
+  do
+    traffic_mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || true
+  done
+  if [[ -n "$SUB_IP" ]]; then
+    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = '${SUB_IP}';" || true
+  fi
+  if [[ -n "$SUB_PPPOE" ]]; then
+    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = 'pppoe:${SUB_PPPOE}';" || true
+  fi
+fi
+
+if [[ -n "$SUB_SN" ]]; then
+  echo "== Gateway inventory delete $SUB_SN =="
+  gateway_mysql_q "
+DELETE FROM olt_activation_operation WHERE sn = '${SUB_SN}';
+UPDATE olt_mgr_task SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
+UPDATE olt_mgr_audit_log SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
+DELETE FROM olt_mgr_onu_status_current WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
+DELETE FROM olt_mgr_onu_service_port WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
+DELETE FROM olt_mgr_onu_extra_vlan WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
+DELETE FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%';
+" || true
 fi
 
 if [[ -n "$ACS_DEVICE" ]]; then
