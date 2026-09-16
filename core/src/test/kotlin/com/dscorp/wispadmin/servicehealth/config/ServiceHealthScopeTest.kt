@@ -29,14 +29,15 @@ class ServiceHealthScopeTest {
     }
 
     @Test
-    fun `staging collects lab row and skips prod subscriptions`() {
+    fun `staging collects every subscription including non-lab e2e`() {
         every { directory.allIds() } returns listOf(2310, 2328, 99)
         val staging = scope("stg")
         assertTrue(staging.lab(99))
         assertFalse(staging.lab(2328))
         assertTrue(staging.collects(99))
-        assertFalse(staging.collects(2328))
-        assertEquals(setOf(99), staging.collectionSubscriptionIds())
+        assertTrue(staging.collects(2328))
+        assertTrue(staging.collects(2310))
+        assertEquals(setOf(2310, 2328, 99), staging.collectionSubscriptionIds())
     }
 
     @Test
@@ -49,22 +50,22 @@ class ServiceHealthScopeTest {
     }
 
     @Test
-    fun `prestaging collects lab row and skips the rest`() {
+    fun `prestaging collects every subscription`() {
         every { directory.allIds() } returns listOf(2310, 2328, 99)
         val prestaging = scope("lpstg")
         assertTrue(prestaging.collects(99))
-        assertFalse(prestaging.collects(2310))
-        assertEquals(setOf(99), prestaging.collectionSubscriptionIds())
+        assertTrue(prestaging.collects(2310))
+        assertEquals(setOf(2310, 2328, 99), prestaging.collectionSubscriptionIds())
     }
 
     @Test
-    fun `tagged env keeps lab collection when health enabled is off`() {
+    fun `tagged env keeps every collection id when health enabled is off`() {
         properties.enabled = false
         every { directory.allIds() } returns listOf(2310, 2328, 99)
         val staging = scope("stg")
         assertTrue(staging.collects(99))
-        assertFalse(staging.collects(2328))
-        assertEquals(setOf(99), staging.collectionSubscriptionIds())
+        assertTrue(staging.collects(2328))
+        assertEquals(setOf(2310, 2328, 99), staging.collectionSubscriptionIds())
         val prod = scope("")
         assertFalse(prod.collects(99))
         assertFalse(prod.collects(2328))

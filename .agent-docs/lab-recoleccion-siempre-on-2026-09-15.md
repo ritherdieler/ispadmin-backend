@@ -6,7 +6,7 @@ En este stack no hay zonas de cobranza SmartMap. Recolección = telemetría 360 
 
 | Capa | Flag / fuente | Quién entra en lab |
 |------|---------------|--------------------|
-| Service-health 360 (ACS Inform, óptica, diagnosis) | `service.health.enabled` + `ServiceHealthProperties.collects()` | En tag no vacío (`stg`, `lpstg`, `dev`): solo `subscription_acs.lab=1` |
+| Service-health 360 (ACS Inform, óptica, diagnosis) | `service.health.enabled` + `ServiceHealthProperties.collects()` | En tag no vacío (`stg`, `lpstg`, `dev`): **todas** las suscripciones (e2e). Prod (tag vacío) sigue excluyendo lab. |
 | Membresía lab | GenieACS `_tags` contiene `lab` → `subscription_acs.lab` | `AcsSubscriptionPort.isLab` / `labSubscriptionIds()` |
 | Tráfico MikroTik | `traffic.poll.enabled` (WAR Traffic) | Directorio Core; no filtra por lab |
 | Overlay staging | `application-staging.properties` | `service.health.enabled=true`, `gigafiber.environment.tag=stg`, `gigafiber.subsystems.servicehealth.enabled=true` |
@@ -26,14 +26,14 @@ No hay `place` ni `olt_mgr_zone` llamados lab. Place de las tres altas: **9 de o
 
 GenieACS NBI: 2 devices con tag `lab` (ZTE + VSOL). Tags `sub-5` y `sub-6` puestos en NBI.
 
-Prestaging local (`lpstg`) usa el mismo gate lab-only; no se tocó su BD.
+Prestaging local (`lpstg`) usa el mismo gate tagged = todas las suscripciones. Política e2e: [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md).
 
 ## Guard de código
 
-`SERVICE_HEALTH_ENABLED=false` (env compartido prod/staging) ya no apaga lab en ambientes con tag:
+`SERVICE_HEALTH_ENABLED=false` (env compartido prod/staging) ya no apaga recolección en ambientes con tag:
 
-- `collects()` / `collectionSubscriptionIds()`: tag no vacío → lab siempre entra; `enabled=false` solo apaga prod (tag vacío).
-- `HealthEvaluationService.evaluate()` ya no sale por `!properties.enabled` si hay ids lab.
+- `collects()` / `collectionSubscriptionIds()`: tag no vacío → **todos** los ids; `enabled=false` solo apaga prod (tag vacío).
+- `HealthEvaluationService.evaluate()` ya no sale por `!properties.enabled` si hay ids en scope.
 
 Prod sigue excluyendo labs BD. Overlays `application-staging.properties` y `application-local-prestaging.properties` hornean `service.health.enabled=true`.
 

@@ -80,18 +80,18 @@ class DiagnosisEngineTest {
         val result=engine.evaluate(input(listOf(source("run_state","online"))).copy(targets=listOf(target)))
         assertTrue(result.missingEvidence.any { it.source=="IDENTITY" && it.metric=="PON" })
     }
-    @Test fun `staging marks only lab identity as pilot`() {
+    @Test fun `staging marks every subscription as pilot for e2e`() {
         val props=ServiceHealthProperties().apply { enabled=true; correlationEnabled=true; pilotSubscriptionIds=setOf(1) }
         val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
         val customer=input(listOf(source("run_state","online")))
-        assertFalse(staging.evaluate(customer).pilotEnabled)
+        assertTrue(staging.evaluate(customer).pilotEnabled)
         assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
     }
-    @Test fun `staging lab stays pilot when health enabled is off`() {
+    @Test fun `staging stays pilot when health enabled is off`() {
         val props=ServiceHealthProperties().apply { enabled=false; correlationEnabled=true }
         val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
         val customer=input(listOf(source("run_state","online")))
         assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
-        assertFalse(staging.evaluate(customer).pilotEnabled)
+        assertTrue(staging.evaluate(customer).pilotEnabled)
     }
 }

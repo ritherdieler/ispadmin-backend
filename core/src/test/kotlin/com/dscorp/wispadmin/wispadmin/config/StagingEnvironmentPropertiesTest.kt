@@ -68,6 +68,7 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("traffic.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("traffic.core-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("gigafiber.subsystems.traffic.enabled=true"), staging)
+        assertTrue(staging.contains("traffic.poll.enabled=true"), staging)
         assertTrue(staging.contains("traffic.client-enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
         assertTrue(staging.contains("olt.gateway.client-enabled=true"), staging)

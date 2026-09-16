@@ -15,7 +15,8 @@ class ServiceHealthProperties {
     var sharedIncidentNotificationsEnabled = false
     var actionsEnabled = false
     var configEnabled = false
-    // Empty pilot list collects every non-lab subscription. Non-empty list restricts prod rollout.
+    // Empty pilot list collects every non-lab subscription in prod (blank tag).
+    // Tagged env (stg/lpstg/dev) collects every subscription so e2e stays on.
     var pilotAcsDeviceIds: List<String> = emptyList()
     var pilotSubscriptionIds: Set<Int> = emptySet()
     var stationHmacKey = ""
@@ -46,13 +47,13 @@ class ServiceHealthProperties {
     var crConcurrency = 3
     fun collects(id: Int?, lab: Boolean = false, environmentTag: String = ""): Boolean {
         if (id == null) return false
-        if (environmentTag.isNotBlank()) return lab
+        if (environmentTag.isNotBlank()) return true
         if (!enabled) return false
         if (lab) return false
         return if (pilotSubscriptionIds.isEmpty()) true else id in pilotSubscriptionIds
     }
     fun collectionSubscriptionIds(labSubscriptionIds: Collection<Int>, environmentTag: String, allSubscriptionIds: Collection<Int>): Set<Int> {
-        if (environmentTag.isNotBlank()) return labSubscriptionIds.toSet()
+        if (environmentTag.isNotBlank()) return allSubscriptionIds.toSet()
         if (!enabled) return emptySet()
         return if (pilotSubscriptionIds.isEmpty()) {
             allSubscriptionIds.toSet() - labSubscriptionIds.toSet()

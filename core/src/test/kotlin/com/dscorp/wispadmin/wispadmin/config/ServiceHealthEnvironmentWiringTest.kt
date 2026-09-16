@@ -14,7 +14,7 @@ class ServiceHealthEnvironmentWiringTest {
         Files.readString(root.resolve("core/src/main/resources/$name"))
 
     @Test
-    fun prod_must_not_set_environment_tag_or_360_would_become_lab_only() {
+    fun prod_must_not_set_environment_tag_or_360_would_collect_every_id() {
         val prod = overlay("application-prod.properties")
         assertFalse(
             Regex("""^gigafiber\.environment\.tag=""", RegexOption.MULTILINE).containsMatchIn(prod),
@@ -25,7 +25,7 @@ class ServiceHealthEnvironmentWiringTest {
     }
 
     @Test
-    fun tagged_overlays_enable_360_and_keep_lab_only_collection() {
+    fun tagged_overlays_enable_360_traffic_wifi_and_stations() {
         val staging = overlay("application-staging.properties")
         val prestaging = overlay("application-local-prestaging.properties")
         assertTrue(staging.contains("gigafiber.environment.tag=stg"), staging)
@@ -35,6 +35,10 @@ class ServiceHealthEnvironmentWiringTest {
             assertTrue(text.contains("service.health.optical-enabled=true"), text)
             assertTrue(text.contains("service.health.acs-enabled=true"), text)
         }
+        assertTrue(staging.contains("gigafiber.subsystems.traffic.enabled=true"), staging)
+        assertTrue(staging.contains("gigafiber.subsystems.servicehealth.enabled=true"), staging)
+        assertTrue(staging.contains("traffic.poll.enabled=true"), staging)
         assertTrue(prestaging.contains("gigafiber.subsystems.servicehealth.enabled=true"), prestaging)
+        assertTrue(prestaging.contains("gigafiber.subsystems.traffic.enabled=true"), prestaging)
     }
 }

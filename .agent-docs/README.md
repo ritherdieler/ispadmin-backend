@@ -48,6 +48,7 @@
 | **Vista 360 lecturas en vivo (cola + pppoe-in)** | [vista-360-live-readings-2026-09-15.md](./vista-360-live-readings-2026-09-15.md) |
 | **Vista 360 actividad en vivo por socket (STATIC_IP)** | [vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md) |
 | **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
+| **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |
 | **#5 ZTE STATIC_IP real, live-readings QUEUE** | [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md) |
 | **#5 ZTE vivo lee gf5, no cola vacía** | [staging-zte-5-pppoe-live-readings-2026-09-15.md](./staging-zte-5-pppoe-live-readings-2026-09-15.md) |
 | **Deploy staging lecturas en vivo 2026-09-15** | [deploy-staging-live-readings-2026-09-15.md](./deploy-staging-live-readings-2026-09-15.md) |

@@ -23,10 +23,10 @@ El tag `lab` **sigue siendo** del NBI (banco). El alta no lo inventa; solo lo pr
 | Ambiente | `environment.tag` | Quién entra al 360 | Overlay |
 |----------|-------------------|--------------------|---------|
 | Prod | **vacío** (prohibido setear tag) | Todas las no-lab. Labs BD **fuera**. Flags `SERVICE_HEALTH_*` / Redis en `/opt/gigafiber/.env`. |
-| Staging | `stg` | Solo `subscription_acs.lab=1` | `application-staging.properties` hornea health/óptica/ACS on |
-| Prestaging local | `lpstg` | Solo `subscription_acs.lab=1` | `application-local-prestaging.properties` |
+| Staging | `stg` | **Todas** las suscripciones (e2e). No depende de `subscription_acs.lab`. | `application-staging.properties` hornea health/óptica/ACS/tráfico on |
+| Prestaging local | `lpstg` | **Todas** las suscripciones | `application-local-prestaging.properties` |
 
-Un `gigafiber.environment.tag` en prod volvería el 360 lab-only y apagaría a los abonados. Contrato: `ServiceHealthEnvironmentWiringTest`.
+Un `gigafiber.environment.tag` en prod recolectaría todos los ids (incluido lab) e ignoraría la lista piloto. Contrato: `ServiceHealthEnvironmentWiringTest`.
 
 ## Verificación
 
