@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.service.subscription.strategies
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
+import com.dscorp.wispadmin.wispadmin.data.model.usesSimpleQueue
 import com.dscorp.wispadmin.wispadmin.data.model.Plan
 import com.dscorp.wispadmin.wispadmin.data.model.Place
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
@@ -55,9 +56,11 @@ class FiberInstallationStrategy(
 
         request.onu?.let { onuRequest ->
             onuSn = onuRequest.sn
-            subscription.accessMode = AccessMode.PPPOE_DYNAMIC
-            if (subscription.pppoeUsername.isNullOrBlank()) {
-                subscription.pppoeUsername = PppoeCredentialFactory.username(subscription.id)
+            if (subscription.accessMode != AccessMode.STATIC_IP) {
+                subscription.accessMode = AccessMode.PPPOE_DYNAMIC
+                if (subscription.pppoeUsername.isNullOrBlank()) {
+                    subscription.pppoeUsername = PppoeCredentialFactory.username(subscription.id)
+                }
             }
             val vlan = resolveVlan(subscription)
             val gateway = gatewayActivation.ifAvailable
@@ -91,8 +94,12 @@ class FiberInstallationStrategy(
                                 wifiPassword24 = request.wifiPassword24,
                                 wifiSsid5 = request.wifiSsid5,
                                 wifiPassword5 = request.wifiPassword5,
-                                pppoeUsername = subscription.pppoeUsername,
-                                pppoePassword = pppoeAccessService.decryptedPassword(subscription),
+                                pppoeUsername = subscription.pppoeUsername.takeIf {
+                                    subscription.accessMode == AccessMode.PPPOE_DYNAMIC
+                                },
+                                pppoePassword = pppoeAccessService.decryptedPassword(subscription).takeIf {
+                                    subscription.accessMode == AccessMode.PPPOE_DYNAMIC
+                                },
                             )
                         )
                     }
@@ -147,14 +154,25 @@ class FiberInstallationStrategy(
                 }
             }
 
-            val pppoeResult = timing.span(
-                "core.mk.pppoe",
-                mapOf("sn" to onuSn, "subscriptionId" to subscription.id?.toString()),
-            ) {
-                pppoeAccessService.ensureSecret(subscription, device)
+            if (subscription.accessMode.usesSimpleQueue()) {
+                val queueResult = timing.span(
+                    "core.mk.queue",
+                    mapOf("sn" to onuSn, "subscriptionId" to subscription.id?.toString()),
+                ) {
+                    simpleQueueProvisioner.ensureQueue(subscription, device, plan)
+                }
+                queueAdded = queueResult.added
+                mikrotikError = queueResult.error
+            } else {
+                val pppoeResult = timing.span(
+                    "core.mk.pppoe",
+                    mapOf("sn" to onuSn, "subscriptionId" to subscription.id?.toString()),
+                ) {
+                    pppoeAccessService.ensureSecret(subscription, device)
+                }
+                queueAdded = pppoeResult.successful
+                mikrotikError = pppoeResult.error
             }
-            queueAdded = pppoeResult.successful
-            mikrotikError = pppoeResult.error
         } ?: run {
             oltError = "Solicitud FIBER sin datos de ONU"
         }

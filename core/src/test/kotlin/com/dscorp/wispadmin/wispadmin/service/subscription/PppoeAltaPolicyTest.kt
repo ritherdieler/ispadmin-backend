@@ -74,4 +74,31 @@ class PppoeAltaPolicyTest {
         assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
         assertEquals(false, decision.needsStaticIp)
     }
+
+    @Test
+    fun `fiber can request static ip for legacy 360`() {
+        val decision = PppoeAltaPolicy.decide(
+            enabled = true,
+            installationType = InstallationType.FIBER,
+            vlan = "100",
+            requestedAccessMode = AccessMode.STATIC_IP,
+        )
+
+        assertEquals(AccessMode.STATIC_IP, decision.accessMode)
+        assertNull(decision.provisionStatus)
+        assertEquals(true, decision.needsStaticIp)
+    }
+
+    @Test
+    fun `fiber ignores non static requested access mode`() {
+        val decision = PppoeAltaPolicy.decide(
+            enabled = true,
+            installationType = InstallationType.FIBER,
+            vlan = "100",
+            requestedAccessMode = AccessMode.PPPOE_FIXED,
+        )
+
+        assertEquals(AccessMode.PPPOE_DYNAMIC, decision.accessMode)
+        assertEquals(false, decision.needsStaticIp)
+    }
 }

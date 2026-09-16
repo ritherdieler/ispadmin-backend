@@ -18,9 +18,13 @@ object PppoeAltaPolicy {
     fun decide(
         enabled: Boolean,
         installationType: InstallationType?,
-        vlan: String?
+        vlan: String?,
+        requestedAccessMode: AccessMode? = null,
     ): PppoeAltaDecision {
         if (installationType != InstallationType.FIBER) {
+            return PppoeAltaDecision(AccessMode.STATIC_IP, null)
+        }
+        if (requestedAccessMode == AccessMode.STATIC_IP) {
             return PppoeAltaDecision(AccessMode.STATIC_IP, null)
         }
         return PppoeAltaDecision(AccessMode.PPPOE_DYNAMIC, PppoeProvisionStatus.PENDING)

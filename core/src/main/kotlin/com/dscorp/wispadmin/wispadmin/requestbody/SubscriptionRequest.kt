@@ -42,6 +42,7 @@ data class SubscriptionRequest(
     var wifiSsid5: String? = null,
     var wifiPassword5: String? = null,
     var vlan: String? = null,
+    var accessMode: AccessMode? = null,
 ) {
     fun toModel(): Subscription = Subscription(
         firstName = firstName.removeSpecialCharacters(),
