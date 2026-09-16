@@ -32,3 +32,5 @@ E2E_ONU_SN=VSOL0031C0B6 ./scripts/e2e_register_fiber_staging_espresso.sh --clean
 ```
 
 `GET /subscription/{id}` → `accessMode=STATIC_IP` + IP. Directorio tráfico: `ip` sí, `pppoeUsername` no. 360: `pilot_enabled=true` (gate tagged = todos los ids).
+
+Staging vivo **2026-09-15**: VSOL es `#11` `192.168.250.11`. Detalle: [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md).

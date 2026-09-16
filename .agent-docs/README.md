@@ -50,6 +50,7 @@
 | **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
 | **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |
 | **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
+| **Staging VSOL `#11` FIBER STATIC_IP 2026-09-15** | [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md) |
 | **#5 ZTE STATIC_IP real, live-readings QUEUE** | [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md) |
 | **#5 ZTE vivo lee gf5, no cola vacía** | [staging-zte-5-pppoe-live-readings-2026-09-15.md](./staging-zte-5-pppoe-live-readings-2026-09-15.md) |
 | **Deploy staging lecturas en vivo 2026-09-15** | [deploy-staging-live-readings-2026-09-15.md](./deploy-staging-live-readings-2026-09-15.md) |
