@@ -47,63 +47,58 @@ if [[ -z "$E2E_SUBSCRIPTION_ID" && -n "$E2E_ONU_SN" ]]; then
 fi
 
 e2e_step "poll TR-069 COMPLETE subscription=$E2E_SUBSCRIPTION_ID"
-python3 - "$API_BASE" "$TOKEN" "$E2E_SUBSCRIPTION_ID" "$POLL_SECONDS" <<'PY'
-import json, sys, time, urllib.error, urllib.request
-
-base, token, sub_id, timeout = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
-deadline = time.time() + timeout
-olt = cpe = None
-attempt = 0
-url = f"{base}/subscription/{sub_id}"
-while time.time() < deadline:
-    attempt += 1
-    print(f"RETRY: TR-069 poll {attempt} GET {url}", file=sys.stderr)
-    print(f"DOING: HTTP GET {url}", file=sys.stderr)
-    print(f"URL: GET {url}", file=sys.stderr)
-    req = urllib.request.Request(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
-            code = resp.status
-            body = json.loads(raw.decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        raw = e.read()
-        code = e.code
-        print(f"HTTP: {code}", file=sys.stderr)
-        print(f"BODY: {raw[:1200]!r}", file=sys.stderr)
-        print(f"HTTP_FAIL: GET {url} code={code}", file=sys.stderr)
-        time.sleep(5)
-        continue
-    except Exception as e:
-        print("HTTP: 000", file=sys.stderr)
-        print(f"HTTP_FAIL: GET {url} {e}", file=sys.stderr)
-        time.sleep(5)
-        continue
-    print(f"HTTP: {code}", file=sys.stderr)
-    clip = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
-    if len(clip) > 1200:
-        clip = clip[:1200] + "...<clipped>"
-    print(f"BODY: {clip}", file=sys.stderr)
-    data = body.get("data") if isinstance(body, dict) else body
-    olt = (data or {}).get("oltProvisionStatus")
-    cpe = (data or {}).get("tr069ProvisionStatus")
-    ext = ((data or {}).get("fiberOnu") or {}).get("uniqueExternalId")
-    print(f"TR069: subscription={sub_id} olt={olt} cpe={cpe} unique_external_id={ext} attempt={attempt}")
-    if olt == "COMPLETE" and cpe in ("PENDING", "COMPLETE", "FAILED"):
-        if cpe == "PENDING":
-            print(f"RETRY: TR-069 still PENDING subscription={sub_id}", file=sys.stderr)
-            time.sleep(5)
-            continue
-        break
-    print(f"RETRY: waiting olt COMPLETE / cpe terminal last olt={olt} cpe={cpe}", file=sys.stderr)
-    time.sleep(5)
-else:
-    raise SystemExit("timeout waiting olt COMPLETE and cpe terminal/pending")
-
-if olt != "COMPLETE":
-    raise SystemExit(f"expected olt COMPLETE, got {olt}")
-print("E2E_ONU_ACTIVATION_STATUS_OK")
-PY
+deadline=$((SECONDS + POLL_SECONDS))
+olt=""
+cpe=""
+attempt=0
+url="$API_BASE/subscription/$E2E_SUBSCRIPTION_ID"
+while (( SECONDS < deadline )); do
+  attempt=$((attempt + 1))
+  e2e_retry "TR-069 poll $attempt GET $url"
+  set +e
+  body="$(e2e_http GET "$url" --max-time 60 -H "Authorization: Bearer $TOKEN")"
+  http_ec=$?
+  set -e
+  if [[ "$http_ec" -ne 0 ]]; then
+    sleep 5
+    continue
+  fi
+  parsed="$(E2E_ONU_BODY="$body" python3 -c '
+import json, os
+raw = os.environ.get("E2E_ONU_BODY") or ""
+try:
+    payload = json.loads(raw)
+except Exception:
+    print("||")
+    raise SystemExit
+data = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+if not isinstance(data, dict):
+    data = {}
+onu = data.get("fiberOnu") if isinstance(data.get("fiberOnu"), dict) else {}
+print("%s|%s|%s" % (
+    data.get("oltProvisionStatus") or "",
+    data.get("tr069ProvisionStatus") or "",
+    onu.get("uniqueExternalId") or "",
+))
+')"
+  olt="${parsed%%|*}"
+  rest="${parsed#*|}"
+  cpe="${rest%%|*}"
+  ext="${rest#*|}"
+  echo "TR069: subscription=$E2E_SUBSCRIPTION_ID olt=$olt cpe=$cpe unique_external_id=$ext attempt=$attempt"
+  if [[ "$olt" == "COMPLETE" && ( "$cpe" == "PENDING" || "$cpe" == "COMPLETE" || "$cpe" == "FAILED" ) ]]; then
+    if [[ "$cpe" == "PENDING" ]]; then
+      e2e_retry "TR-069 still PENDING subscription=$E2E_SUBSCRIPTION_ID"
+      sleep 5
+      continue
+    fi
+    break
+  fi
+  e2e_retry "waiting olt COMPLETE / cpe terminal last olt=$olt cpe=$cpe"
+  sleep 5
+done
+if [[ "$olt" != "COMPLETE" || ( "$cpe" != "COMPLETE" && "$cpe" != "FAILED" ) ]]; then
+  echo "timeout waiting olt COMPLETE and cpe terminal/pending last olt=$olt cpe=$cpe" >&2
+  exit 1
+fi
+echo "E2E_ONU_ACTIVATION_STATUS_OK"
