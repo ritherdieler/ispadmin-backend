@@ -25,6 +25,7 @@ class RealOltService(
     private val gatewayHttp: ObjectProvider<OltGatewayHttpClient>,
     private val objectMapper: ObjectMapper,
     private val smartOltHttpClient: SmartOltHttpClient,
+    private val mgmtIpDhcpApplier: SmartOltMgmtIpDhcpApplier,
 ) : OltService {
 
     override fun getUnConfiguredOnus(): List<Response>? {
@@ -71,6 +72,7 @@ class RealOltService(
             return
         }
         smartOltHttpClient.post("onu/authorize_onu", authorizeForm(authorizationRequest), Any::class.java)
+        mgmtIpDhcpApplier.afterAuthorize(authorizationRequest)
     }
 
     override fun deleteOnu(onuExternalId: String) {

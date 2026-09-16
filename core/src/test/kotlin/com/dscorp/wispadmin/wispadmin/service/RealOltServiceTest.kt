@@ -23,6 +23,7 @@ class RealOltServiceTest {
     private val smartOlt = mockk<SmartOltHttpClient>(relaxed = true)
     private val gatewayClient = mockk<OltGatewayHttpClient>(relaxed = true)
     private val gateway = mockk<ObjectProvider<OltGatewayHttpClient>>()
+    private val mgmtApplier = mockk<SmartOltMgmtIpDhcpApplier>(relaxed = true)
 
     private fun service(gatewayEnabled: Boolean): RealOltService {
         every { gateway.ifAvailable } returns if (gatewayEnabled) gatewayClient else null
@@ -31,6 +32,7 @@ class RealOltServiceTest {
             gatewayHttp = gateway,
             objectMapper = jacksonObjectMapper(),
             smartOltHttpClient = smartOlt,
+            mgmtIpDhcpApplier = mgmtApplier,
         )
     }
 
@@ -83,6 +85,7 @@ class RealOltServiceTest {
         verify { gatewayClient.postForm("/api/olt-gateway/onu/move/ZTEGDC47BFFD", any<MultiValueMap<String, String>>()) }
         verify(exactly = 0) { smartOlt.post(any(), any(), Any::class.java) }
         verify(exactly = 0) { smartOlt.get(any(), OnuBySnResponse::class.java) }
+        verify(exactly = 0) { mgmtApplier.afterAuthorize(any()) }
     }
 
     @Test
@@ -90,6 +93,7 @@ class RealOltServiceTest {
         service(false).authorizeOnuInSmartOltWidthPostMethod(authorizeRequest)
 
         verify { smartOlt.post("onu/authorize_onu", any(), Any::class.java) }
+        verify { mgmtApplier.afterAuthorize(authorizeRequest) }
         verify(exactly = 0) { gatewayClient.postForm(any(), any()) }
     }
 }

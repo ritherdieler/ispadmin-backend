@@ -217,7 +217,7 @@ class MockOltService : OltService {
             mgmt_ip_subnet_mask = "255.255.255.0",
             mgmt_ip_svlan = "",
             mgmt_ip_tag_transform_mode = "",
-            mgmt_ip_vlan = authorizationRequest.vlan.toString(),
+            mgmt_ip_vlan = if (authorizationRequest.vlan.trim() == "100") "1000" else authorizationRequest.vlan.toString(),
             mode = authorizationRequest.onu_mode,
             name = authorizationRequest.name,
             odb_name = "Mock ODB",
