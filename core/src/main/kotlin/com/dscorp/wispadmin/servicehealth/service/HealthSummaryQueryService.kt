@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.events.HealthSnapshotCache
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
+import com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort
 import com.dscorp.wispadmin.servicehealth.domain.HealthCurrent
 import com.dscorp.wispadmin.servicehealth.dto.ActionPolicy
 import com.dscorp.wispadmin.servicehealth.dto.HealthSummary
@@ -26,6 +27,7 @@ class HealthSummaryQueryService(
     private val subscriptionContext: ServiceHealthSubscriptionContextReader,
     private val properties: ServiceHealthProperties,
     private val json: ObjectMapper,
+    private val scope: HealthLabScopePort,
 ) {
     private val logger = LoggerFactory.getLogger(HealthSummaryQueryService::class.java)
     fun summary(id: Int, now: Instant = Instant.now()): HealthSummary {
@@ -39,7 +41,7 @@ class HealthSummaryQueryService(
                 return decorate(id, stored)
             }
         }
-        val evaluated = engine.evaluate(reader.read(id, now))
+        val evaluated = applyScope(id, engine.evaluate(reader.read(id, now)))
         persist(id, evaluated, now)
         return decorate(id, evaluated)
     }
@@ -51,7 +53,7 @@ class HealthSummaryQueryService(
      * query per Inform. At 3000 ONUs that is once every 600 ms.
      */
     fun reevaluate(id: Int, now: Instant = Instant.now()): HealthSummary {
-        val evaluated = engine.evaluate(reader.read(id, now))
+        val evaluated = applyScope(id, engine.evaluate(reader.read(id, now)))
         persist(id, evaluated, now)
         return evaluated
     }
@@ -78,14 +80,23 @@ class HealthSummaryQueryService(
         }
     }
 
+    private fun applyScope(id: Int, summary: HealthSummary): HealthSummary {
+        val collecting = scope.collects(id)
+        return summary.copy(
+            pilotEnabled = collecting,
+            actionsEnabled = properties.actionsEnabled && collecting,
+        )
+    }
+
     private fun decorate(id: Int, summary: HealthSummary): HealthSummary {
         val context = subscriptionContext.read(id)
         val open = events.findBySubscriptionIdAndEventStatus(id, "OPEN")
-        return summary.copy(
-            actionPolicy = actionPolicy(summary),
+        val gated = applyScope(id, summary)
+        return gated.copy(
+            actionPolicy = actionPolicy(gated),
             subscriber = context.subscriber,
             serviceContext = context.serviceContext,
-            diagnoses = summary.diagnoses.map { d ->
+            diagnoses = gated.diagnoses.map { d ->
                 d.copy(suppressingIncidentId = open.firstOrNull { it.diagnosisCode == d.diagnosisCode }?.suppressingIncidentId)
             },
         )

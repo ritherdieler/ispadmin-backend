@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.servicehealth.service
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
+import com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
@@ -16,20 +17,23 @@ class DiagnosisEngine(
     private val cpuThreshold: Int = 85,
     private val goodOpticalDbm: Double = -25.0,
     private val minimumCoveragePct: Double = 80.0,
-    private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties()
+    private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
+    private val scope: HealthLabScopePort? = null,
 ) {
     @Autowired
     constructor(
         properties: ServiceHealthProperties,
         netDiagPort: ObjectProvider<HealthNetDiagPort>,
         trafficPort: ObjectProvider<HealthTrafficPort>,
-        environment: GigafiberEnvironmentProperties
+        environment: GigafiberEnvironmentProperties,
+        scope: HealthLabScopePort,
     ) : this(
         properties,
         netDiagPort.ifAvailable?.cpuThreshold() ?: 85,
         -25.0,
         trafficPort.ifAvailable?.minimumCoveragePct() ?: 80.0,
-        environment
+        environment,
+        scope,
     )
     fun evaluate(input: HealthInputs): HealthSummary {
         val missing=input.sources.filter { it.qualityStatus!=Quality.FRESH }.map {
@@ -101,5 +105,6 @@ class DiagnosisEngine(
             collects(input),properties.actionsEnabled && collects(input))
     }
     private fun collects(input: HealthInputs) =
-        properties.collects(input.subscriptionId, input.identity["lab"] == "true", environment.normalizedTag())
+        scope?.collects(input.subscriptionId)
+            ?: properties.collects(input.subscriptionId, input.identity["lab"] == "true", environment.normalizedTag())
 }

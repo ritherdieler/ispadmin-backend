@@ -94,4 +94,14 @@ class DiagnosisEngineTest {
         assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
         assertTrue(staging.evaluate(customer).pilotEnabled)
     }
+    @Test fun `scope wins when engine environment tag is blank after e2e`() {
+        val props=ServiceHealthProperties().apply { enabled=true; correlationEnabled=true }
+        val scope=object: com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort {
+            override fun collects(subscriptionId: Int?) = subscriptionId==1
+            override fun collectionSubscriptionIds() = setOf(1)
+        }
+        val engine=DiagnosisEngine(props, scope=scope)
+        val lab=input(listOf(source("run_state","online"))).copy(identity=mapOf("ONU" to "sn","PON" to "1:0:1","ACS" to "device","lab" to "true"))
+        assertTrue(engine.evaluate(lab).pilotEnabled)
+    }
 }

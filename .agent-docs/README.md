@@ -51,6 +51,7 @@
 | **Vista 360 actividad en vivo por socket (STATIC_IP)** | [vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md) |
 | **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
 | **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |
+| **Banner recolección desactivada post-e2e** | [staging-e2e-collection-banner-false-2026-09-15.md](./staging-e2e-collection-banner-false-2026-09-15.md) |
 | **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
 | **Staging VSOL `#11` FIBER STATIC_IP 2026-09-15** | [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md) |
 | **ACS STATIC_IP = provision GenieACS HTTP** | [acs-static-ip-named-provision-http-2026-09-15.md](./acs-static-ip-named-provision-http-2026-09-15.md) |
