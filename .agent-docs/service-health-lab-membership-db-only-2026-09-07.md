@@ -25,7 +25,7 @@ GenieACS device tag "lab"
 - `service.health.lab-subscription-ids`
 - `ServiceHealthProperties.labSubscriptionIds`
 
-Añadir un lab: tag GenieACS `lab` + sync ACS (siguiente poll). **Sin** editar `.env` ni recreate por membresía.
+Añadir un lab: tag GenieACS `lab` + sync ACS. `upsertFromProvision` proyecta la fila con **cualquier** status si hay `deviceId` (incluido `NA`). `GET …/registration-progress` → `refreshTr069FromGateway` backfilla `subscription_acs` + tags aunque TR-069 ya esté `COMPLETE`. Detalle: [subscription-acs-lab-sync-registro-2026-09-15.md](./subscription-acs-lab-sync-registro-2026-09-15.md). **Sin** editar `.env` ni recreate por membresía.
 
 ## Staging as-built (2026-09-07)
 

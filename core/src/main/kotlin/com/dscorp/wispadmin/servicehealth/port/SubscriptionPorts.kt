@@ -40,6 +40,7 @@ data class SubscriptionHealthRef(
     val napBoxId: Int?,
     val serviceStatus: String,
     val tr069DeviceId: String? = null,
+    val pppoeUsername: String? = null,
 )
 
 data class SubscriptionHealthContext(

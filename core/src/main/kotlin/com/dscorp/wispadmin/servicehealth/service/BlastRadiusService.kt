@@ -29,7 +29,7 @@ class BlastRadiusService(
         tx.executeWithoutResult {
             cursors.lock("blast-radius") ?: return@executeWithoutResult
             val now=Instant.now()
-            val open=events.findByEventStatus("OPEN").filter { it.diagnosisCode=="GPON_DOWN" && properties.collects(it.subscriptionId) }
+            val open=events.findByEventStatus("OPEN").filter { it.diagnosisCode=="GPON_DOWN" }
             val inputs=open.associate { it.subscriptionId to reader.read(it.subscriptionId,now) }
             val stillAffected=mutableSetOf<Pair<Long,Int>>()
             val compatible=setOf("GPON_SHARED_DOWN","LINK_DOWN","UPSTREAM_PROBE_FAIL","SNMP_TRAP_LINK_DOWN","PON_PORT_DOWN","PON_PORT_HW_FAULT","PON_MASS_POWER_OFF","PON_PROTECTION_FIBER")
@@ -70,7 +70,7 @@ class BlastRadiusService(
             }
             val activeRelations=affected.findByState("AFFECTED")
             for(row in activeRelations) {
-                if(!properties.collects(row.subscriptionId) || (row.incidentId to row.subscriptionId) in stillAffected) continue
+                if((row.incidentId to row.subscriptionId) in stillAffected) continue
                 val state=reader.read(row.subscriptionId,now).sources.firstOrNull { it.metric=="run_state" }
                 if(state?.qualityStatus==Quality.FRESH && state.value=="online") {
                     row.state="RECOVERED"; row.recoveredAt=now; affected.save(row)

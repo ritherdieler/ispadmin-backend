@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.trafficclient
 
+import com.dscorp.wispadmin.transport.LiveTrafficStreamPort
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.messaging.converter.MappingJackson2MessageConverter
 import org.springframework.messaging.simp.stomp.*
@@ -15,7 +17,8 @@ import javax.annotation.PreDestroy
 
 @Component
 @ConditionalOnProperty(prefix="traffic",name=["client-enabled"],havingValue="true")
-class StompTrafficStreamTransport(private val properties: TrafficClientProperties) : TrafficStreamTransport {
+@ConditionalOnMissingBean(LiveTrafficStreamPort::class)
+class StompTrafficStreamTransport(private val properties: TrafficClientProperties) : LiveTrafficStreamPort {
     private val log=LoggerFactory.getLogger(javaClass)
     private val scheduler=ThreadPoolTaskScheduler().apply { poolSize=1;setThreadNamePrefix("traffic-heartbeat-");initialize() }
     private val client=WebSocketStompClient(StandardWebSocketClient()).apply {
@@ -24,17 +27,25 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
         defaultHeartbeat=longArrayOf(10000,10000)
     }
     private val receivers=mutableMapOf<Int,(Any)->Unit>()
+    private val commands=mutableMapOf<Int,Map<String,Any>>()
     private val bindings=mutableMapOf<Int,StompSession.Subscription>()
     private var session: StompSession?=null
     private var connecting=false
 
     @Synchronized override fun start(subscriptionId: Int,receive: (Any)->Unit) {
+        start(mapOf("subscriptionId" to subscriptionId),receive)
+    }
+
+    @Synchronized override fun start(command: Map<String,Any>,receive: (Any)->Unit) {
+        val subscriptionId=(command["subscriptionId"] as? Number)?.toInt() ?: return
         receivers[subscriptionId]=receive
+        commands[subscriptionId]=command
         session?.takeIf { it.isConnected }?.let { bind(it,subscriptionId) }
         reconnect()
     }
     @Synchronized override fun stop(subscriptionId: Int) {
         receivers.remove(subscriptionId)
+        commands.remove(subscriptionId)
         runCatching { bindings.remove(subscriptionId)?.unsubscribe() }
         runCatching { session?.takeIf { it.isConnected }?.send("/app/subscription-traffic/stop",mapOf("subscriptionId" to subscriptionId)) }
     }
@@ -43,7 +54,7 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
         if(receivers.isEmpty() || connecting) return
         session?.takeIf { it.isConnected }?.let { connected ->
             receivers.keys.forEach { id ->
-                runCatching { connected.send("/app/subscription-traffic/start",mapOf("subscriptionId" to id)) }
+                runCatching { connected.send("/app/subscription-traffic/start",startCommand(id)) }
                     .onFailure { session=null;bindings.clear() }
             }
             return
@@ -82,8 +93,9 @@ class StompTrafficStreamTransport(private val properties: TrafficClientPropertie
                 if(payload!=null) receiver?.invoke(payload)
             }
         })
-        connected.send("/app/subscription-traffic/start",mapOf("subscriptionId" to id))
+        connected.send("/app/subscription-traffic/start",startCommand(id))
     }
+    private fun startCommand(id: Int)=commands[id] ?: mapOf("subscriptionId" to id)
     @PreDestroy @Synchronized fun close() {
         receivers.clear();bindings.clear()
         runCatching { session?.disconnect() };session=null

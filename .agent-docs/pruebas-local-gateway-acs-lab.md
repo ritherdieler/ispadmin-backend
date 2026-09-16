@@ -113,23 +113,9 @@ Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gate
 
 Timeout Core→Gateway: `OltGatewayClientConfig.READ_TIMEOUT_MS = 180000` (cubre authorize SSH + ACS).
 
-### 5. Perfiles TR-069 en ACS VPS (dos imports)
+### 5. Provisions GenieACS (no CSV)
 
-`GET /api/acs/v1/profiles` debe listar `F6600R` (alias `F6600RV9.0.21`).
-
-Si falta, o si activate falla con *“No hay perfiles TR-069 importados…”* pese a que `GET /profiles` ya lista filas: importar el CSV **dos veces**.
-
-Causa: `Tr069ModelProfileImportService.importCsv` hace `registry.reload()` **dentro** de `@Transactional`; el primer import puede dejar el registry en memoria vacío.
-
-Fixture: `src/test/resources/genieacs-exports/zte-f6600r.csv`.
-
-```bash
-# body: { "csv": "<contenido>", "importedBy": "lab", "aliases": ["F6600RV9.0.21"] }
-curl -s -X POST -H "X-Acs-Key: $ACS_API_KEY" -H "Content-Type: application/json" \
-  --data-binary @/tmp/acs-import-f6600r.json \
-  http://127.0.0.1:8091/ispadmin-staging-acs/api/acs/v1/profiles/import
-# repetir el mismo POST una segunda vez
-```
+TR-069 ya no importa perfiles CSV. El ACS encola scripts por HTTP NBI (`NamedCpeProvisioner`): `gf-pppoe-wan2-poc` (PPPoE + WiFi) o `gf-static-wan2-poc` (STATIC_IP, reemplaza leftover PPP). Layouts: `F6600R`, `V2804AX15T`, `VSOLVA74`.
 
 ### 6. Limpiar la ONU lab (una pasada exige journal vacío + autofind)
 
@@ -175,7 +161,7 @@ GET http://127.0.0.1:8082/ispadmin/subscription/{id}/registration-progress
 
 COMPLETE ACS exige en WAN cliente (índice 2 / path F6600R): IP del alta, `ConnectionStatus=Connected`, SSIDs iguales a los pedidos. Timeout verify 90 s → `PENDING` (no FAILED).
 
-Lanzar el POST+poll en **background** si puede pasar de ~1–2 min; cerrar el turno y reportar al aviso de fin de job.
+Ejecutar el POST+poll con **salida visible** y mantener el turno abierto con `AwaitShell` hasta COMPLETE/timeout.
 
 ### 10. Entregar WiFi al usuario
 
@@ -204,7 +190,7 @@ No usar NAP `NO-001` / lugar `9 de octubre` (puerto GPON distinto). Lab local:
 | ONU | `ZTEGDC47BFFD` (única con tag `lab`; el script de prod toma la primera ONU) |
 | Paquete | `com.dscorp.ispadmin.dev` (BASE_URL local; no prodDebug) |
 
-Desde el repo Android (background; no `AwaitShell`):
+Desde el repo Android (consola visible; `AwaitShell` hasta el final):
 
 ```bash
 ./scripts/e2e_register_fiber_local_espresso.sh --cleanup-mode ask
@@ -247,9 +233,9 @@ No poner `mikrotik.connection.override.ip`: el alta usa `hostDeviceId` **8** (MK
 
 ## Criterio COMPLETE del ACS WAR
 
-`POST /api/acs/v1/cpe/provision` (lo llama el Gateway, no el Core) → `CpeFacadeService` → `Tr069ProvisioningService.provision`.
+`POST /api/acs/v1/cpe/provision` (lo llama el Gateway, no el Core) → `CpeFacadeService` → `NamedCpeProvisioner.provision`.
 
-Tras SPV (WAN cliente + WiFi) hace GPV y poll de caché GenieACS.
+El provisioner encola el script GenieACS por NBI HTTP y espera SSIDs / WAN según el layout.
 
 Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y** otra vez en verify. `GET /cpe/{sn}/status` lee BD ACS, no reconsulta Genie en vivo.
 
@@ -381,7 +367,18 @@ Camino: `POST /api/acs/v1/cpe/inform-notify` (NBI túnel `:7557`) → Gateway XA
 ./scripts/run-local-prestaging.sh inform-notify ZTEGDC47BFFD
 ```
 
-`GET /subscription/{id}/service-health` (JWT) lee series. Óptica/tráfico siguen vacíos aquí (SNMP y Traffic apagados).
+`GET /subscription/{id}/service-health` (JWT) lee series. Óptica SNMP sigue apagada. Tráfico **sí** corre in-process (`gigafiber.subsystems.traffic.enabled=true`); el scheduler de billing sigue off — el poll es `POST /api/traffic/v1/admin/poll`.
+
+### Tráfico STATIC_IP (wireless, MK2)
+
+Cola simple `target=IP/32`. No usa ONU ni OLT. Fixture:
+
+```bash
+./scripts/run-local-prestaging.sh start
+./scripts/prestaging-static-ip-traffic-lab.sh all
+```
+
+El script siembra un plan `WIRELESS` en `ispadmin_prestaging`, da de alta `LAB` / `STATICIP` en MK2 (`hostDeviceId` 8), comprueba que el directorio emite **solo IP** y dispara un poll. No MK1. Detalle: [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md).
 
 ---
 

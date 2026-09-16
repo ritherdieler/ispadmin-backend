@@ -170,7 +170,7 @@ No usar SmartOLT cloud en staging: el alta va por Gateway SSH; el cleanup debe b
 | Síntoma | Qué mirar |
 |---------|-----------|
 | HTTP 500 al POST suscripción | VLAN/pool (`stg` + `.250`) o SmartOLT vs facade SSH |
-| «No hay perfiles TR-069» | seed + **reload WAR**; `GET /admin/tr069-profiles` ≥3 y `F6600R` |
+| TR-069 FAILED / ONU desconocida | GenieACS tag `lab`, provision `gf-pppoe-wan2-poc` / `gf-wifi-ssid-poc`, layout del productClass |
 | Wizard sin lugar/NAP/plan | `staging-e2e-seed-all.sh`; `findByLocation` con el geo de arriba |
 | ONU no en unconfigured | SmartOLT; cleanup previo; esperar ~1 min |
 | TR-069 `MANUAL_REQUIRED` | perfil / alias tipo ONU |
@@ -184,7 +184,6 @@ Verificar API (token `dscorp`/`nohacker`):
 POST /users/login
 GET /place/findByLocation?latitude=-11.2156&longitude=-77.4107
 GET /plan   GET /napbox   GET /networkDevice/coreTypes
-GET /admin/tr069-profiles
 GET /onu/unconfigured_onus
 ```
 

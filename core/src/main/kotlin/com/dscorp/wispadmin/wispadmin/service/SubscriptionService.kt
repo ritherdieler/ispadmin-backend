@@ -191,7 +191,8 @@ class SubscriptionService(
             val pppoeDecision = PppoeAltaPolicy.decide(
                 enabled = pppoeProperties.newSubscriptions.enabled,
                 installationType = newSubscription.installationType,
-                vlan = newSubscription.vlan
+                vlan = newSubscription.vlan,
+                requestedAccessMode = newSubscription.accessMode,
             )
             val ipAssignment = if (pppoeDecision.needsStaticIp) resolveIpAssignment(newSubscription) else null
             val subscriptionToSave = createSubscriptionEntity(newSubscription, ipAssignment, pppoeDecision)

@@ -490,6 +490,56 @@ class SubscriptionProvisionServiceTest {
     }
 
     @Test
+    fun `refreshTr069FromGateway backfills subscription_acs when COMPLETE already has deviceId`() {
+        val acsSync = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsSyncService>(relaxed = true)
+        val tagger = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsSubscriptionTagger>(relaxed = true)
+        val wired = SubscriptionProvisionService(
+            repository = repository,
+            networkDeviceRepository = networkDeviceRepository,
+            planRepository = planRepository,
+            placeRepository = placeRepository,
+            installationStrategyFactory = installationStrategyFactory,
+            errorLogRepository = errorLogRepository,
+            gatewayActivation = gatewayActivation,
+            pppoeAccessService = pppoeAccessService,
+            cpeEnabled = false,
+            acsSyncService = acsSync,
+            acsTagger = tagger,
+        )
+        val subscription = baseSubscription().apply {
+            id = 6
+            installationType = InstallationType.FIBER
+            fiberOnuSn = "VSOL0031C0B6"
+            oltProvisionStatus = OltProvisionStatus.COMPLETE
+            tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE
+            tr069DeviceId = "B46415-V2804AX15T-12345B4641531C0B6"
+        }
+
+        wired.refreshTr069FromGateway(subscription)
+
+        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
+        verify {
+            acsSync.upsertFromProvision(
+                6,
+                match {
+                    it.deviceId == "B46415-V2804AX15T-12345B4641531C0B6" &&
+                        it.status == Tr069ProvisionStatus.COMPLETE
+                },
+                "VSOL0031C0B6",
+            )
+        }
+        verify {
+            tagger.apply(
+                deviceId = "B46415-V2804AX15T-12345B4641531C0B6",
+                subscriptionId = 6,
+                kind = com.dscorp.wispadmin.wispadmin.service.genieacs.GenieAcsServiceKind.INTERNET,
+                fullName = "Ana Lopez",
+                previousDeviceId = null,
+            )
+        }
+    }
+
+    @Test
     fun `retryTr069 reapplies provision when MANUAL_REQUIRED and OLT COMPLETE`() {
         val subscription = baseSubscription().apply {
             id = 42

@@ -156,6 +156,7 @@ class FiberInstallationStrategyTest {
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
+            accessMode = AccessMode.PPPOE_DYNAMIC
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
@@ -180,34 +181,46 @@ class FiberInstallationStrategyTest {
     }
 
     @Test
-    fun `processInstallation always creates pppoe secret and never simple queue`() {
+    fun `processInstallation static ip keeps mode and creates simple queue`() {
         val onuReuse = mockk<CancelledOnuReuseService>(relaxed = true)
         val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
         strategy = buildStrategy(onuReuse, queueProvisioner, noGateway())
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
-            ip = "192.168.1.77"
+            ip = "192.168.250.20"
             accessMode = AccessMode.STATIC_IP
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }
-        every { pppoeAccessService.ensureSecret(any(), any()) } returns
-            PppoeSecretResult(created = true, profile = "GF-50-50")
 
         val result = strategy.processInstallation(
             subscription = subscription,
-            request = fiberRequest().apply { clientIpAddress = "192.168.1.77" },
+            request = fiberRequest().apply {
+                accessMode = AccessMode.STATIC_IP
+                clientIpAddress = "192.168.250.20"
+                onu = OnuDto(
+                    sn = "VSOL0031C0B6",
+                    board = "1",
+                    olt_id = "gigafiber-ma5608t",
+                    onu = "",
+                    onu_type_id = "",
+                    onu_type_name = "V2804AX15T",
+                    pon_type = "gpon",
+                    port = "6",
+                )
+            },
             device = host,
             plan = subscription.plan!!,
             place = subscription.place!!
         )
 
         assertTrue(result.queueAdded)
-        assertEquals(AccessMode.PPPOE_DYNAMIC, subscription.accessMode)
-        assertEquals("gf100", subscription.pppoeUsername)
-        verify { pppoeAccessService.ensureSecret(subscription, host) }
-        verify(exactly = 0) { queueProvisioner.ensureQueue(any(), any(), any()) }
+        assertEquals(AccessMode.STATIC_IP, subscription.accessMode)
+        assertNull(subscription.pppoeUsername)
+        verify { queueProvisioner.ensureQueue(subscription, host, subscription.plan!!) }
+        verify(exactly = 0) { pppoeAccessService.ensureSecret(any(), any()) }
     }
 
     @Test
@@ -286,6 +299,7 @@ class FiberInstallationStrategyTest {
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
+            accessMode = AccessMode.PPPOE_DYNAMIC
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
             fiberOnuSn = "ALCL12345678"
@@ -304,6 +318,63 @@ class FiberInstallationStrategyTest {
         assertEquals("gigafiber-ma5608t_1_0_5", result.uniqueExternalId)
         verify { gateway.activate(match<GatewayOnuActivateRequest> { it.sn == "ALCL12345678" && it.vlan == "100" && it.pppoeUsername == "gf100" }) }
         verify(exactly = 0) { onuReuse.authorizeWithCancelledReuse(any()) }
+    }
+
+    @Test
+    fun `processInstallation static ip envia IP al Gateway sin PPPoE`() {
+        val gateway = mockk<GatewayOnuActivationClient>()
+        val provider = mockk<ObjectProvider<GatewayOnuActivationClient>>()
+        every { provider.ifAvailable } returns gateway
+        every { gateway.activate(any()) } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "gigafiber-ma5608t_1_6_116",
+            sn = "VSOL0031C0B6",
+            oltStatus = "COMPLETE",
+            cpeStatus = "PENDING",
+        )
+        val queueProvisioner = mockk<SimpleQueueProvisioner>()
+        every { queueProvisioner.ensureQueue(any(), any(), any()) } returns QueueEnsureResult(added = true)
+        strategy = buildStrategy(mockk(relaxed = true), queueProvisioner, provider)
+        val host = cloudCoreRouter(id = 8, vlanId = 100)
+        val subscription = subscriptionWithHostDevice(host).apply {
+            vlan = "100"
+            ip = "192.168.250.20"
+            accessMode = AccessMode.STATIC_IP
+            plan = Plan(id = 1, name = "basico", downloadSpeed = 200, uploadSpeed = 200)
+            place = Place(id = 1, name = "9 de octubre")
+            fiberOnuSn = "VSOL0031C0B6"
+        }
+
+        strategy.processInstallation(
+            subscription = subscription,
+            request = fiberRequest().apply {
+                accessMode = AccessMode.STATIC_IP
+                onu = OnuDto(
+                    sn = "VSOL0031C0B6",
+                    board = "1",
+                    olt_id = "gigafiber-ma5608t",
+                    onu = "",
+                    onu_type_id = "",
+                    onu_type_name = "V2804AX15T",
+                    pon_type = "gpon",
+                    port = "6",
+                )
+            },
+            device = host,
+            plan = subscription.plan!!,
+            place = subscription.place!!,
+        )
+
+        verify {
+            gateway.activate(
+                match<GatewayOnuActivateRequest> {
+                    it.sn == "VSOL0031C0B6" &&
+                        it.ip == "192.168.250.20" &&
+                        it.pppoeUsername == null &&
+                        it.pppoePassword == null
+                }
+            )
+        }
+        verify(exactly = 0) { pppoeAccessService.ensureSecret(any(), any()) }
     }
 
     @Test
@@ -375,6 +446,7 @@ class FiberInstallationStrategyTest {
         val host = cloudCoreRouter(id = 8, vlanId = 100)
         val subscription = subscriptionWithHostDevice(host).apply {
             vlan = "100"
+            accessMode = AccessMode.PPPOE_DYNAMIC
             plan = Plan(id = 54, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
             place = Place(id = 4, name = "Huacho")
         }

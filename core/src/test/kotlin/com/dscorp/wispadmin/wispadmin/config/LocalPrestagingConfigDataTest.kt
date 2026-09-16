@@ -59,4 +59,15 @@ class LocalPrestagingConfigDataTest {
         val overrideIp = properties.getProperty("mikrotik.connection.override.ip").orEmpty()
         assertTrue(overrideIp.isEmpty(), overrideIp)
     }
+
+    @Test
+    fun prestaging_enables_in_process_traffic_without_operational_schedulers() {
+        val properties = prestaging()
+        assertEquals("false", properties.getProperty("gigafiber.scheduling.enabled"))
+        assertEquals("true", properties.getProperty("gigafiber.subsystems.traffic.enabled"))
+        assertEquals("true", properties.getProperty("traffic.client-enabled"))
+        assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("traffic.internal-base-url"))
+        assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("traffic.core-base-url"))
+        assertTrue(properties.getProperty("traffic.datasource.url").orEmpty().contains("prestaging_traffic"))
+    }
 }

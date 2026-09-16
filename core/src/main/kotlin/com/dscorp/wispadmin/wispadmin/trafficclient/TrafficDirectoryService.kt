@@ -1,6 +1,8 @@
 package com.dscorp.wispadmin.wispadmin.trafficclient
 
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
+import com.dscorp.wispadmin.wispadmin.data.model.usesPppoe
+import com.dscorp.wispadmin.wispadmin.data.model.usesSimpleQueue
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.springframework.stereotype.Service
 
@@ -23,8 +25,10 @@ class TrafficDirectoryService(
 
     private fun Subscription.toEntry(): TrafficDirectoryEntryDto? {
         val id = id ?: return null
-        val ip = ip?.trim().orEmpty()
-        val pppoe = pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        val ipRaw = ip?.trim().orEmpty()
+        val pppoeRaw = pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        val ip = if (accessMode.usesSimpleQueue()) ipRaw else ""
+        val pppoe = if (accessMode.usesPppoe() && !accessMode.usesSimpleQueue()) pppoeRaw else null
         if (ip.isEmpty() && pppoe == null) return null
         val person = listOf(firstName, lastName)
             .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }

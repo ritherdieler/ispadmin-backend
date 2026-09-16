@@ -1,6 +1,8 @@
 # Agentes — pruebas largas sin bloquear el turno (2026-09-05)
 
-## Decisión
+**Obsoleto (2026-09-15).** Vigente: [agente-pruebas-largas-consola-visible-2026-09-15.md](./agente-pruebas-largas-consola-visible-2026-09-15.md).
+
+## Decisión (histórica)
 
 Tras el e2e Espresso staging FIBER (`ZTEGDC47BFFD`), se fijó que el agente **no debe** quedarse en `AwaitShell`/polling mientras corre una prueba larga. Debe usar la **notificación de fin de job en background** de Cursor.
 

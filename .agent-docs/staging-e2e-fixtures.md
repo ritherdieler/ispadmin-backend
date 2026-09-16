@@ -12,7 +12,7 @@ Desde `ispadmin-backend/` (usa `scripts/deploy.config.local`):
 ./scripts/sql/staging-e2e-seed-all.sh
 ```
 
-Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente) y hace `touch` del WAR `ispadmin-staging-acs` para que el registry ACS recargue `stg_acs.tr069_model_profile`. Sin reload, el SQL queda en MySQL pero el alta FIBER sigue diciendo «No hay perfiles TR-069 importados». No crear `ispadmin-staging-acs.xml` vacío en `webapps/` (rompe el context). La primera vez, antes de Core Flyway V50: `scripts/sql/copy-tr069-profiles-to-acs.sql`.
+Aplica `scripts/sql/staging-e2e-registration-catalog.sql` (idempotente). TR-069 ya no importa CSV: el alta encola provisions GenieACS (`NamedCpeProvisioner` → NBI HTTP). No crear `ispadmin-staging-acs.xml` vacío en `webapps/` (rompe el context).
 
 SQL suelto en el VPS:
 
@@ -25,40 +25,20 @@ docker exec -i mysql8033 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < staging-e2e-reg
 
 | Dato | Origen | Dónde vive | Obligatorio para |
 |------|--------|------------|------------------|
-| `place` (24, polígonos) | `ispadmin.place` | MySQL staging | `findByLocation`, selector Lugar |
+| `place` (24, polígonos) | `ispadmin.place` vía `ST_SRID(area, 4326)` (no reescribir WKT) | MySQL staging | `findByLocation`, selector Lugar |
 | `mufa` | `ispadmin.mufa` | MySQL staging | FK de NAP |
 | `nap_box` (162, incl. `NO-001`) | `ispadmin.nap_box` | MySQL staging | selector NAP, `/napbox/near` |
 | `plan` (al menos 1 `FIBER` activo) | `ispadmin.plan` | MySQL staging | paso plan |
 | `network_device` id **8** (MK2) | `ispadmin.network_device` | MySQL staging | host + ping e2e |
 | `ip_pool` `192.168.250.1/24` → host 8 | seed (no solapa prod) | MySQL staging | IP VLAN 100 + tag `stg` |
-| **`tr069_model_profile`** | `prod_acs.tr069_model_profile` | `stg_acs` (ACS WAR) | TR-069 / ACS; sin esto → `MANUAL_REQUIRED` |
 | Usuario staff `dscorp` | seed de app | MySQL users | login e2e |
 | ONU lab `ZTEGDC47BFFD` | SmartOLT cloud | no es MySQL | `GET /onu/unconfigured_onus` |
 
 Scripts legacy (no usar para un seed nuevo): `staging-e2e-place-nap.sql`, `staging-ip-pool.sql` — el catálogo completo ya los incluye.
 
-## Perfiles TR-069 (prod → staging)
+## TR-069 (provisions GenieACS)
 
-Necesarios para que `Tr069ProvisioningService` no corte el alta. El e2e lab usa tipo ONU **`F6600RV9.0.21`**, alias del perfil **`F6600R`**.
-
-| `product_class` | Fabricante | Aliases | Serial origen (import prod) |
-|-----------------|------------|---------|-----------------------------|
-| `F6600R` | ZTE | `F6600`, `F6600RV9.0.21` | `ZTEGDC47C838` |
-| `HG8145X6` | Huawei | `HG8145X6` | `48575443C6FBA6AA` |
-| `V2804AX15T` | Realtek | — | `12345B4641531C0B6` |
-
-Verificar:
-
-```bash
-TOKEN=$(curl -sS -X POST https://api.gigafiberperu.cloud/ispadmin-staging/users/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"dscorp","password":"nohacker"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])')
-curl -sS -H "Authorization: Bearer $TOKEN" \
-  https://api.gigafiberperu.cloud/ispadmin-staging/admin/tr069-profiles
-# ≥3 productClass, incluye F6600R
-```
-
-Tras un **nuevo import en prod** (CSV GenieACS en Administración → Perfiles TR-069), volver a correr `staging-e2e-seed-all.sh` para sincronizar staging.
+El e2e lab usa `NamedCpeLayouts` (`F6600R`, `V2804AX15T`, `VSOLVA74`) y scripts `gf-pppoe-wan2-poc` / `gf-wifi-ssid-poc`. No hay import CSV de perfiles.
 
 ## Fixture lab Android
 
@@ -89,7 +69,6 @@ curl -H "Authorization: Bearer $TOKEN" …/place/findByLocation?latitude=-11.215
 curl -H "Authorization: Bearer $TOKEN" …/plan
 curl -H "Authorization: Bearer $TOKEN" …/napbox
 curl -H "Authorization: Bearer $TOKEN" …/networkDevice/coreTypes
-curl -H "Authorization: Bearer $TOKEN" …/admin/tr069-profiles
 curl -H "Authorization: Bearer $TOKEN" …/onu/unconfigured_onus
 ```
 

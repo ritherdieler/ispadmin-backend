@@ -82,13 +82,13 @@ const now = Date.now();
 // The Inform interval is the only cadence knob: the 360 wants a sample every
 // 30 min and each Inform is one sample. Jitter is derived from the serial so it
 // is stable per CPE and the fleet does not converge on the same second.
-// Lab serials use 30 s. This script runs only on 0 BOOTSTRAP (preset events).
+// Lab serials use 60 s. This script runs only on 0 BOOTSTRAP (preset events).
 // Ongoing cadence changes go through gf-inform-interval on the inform channel.
 const serial = declare("DeviceID.SerialNumber", {value: 1}).value[0] || "";
 let jitter = 0;
 for (let i = 0; i < serial.length; i++) jitter = (jitter * 31 + serial.charCodeAt(i)) % 300;
 const isLab = serial === "ZTEGDC47BFFD" || serial === "12345B4641531C0B6";
-const informInterval = isLab ? 30 : (1800 + jitter);
+const informInterval = isLab ? 60 : (1800 + jitter);
 log("gigafiber-bootstrap serial=" + serial + " isLab=" + isLab + " interval=" + informInterval);
 
 clear("Device", now);

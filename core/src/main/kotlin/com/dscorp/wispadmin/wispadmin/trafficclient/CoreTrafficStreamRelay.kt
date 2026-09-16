@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.trafficclient
 
+import com.dscorp.wispadmin.transport.LiveTrafficStreamPort
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.event.EventListener
@@ -12,17 +13,15 @@ import org.springframework.messaging.support.ChannelInterceptor
 import org.springframework.stereotype.Controller
 import org.springframework.web.socket.messaging.SessionDisconnectEvent
 
-interface TrafficStreamTransport {
-    fun start(subscriptionId: Int,receive: (Any)->Unit)
-    fun stop(subscriptionId: Int)
-}
+typealias TrafficStreamTransport = LiveTrafficStreamPort
 
 @Controller
 @ConditionalOnProperty(prefix="traffic",name=["client-enabled"],havingValue="true")
 class CoreTrafficStreamRelay(
-    private val upstream: TrafficStreamTransport,
+    private val upstream: LiveTrafficStreamPort,
     @Lazy private val messaging: SimpMessagingTemplate,
     private val subscriptions: SubscriptionRepository,
+    private val directory: TrafficDirectoryService,
 ) : ChannelInterceptor {
     private val sessions=mutableMapOf<Int,MutableSet<String>>()
 
@@ -33,7 +32,21 @@ class CoreTrafficStreamRelay(
         require(subscriptions.existsById(id)) { "Subscription not found" }
         val session=requireNotNull(headers.sessionId)
         val watchers=sessions.getOrPut(id) { mutableSetOf() }
-        if(watchers.add(session) && watchers.size==1) upstream.start(id) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
+        if(watchers.add(session) && watchers.size==1) {
+            upstream.start(liveStartCommand(id)) { payload -> messaging.convertAndSend("/topic/subscription-traffic/$id",payload) }
+        }
+    }
+
+    private fun liveStartCommand(id: Int): Map<String, Any> {
+        val command = mutableMapOf<String, Any>("subscriptionId" to id)
+        val entry = directory.list().firstOrNull { it.subscriptionId == id } ?: return command
+        val ip = entry.ip.trim().takeIf { it.isNotEmpty() }
+        val pppoe = entry.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
+        check(ip == null || pppoe == null) { "Traffic directory emitted ip and pppoeUsername for $id" }
+        ip?.let { command["ip"] = it }
+        pppoe?.let { command["pppoeUsername"] = it }
+        entry.routerHint?.let { command["routerHint"] = it }
+        return command
     }
     @MessageMapping("/subscription-traffic/stop")
     @Synchronized fun stop(request: Map<String,Any>,headers: SimpMessageHeaderAccessor) {

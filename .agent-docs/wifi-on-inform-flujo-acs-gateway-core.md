@@ -2,6 +2,8 @@
 
 **Doc canónico** (cómo funciona el camino). Las notas con fecha son evidencia operativa; no sustituyen este documento.
 
+Cadencia lab 60 s y persist 1:1 sin throttle Core: [wifi-inform-clock-una-perilla-2026-09-15.md](./wifi-inform-clock-una-perilla-2026-09-15.md).
+
 ## 0. Principio: el Inform es la única fuente de verdad
 
 El Inform de cada ONU, al intervalo que tenga configurado, es la única fuente de
@@ -18,10 +20,11 @@ De ahí salen tres consecuencias que contradicen versiones anteriores de este do
   sesión ve la sesión *anterior*. El payload del `ext` elimina ese desfase por
   construcción. El `readDeviceCache` queda solo como fallback.
 - **`PeriodicInformInterval` es la única perilla de cadencia viva.** Vive en
-  `gf-inform-interval` (canal `inform`, cada sesión). Lab 4 s; flota 1800 s +
+  `gf-inform-interval` (canal `inform`, cada sesión). Lab **60 s**; flota **1800 s** +
   jitter. El preset `bootstrap` es solo `0 BOOTSTRAP` (factory): `clear()` +
   credenciales. Un reboot (`1 BOOT` / `M Reboot`) no corre bootstrap; el
-  intervalo nuevo se toma en el próximo Inform.
+  intervalo nuevo se toma en el próximo Inform. Core persiste **cada** `cpe.inform`
+  completo (idempotente por `informAt`); no copia el intervalo ni filtra por hueco.
 
 Desacople de transporte (HTTP / Redis Streams; ACS **no** XADD): [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md).  
 Secretos (solo nombres): [vps-secrets-management.md](./vps-secrets-management.md).  
@@ -74,7 +77,7 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 | 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS WAR con el payload en el body. Timeout 2500 ms, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
 | 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
 | 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
-| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Gate `ServiceHealthScope.collects`; idempotente; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC) y `acs_wifi_status_current`. |
+| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC, `observedAt` = `informAt`) y `acs_wifi_status_current`. |
 | 7 | Backoffice 360 | `GET …/service-health/series` → `WifiCharts` / estaciones. |
 
 `ACS/collector` del 360 sale de `acs_wifi_status_current.observedAt` de la suscripción,
@@ -107,7 +110,7 @@ El preset piloto usa canal `inform` con `events: {}`: **cualquier** Inform del a
 | ProductClass | `V2804AX15T` |
 | Tag | `lab` |
 | Suscripción staging (evidencia) | `subscription_id=2389` |
-| `PeriodicInformInterval` | Lab: **5 s** (tag `lab` o serial de banco). Flota: **1800 s + jitter**. Todo en `gigafiber-bootstrap.js`; el provision de telemetría ya no escribe cadencia |
+| `PeriodicInformInterval` | Lab: **60 s** (serial de banco). Flota: **1800 s + jitter**. Todo en `gigafiber-bootstrap.js` / `gf-inform-interval.js`; el provision de telemetría ya no escribe cadencia |
 | Radios VSOL | WLAN **1** (5 GHz), WLAN **5** (2.4 GHz) |
 
 No se toca el preset/provision global `inform` / `inform.js` de flota. Allowlist = Serial + ProductClass del `_id` anterior.
@@ -146,7 +149,7 @@ En Core (`CpeInformPersistService`):
 1. Resuelve `subscriptionId` por SN (`IdentityService.resolveOnu`).
 2. Si ya existe fila con **`deviceId` + `subscriptionId` + `informAt`**, sale sin reescribir.
 3. Upsert atómico de count sample con `informAt` / `observedAt` (texto UTC).
-4. Stations y `acs_wifi_status_current` se enganchan al id del count sample vía `AcsWifiSampleLookup.idAfterUpsert` (no confiar solo en lookup JPA por `Instant`).
+4. Stations se estampan con `observedAt = informAt` (el timestamp de hoja TR-069 solo sirve al gate `complete`). `acs_wifi_status_current` se engancha al id del count sample vía `AcsWifiSampleLookup.idAfterUpsert` (no confiar solo en lookup JPA por `Instant`).
 
 Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload incompleto / `UNSUPPORTED` → skip (log), sin fallar el consumer.
 

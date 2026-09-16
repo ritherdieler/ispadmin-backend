@@ -15,4 +15,24 @@ class TrafficStreamActivityTest {
             verify { session.send("/app/subscription-traffic/start",mapOf("subscriptionId" to 7)) }
         } finally { transport.close() }
     }
+
+    @Test fun `upstream start forwards static ip identity on the socket command`() {
+        val transport=StompTrafficStreamTransport(TrafficClientProperties())
+        try {
+            val session=mockk<StompSession>(relaxed=true)
+            every { session.isConnected } returns true
+            transport.javaClass.getDeclaredField("session").apply { isAccessible=true }.set(transport,session)
+            transport.start(mapOf("subscriptionId" to 5, "ip" to "192.168.250.20", "routerHint" to 8)) { }
+            verify {
+                session.send(
+                    "/app/subscription-traffic/start",
+                    match<Map<String, Any>> {
+                        it["subscriptionId"] == 5 &&
+                            it["ip"] == "192.168.250.20" &&
+                            it["routerHint"] == 8
+                    },
+                )
+            }
+        } finally { transport.close() }
+    }
 }

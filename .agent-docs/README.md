@@ -3,6 +3,7 @@
 | Tema | Archivo |
 |------|---------|
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
+| **Pruebas largas: consola visible (agentes)** | [agente-pruebas-largas-consola-visible-2026-09-15.md](./agente-pruebas-largas-consola-visible-2026-09-15.md) |
 | **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |
 | **Ambiente `local-prestaging` (Core+Gateway+ACS en Mac, OLT LAN, GenieACS túnel)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#ambiente-local-prestaging) |
 | **E2E FIBER `local-prestaging` (curl Core `:8082`, ACS `:8090`)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#e2e-alta-fiber-local-prestaging) |
@@ -10,10 +11,12 @@
 | **VLAN 1 en desuso — destino VLAN 100** | [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md) |
 | **Diagramas ordenados (sin cruces de líneas)** | [diagramas-arquitectura-orden.md](./diagramas-arquitectura-orden.md) |
 | **Arquitectura 4 WARs — Core sin dominio ACS** | [arquitectura-4-wars-core-sin-acs.md](./arquitectura-4-wars-core-sin-acs.md) |
-| **Perfiles TR-069: gobierno ACS WAR** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
+| **Perfiles TR-069 CSV retirados (2026-09-15)** | [tr069-csv-profiles-removed-2026-09-15.md](./tr069-csv-profiles-removed-2026-09-15.md) |
+| **Perfiles TR-069: gobierno ACS WAR (histórico)** | [tr069-perfiles-gobierno-acs.md](./tr069-perfiles-gobierno-acs.md) |
 | **Provisions nombrados cableados Core→Gateway→ACS** | [provisions-core-gateway-acs.md](./provisions-core-gateway-acs.md) |
 | **Provisions de lab: PPPoE, WiFi, reboot (args, layouts, curl, Core→Gateway→ACS)** | [genieacs-provisions-lab.md](./genieacs-provisions-lab.md) |
 | **GenieACS provisions F6600R/VSOL: `commit()`, AddObject, layouts, errores de POC, ver logs** | [genieacs-provisions-f6600r-hallazgos.md](./genieacs-provisions-f6600r-hallazgos.md) |
+| **F6600 PPPoE slot `.2` si `wildcardSize` undefined (2026-09-16)** | [gf-pppoe-f6600-slot2-undefined-2026-09-16.md](./gf-pppoe-f6600-slot2-undefined-2026-09-16.md) |
 | **Scripts GenieACS — clean code** (provisions / virtual-parameters) | [genieacs-scripts-cleancode.md](./genieacs-scripts-cleancode.md) |
 | **As-built 4 WARs ACS 2026-09-04** | [arquitectura-4-wars-as-built-2026-09-04.md](./arquitectura-4-wars-as-built-2026-09-04.md) |
 | **Fix overlay client Gateway + security WAR 2026-09-04** | [fix-staging-gateway-client-overlay-2026-09-04.md](./fix-staging-gateway-client-overlay-2026-09-04.md) |
@@ -21,6 +24,7 @@
 | **Diagrama 3 WARs — detalle por rectángulo** | [arquitectura-3-wars-detalle.md](./arquitectura-3-wars-detalle.md) |
 | **Subsistemas: desacople (REST/WebSocket/Redis Streams interno)** | [subsistemas-desacople-transporte.md](./subsistemas-desacople-transporte.md) |
 | **WiFi-on-Inform — flujo ACS → Gateway → Core (canónico)** | [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md) |
+| **Reloj Wi-Fi 360 = Inform (una perilla, lab 60 s)** | [wifi-inform-clock-una-perilla-2026-09-15.md](./wifi-inform-clock-una-perilla-2026-09-15.md) |
 | **Óptica SNMP push — Gateway → Redis → Core (canónico)** | [optical-push-gateway-core.md](./optical-push-gateway-core.md) |
 | **Óptica diaria — roll-up y retención (raw 90d / daily 730d)** | [optical-daily-rollup-retention.md](./optical-daily-rollup-retention.md) |
 | **Contención SNMP óptica (lock Redis + timeout 15s)** | [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md) |
@@ -37,6 +41,28 @@
 | **360: refrescos manuales Wi‑Fi/óptica sin cooldown** | [service-health-manual-refresh-no-cooldown-2026-09-03.md](./service-health-manual-refresh-no-cooldown-2026-09-03.md) |
 | **Diagnóstico técnico convergente — inventario/notas** | [diagnostico-tecnico-convergente-complemento.md](./diagnostico-tecnico-convergente-complemento.md) |
 | **Tráfico — capas 1m/5m/1h/1d y watermarks** | [traffic-recoleccion-politica.md](./traffic-recoleccion-politica.md) |
+| **Directorio tráfico por accessMode (PPPoE vs IP)** | [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md) |
+| **360 identity PPPOE (consumo sin IP)** | [service-health-identity-pppoe-2026-09-15.md](./service-health-identity-pppoe-2026-09-15.md) |
+| **Live socket in-process (WAR único)** | [vista-360-live-socket-inprocess-2026-09-15.md](./vista-360-live-socket-inprocess-2026-09-15.md) |
+| **Deploy+smoke staging live in-process 2026-09-15** | [deploy-staging-live-socket-inprocess-2026-09-15.md](./deploy-staging-live-socket-inprocess-2026-09-15.md) |
+| **Deploy staging live-socket STATIC_IP 2026-09-15** | [deploy-staging-live-socket-static-ip-2026-09-15.md](./deploy-staging-live-socket-static-ip-2026-09-15.md) |
+| **Deploy staging 360 PPPoE + STATIC_IP 2026-09-15** | [deploy-staging-360-pppoe-static-2026-09-15.md](./deploy-staging-360-pppoe-static-2026-09-15.md) |
+| **Deploy staging tráfico accessMode 2026-09-15** | [deploy-staging-traffic-access-mode-2026-09-15.md](./deploy-staging-traffic-access-mode-2026-09-15.md) |
+| **Vista 360 lecturas en vivo (cola + pppoe-in)** | [vista-360-live-readings-2026-09-15.md](./vista-360-live-readings-2026-09-15.md) |
+| **Vista 360 actividad en vivo por socket (STATIC_IP)** | [vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md) |
+| **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
+| **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |
+| **Gate de recolección 360 eliminado (prod + staging)** | [remove-collection-gate-2026-09-15.md](./remove-collection-gate-2026-09-15.md) |
+| **Banner recolección desactivada post-e2e (histórico)** | [staging-e2e-collection-banner-false-2026-09-15.md](./staging-e2e-collection-banner-false-2026-09-15.md) |
+| **Deploy staging decorate 360 recolección on** | [deploy-staging-360-collect-banner-2026-09-15.md](./deploy-staging-360-collect-banner-2026-09-15.md) |
+| **Deploy staging WAR acumulado + logs e2e 2026-09-16** | [deploy-staging-e2e-console-logs-2026-09-16.md](./deploy-staging-e2e-console-logs-2026-09-16.md) |
+| **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
+| **Staging VSOL `#11` FIBER STATIC_IP 2026-09-15** | [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md) |
+| **WAN2 se reemplaza en alta STATIC/PPPoE 2026-09-16** | [wan-internet-replace-static-2026-09-16.md](./wan-internet-replace-static-2026-09-16.md) |
+| **ACS STATIC_IP = provision GenieACS HTTP** | [acs-static-ip-named-provision-http-2026-09-15.md](./acs-static-ip-named-provision-http-2026-09-15.md) |
+| **#5 ZTE STATIC_IP real, live-readings QUEUE** | [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md) |
+| **#5 ZTE vivo lee gf5, no cola vacía** | [staging-zte-5-pppoe-live-readings-2026-09-15.md](./staging-zte-5-pppoe-live-readings-2026-09-15.md) |
+| **Deploy staging lecturas en vivo 2026-09-15** | [deploy-staging-live-readings-2026-09-15.md](./deploy-staging-live-readings-2026-09-15.md) |
 | **Traffic WAR desacople (IP + subscription_id)** | [traffic-war-desacople-2026-09-03.md](./traffic-war-desacople-2026-09-03.md) |
 | **OLT Gateway WAR (staging primero)** | [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) |
 | **Toggle SmartOLT / SSH de escrituras en Gateway** | [gateway-smartolt-write-toggle-2026-09-05.md](./gateway-smartolt-write-toggle-2026-09-05.md) |
@@ -112,6 +138,10 @@
 | **Logs timing alta FIBER (`REG_TIMING`, no prod)** | [registration-timing-logs.md](./registration-timing-logs.md) |
 | **E2E Espresso — `--cleanup-mode` ask/auto/skip** | [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md) |
 | **Wipe lab staging a registros 0 (2026-09-15)** | [lab-wipe-zero-register-staging-2026-09-15.md](./lab-wipe-zero-register-staging-2026-09-15.md) |
+| **Wipe staging #9 #10 #11 (2026-09-15)** | [lab-wipe-staging-9-10-11-2026-09-15.md](./lab-wipe-staging-9-10-11-2026-09-15.md) |
+| **Staging place.area SRID / findByLocation 404** | [staging-place-srid-findbylocation-2026-09-15.md](./staging-place-srid-findbylocation-2026-09-15.md) |
+| **Staging VSOL `#12` FIBER PPPoE e2e Android** | [staging-vsol-12-pppoe-android-e2e-2026-09-15.md](./staging-vsol-12-pppoe-android-e2e-2026-09-15.md) |
+| **#10 WIRELESS STATIC_IP recolección legacy** | [staging-static-ip-10-legacy-2026-09-15.md](./staging-static-ip-10-legacy-2026-09-15.md) |
 | **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |

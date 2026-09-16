@@ -1,8 +1,6 @@
 package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
-import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
@@ -44,7 +42,6 @@ class RemoteActionPersistenceTest {
     private lateinit var remote: RemoteActionService
     private lateinit var cpe: HealthCpePort
     private lateinit var directory: SubscriptionDirectoryPort
-    private val acs = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
     private val actor=HealthActor(1,"TECHNICIAN")
 
     private fun ref(id: Int) = SubscriptionHealthRef(
@@ -71,11 +68,8 @@ class RemoteActionPersistenceTest {
         identity: IdentityService,
         optical: ObjectProvider<HealthLabOpticalPort>? = null,
     ): RemoteActionService {
-        every { acs.isLab(any()) } returns false
-        every { acs.labSubscriptionIds() } returns emptyList()
-        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), directory, acs)
         return RemoteActionService(
-            properties, scope, actions, cursors, directory, wifi, identity, cpeProvider(cpe),
+            properties, actions, cursors, directory, wifi, identity, cpeProvider(cpe),
             TransactionTemplate(manager), ObjectMapper(), null, optical,
         )
     }
@@ -90,7 +84,7 @@ class RemoteActionPersistenceTest {
             every { directory.find(id) } returns ref(id)
             every { identity.resolveOnu("sn$id") } returns id
         }
-        val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
+        val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; configEnabled=true; stationHmacKey="k".repeat(32) }
         every { directory.allIds() } returns (1..6).toList()
         remote=buildRemote(properties, identity)
     }
@@ -129,7 +123,7 @@ class RemoteActionPersistenceTest {
     @Test fun `manual optical refresh can be reserved immediately after a previous optical refresh`() {
         val properties = ServiceHealthProperties().apply {
             enabled = true; actionsEnabled = true; opticalEnabled = true
-            pilotSubscriptionIds = (1..6).toSet(); stationHmacKey = "k".repeat(32)
+            stationHmacKey = "k".repeat(32)
         }
         val identity = mockk<IdentityService>()
         every { identity.resolveOnu("sn1") } returns 1
@@ -162,7 +156,7 @@ class RemoteActionPersistenceTest {
         every { port.refreshBySn("sn1") } returns HealthLabOpticalRefresh(true)
         val provider=mockk<ObjectProvider<HealthLabOpticalPort>>()
         every { provider.ifAvailable } returns port
-        val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; pilotSubscriptionIds=(1..6).toSet(); stationHmacKey="k".repeat(32) }
+        val properties=ServiceHealthProperties().apply { enabled=true; actionsEnabled=true; opticalEnabled=true; stationHmacKey="k".repeat(32) }
         every { directory.allIds() } returns (1..6).toList()
         val identity = mockk<IdentityService>()
         every { identity.resolveOnu("sn1") } returns 1

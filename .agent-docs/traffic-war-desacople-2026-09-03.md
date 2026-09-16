@@ -1,12 +1,12 @@
 # Traffic WAR — desacople IP + subscription_id (2026-09-03)
 
-El collector de tráfico deja de leer `Subscription`/`NetworkDevice` por JDBC. Recolección por IP de `/queue/simple`; atribución `subscription_id` vía directorio REST del core.
+El collector de tráfico deja de leer `Subscription`/`NetworkDevice` por JDBC. Recolección en `/queue/simple`; atribución `subscription_id` vía directorio REST del core. El Core elige la identidad según `accessMode` (PPPoE dinámico = username; estático/fijo = IP). Matriz y verificación: [traffic-directorio-access-mode-2026-09-15.md](./traffic-directorio-access-mode-2026-09-15.md).
 
 ## Identidad
 
 | Rol | Campo | Origen |
 |-----|--------|--------|
-| Recolección | `client_ip` | MikroTik queue target |
+| Recolección | `client_ip` | IP `/32` o `pppoe:{username}` (cola `<pppoe-user>`) |
 | Atribución | `subscription_id` nullable | `GET /internal/traffic/targets` |
 
 UK de muestra: `(client_ip, bucket_start)`. Si el directorio falla, el poll sigue y deja `subscription_id` nulo.

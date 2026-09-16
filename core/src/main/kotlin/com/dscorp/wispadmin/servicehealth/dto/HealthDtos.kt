@@ -23,7 +23,7 @@ data class SubscriptionContext(val subscriber: SubscriberContext, val serviceCon
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
 data class HealthSummary(val subscriptionId: Int, val evaluatedAt: Instant, val states: Map<String,String>,
                          val sources: List<Evidence>, val diagnoses: List<Diagnosis>, val missingEvidence: List<MissingEvidence>,
-                         val identity: Map<String,Any?>, val pilotEnabled: Boolean, val actionsEnabled: Boolean,
+                         val identity: Map<String,Any?>, val actionsEnabled: Boolean,
                          val ruleVersion: String = "service-health-v1",
                          val actionPolicy: Map<String,ActionPolicy> = emptyMap(),
                          val subscriber: SubscriberContext? = null,

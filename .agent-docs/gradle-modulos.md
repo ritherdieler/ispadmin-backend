@@ -39,7 +39,7 @@ Un solo contexto Spring:
 - Clientes HTTP entre módulos siguen en loopback (`*.internal-base-url` del mismo context-path).
 - `AcsApplication` / `OltGatewayApplication` / `TrafficApplication` no hacen `@ComponentScan`: el WAR único ya escanea esos paquetes. Un scan anidado duplica `@RestController` (`Ambiguous mapping`).
 - Rutas públicas `/traffic/network/**` y `/traffic/bandwidth/v1/**` las sirve el core (`BandwidthIntelligenceFacadeController`). Los controllers homónimos del módulo traffic quedan detrás de `traffic.legacy-context-paths=true`.
-- STOMP `/app/subscription-traffic/*`: en el WAR único gana `CoreTrafficStreamRelay` (`traffic.client-enabled=true`). `SubscriptionTrafficWebSocket` del módulo traffic solo carga si `traffic.client-enabled=false` (WAR traffic aislado). Si ambos viven, Spring falla con `Ambiguous mapping`.
+- STOMP `/app/subscription-traffic/*`: en el WAR único gana `CoreTrafficStreamRelay` (`traffic.client-enabled=true`). El monitor live es in-process (`SubscriptionTrafficLiveMonitor` implementa `LiveTrafficStreamPort`). `StompTrafficStreamTransport` solo carga si no hay ese bean (core hablando con un WAR traffic sibling). `SubscriptionTrafficWebSocket` del módulo traffic solo carga si `traffic.client-enabled=false` (WAR traffic aislado). Si relay y WS viven juntos, Spring falla con `Ambiguous mapping`.
 
 ## Comandos
 

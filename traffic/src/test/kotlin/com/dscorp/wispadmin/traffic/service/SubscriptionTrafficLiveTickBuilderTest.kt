@@ -19,6 +19,24 @@ class SubscriptionTrafficLiveTickBuilderTest {
     }
 
     @Test
+    fun `findQueueRow matches tagged static queue by target ip`() {
+        val queues = listOf(
+            mapOf(
+                "name" to "[stg] id:5",
+                "target" to "192.168.250.20/32",
+                "bytes" to "148240/148716",
+                "rate" to "11200/11200",
+            )
+        )
+        val row = SubscriptionTrafficLiveTickBuilder.findQueueRow(
+            queues,
+            ip = "192.168.250.20",
+            pppoeUsername = null,
+        )
+        assertEquals("[stg] id:5", row?.get("name"))
+    }
+
+    @Test
     fun `findQueueRow matches dynamic pppoe queue by username without IP`() {
         val queues = listOf(
             mapOf("name" to "<pppoe-gf77>", "target" to "10.64.0.25/32", "bytes" to "100/200", "rate" to "0/0")

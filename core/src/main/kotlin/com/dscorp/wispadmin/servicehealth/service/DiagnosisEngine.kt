@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
-import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
@@ -16,20 +15,17 @@ class DiagnosisEngine(
     private val cpuThreshold: Int = 85,
     private val goodOpticalDbm: Double = -25.0,
     private val minimumCoveragePct: Double = 80.0,
-    private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties()
 ) {
     @Autowired
     constructor(
         properties: ServiceHealthProperties,
         netDiagPort: ObjectProvider<HealthNetDiagPort>,
         trafficPort: ObjectProvider<HealthTrafficPort>,
-        environment: GigafiberEnvironmentProperties
     ) : this(
         properties,
         netDiagPort.ifAvailable?.cpuThreshold() ?: 85,
         -25.0,
         trafficPort.ifAvailable?.minimumCoveragePct() ?: 80.0,
-        environment
     )
     fun evaluate(input: HealthInputs): HealthSummary {
         val missing=input.sources.filter { it.qualityStatus!=Quality.FRESH }.map {
@@ -97,9 +93,7 @@ class DiagnosisEngine(
             "Revisar última corrida, acceso al equipo y salud del collector antes de intervenir al cliente")
         return HealthSummary(input.subscriptionId,input.now,mapOf("gpon" to if(online) "ONLINE" else if(offline) "OFFLINE" else "UNKNOWN",
             "internet" to if(trafficPresent) "ACTIVE" else "UNKNOWN", "acs" to (source("last_inform")?.qualityStatus?.name ?: "MISSING")),
-            input.sources,if(properties.correlationEnabled && collects(input)) diagnoses else emptyList(),missing,input.identity+mapOf("plan" to input.planSnapshot,"service_status" to input.serviceStatus),
-            collects(input),properties.actionsEnabled && collects(input))
+            input.sources,if(properties.correlationEnabled) diagnoses else emptyList(),missing,input.identity+mapOf("plan" to input.planSnapshot,"service_status" to input.serviceStatus),
+            properties.actionsEnabled)
     }
-    private fun collects(input: HealthInputs) =
-        properties.collects(input.subscriptionId, input.identity["lab"] == "true", environment.normalizedTag())
 }

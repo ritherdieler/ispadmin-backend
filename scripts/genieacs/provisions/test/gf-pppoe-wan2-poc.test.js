@@ -34,9 +34,10 @@ const F6600_WLAN5 = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5";
 const VSOL_WLAN24 = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5";
 const VSOL_WLAN5 = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1";
 
-function runProvision(productClass, existingInstances, extraArgs) {
+function runProvision(productClass, existingInstances, extraArgs, options) {
   const existing = new Set(existingInstances);
   const ops = [];
+  const undefinedWildcards = new Set((options && options.undefinedWildcardSize) || []);
 
   function declare(p, _timestamps, values) {
     if (p === "DeviceID.ProductClass") {
@@ -55,6 +56,9 @@ function runProvision(productClass, existingInstances, extraArgs) {
       ops.push({ op: "set", path: p, value: values.value });
     }
     if (String(p).endsWith(".*")) {
+      if (undefinedWildcards.has(p)) {
+        return { path: undefined, size: undefined };
+      }
       const prefix = instancePrefix(p);
       const ids = new Set();
       for (const inst of existing) {
@@ -216,6 +220,45 @@ describe("gf-pppoe-wan2-poc layouts", () => {
     assert.equal(sets[F6600_WLAN24 + ".KeyPassphrase"], "from24pass");
     assert.equal(sets[F6600_WLAN5 + ".SSID"], "lab-zte-5");
     assert.equal(sets[F6600_WLAN5 + ".KeyPassphrase"], "from24pass");
+  });
+
+  it("F6600R deletes leftover WANIP.3 so only mgmt plus PPP remain", () => {
+    const leftoverIp3 = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.3";
+    const ops = runProvision("F6600R", [F6600_MGMT, F6600_PPP, leftoverIp3]);
+    assert.deepEqual(pathsOf(ops, "delete"), [leftoverIp3]);
+    assert.equal(bySetPath(ops)[F6600_MGMT + ".Enable"], undefined);
+  });
+
+  it("F6600R when PPP wildcard size is undefined adds WANPPP.2 not empty .1", () => {
+    const factoryPpp1 = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1";
+    const leftoverPpp3 = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.3";
+    const ops = runProvision(
+      "F6600R",
+      [F6600_MGMT, factoryPpp1, leftoverPpp3, F6600_IP],
+      undefined,
+      { undefinedWildcardSize: [F6600_PPP_PARENT] },
+    );
+    assert.deepEqual(pathsOf(ops, "delete"), [F6600_IP, leftoverPpp3]);
+    const adds = ops.filter((item) => item.op === "add");
+    assert.equal(adds.length, 1);
+    assert.equal(adds[0].path, F6600_PPP_PARENT);
+    assert.equal(adds[0].count, 2);
+    const sets = bySetPath(ops);
+    assert.equal(sets[F6600_PPP + ".Username"], "gflabzte");
+    assert.equal(sets[F6600_PPP + ".Enable"], true);
+    assert.equal(sets[F6600_MGMT + ".Enable"], undefined);
+    assert.equal(sets[factoryPpp1 + ".Username"], undefined);
+    assert.equal(sets[factoryPpp1 + ".Enable"], undefined);
+  });
+
+  it("F6600R with only mgmt WAN adds PPP count 2", () => {
+    const ops = runProvision("F6600R", [F6600_MGMT]);
+    const adds = ops.filter((item) => item.op === "add");
+    assert.equal(adds.length, 1);
+    assert.equal(adds[0].path, F6600_PPP_PARENT);
+    assert.equal(adds[0].count, 2);
+    assert.equal(bySetPath(ops)[F6600_PPP + ".Username"], "gflabzte");
+    assert.equal(bySetPath(ops)[F6600_MGMT + ".Enable"], undefined);
   });
 
   it("unknown product class writes nothing", () => {

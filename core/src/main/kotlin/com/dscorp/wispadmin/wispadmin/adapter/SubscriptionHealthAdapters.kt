@@ -113,6 +113,7 @@ class SubscriptionDirectoryAdapter(
             napBoxId = napBox?.id,
             serviceStatus = serviceStatus.name,
             tr069DeviceId = tr069DeviceId?.takeIf { it.isNotBlank() },
+            pppoeUsername = pppoeUsername?.trim()?.takeIf { it.isNotEmpty() },
         )
     }
 }

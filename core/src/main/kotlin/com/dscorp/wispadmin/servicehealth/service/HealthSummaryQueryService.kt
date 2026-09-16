@@ -81,11 +81,12 @@ class HealthSummaryQueryService(
     private fun decorate(id: Int, summary: HealthSummary): HealthSummary {
         val context = subscriptionContext.read(id)
         val open = events.findBySubscriptionIdAndEventStatus(id, "OPEN")
-        return summary.copy(
-            actionPolicy = actionPolicy(summary),
+        val gated = summary.copy(actionsEnabled = properties.actionsEnabled)
+        return gated.copy(
+            actionPolicy = actionPolicy(gated),
             subscriber = context.subscriber,
             serviceContext = context.serviceContext,
-            diagnoses = summary.diagnoses.map { d ->
+            diagnoses = gated.diagnoses.map { d ->
                 d.copy(suppressingIncidentId = open.firstOrNull { it.diagnosisCode == d.diagnosisCode }?.suppressingIncidentId)
             },
         )

@@ -2,7 +2,6 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.events.CpeInformPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
@@ -24,7 +23,6 @@ class CpeInformPersistService(
     private val counts: WifiCountSampleRepository,
     private val stationWriter: WifiStationSampleWriter,
     private val current: WifiCurrentRepository,
-    private val scope: ServiceHealthScope,
     private val properties: ServiceHealthProperties,
     private val objectMapper: ObjectMapper,
     private val acsRegistry: AcsSubscriptionPort,
@@ -36,13 +34,6 @@ class CpeInformPersistService(
         val subscriptionId = identity.resolveOnu(payload.sn)
         if (subscriptionId == null) {
             logger.info("Discarding cpe.inform for unknown SN={}", payload.sn)
-            return
-        }
-        // Every ONU informs on its own interval whether or not this environment
-        // is meant to collect it, so the scope gate belongs here and not only on
-        // the (now gone) poll.
-        if (!scope.collects(subscriptionId)) {
-            logger.debug("Out of collection scope, skipping cpe.inform for subscription={}", subscriptionId)
             return
         }
         val observedAt = payload.observedAt
@@ -96,7 +87,7 @@ class CpeInformPersistService(
                     stationKey = key,
                     band = station.band,
                     displayName = station.displayName,
-                    observedAt = station.observedAt,
+                    observedAt = payload.informAt,
                     collectedAt = now,
                     rssi = station.rssi,
                     snr = station.snr,
@@ -108,13 +99,23 @@ class CpeInformPersistService(
                 )
             },
         )
+        refreshLive(subscriptionId, payload, countId, now)
+    }
+
+    @Transactional
+    fun persistFromEventJson(payloadJson: String) {
+        val payload = objectMapper.readValue(payloadJson, CpeInformPayload::class.java)
+        persist(payload)
+    }
+
+    private fun refreshLive(subscriptionId: Int, payload: CpeInformPayload, countSampleId: Long?, now: Instant) {
         val status = current.findById(subscriptionId).orElse(WifiCurrent(subscriptionId = subscriptionId))
         status.deviceId = payload.deviceId
         status.model = payload.model
         status.informAt = payload.informAt
         status.observedAt = payload.observedAt
         status.associatedDeviceCount = payload.associatedDeviceCount
-        status.countSampleId = countId
+        status.countSampleId = countSampleId
         status.qualityStatus = runCatching { Quality.valueOf(payload.qualityStatus) }.getOrDefault(Quality.FRESH)
         status.updatedAt = now
         current.save(status)
@@ -125,15 +126,5 @@ class CpeInformPersistService(
             "",
             LocalDateTime.ofInstant(now, ZoneOffset.UTC),
         )
-        // No telemetry_source_run row: there is no run. The freshness of the
-        // collection is acs_wifi_status_current.observedAt, per device, which is
-        // what HealthEvidenceReader now reads. A global "gateway-cpe" key only
-        // masked per-device staleness.
-    }
-
-    @Transactional
-    fun persistFromEventJson(payloadJson: String) {
-        val payload = objectMapper.readValue(payloadJson, CpeInformPayload::class.java)
-        persist(payload)
     }
 }

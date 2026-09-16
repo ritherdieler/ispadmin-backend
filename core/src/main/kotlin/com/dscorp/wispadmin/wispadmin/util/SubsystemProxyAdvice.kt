@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.util
 
-import com.dscorp.wispadmin.wispadmin.controller.Tr069ModelProfileController
 import com.dscorp.wispadmin.wispadmin.oltclient.OnuFacadeController
 import com.dscorp.wispadmin.wispadmin.trafficclient.SubscriptionTrafficFacadeController
 import com.dscorp.wispadmin.wispadmin.trafficclient.BandwidthIntelligenceFacadeController
@@ -11,7 +10,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.util.UUID
 import javax.servlet.http.HttpServletRequest
 
-@RestControllerAdvice(assignableTypes=[OnuFacadeController::class,SubscriptionTrafficFacadeController::class,BandwidthIntelligenceFacadeController::class,Tr069ModelProfileController::class])
+@RestControllerAdvice(assignableTypes=[OnuFacadeController::class,SubscriptionTrafficFacadeController::class,BandwidthIntelligenceFacadeController::class])
 class SubsystemProxyAdvice {
     @ExceptionHandler(SubsystemFailure::class)
     fun failure(error: SubsystemFailure,request: HttpServletRequest): ResponseEntity<SubsystemErrorBody> {

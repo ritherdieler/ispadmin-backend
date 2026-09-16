@@ -13,7 +13,11 @@ class StagingE2eRegistrationCatalogSqlTest {
         val sql = Files.readString(root().resolve("scripts/sql/staging-e2e-registration-catalog.sql"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.place"))
         assertTrue(sql.contains("FROM ispadmin.place"))
-        assertTrue(sql.contains("ST_GeomFromText(ST_AsText"))
+        assertTrue(sql.contains("ST_SRID(p.area, 4326)"))
+        assertFalse(
+            sql.contains("ST_GeomFromText(ST_AsText"),
+            "ST_AsText + SRID 4326 swaps lon/lat; findByLocation 404",
+        )
         assertFalse(
             Regex("INSERT INTO ispadmin_staging\\.place\\s+SELECT \\*").containsMatchIn(sql),
             "place copy must not SELECT * (GEOMETRY SRID 4326)",
@@ -46,11 +50,8 @@ class StagingE2eRegistrationCatalogSqlTest {
         assertTrue(sql.contains("192.168.250.1/24"))
         assertTrue(sql.contains("ST_Contains"))
         assertTrue(sql.contains("POINT(-77.4107 -11.2156)"))
-        assertTrue(sql.contains("INSERT INTO stg_acs.tr069_model_profile"))
-        assertTrue(sql.contains("FROM prod_acs.tr069_model_profile"))
-        assertTrue(sql.contains("UPDATE stg_acs.tr069_model_profile"))
-        assertFalse(sql.contains("INSERT INTO ispadmin_staging.tr069_model_profile"))
-        assertTrue(sql.contains("F6600RV9.0.21"))
+        assertFalse(sql.contains("tr069_model_profile"))
+        assertFalse(sql.contains("F6600RV9.0.21"))
     }
 
     @Test
@@ -60,8 +61,8 @@ class StagingE2eRegistrationCatalogSqlTest {
         assertTrue(script.contains("staging-e2e-registration-catalog.sql"), script)
         assertTrue(script.contains("mysql8033"), script)
         assertTrue(script.contains("ispadmin-staging-acs.war"), script)
-        assertTrue(doc.contains("tr069_model_profile"), doc)
-        assertTrue(doc.contains("stg_acs"), doc)
+        assertFalse(doc.contains("tr069_model_profile"), doc)
+        assertFalse(doc.contains("copy-tr069-profiles-to-acs.sql"), doc)
         assertTrue(doc.contains("staging-e2e-seed-all.sh"), doc)
         assertTrue(doc.contains("ZTEGDC47BFFD"), doc)
         assertTrue(doc.contains("F6600R"), doc)

@@ -1,7 +1,6 @@
 -- Catálogo mínimo en ispadmin_staging para e2e registro FIBER Android.
 -- Copia idempotente desde ispadmin (prod): place, mufa, nap_box, plan,
--- network_device, ip_pool. Perfiles TR-069 viven en ACS: prod_acs → stg_acs
--- (F6600R alias F6600RV9.0.21). Requiere ACS Flyway V1 y copy-tr069-profiles-to-acs.sql.
+-- network_device, ip_pool. TR-069 usa provisions GenieACS (NamedCpeProvisioner), no CSV.
 --
 -- Aplicar en el VPS:
 --   mysql < scripts/sql/staging-e2e-registration-catalog.sql
@@ -11,6 +10,8 @@
 --   findByLocation → 200 "9 de octubre"; napbox/near incluye NO-001
 -- NO usar place.lat/lon (-11.2177/-77.4137): dentro del polígono pero near ≠ otras NAP.
 -- NO intercambiar lat/lon. WKT: POINT(longitude latitude).
+-- Copiar area con ST_SRID(p.area, 4326). No reescribir WKT a 4326:
+-- MySQL 8 interpreta ese WKT como lat/lon y findByLocation queda en 404.
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -22,7 +23,7 @@ SELECT
   p.longitude,
   CASE
     WHEN p.area IS NULL THEN NULL
-    ELSE ST_GeomFromText(ST_AsText(p.area), 4326)
+    ELSE ST_SRID(p.area, 4326)
   END
 FROM ispadmin.place p
 WHERE NOT EXISTS (
@@ -37,7 +38,7 @@ SET
   s.name = p.name,
   s.area = CASE
     WHEN p.area IS NULL THEN NULL
-    ELSE ST_GeomFromText(ST_AsText(p.area), 4326)
+    ELSE ST_SRID(p.area, 4326)
   END;
 
 INSERT INTO ispadmin_staging.mufa (id, latitude, longitude, reference, threads)
@@ -148,68 +149,6 @@ WHERE NOT EXISTS (
   SELECT 1 FROM ispadmin_staging.ip_pool p WHERE p.ip_segment = '192.168.250.1/24'
 );
 
-INSERT INTO stg_acs.tr069_model_profile (
-  product_class,
-  aliases_json,
-  imported_at,
-  imported_by,
-  manufacturer,
-  source_device_id,
-  source_serial,
-  vlan_parameters_json,
-  wan_connection_device_index,
-  wan_gpon_link_config_path,
-  wan_ip_connection_path,
-  warnings_json,
-  wlan24_path,
-  wlan5_path,
-  wifi_security_prep_json,
-  client_vlan_parameters_json,
-  client_wan_ip_connection_path
-)
-SELECT
-  p.product_class,
-  p.aliases_json,
-  p.imported_at,
-  p.imported_by,
-  p.manufacturer,
-  p.source_device_id,
-  p.source_serial,
-  p.vlan_parameters_json,
-  p.wan_connection_device_index,
-  p.wan_gpon_link_config_path,
-  p.wan_ip_connection_path,
-  p.warnings_json,
-  p.wlan24_path,
-  p.wlan5_path,
-  p.wifi_security_prep_json,
-  p.client_vlan_parameters_json,
-  p.client_wan_ip_connection_path
-FROM prod_acs.tr069_model_profile p
-WHERE NOT EXISTS (
-  SELECT 1 FROM stg_acs.tr069_model_profile s WHERE s.product_class = p.product_class
-);
-
-UPDATE stg_acs.tr069_model_profile s
-INNER JOIN prod_acs.tr069_model_profile p ON p.product_class = s.product_class
-SET
-  s.aliases_json = p.aliases_json,
-  s.imported_at = p.imported_at,
-  s.imported_by = p.imported_by,
-  s.manufacturer = p.manufacturer,
-  s.source_device_id = p.source_device_id,
-  s.source_serial = p.source_serial,
-  s.vlan_parameters_json = p.vlan_parameters_json,
-  s.wan_connection_device_index = p.wan_connection_device_index,
-  s.wan_gpon_link_config_path = p.wan_gpon_link_config_path,
-  s.wan_ip_connection_path = p.wan_ip_connection_path,
-  s.warnings_json = p.warnings_json,
-  s.wlan24_path = p.wlan24_path,
-  s.wlan5_path = p.wlan5_path,
-  s.wifi_security_prep_json = p.wifi_security_prep_json,
-  s.client_vlan_parameters_json = p.client_vlan_parameters_json,
-  s.client_wan_ip_connection_path = p.client_wan_ip_connection_path;
-
 SET FOREIGN_KEY_CHECKS = 1;
 
 SELECT COUNT(*) AS staging_places FROM ispadmin_staging.place;
@@ -218,7 +157,6 @@ SELECT COUNT(*) AS staging_nap_boxes FROM ispadmin_staging.nap_box;
 SELECT COUNT(*) AS staging_fiber_plans FROM ispadmin_staging.plan WHERE type = 'FIBER' AND is_active = 1;
 SELECT id, name, network_device_type, disabled FROM ispadmin_staging.network_device WHERE id = 8;
 SELECT ip_segment, host_device_id FROM ispadmin_staging.ip_pool WHERE ip_segment = '192.168.250.1/24';
-SELECT product_class, aliases_json FROM stg_acs.tr069_model_profile ORDER BY product_class;
 
 SELECT p.id, p.name
 FROM ispadmin_staging.place p

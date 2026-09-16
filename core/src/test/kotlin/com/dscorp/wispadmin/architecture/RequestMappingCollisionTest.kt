@@ -50,6 +50,19 @@ class RequestMappingCollisionTest {
     }
 
     @Test
+    fun singleWarLiveTrafficDoesNotLoopbackOverStomp() {
+        val stomp = Files.readString(
+            root.resolve("core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/trafficclient/StompTrafficStreamTransport.kt"),
+        )
+        val monitor = Files.readString(
+            root.resolve("traffic/src/main/kotlin/com/dscorp/wispadmin/traffic/service/SubscriptionTrafficLiveMonitor.kt"),
+        )
+        assertTrue(stomp.contains("ConditionalOnMissingBean"), stomp)
+        assertTrue(stomp.contains("LiveTrafficStreamPort"), stomp)
+        assertTrue(monitor.contains("LiveTrafficStreamPort"), monitor)
+    }
+
+    @Test
     fun subscriptionTrafficStompMappingsAreMutuallyExclusive() {
         val relay = Files.readString(
             root.resolve("core/src/main/kotlin/com/dscorp/wispadmin/wispadmin/trafficclient/CoreTrafficStreamRelay.kt"),

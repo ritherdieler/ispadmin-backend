@@ -25,7 +25,6 @@ class CrossSchemaJdbcForbiddenTest {
     )
 
     private val oneShotAllowlist = setOf(
-        "scripts/sql/copy-tr069-profiles-to-acs.sql",
         "scripts/sql/migrate-olt-mgr-to-stg_oltgateway.sql",
         "scripts/sql/migrate-olt-mgr-to-prod_oltgateway.sql",
         "scripts/sql/migrate-traffic-to-stg_traffic.sql",
@@ -33,7 +32,6 @@ class CrossSchemaJdbcForbiddenTest {
         "scripts/sql/staging-e2e-registration-catalog.sql",
         "scripts/sql/staging-e2e-place-nap.sql",
         "scripts/sql/staging-ip-pool.sql",
-        "scripts/sql/stg-acs-pppoe-wan-paths.sql",
         "scripts/whatsapp-normalize-message-log-phones.sql",
     )
 

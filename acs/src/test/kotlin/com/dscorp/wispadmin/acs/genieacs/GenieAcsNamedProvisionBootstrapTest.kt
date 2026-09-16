@@ -11,7 +11,7 @@ import org.springframework.boot.DefaultApplicationArguments
 class GenieAcsNamedProvisionBootstrapTest {
 
     @Test
-    fun `classpath contains the three named provisions`() {
+    fun `classpath contains the four named provisions`() {
         val bootstrap = GenieAcsNamedProvisionBootstrap(mockk(relaxed = true))
         NamedGenieAcsProvisions.ids.forEach { id ->
             val script = bootstrap.loadScript(id)
@@ -28,6 +28,6 @@ class GenieAcsNamedProvisionBootstrapTest {
 
         bootstrap.run(DefaultApplicationArguments())
 
-        verify(exactly = 3) { client.putProvision(any(), any()) }
+        verify(exactly = 4) { client.putProvision(any(), any()) }
     }
 }
