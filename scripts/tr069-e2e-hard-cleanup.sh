@@ -11,6 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_LOCAL="${DEPLOY_CONFIG_LOCAL:-$SCRIPT_DIR/deploy.config.local}"
+source "$SCRIPT_DIR/e2e_console.sh"
 
 ID=""
 SN=""
@@ -91,6 +92,8 @@ traffic_mysql_q() {
   mysql_schema_q "$TRAFFIC_MYSQL_SCHEMA" "$1"
 }
 
+e2e_step "hard cleanup env=$E2E_ENV schema=$MYSQL_SCHEMA"
+e2e_doing "resolve subscription id=$ID sn=$SN dni=$DNI allow-empty=$ALLOW_EMPTY"
 echo "== resolve subscription env=$E2E_ENV schema=$MYSQL_SCHEMA =="
 WHERE="1=0"
 [[ -n "$ID" ]] && WHERE="$WHERE OR id=$ID"
@@ -217,8 +220,10 @@ fi
 if [[ -n "$SUB_SN" ]]; then
   if [[ "$E2E_ENV" == "staging" ]]; then
     echo "== clear Gateway activation journal $SUB_SN =="
+    e2e_doing "DELETE olt_activation_operation sn=$SUB_SN schema=$OLT_GATEWAY_MYSQL_SCHEMA"
     ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || true
     echo "== OLT Gateway delete $SUB_SN (ispadmin-staging) =="
+    e2e_doing "Gateway lookup+delete SN=$SUB_SN via VPS 127.0.0.1:8081/ispadmin-staging"
     ssh_vps "bash -s" <<EOF
 set -euo pipefail
 set -a
@@ -234,7 +239,16 @@ for path in \
   "/api/olt-gateway/onu/get_onus_details_by_sn/\$SN" \
   "/api/olt-gateway/onus/by-sn/\$SN"
 do
-  body=\$(curl -sS "\${hdr[@]}" "\$GW\$path" || true)
+  echo "DOING: HTTP GET \$GW\$path"
+  echo "URL: GET \$GW\$path"
+  body=\$(curl -sS -w "\\nHTTP:%{http_code}" "\${hdr[@]}" "\$GW\$path" || true)
+  code=\$(echo "\$body" | sed -n 's/^HTTP://p' | tail -1)
+  body=\$(echo "\$body" | sed '/^HTTP:/d')
+  echo "HTTP: \${code:-000}"
+  echo "BODY: \$(echo "\$body" | head -c 1200)"
+  if [[ -n "\$code" && "\$code" != 2* ]]; then
+    echo "HTTP_FAIL: GET \$GW\$path code=\$code"
+  fi
   EXT=\$(python3 -c 'import json,sys
 raw=sys.stdin.read().strip()
 if not raw:
@@ -257,9 +271,15 @@ if [[ -z "\$EXT" ]]; then
   exit 0
 fi
 echo "external_id=\$EXT"
+echo "DOING: HTTP POST \$GW/api/olt-gateway/onu/delete/\$EXT"
+echo "URL: POST \$GW/api/olt-gateway/onu/delete/\$EXT"
 resp=\$(curl -sS -w "\\nHTTP:%{http_code}" -X POST "\${hdr[@]}" "\$GW/api/olt-gateway/onu/delete/\$EXT" || true)
 echo "\$resp"
 code=\$(echo "\$resp" | sed -n 's/^HTTP://p' | tail -1)
+echo "HTTP: \${code:-000}"
+if [[ "\$code" != "200" ]]; then
+  echo "HTTP_FAIL: POST \$GW/api/olt-gateway/onu/delete/\$EXT code=\$code"
+fi
 docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
 if [[ "\$code" != "200" ]]; then
   echo "Gateway delete returned HTTP \$code" >&2
@@ -271,18 +291,18 @@ EOF
     echo "== clear Gateway activation journal $SUB_SN (prod) =="
     ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\" 2>/dev/null" || true
     echo "== SmartOLT delete $SUB_SN =="
+    e2e_doing "SmartOLT lookup+delete SN=$SUB_SN"
     SMARTOLT_KEY="${SMARTOLT_API_KEY:-}"
     if [[ -z "$SMARTOLT_KEY" ]]; then
       SMARTOLT_KEY="$(ssh_vps 'docker exec tomcat9027 bash -lc "grep -h olt.service.api-key /usr/local/tomcat/webapps/ispadmin/WEB-INF/classes/application-prod.properties | head -1 | cut -d= -f2-"' | tr -d '\r')"
     fi
     [[ -n "$SMARTOLT_KEY" ]] || { echo "Missing SmartOLT API key" >&2; exit 1; }
-    EXT="$(curl -sS -H "X-Token: $SMARTOLT_KEY" \
-      "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
+    EXT="$(e2e_http GET "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
+      -H "X-Token: $SMARTOLT_KEY" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("onus") or [{}])[0].get("unique_external_id") or ""))' || true)"
     if [[ -n "$EXT" ]]; then
-      curl -sS -X POST -H "X-Token: $SMARTOLT_KEY" \
-        "https://gigafiberperu.smartolt.com/api/onu/delete/$EXT" \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("response","?"))' || true
+      e2e_http POST "https://gigafiberperu.smartolt.com/api/onu/delete/$EXT" \
+        -H "X-Token: $SMARTOLT_KEY" || true
     else
       echo "ONU not authorized in SmartOLT (ok)"
     fi
@@ -367,6 +387,7 @@ fi
 
 if [[ -n "$ACS_DEVICE" ]]; then
   echo "== ACS purge $ACS_DEVICE =="
+  e2e_doing "GenieACS NBI purge device=$ACS_DEVICE"
   ssh_vps "python3 - <<'PY'
 import json,urllib.request,urllib.parse
 dev='''$ACS_DEVICE'''
@@ -382,6 +403,7 @@ PY"
 fi
 
 echo "== verify =="
+e2e_doing "verify leftover subscription rows"
 if [[ -n "$SUB_ID" ]]; then
   LEFT="$(mysql_q "SELECT COUNT(*) FROM subscription WHERE id=${SUB_ID};")"
   echo "remaining_sub_id=$LEFT"
