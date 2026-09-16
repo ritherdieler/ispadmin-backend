@@ -5,20 +5,17 @@ Prod no se tocó. Recolección lab on.
 | Pieza | Ref | Destino | Health |
 |-------|-----|---------|--------|
 | Core WAR | `1.0.3+f0f9075` `cursor/staging-unify-360-d0ce` | `tomcat-staging` `:8081` `/ispadmin-staging/` | HTTP 200 |
-| SPA | `ac586b9` `cursor/staging-unify-360-d0ce` | `/var/www/gigafiber/backoffice-staging/` | vhost `backoffice-staging.gigafiberperu.cloud` HTTP 200 |
+| Backoffice | `ispadmin-backoffice` `--mode staging` | **Solo Vite en la Mac.** No se publica en el VPS | — |
 
 ## Backend incluido (ya apilado en `f0f9075`)
 
 live-readings, live-socket in-process, accessMode XOR, CSV TR-069 retirado, place SRID, e2e collection always on, gate `pilot_enabled` eliminado.
 
-## SPA incluido (`develop` +)
+## Backoffice
 
-- `a6b8f14` panel 360 host ∧ (IP ∨ PPPoE)
-- `bdff666` sin banner «Recolección desactivada»
-- `0ad068a` sin importador CSV TR-069
-- `ac586b9` tsc hostDevice `{ id }`
+El front `ispadmin-backoffice` staging **no se despliega**. Un rsync a `/var/www/gigafiber/backoffice-staging/` en este turno fue un error de procedimiento. Regla: `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc`.
 
-Bundle remoto: `ServiceHealthPage-CKxF_11U.js` sin el banner; `SubscriptionTrafficPanel-C4Q1lrWn.js` con `PPPOE_DYNAMIC`; chunk `Tr069Profiles-*` ausente.
+Árbol unificado local: `cursor/staging-unify-360-d0ce` (`a6b8f14` accessMode, `bdff666` sin banner, `0ad068a` sin CSV TR-069).
 
 ## Comandos
 
@@ -29,11 +26,10 @@ gradle :core:war :core:tomcatLibs -Pdjl.linux
 cp core/build/libs/ispadmin.war target/ispadmin-staging.war
 ./scripts/deploy.sh --war-only --env staging --with oltgateway,traffic,acs,servicehealth
 
-npm run build:staging
-# rsync --delete dist/ → VPS /var/www/gigafiber/backoffice-staging/
+# backoffice: Vite local, no rsync
+npx vite --mode staging --host 127.0.0.1 --port 3000 --strictPort
 ```
 
 Primer WAR desde worktree limpio falló al boot: faltaba `firebase_service_account_prod.json` (gitignore). Se copió solo al árbol de build, no se commiteó. Redeploy OK.
 
 API: `https://api.gigafiberperu.cloud/ispadmin-staging/`
-SPA: host nginx `backoffice-staging.gigafiberperu.cloud` (desde la Mac el path `/backoffice-staging/` en `gigafiberperu.cloud` sirve la landing).

@@ -184,7 +184,7 @@ Copiar plantilla: `scripts/deploy.config.example`. **Nunca commitear** `deploy.c
 | Nombre | Entorno | Dónde vive el valor | Enlaza | Rotación / pareja |
 |--------|---------|---------------------|--------|-------------------|
 | `VITE_API_BASE_URL` | prod / build | `.env.production` (local/CI, no secretos) | Axios del backoffice | Prod: `https://api.gigafiberperu.cloud/ispadmin` |
-| `VITE_API_BASE_URL` | staging / build | `.env.staging` | Axios del backoffice | Staging: `https://api.gigafiberperu.cloud/ispadmin-staging` (`npm run build:staging`) |
+| `VITE_API_BASE_URL` | staging / Vite local | `.env.staging` | Axios del backoffice | Staging: `https://api.gigafiberperu.cloud/ispadmin-staging` (Vite `--mode staging` en la Mac; no se publica en el VPS) |
 | `VITE_MAPBOX_ACCESS_TOKEN` | build | `.env` / `.env.production` | Mapbox GL | Token `pk.` público |
 | `VITE_OBS_API_KEY` | build | `.env.production` | ingest observabilidad | Par con `OBS_API_KEY_BACKOFFICE` |
 | `VITE_NETDIAG_API_KEY` | build | `.env.production` | header NOC | Par con `NET_DIAG_API_KEY` |
@@ -192,7 +192,7 @@ Copiar plantilla: `scripts/deploy.config.example`. **Nunca commitear** `deploy.c
 - Tras `npm run build`, las claves van **dentro del bundle JS** servido por Nginx (`/var/www/gigafiber/backoffice/`, etc.).
 - `VITE_NETDIAG_API_KEY` debe coincidir con `NET_DIAG_API_KEY` del backend, pero asumir que **cualquier usuario autenticado en NOC puede verla** en DevTools.
 
-Deploy backoffice típico: build local + `rsync` al VPS. Staging: `npm run build:staging` (no apunta el bundle de prod a `/ispadmin-staging`). Observability-web y asistencias: misma idea en una fase posterior. Runbook: [ambientes-local-staging-prod.md](./ambientes-local-staging-prod.md).
+Backoffice **prod**: build local + `rsync` a `/var/www/gigafiber/backoffice/` cuando Sergio lo pida. Backoffice **staging**: solo Vite en la Mac (`--mode staging`); prohibido rsync a `/var/www/gigafiber/backoffice-staging/`. Runbook: [ambientes-local-staging-prod.md](./ambientes-local-staging-prod.md). Regla: `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc`.
 
 ---
 
