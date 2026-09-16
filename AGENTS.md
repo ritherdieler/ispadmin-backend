@@ -34,6 +34,12 @@ Prohibido subir WAR, properties, secretos, schema MySQL, nginx o un Tomcat de pr
 
 Regla Cursor: `gigafiber/.cursor/rules/prestaging-solo-local.mdc`.
 
+## Backoffice staging no va al VPS (obligatorio)
+
+`ispadmin-backoffice` en modo staging **solo corre en la Mac** (Vite `--mode staging` → API `/ispadmin-staging`). Prohibido rsync a `/var/www/gigafiber/backoffice-staging/`. Un «deploy staging» es el **WAR**, no el backoffice.
+
+Regla Cursor: `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc`.
+
 ## Deploy: módulos desactivados (obligatorio)
 
 Antes de **cualquier** `deploy.sh` (staging o prod, incluido `--war-only`):

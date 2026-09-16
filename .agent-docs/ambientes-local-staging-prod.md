@@ -14,8 +14,8 @@ URLs públicas:
 
 - Prod API: `https://api.gigafiberperu.cloud/ispadmin/`
 - Staging API: `https://api.gigafiberperu.cloud/ispadmin-staging/`
-- Backoffice local contra staging: `npm run dev` con `VITE_API_BASE_URL` de `.env.staging`, o `npm run build:staging`
-- Vite en Mac suele ser **`:3002`** si `:3000` es un túnel SSH al VPS
+- Backoffice contra staging: **solo Vite en la Mac** (`npx vite --mode staging`). No se publica en el VPS.
+- Vite en Mac: preferir **`:3000`**; si está ocupado, otro puerto y reportarlo.
 
 ## Por qué el perfil va dentro del WAR
 
@@ -44,7 +44,7 @@ El primer `--env staging` mientras compose aún tenga `SPRING_PROFILES_ACTIVE` *
 
 # 2) Smoke
 curl -sI https://api.gigafiberperu.cloud/ispadmin-staging/
-# login backoffice mode staging; no disparar campañas WhatsApp
+# backoffice: Vite --mode staging en la Mac (no rsync al VPS); no disparar campañas WhatsApp
 
 # 3) Prod (árbol git limpio; registra release)
 ./scripts/deploy.sh --env prod
@@ -62,7 +62,7 @@ Fragmento: `scripts/nginx-ispadmin-staging.location.conf`. Recargar nginx tras c
 
 ## Frontends
 
-Nombres `VITE_*`: [vps-secrets-management.md](./vps-secrets-management.md) (sección Frontends). Backoffice: `.env.staging` + `npm run build:staging`. Observability-web y asistencias: misma idea en una fase posterior.
+Nombres `VITE_*`: [vps-secrets-management.md](./vps-secrets-management.md) (sección Frontends). Backoffice **staging**: Vite `--mode staging` en la Mac; **no** rsync a `/var/www/gigafiber/backoffice-staging/`. Backoffice **prod**: build + rsync a `/var/www/gigafiber/backoffice/` solo si Sergio lo pide. Regla: `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc`.
 
 ## MySQL staging
 
