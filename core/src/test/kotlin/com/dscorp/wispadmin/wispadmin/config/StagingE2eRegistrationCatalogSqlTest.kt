@@ -13,7 +13,11 @@ class StagingE2eRegistrationCatalogSqlTest {
         val sql = Files.readString(root().resolve("scripts/sql/staging-e2e-registration-catalog.sql"))
         assertTrue(sql.contains("INSERT INTO ispadmin_staging.place"))
         assertTrue(sql.contains("FROM ispadmin.place"))
-        assertTrue(sql.contains("ST_GeomFromText(ST_AsText"))
+        assertTrue(sql.contains("ST_SRID(p.area, 4326)"))
+        assertFalse(
+            sql.contains("ST_GeomFromText(ST_AsText"),
+            "ST_AsText + SRID 4326 swaps lon/lat; findByLocation 404",
+        )
         assertFalse(
             Regex("INSERT INTO ispadmin_staging\\.place\\s+SELECT \\*").containsMatchIn(sql),
             "place copy must not SELECT * (GEOMETRY SRID 4326)",

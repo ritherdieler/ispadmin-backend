@@ -10,6 +10,8 @@
 --   findByLocation → 200 "9 de octubre"; napbox/near incluye NO-001
 -- NO usar place.lat/lon (-11.2177/-77.4137): dentro del polígono pero near ≠ otras NAP.
 -- NO intercambiar lat/lon. WKT: POINT(longitude latitude).
+-- Copiar area con ST_SRID(p.area, 4326). No reescribir WKT a 4326:
+-- MySQL 8 interpreta ese WKT como lat/lon y findByLocation queda en 404.
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -21,7 +23,7 @@ SELECT
   p.longitude,
   CASE
     WHEN p.area IS NULL THEN NULL
-    ELSE ST_GeomFromText(ST_AsText(p.area), 4326)
+    ELSE ST_SRID(p.area, 4326)
   END
 FROM ispadmin.place p
 WHERE NOT EXISTS (
@@ -36,7 +38,7 @@ SET
   s.name = p.name,
   s.area = CASE
     WHEN p.area IS NULL THEN NULL
-    ELSE ST_GeomFromText(ST_AsText(p.area), 4326)
+    ELSE ST_SRID(p.area, 4326)
   END;
 
 INSERT INTO ispadmin_staging.mufa (id, latitude, longitude, reference, threads)

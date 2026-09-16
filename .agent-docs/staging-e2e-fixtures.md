@@ -25,7 +25,7 @@ docker exec -i mysql8033 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < staging-e2e-reg
 
 | Dato | Origen | Dónde vive | Obligatorio para |
 |------|--------|------------|------------------|
-| `place` (24, polígonos) | `ispadmin.place` | MySQL staging | `findByLocation`, selector Lugar |
+| `place` (24, polígonos) | `ispadmin.place` vía `ST_SRID(area, 4326)` (no reescribir WKT) | MySQL staging | `findByLocation`, selector Lugar |
 | `mufa` | `ispadmin.mufa` | MySQL staging | FK de NAP |
 | `nap_box` (162, incl. `NO-001`) | `ispadmin.nap_box` | MySQL staging | selector NAP, `/napbox/near` |
 | `plan` (al menos 1 `FIBER` activo) | `ispadmin.plan` | MySQL staging | paso plan |

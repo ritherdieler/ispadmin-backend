@@ -132,6 +132,7 @@
 | **E2E Espresso — `--cleanup-mode` ask/auto/skip** | [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md) |
 | **Wipe lab staging a registros 0 (2026-09-15)** | [lab-wipe-zero-register-staging-2026-09-15.md](./lab-wipe-zero-register-staging-2026-09-15.md) |
 | **Wipe staging #9 #10 #11 (2026-09-15)** | [lab-wipe-staging-9-10-11-2026-09-15.md](./lab-wipe-staging-9-10-11-2026-09-15.md) |
+| **Staging place.area SRID / findByLocation 404** | [staging-place-srid-findbylocation-2026-09-15.md](./staging-place-srid-findbylocation-2026-09-15.md) |
 | **#10 WIRELESS STATIC_IP recolección legacy** | [staging-static-ip-10-legacy-2026-09-15.md](./staging-static-ip-10-legacy-2026-09-15.md) |
 | **TR-069 Huawei — SPV aislado L3 (NAT / DNS / máscara)** | [tr069-huawei-spv-aislado-l3.md](./tr069-huawei-spv-aislado-l3.md) |
 | **OLT Huawei MA5608T — guía GPON y CLI** | [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md) |
