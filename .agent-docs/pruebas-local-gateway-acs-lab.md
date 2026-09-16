@@ -115,7 +115,7 @@ Timeout Core→Gateway: `OltGatewayClientConfig.READ_TIMEOUT_MS = 180000` (cubre
 
 ### 5. Provisions GenieACS (no CSV)
 
-TR-069 ya no importa perfiles CSV. El ACS encola scripts por HTTP NBI (`NamedCpeProvisioner`): `gf-pppoe-wan2-poc` (PPPoE + WiFi) o `gf-wifi-ssid-poc` (STATIC_IP). Layouts: `F6600R`, `V2804AX15T`, `VSOLVA74`.
+TR-069 ya no importa perfiles CSV. El ACS encola scripts por HTTP NBI (`NamedCpeProvisioner`): `gf-pppoe-wan2-poc` (PPPoE + WiFi) o `gf-static-wan2-poc` (STATIC_IP, reemplaza leftover PPP). Layouts: `F6600R`, `V2804AX15T`, `VSOLVA74`.
 
 ### 6. Limpiar la ONU lab (una pasada exige journal vacío + autofind)
 

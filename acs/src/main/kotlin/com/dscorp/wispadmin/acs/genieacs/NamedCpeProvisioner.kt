@@ -75,7 +75,9 @@ class NamedCpeProvisioner(
             )
         }
         return timing.span("acs.genieacs.wait-complete", mapOf("sn" to request.onuSerial)) {
-            waitForComplete(device, layout, request)
+            waitForComplete(device, layout, request, layout.pppExternalIp) { lastIp ->
+                lastIp != null && lastIp.startsWith("10.64.")
+            }
         }
     }
 
@@ -91,50 +93,50 @@ class NamedCpeProvisioner(
         } catch (ex: Exception) {
             log.warn("Could not purge GenieACS queue for {}: {}", device.id, ex.message)
         }
-        val hasWifi = !request.wifiSsid24.isNullOrBlank() || !request.wifiSsid5.isNullOrBlank()
-        if (hasWifi) {
-            val passphrase = request.wifiPassword24.orEmpty()
-            if (passphrase.length < NamedGenieAcsProvisions.MIN_WIFI_PASSPHRASE) {
-                return failed("WiFi passphrase shorter than 8", device.id, snapshotFromDevice(device, request))
-            }
-            val args = listOf(request.wifiSsid24.orEmpty(), request.wifiSsid5.orEmpty(), passphrase)
-            var result = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.WIFI, args, connectionRequest = true)
-            if (result.connectionRequestFailed) {
-                result = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.WIFI, args, connectionRequest = false)
-            }
-            if (!result.accepted) {
-                val error = result.toErrorDetail()
-                return Tr069ProvisionOutcome(
-                    status = CpeStatus.FAILED,
-                    deviceId = device.id,
-                    error = error,
-                    message = error,
-                    acsSnapshot = snapshotFromDevice(device, request),
-                )
-            }
-            val wifiOk = waitForWifi(
-                device.id,
-                layout,
-                request.wifiSsid24,
-                request.wifiSsid5,
-                request.waitTimeoutMs ?: properties.waitTimeoutMs,
-            )
-            if (!wifiOk) {
-                return Tr069ProvisionOutcome(
-                    status = CpeStatus.PENDING,
-                    deviceId = device.id,
-                    error = "SSID no se confirmaron en el ACS dentro del tiempo de espera.",
-                    message = "SSID no se confirmaron en el ACS dentro del tiempo de espera.",
-                    acsSnapshot = snapshotFromDevice(device, request),
-                )
-            }
+        val ip = request.ip?.trim().orEmpty()
+        if (ip.isBlank()) {
+            return failed("Faltan IP o credenciales PPPoE para aprovisionar WAN.", device.id, snapshotFromDevice(device, request))
         }
-        return Tr069ProvisionOutcome(
-            status = CpeStatus.COMPLETE,
-            deviceId = device.id,
-            message = "ONU configurada automáticamente por TR-069.",
-            acsSnapshot = snapshotFromDevice(device, request),
+        val hasWifi = !request.wifiSsid24.isNullOrBlank() || !request.wifiSsid5.isNullOrBlank()
+        val passphrase = request.wifiPassword24.orEmpty()
+        if (hasWifi && passphrase.length < NamedGenieAcsProvisions.MIN_WIFI_PASSPHRASE) {
+            return failed("WiFi passphrase shorter than 8", device.id, snapshotFromDevice(device, request))
+        }
+        val segment = request.ipSegment?.trim().orEmpty()
+        val connectionName = request.connectionName?.takeIf { it.isNotBlank() }
+            ?: properties.clientWanNamePattern.replace("{vlan}", request.wanVlanId.toString())
+        val args = listOf(
+            ip,
+            GenieAcsValues.cidrToSubnetMask(segment.ifBlank { "/24" }),
+            if (segment.isBlank()) "" else segment.getBaseIpFromRange() + "1",
+            properties.defaultDns,
+            request.wanVlanId.toString(),
+            connectionName,
+            request.wifiSsid24.orEmpty(),
+            passphrase,
+            request.wifiSsid5.orEmpty(),
+            passphrase,
         )
+        var result = timing.span("acs.genieacs.enqueue-static", mapOf("sn" to request.onuSerial)) {
+            var enqueued = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.STATIC, args, connectionRequest = true)
+            if (enqueued.connectionRequestFailed) {
+                enqueued = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.STATIC, args, connectionRequest = false)
+            }
+            enqueued
+        }
+        if (!result.accepted) {
+            val error = result.toErrorDetail()
+            return Tr069ProvisionOutcome(
+                status = CpeStatus.FAILED,
+                deviceId = device.id,
+                error = error,
+                message = error,
+                acsSnapshot = snapshotFromDevice(device, request),
+            )
+        }
+        return timing.span("acs.genieacs.wait-complete", mapOf("sn" to request.onuSerial)) {
+            waitForComplete(device, layout, request, layout.ipExternalIp) { lastIp -> lastIp == ip }
+        }
     }
 
     fun setWifi(sn: String, ssid24: String?, ssid5: String?, passphrase: String): CpeCommandResult {
@@ -192,10 +194,12 @@ class NamedCpeProvisioner(
         device: GenieAcsDevice,
         layout: NamedCpeLayout,
         request: Tr069ProvisionRequest,
+        wanIpPath: String,
+        wanSatisfied: (String?) -> Boolean,
     ): Tr069ProvisionOutcome {
         val hasWifi = !request.wifiSsid24.isNullOrBlank() || !request.wifiSsid5.isNullOrBlank()
         val params = buildList {
-            add(layout.pppExternalIp)
+            add(wanIpPath)
             if (hasWifi) {
                 add(layout.ssid24)
                 add(layout.ssid5)
@@ -207,10 +211,10 @@ class NamedCpeProvisioner(
         var lastSsid24: String? = null
         var lastSsid5: String? = null
         while (clock() <= deadline) {
-            lastIp = client.getDeviceParameterValue(device.id, layout.pppExternalIp)
+            lastIp = client.getDeviceParameterValue(device.id, wanIpPath)
             lastSsid24 = if (hasWifi) client.getDeviceParameterValue(device.id, layout.ssid24) else null
             lastSsid5 = if (hasWifi) client.getDeviceParameterValue(device.id, layout.ssid5) else null
-            val wanOk = lastIp != null && lastIp.startsWith("10.64.")
+            val wanOk = wanSatisfied(lastIp)
             val wifiOk = !hasWifi || wifiSatisfied(request, lastSsid24, lastSsid5)
             if (wanOk && wifiOk) {
                 return Tr069ProvisionOutcome(

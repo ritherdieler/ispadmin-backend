@@ -10,11 +10,11 @@ Camino vivo (staging y prod, sin flag vparams):
 Cliente  --HTTP JWT-->  Core  --HTTP-->  Gateway  --HTTP-->  ACS WAR  --NBI provisions-->  GenieACS  -->  ONU
 ```
 
-El cliente (app Android / backoffice) habla **solo con el Core**. Solo el Gateway llama al ACS. El ACS, al arrancar, hace `PUT` de los tres `.js` al NBI (`src/main/resources/genieacs/provisions/`).
+El cliente (app Android / backoffice) habla **solo con el Core**. Solo el Gateway llama al ACS. El ACS, al arrancar, hace `PUT` de los cuatro `.js` al NBI (`src/main/resources/genieacs/provisions/`).
 
 | Acción | Core | Gateway | ACS / NBI |
 |---|---|---|---|
-| Alta FIBER | `POST /subscription` (siempre PPPoE; passphrase = `wifiPassword24` en ambas bandas) | `POST /api/olt-gateway/onu/activate` | Encola `gf-pppoe-wan2-poc` y GPV (IP `10.64.*` + SSIDs). COMPLETE no es HTTP 200 |
+| Alta FIBER | `POST /subscription` (PPPoE o STATIC_IP; passphrase = `wifiPassword24` en ambas bandas) | `POST /api/olt-gateway/onu/activate` | Encola `gf-pppoe-wan2-poc` o `gf-static-wan2-poc`. COMPLETE = GPV de WAN2, no HTTP 200 |
 | Retry TR-069 | `POST /subscription/{id}/acs/retry-tr069` | `POST /onus/{sn}/cpe/provision` (sin OLT) | Mismo provision PPPoE (o IP si no hay secret) |
 | Migración IP→PPPoE | `AccessMigrationService` | `cpe/provision` + `cpe/access-layout` | PPPoE; el revert sigue siendo WAN IP (sin PPPoE) |
 | WiFi post-alta | `POST /subscription/{id}/acs/wifi` body `{ssid24,ssid5,passphrase}` | `POST /onus/{sn}/cpe/wifi` | `gf-wifi-ssid-poc`. Passphrase menor a 8 → FAILED |
@@ -25,6 +25,7 @@ Product class fuera de `F6600R` / `V2804AX15T` / `VSOLVA74` (Huawei incluido): `
 | Id NBI | Archivo | Qué hace |
 |---|---|---|
 | `gf-pppoe-wan2-poc` | `scripts/genieacs/provisions/gf-pppoe-wan2-poc.js` | Sustituye la WAN IP de internet por PPPoE y, si vienen SSIDs, escribe WiFi |
+| `gf-static-wan2-poc` | `scripts/genieacs/provisions/gf-static-wan2-poc.js` | Sustituye la WAN PPP leftover por STATIC y, si vienen SSIDs, escribe WiFi |
 | `gf-wifi-ssid-poc` | `scripts/genieacs/provisions/gf-wifi-ssid-poc.js` | Cambia SSID 2.4 y 5.8 con una passphrase |
 | `gf-reboot-poc` | `scripts/genieacs/provisions/gf-reboot-poc.js` | Reinicia la ONU (RPC CWMP `Reboot`) |
 
@@ -85,6 +86,16 @@ Orden: asegurar WCD de internet (solo VSOL, si falta `WCD.2`) → borrar WAN IP 
 {"name":"provisions","provisions":[["gf-pppoe-wan2-poc","<user>","<pass>",100,"2_INTERNET_R_VID_100","<ssid24>","<pass24>","<ssid5>","<pass24>"]]}
 ```
 
+## `gf-static-wan2-poc`
+
+Args: `[ip, subnetMask, gateway, dns, vlanId, connectionName, ssid24, pass24, ssid5, pass5]`.
+
+`pass5` se ignora. Orden: WCD de internet (VSOL) → borrar leftover PPP → crear/reusar WAN IP → hojas → `Enable` → WiFi. No toca WAN1 TR-069.
+
+```json
+{"name":"provisions","provisions":[["gf-static-wan2-poc","192.168.250.10","255.255.255.0","192.168.250.1","8.8.8.8,8.8.4.4",100,"2_INTERNET_R_VID_100","<ssid24>","<pass24>","<ssid5>","<pass24>"]]}
+```
+
 ## `gf-wifi-ssid-poc`
 
 Args: `[ssid24, ssid5, passphrase]`. Una passphrase para las dos bandas. No toca WAN.
@@ -110,6 +121,6 @@ declare("Reboot", null, { value: Date.now() });
 {"name":"provisions","provisions":[["gf-reboot-poc"]]}
 ```
 
-## Qué no son estos tres
+## Qué no son estos cuatro
 
-Los presets `bootstrap`, `gigafiber-bootstrap`, `inform`, `default`, `huawei-writeonly-acs-credentials` y `gigafiber-wifi-telemetry` siguen en el NBI. Borrarlos rompe ACS URL, summon y telemetría WiFi. Estos tres no sustituyen ese canal.
+Los presets `bootstrap`, `gigafiber-bootstrap`, `inform`, `default`, `huawei-writeonly-acs-credentials` y `gigafiber-wifi-telemetry` siguen en el NBI. Borrarlos rompe ACS URL, summon y telemetría WiFi. Estos cuatro no sustituyen ese canal.

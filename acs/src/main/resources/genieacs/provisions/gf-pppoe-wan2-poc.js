@@ -24,6 +24,7 @@ const VSOL_LAYOUT = {
   writeAlias: true,
   writeCtCom: true,
   writeZte: false,
+  extraIpPaths: [],
   gponVlanPath: WAN_DEVICE + ".WANConnectionDevice.2.X_CT-COM_WANGponLinkConfig.VLANIDMark",
   wlan24: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5",
   wlan5: "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1",
@@ -34,6 +35,7 @@ const VSOL_LAYOUT = {
 const F6600_LAYOUT = {
   pppPath: WAN_DEVICE + ".WANConnectionDevice.1.WANPPPConnection.2",
   ipPath: WAN_DEVICE + ".WANConnectionDevice.1.WANIPConnection.2",
+  extraIpPaths: [WAN_DEVICE + ".WANConnectionDevice.1.WANIPConnection.3"],
   pppParent: WAN_DEVICE + ".WANConnectionDevice.1.WANPPPConnection",
   wcdPath: null,
   wcdParent: null,
@@ -114,11 +116,15 @@ function ensureInternetWcd(layout) {
 }
 
 function deleteInternetIpWan(layout) {
-  if (!pathExists(layout.ipPath)) {
-    return;
+  const paths = [layout.ipPath].concat(layout.extraIpPaths || []);
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i];
+    if (!pathExists(path)) {
+      continue;
+    }
+    logStep("delete " + path);
+    deleteObject(path);
   }
-  logStep("delete " + layout.ipPath);
-  deleteObject(layout.ipPath);
 }
 
 function ensureInternetPpp(layout) {

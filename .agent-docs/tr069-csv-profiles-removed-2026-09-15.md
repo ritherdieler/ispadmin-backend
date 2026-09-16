@@ -21,10 +21,10 @@ ACS  CpeFacadeService
   └── NamedCpeProvisioner
         │ HTTP NBI
         ▼
-      GenieACS  gf-pppoe-wan2-poc | gf-wifi-ssid-poc | gf-reboot-poc
+      GenieACS  gf-pppoe-wan2-poc | gf-static-wan2-poc | gf-wifi-ssid-poc | gf-reboot-poc
 ```
 
-Layouts: `NamedCpeLayouts` (`F6600R`, `V2804AX15T`, `VSOLVA74`). STATIC_IP encola `gf-wifi-ssid-poc`. PPPoE encola `gf-pppoe-wan2-poc`.
+Layouts: `NamedCpeLayouts` (`F6600R`, `V2804AX15T`, `VSOLVA74`). STATIC_IP encola `gf-static-wan2-poc`. PPPoE encola `gf-pppoe-wan2-poc`.
 
 ## Qué se borró
 
