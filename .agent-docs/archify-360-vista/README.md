@@ -13,7 +13,7 @@ Diagrama de arquitectura (showcase) del camino de lectura, la recolección async
 
 1. **Lectura:** el operador abre `/subscriptions/{id}/service-health`. El Core responde `GET /subscription/{id}/service-health` leyendo `HealthCurrent`. Sin I/O a equipos.
 2. **Recolección:** ONU → ACS → Redis `cpe.inform`; OLT → Gateway → Redis `onu.optical-batch`. `HealthEvaluationService` consume, diagnostica y escribe el snapshot.
-3. **En vivo:** `GET /subscription/{id}/live-readings` abre socket al MikroTik. No pasa por Redis ni por `HealthCurrent`.
+3. **En vivo:** `GET /subscription/{id}/live-readings` va Core → Traffic → MikroTik. No pasa por Redis ni por `HealthCurrent`.
 
 ## Invariante (código vigente)
 

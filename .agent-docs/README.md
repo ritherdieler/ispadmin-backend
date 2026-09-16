@@ -49,6 +49,7 @@
 | **Deploy staging 360 PPPoE + STATIC_IP 2026-09-15** | [deploy-staging-360-pppoe-static-2026-09-15.md](./deploy-staging-360-pppoe-static-2026-09-15.md) |
 | **Deploy staging tráfico accessMode 2026-09-15** | [deploy-staging-traffic-access-mode-2026-09-15.md](./deploy-staging-traffic-access-mode-2026-09-15.md) |
 | **Vista 360 lecturas en vivo (cola + pppoe-in)** | [vista-360-live-readings-2026-09-15.md](./vista-360-live-readings-2026-09-15.md) |
+| **Live-readings detrás de Traffic (2026-09-16)** | [live-readings-behind-traffic-2026-09-16.md](./live-readings-behind-traffic-2026-09-16.md) |
 | **Vista 360 actividad en vivo por socket (STATIC_IP)** | [vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md) |
 | **Recolección lab siempre on (360 + traffic)** | [lab-recoleccion-siempre-on-2026-09-15.md](./lab-recoleccion-siempre-on-2026-09-15.md) |
 | **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |

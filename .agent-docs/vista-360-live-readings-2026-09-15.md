@@ -1,6 +1,6 @@
 # Vista 360 — lecturas en vivo (2026-09-15)
 
-`GET /subscription/{id}/live-readings` en Core (consulta puntual). El gráfico **Ahora** de la 360 no usa este GET: va por socket STOMP ([vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md)). WS y GET de interfaces incluyen `pppoe-in` + `rxBytes`/`txBytes`.
+`GET /subscription/{id}/live-readings` es la fachada pública en Core. Core no abre MikroTik: llama Traffic `GET /api/traffic/v1/by-subscription/{id}/live-readings` (`TrafficHttpClient`). Traffic lee `/queue/simple`, `/ppp/active`, `/interface` y `/interface/monitor-traffic`. El gráfico **Ahora** de la 360 no usa este GET: va por socket STOMP ([vista-360-live-socket-static-ip-2026-09-15.md](./vista-360-live-socket-static-ip-2026-09-15.md)).
 
 Staging y prod comparten MK2. La cola `id:6` (`*9`, Cintia Escobal, `192.168.30.23`) no es el lab. El lab #6 es `PPPOE_DYNAMIC` `gf6`: interfaz `pppoe-in` `<pppoe-gf6>` (y cola dinámica `*89C` solo como objeto residual).
 
@@ -16,8 +16,8 @@ Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o
 
 `PPPOE_DYNAMIC` no lee `rate` de simple queue. En `pppoe-in` el RX del router es upload del cliente y el TX es download.
 
-`SubscriptionLiveReadingService` tiene un solo constructor Spring (`repository` + `MikroTikConnectionService` + `GigafiberEnvironmentProperties`). `Clock` es `internal var`. `MikroTikConnectionService.callOnDevice` delega a `MikrotikSession.call`.
+Core `SubscriptionLiveReadingService` (`repository` + `TrafficHttpClient` + env + `ObjectMapper`) arma query `accessMode`, `ip`, `pppoeLastIp`, `pppoeUsername`, `hostDeviceId`, `envTag`. Traffic `SubscriptionLiveReadingService` abre `trafficPollMikrotikClient`. Escrituras MK (colas, secret, cortes) siguen en Core. WS de tráfico por suscripción ya vivía en Traffic.
 
 ## Tests
 
-JUnit/MockK en `:core`: `SubscriptionLiveReadingServiceTest`, `SubscriptionLiveReadingControllerTest`, `MikroTikConnectionServiceTest`, `NetworkDeviceConnectionServiceTest`, `InterfaceTrafficMapperTest`.
+JUnit/MockK: `:core` `SubscriptionLiveReadingServiceTest` (proxy, sin RouterOS), `SubscriptionLiveReadingControllerTest`. `:traffic` `SubscriptionLiveReadingServiceTest` (RouterOS), `TrafficSubscriptionLiveReadingControllerTest`.
