@@ -110,6 +110,27 @@ class GenieAcsVirtualParametersTest {
     }
 
     @Test
+    fun static_provision_replaces_leftover_pppoe_and_never_touches_mgmt() {
+        val src = read("scripts/genieacs/provisions/gf-static-wan2-poc.js")
+        assertTrue(src.contains("V2804AX15T"), src)
+        assertTrue(src.contains("VSOLVA74"), src)
+        assertTrue(src.contains("F6600R"), src)
+        assertTrue(src.contains("WANConnectionDevice.2.WANPPPConnection.1"), src)
+        assertTrue(src.contains("WANConnectionDevice.2.WANIPConnection.1"), src)
+        assertTrue(src.contains("WANConnectionDevice.1.WANPPPConnection.2"), src)
+        assertTrue(src.contains("WANConnectionDevice.1.WANIPConnection.2"), src)
+        assertTrue(src.contains("function ensureInternetWcd"), src)
+        assertTrue(src.contains("function deleteInternetPppWan"), src)
+        assertTrue(src.contains("function ensureInternetIp"), src)
+        assertTrue(src.contains("function setInternetIpLeaves"), src)
+        assertTrue(src.contains("function enableInternetIp"), src)
+        assertTrue(src.contains("AddressingType"), src)
+        assertTrue(src.contains("ExternalIPAddress"), src)
+        assertTrue(src.contains("unsupported productClass"), src)
+        assertFalse(src.contains("11111111"), src)
+    }
+
+    @Test
     fun wifi_ssid_provision_maps_vsol_and_f6600_and_uses_one_passphrase() {
         val src = read("scripts/genieacs/provisions/gf-wifi-ssid-poc.js")
         assertTrue(src.contains("V2804AX15T"), src)

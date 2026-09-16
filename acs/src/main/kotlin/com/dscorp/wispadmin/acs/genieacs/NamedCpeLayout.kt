@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.acs.genieacs
 
 data class NamedCpeLayout(
     val pppExternalIp: String,
+    val ipExternalIp: String,
     val ssid24: String,
     val ssid5: String,
 )
@@ -12,12 +13,14 @@ object NamedCpeLayouts {
 
     private val F6600 = NamedCpeLayout(
         pppExternalIp = "$WAN.1.WANPPPConnection.2.ExternalIPAddress",
+        ipExternalIp = "$WAN.1.WANIPConnection.2.ExternalIPAddress",
         ssid24 = "$LAN.1.SSID",
         ssid5 = "$LAN.5.SSID",
     )
 
     private val VSOL = NamedCpeLayout(
         pppExternalIp = "$WAN.2.WANPPPConnection.1.ExternalIPAddress",
+        ipExternalIp = "$WAN.2.WANIPConnection.1.ExternalIPAddress",
         ssid24 = "$LAN.5.SSID",
         ssid5 = "$LAN.1.SSID",
     )

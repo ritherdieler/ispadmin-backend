@@ -24,6 +24,6 @@ Incluye gate de recolección quitado, directorio XOR por `accessMode`, y `POST /
 | ONU | Flag | Id | accessMode | Identidad 360 | Wi-Fi |
 |-----|------|----|------------|---------------|-------|
 | VSOL `VSOL0031C0B6` | `--access-mode static` | `#13` | `STATIC_IP` | `IP=192.168.250.10` `ROUTER=8` (sin PPPoE) | `lab-vsol-e2e-24` / `lab-vsol-e2e-24 - 5G` pass `11111111` |
-| ZTE `ZTEGDC47BFFD` | `--access-mode pppoe` | `#14` | `PPPOE_DYNAMIC` | (ver API; `gf*`) | `lab-zte-e2e-24` / `lab-zte-e2e-24 - 5G` pass `11111111` |
+| ZTE `ZTEGDC47BFFD` | `--access-mode pppoe` | `#14` | `PPPOE_DYNAMIC` | `PPPOE=gf14` `ROUTER=8` (sin IP) | `lab-zte-e2e-24` / `lab-zte-e2e-24 - 5G` pass `11111111` |
 
 Ambos `E2E_FIBER_STAGING_ESPRESSO_OK`. `evaluated_at` presente. `pilot_enabled` ausente. Recolección lab on. Prod no se tocó.

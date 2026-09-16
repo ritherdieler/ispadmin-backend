@@ -19,8 +19,8 @@ Continua = HTTP. El JS en GenieACS ramifica por `DeviceID.ProductClass`.
 
 | Alta | Script NBI | Qué escribe |
 |------|------------|-------------|
-| FIBER PPPoE | `gf-pppoe-wan2-poc` | WAN PPP + WiFi si hay SSIDs |
-| FIBER STATIC_IP | `gf-wifi-ssid-poc` | Solo WiFi (WAN IP ya la pone MK2/OLT) |
+| FIBER PPPoE | `gf-pppoe-wan2-poc` | Reemplaza WAN2 por PPP + WiFi si hay SSIDs |
+| FIBER STATIC_IP | `gf-static-wan2-poc` | Reemplaza WAN2 por IP estática + WiFi si hay SSIDs |
 | WiFi día 2 | `gf-wifi-ssid-poc` | SSIDs |
 | Reboot | `gf-reboot-poc` | Reboot CWMP |
 

@@ -2,7 +2,7 @@
 
 Ámbito: JavaScript en `scripts/genieacs/` (provisions, virtual-parameters y sus tests). El sandbox de GenieACS (`declare` / `commit` / `log` / `args`) no es licencia para un script lineal.
 
-Contrato CWMP (`commit()`, AddObject `.*`, layouts F6600R/VSOL, 9005/9007): `.agent-docs/genieacs-provisions-f6600r-hallazgos.md`. Catálogo de `gf-pppoe-wan2-poc`, `gf-wifi-ssid-poc` y `gf-reboot-poc`: `.agent-docs/genieacs-provisions-lab.md`. Este doc cubre **forma del código**. `gf-reboot-poc` es la excepción: un `declare("Reboot")` en el top-level, sin `commit()`, porque reejecutar el script volvería a reiniciar.
+Contrato CWMP (`commit()`, AddObject `.*`, layouts F6600R/VSOL, 9005/9007): `.agent-docs/genieacs-provisions-f6600r-hallazgos.md`. Catálogo de `gf-pppoe-wan2-poc`, `gf-static-wan2-poc`, `gf-wifi-ssid-poc` y `gf-reboot-poc`: `.agent-docs/genieacs-provisions-lab.md`. Este doc cubre **forma del código**. `gf-reboot-poc` es la excepción: un `declare("Reboot")` en el top-level, sin `commit()`, porque reejecutar el script volvería a reiniciar.
 
 ## Criterio de terminado
 

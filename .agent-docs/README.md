@@ -58,6 +58,7 @@
 | **Deploy staging decorate 360 recolección on** | [deploy-staging-360-collect-banner-2026-09-15.md](./deploy-staging-360-collect-banner-2026-09-15.md) |
 | **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
 | **Staging VSOL `#11` FIBER STATIC_IP 2026-09-15** | [staging-vsol-11-static-ip-2026-09-15.md](./staging-vsol-11-static-ip-2026-09-15.md) |
+| **WAN2 se reemplaza en alta STATIC/PPPoE 2026-09-16** | [wan-internet-replace-static-2026-09-16.md](./wan-internet-replace-static-2026-09-16.md) |
 | **ACS STATIC_IP = provision GenieACS HTTP** | [acs-static-ip-named-provision-http-2026-09-15.md](./acs-static-ip-named-provision-http-2026-09-15.md) |
 | **#5 ZTE STATIC_IP real, live-readings QUEUE** | [staging-zte-5-static-queue-live-readings-2026-09-15.md](./staging-zte-5-static-queue-live-readings-2026-09-15.md) |
 | **#5 ZTE vivo lee gf5, no cola vacía** | [staging-zte-5-pppoe-live-readings-2026-09-15.md](./staging-zte-5-pppoe-live-readings-2026-09-15.md) |

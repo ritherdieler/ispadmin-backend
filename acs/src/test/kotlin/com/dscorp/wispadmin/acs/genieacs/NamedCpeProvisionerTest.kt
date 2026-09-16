@@ -250,7 +250,214 @@ class NamedCpeProvisionerTest {
     }
 
     @Test
-    fun `STATIC_IP enqueues gf-wifi-ssid-poc for VSOL layout then COMPLETE after SSIDs`() {
+    fun `STATIC_IP replaces leftover PPPoE on VSOL and COMPLETE only after matching WAN IP`() {
+        val deviceId = "B46415-V2804AX15T-12345B4641531C0B6"
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(
+                id = deviceId,
+                serialNumber = "VSOL0031C0B6",
+                productClass = "V2804AX15T",
+            )
+        )
+        every { client.enqueueProvisions(any(), any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 202,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANIPConnection.1.ExternalIPAddress",
+            )
+        } returns "192.168.250.10"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID",
+            )
+        } returns "lab-vsol-e2e-24"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID",
+            )
+        } returns "lab-vsol-e2e-24 - 5G"
+        val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })
+
+        val outcome = provisioner.provision(
+            Tr069ProvisionRequest(
+                onuSerial = "VSOL0031C0B6",
+                onuTypeName = "VSOLVA74",
+                ip = "192.168.250.10",
+                ipSegment = "192.168.250.1/24",
+                wifiSsid24 = "lab-vsol-e2e-24",
+                wifiPassword24 = "11111111",
+                wifiSsid5 = "lab-vsol-e2e-24 - 5G",
+                wifiPassword5 = "other",
+                wanVlanId = 100,
+            )
+        )
+
+        assertEquals(CpeStatus.COMPLETE, outcome.status)
+        verify {
+            client.enqueueProvisions(
+                deviceId,
+                "gf-static-wan2-poc",
+                match { args ->
+                    args.size >= 6 &&
+                        args[0] == "192.168.250.10" &&
+                        args[1] == "255.255.255.0" &&
+                        args[2] == "192.168.250.1" &&
+                        args[4] == "100"
+                },
+                connectionRequest = true,
+            )
+        }
+        verify(exactly = 0) {
+            client.enqueueProvisions(any(), NamedGenieAcsProvisions.PPPOE, any(), any())
+        }
+    }
+
+    @Test
+    fun `STATIC_IP does not COMPLETE when leftover PPPoE IP is still observed`() {
+        val deviceId = "B46415-V2804AX15T-12345B4641531C0B6"
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(
+                id = deviceId,
+                serialNumber = "VSOL0031C0B6",
+                productClass = "V2804AX15T",
+            )
+        )
+        every { client.enqueueProvisions(any(), any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 202,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getDeviceParameterValue(any(), any()) } returns "10.64.0.12"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID",
+            )
+        } returns "lab-vsol-e2e-24"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID",
+            )
+        } returns "lab-vsol-e2e-24 - 5G"
+        val clock = AtomicLong(0)
+        val provisioner = NamedCpeProvisioner(
+            client,
+            GenieAcsProperties().apply {
+                enabled = true
+                waitTimeoutMs = 10
+                pollIntervalMs = 5
+            },
+        ).withTimeControls(clock = { clock.get() }, sleeper = { clock.addAndGet(it) })
+
+        val outcome = provisioner.provision(
+            Tr069ProvisionRequest(
+                onuSerial = "VSOL0031C0B6",
+                onuTypeName = "VSOLVA74",
+                ip = "192.168.250.10",
+                ipSegment = "192.168.250.1/24",
+                wifiSsid24 = "lab-vsol-e2e-24",
+                wifiPassword24 = "11111111",
+                wifiSsid5 = "lab-vsol-e2e-24 - 5G",
+                wifiPassword5 = "other",
+                wanVlanId = 100,
+            )
+        )
+
+        assertEquals(CpeStatus.PENDING, outcome.status)
+    }
+
+    @Test
+    fun `STATIC_IP replaces leftover PPPoE on F6600R and COMPLETE after matching WAN IP`() {
+        val deviceId = "5872C9-F6600R-ZTEGDC47BFFD"
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(
+                id = deviceId,
+                serialNumber = "ZTEGDC47BFFD",
+                productClass = "F6600R",
+            )
+        )
+        every { client.enqueueProvisions(any(), any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.2.ExternalIPAddress",
+            )
+        } returns "192.168.250.22"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID",
+            )
+        } returns "lab-zte-24"
+        every {
+            client.getDeviceParameterValue(
+                deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID",
+            )
+        } returns "lab-zte-5"
+        val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })
+
+        val outcome = provisioner.provision(
+            Tr069ProvisionRequest(
+                onuSerial = "ZTEGDC47BFFD",
+                onuTypeName = "F6600R",
+                ip = "192.168.250.22",
+                ipSegment = "192.168.250.1/24",
+                wifiSsid24 = "lab-zte-24",
+                wifiPassword24 = "from24pass",
+                wifiSsid5 = "lab-zte-5",
+                wifiPassword5 = "other",
+                wanVlanId = 100,
+            )
+        )
+
+        assertEquals(CpeStatus.COMPLETE, outcome.status)
+        verify {
+            client.enqueueProvisions(
+                deviceId,
+                "gf-static-wan2-poc",
+                match { args ->
+                    args.size >= 6 &&
+                        args[0] == "192.168.250.22" &&
+                        args[1] == "255.255.255.0" &&
+                        args[2] == "192.168.250.1"
+                },
+                connectionRequest = true,
+            )
+        }
+    }
+
+    @Test
+    fun `STATIC_IP enqueues gf-static-wan2-poc for VSOL layout then COMPLETE after WAN IP`() {
         val client = mockk<GenieAcsClient>(relaxed = true)
         every { client.listDevices() } returns listOf(
             GenieAcsDevice(
@@ -269,6 +476,12 @@ class NamedCpeProvisionerTest {
             body = "ok",
             accepted = true,
         )
+        every {
+            client.getDeviceParameterValue(
+                "B46415-V2804AX15T-12345B4641531C0B6",
+                "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANIPConnection.1.ExternalIPAddress",
+            )
+        } returns "192.168.250.11"
         every {
             client.getDeviceParameterValue(
                 "B46415-V2804AX15T-12345B4641531C0B6",
@@ -301,11 +514,24 @@ class NamedCpeProvisionerTest {
         verify(exactly = 0) {
             client.enqueueProvisions(any(), NamedGenieAcsProvisions.PPPOE, any(), any())
         }
+        verify(exactly = 0) {
+            client.enqueueProvisions(any(), NamedGenieAcsProvisions.WIFI, any(), any())
+        }
         verify {
             client.enqueueProvisions(
                 "B46415-V2804AX15T-12345B4641531C0B6",
-                NamedGenieAcsProvisions.WIFI,
-                listOf("lab-vsol-e2e-24", "lab-vsol-e2e-24 - 5G", "LabVsolWifi24!"),
+                NamedGenieAcsProvisions.STATIC,
+                match { args ->
+                    args.size == 10 &&
+                        args[0] == "192.168.250.11" &&
+                        args[1] == "255.255.255.0" &&
+                        args[2] == "192.168.250.1" &&
+                        args[4] == "100" &&
+                        args[6] == "lab-vsol-e2e-24" &&
+                        args[7] == "LabVsolWifi24!" &&
+                        args[8] == "lab-vsol-e2e-24 - 5G" &&
+                        args[9] == "LabVsolWifi24!"
+                },
                 connectionRequest = true,
             )
         }
