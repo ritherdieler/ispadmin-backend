@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.repository.*
 import com.dscorp.wispadmin.servicehealth.port.HealthTrafficPort
@@ -18,7 +17,7 @@ import java.time.ZoneId
 
 @Service
 class HealthEvaluationService(
-    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope, private val subscriptions: SubscriptionDirectoryPort,
+    private val properties: ServiceHealthProperties, private val subscriptions: SubscriptionDirectoryPort,
     private val identity: IdentityService, private val reader: HealthEvidenceReader, private val engine: DiagnosisEngine,
     private val events: HealthEventRepository, private val current: HealthCurrentRepository,
     private val evidence: EvidenceLinkRepository, private val runs: TelemetryRunRepository, private val trafficPort: ObjectProvider<HealthTrafficPort>,
@@ -27,7 +26,7 @@ class HealthEvaluationService(
 ) {
     @Scheduled(fixedDelayString="\${service.health.evaluation-interval-ms:60000}",initialDelayString="\${service.health.evaluation-initial-delay-ms:60000}")
     fun evaluate() {
-        val collectIds=scope.collectionSubscriptionIds()
+        val collectIds=subscriptions.allIds()
         if(collectIds.isEmpty()) return
         tx.executeWithoutResult {
             val cursor=cursors.lock("traffic-consumer") ?: return@executeWithoutResult
@@ -55,6 +54,8 @@ class HealthEvaluationService(
             cursors.lock("evaluation") ?: return@executeWithoutResult
             if(!subscriptions.exists(id)) return@executeWithoutResult
             val now=Instant.now()
+            val existing=current.findById(id).orElse(null)
+            if(isFresh(existing, now)) return@executeWithoutResult
             identity.reconcile(id,now)
             val input=reader.read(id,now)
             val summary=engine.evaluate(input)
@@ -88,5 +89,11 @@ class HealthEvaluationService(
             }
             current.save(HealthCurrent(subscriptionId=id,evaluatedAt=now,summaryJson=json.writeValueAsString(summary)))
         }
+    }
+
+    private fun isFresh(row: HealthCurrent?, now: Instant): Boolean {
+        if (row == null) return false
+        val window = properties.snapshotFreshSeconds.coerceAtLeast(1)
+        return !row.evaluatedAt.isBefore(now.minusSeconds(window))
     }
 }

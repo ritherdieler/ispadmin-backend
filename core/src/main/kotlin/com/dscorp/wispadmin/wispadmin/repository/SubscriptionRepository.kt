@@ -61,6 +61,27 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     @Query(
         """
+        select s.id from Subscription s
+        where s.serviceStatus <> com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus.CANCELLED
+          and s.installationType in (
+            com.dscorp.wispadmin.wispadmin.data.model.InstallationType.FIBER,
+            com.dscorp.wispadmin.wispadmin.data.model.InstallationType.ONLY_TV_FIBER
+          )
+          and (
+            (s.fiberOnuSn is not null and s.fiberOnuSn <> '')
+            or exists (
+              select 1 from SubscriptionAcs a
+              where a.subscriptionId = s.id
+                and a.genieacsDeviceId is not null
+                and a.genieacsDeviceId <> ''
+            )
+          )
+        """
+    )
+    fun findEvaluationIds(): List<Int>
+
+    @Query(
+        """
         SELECT s FROM Subscription s
         WHERE s.provisionNextAttemptAt IS NOT NULL
           AND s.provisionNextAttemptAt <= :now

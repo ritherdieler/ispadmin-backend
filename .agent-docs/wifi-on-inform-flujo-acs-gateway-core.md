@@ -177,7 +177,8 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | Apply | `scripts/genieacs/apply-wifi-telemetry.py` (`--device-id` para el escalón, `--all-models` para la flota) |
 | Cobertura / faults | `scripts/genieacs/inform-channel-coverage.py` |
 | ACS notify | `WifiInformNotifyService`, `POST /api/acs/v1/cpe/inform-notify` |
-| Gateway ingest | `CpeInformIngestService`, `POST /api/olt-gateway/acs/cpe-inform` |
+| ACS → bus | `AcsToGatewayInformClient`: XADD `cpe.inform` si el EventBus no es no-op; si no, `POST /api/olt-gateway/acs/cpe-inform` |
+| Gateway ingest | `CpeInformIngestService` (fallback HTTP) |
 | Core persist | `CpeInformPersistService` / `HealthSnapshotIngestService` |
 | Evento | `PlatformEventTypes.CPE_INFORM` = `cpe.inform` |
 

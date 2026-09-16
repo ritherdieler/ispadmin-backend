@@ -40,7 +40,6 @@ import com.dscorp.wispadmin.oltgateway.service.OltSignalPollService
 import com.dscorp.wispadmin.oltgateway.service.SignalCategoryCalculator
 import com.dscorp.wispadmin.oltgateway.service.SmartOltImportService
 import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltCatalogClient
-import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpBusRegistry
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLock
@@ -118,28 +117,8 @@ class OltGatewayConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
-    @Suppress("DEPRECATION")
-    fun parallelOnuInventoryReader(
-        oltCliBus: OltCliBus,
-        boardParser: BoardParser,
-        onuSummaryParser: OnuSummaryParser,
-        oltRepository: OltMgrOltRepository,
-        properties: OltGatewayProperties
-    ): ParallelOnuInventoryReader {
-        return ParallelOnuInventoryReader(
-            cliBus = oltCliBus,
-            boardParser = boardParser,
-            onuSummaryParser = onuSummaryParser,
-            oltRepository = oltRepository,
-            properties = properties
-        )
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
     fun oltGatewayQueryService(
         oltCommandExecutor: OltCommandExecutor,
-        parallelOnuInventoryReader: ParallelOnuInventoryReader,
         oltRepository: OltMgrOltRepository,
         smartOltCompatMapper: SmartOltCompatMapper,
         properties: OltGatewayProperties,
@@ -147,12 +126,10 @@ class OltGatewayConfig {
         boardParser: BoardParser,
         autofindParser: AutofindParser,
         onuInfoBySnParser: OnuInfoBySnParser,
-        opticalInfoParser: OpticalInfoParser,
         snmpClient: ObjectProvider<OltSnmpClient>
     ): OltGatewayQueryFacade {
         return OltGatewayQueryService(
             commandExecutor = oltCommandExecutor,
-            inventoryReader = parallelOnuInventoryReader,
             oltRepository = oltRepository,
             smartOltCompatMapper = smartOltCompatMapper,
             properties = properties,
@@ -160,7 +137,6 @@ class OltGatewayConfig {
             boardParser = boardParser,
             autofindParser = autofindParser,
             onuInfoBySnParser = onuInfoBySnParser,
-            opticalInfoParser = opticalInfoParser,
             snmpClient = snmpClient.ifAvailable
         )
     }
@@ -491,8 +467,6 @@ class OltGatewayConfig {
         onuRepository: OltMgrOnuRepository,
         statusRepository: OltMgrOnuStatusCurrentRepository,
         taskRepository: OltMgrTaskRepository,
-        boardParser: BoardParser,
-        opticalInfoParser: OpticalInfoParser,
         signalCategoryCalculator: SignalCategoryCalculator,
         properties: OltGatewayProperties,
         cliBus: ObjectProvider<OltCliBus>,
@@ -507,8 +481,6 @@ class OltGatewayConfig {
             onuRepository = onuRepository,
             statusRepository = statusRepository,
             taskRepository = taskRepository,
-            boardParser = boardParser,
-            opticalInfoParser = opticalInfoParser,
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
             cliBus = cliBus.ifAvailable,

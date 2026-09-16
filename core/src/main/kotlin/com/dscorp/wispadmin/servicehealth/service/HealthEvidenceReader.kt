@@ -2,9 +2,9 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.events.LiveTelemetryPort
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
+import com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthCpePort
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagPort
 import com.dscorp.wispadmin.servicehealth.port.HealthNetDiagTarget
@@ -39,7 +39,7 @@ class HealthEvidenceReader(
     private val liveTelemetry: ObjectProvider<LiveTelemetryPort>,
     private val trafficEvidence: TrafficEvidenceRepository,
     private val runs: TelemetryRunRepository, private val netDiagPort: ObjectProvider<HealthNetDiagPort>,
-    private val properties: ServiceHealthProperties, private val scope: ServiceHealthScope,
+    private val properties: ServiceHealthProperties, private val acs: AcsSubscriptionPort,
     private val json: ObjectMapper
 ) {
     fun requireExists(id: Int) {
@@ -49,7 +49,7 @@ class HealthEvidenceReader(
     fun read(id: Int, now: Instant = Instant.now()): HealthInputs {
         val sub=directory.find(id) ?: throw NoSuchElementException("Suscripción $id no encontrada")
         val ids=identity.snapshot(sub).toMutableMap()
-        ids["lab"] = if (scope.lab(id)) "true" else "false"
+        ids["lab"] = if (acs.isLab(id)) "true" else "false"
         val from=now.minusSeconds(86400)
         val trafficIdentitySince=identity.currentLinks(id).filter { it.kind in setOf("IP","ROUTER","QUEUE","PLAN","ONU") }.maxOfOrNull { it.validFrom }
         val sources=mutableListOf<Evidence>()

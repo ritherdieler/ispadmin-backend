@@ -31,8 +31,6 @@ class AcsSubscriptionAdapter(
     override fun findSubscriptionIdsByDeviceId(deviceId: String): List<Int> =
         acs.findByGenieacsDeviceId(deviceId).map { it.subscriptionId }
 
-    override fun labSubscriptionIds(): List<Int> = acs.findByLabIsTrue().map { it.subscriptionId }
-
     override fun isLab(subscriptionId: Int?): Boolean =
         subscriptionId != null && acs.findById(subscriptionId).orElse(null)?.lab == true
 
@@ -67,7 +65,7 @@ class SubscriptionDirectoryAdapter(
     private val subscriptions: SubscriptionRepository
 ) : SubscriptionDirectoryPort {
 
-    override fun allIds(): List<Int> = subscriptions.findAllIds()
+    override fun allIds(): List<Int> = subscriptions.findEvaluationIds()
 
     override fun exists(subscriptionId: Int): Boolean = subscriptions.existsById(subscriptionId)
 

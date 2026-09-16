@@ -66,15 +66,6 @@ class WifiCurrent(
 )
 
 @Entity
-@Table(name="capability_profile", uniqueConstraints=[UniqueConstraint(name="uk_sh_read_profile",columnNames=["manufacturer","model","firmware"])])
-class ReadCapabilityProfile(
-    @Id @GeneratedValue(strategy=GenerationType.IDENTITY) @Column(name="id") var id: Long? = null,
-    @Column(name="manufacturer", length=64) var manufacturer: String = "", @Column(name="model", length=64) var model: String = "",
-    @Column(name="firmware", length=64) var firmware: String = "*", @Column(name="wifi_count") var wifiCount: Boolean = false, @Column(name="wifi_signal") var wifiSignal: Boolean = false,
-    @Column(name="station_bytes") var stationBytes: Boolean = false, @Column(name="verified_at") @org.hibernate.annotations.Type(type="com.dscorp.wispadmin.servicehealth.domain.UtcInstantType") var verifiedAt: Instant? = null, @Column(name="version") var version: String = "wifi-v1"
-)
-
-@Entity
 @Table(name="telemetry_source_run", indexes=[Index(name="idx_sh_run_source_time",columnList="source,equipment_key,started_at")])
 class TelemetryRun(
     @Id @GeneratedValue(strategy=GenerationType.IDENTITY) @Column(name="id") var id: Long? = null,

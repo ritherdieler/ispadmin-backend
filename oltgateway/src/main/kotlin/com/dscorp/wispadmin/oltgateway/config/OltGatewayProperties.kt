@@ -70,16 +70,6 @@ class OltGatewayProperties {
         var maxRepetitions: Int = 25
         /** Small pacing interval between GETBULK pages; protects constrained OLT agents. */
         var requestIntervalMs: Long = 100
-        /**
-         * Deprecated escape hatch: allow inventory sync via SSH when SNMP is unavailable.
-         * Default false — inventory sync is SNMP-only when this module is the intended path.
-         */
-        var allowSshInventoryFallback: Boolean = false
-        /**
-         * Deprecated escape hatch: allow optical signal poll via SSH when SNMP is unavailable.
-         * Default false — signal poll is SNMP-only.
-         */
-        var allowSshSignalFallback: Boolean = false
         /** No-op since columns share one multi-varbind GETBULK page; kept for rollback of env overrides. */
         var opticalParallelColumns: Boolean = false
         /** Max concurrent per-port optical walks; >1 only queues and induces drops on MA5608T. */

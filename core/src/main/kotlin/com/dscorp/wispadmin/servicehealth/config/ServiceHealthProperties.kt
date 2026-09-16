@@ -11,12 +11,10 @@ class ServiceHealthProperties {
     var acsEnabled = false
     var correlationEnabled = false
     var sharedIncidentsEnabled = false
-    var sharedIncidentNotificationsEnabled = false
     var actionsEnabled = false
     var configEnabled = false
     var stationHmacKey = ""
     var periodicInformSeconds = 1800L
-    var labPeriodicInformSeconds = 30L
     var snapshotFreshSeconds = 60L
     var opticalFreshSeconds = 2400L
     var stateFreshSeconds = 1200L
@@ -36,7 +34,6 @@ class ServiceHealthProperties {
     var eventRetentionDays = 180L
     var actionCooldownSeconds = 600L
     var acsWifiSampleTargetSeconds = 1800L
-    var opticalPullEnabled = false
     fun wifiSampleFreshSeconds() = acsWifiSampleTargetSeconds.coerceAtLeast(1) * 2
     var crConcurrency = 3
 }

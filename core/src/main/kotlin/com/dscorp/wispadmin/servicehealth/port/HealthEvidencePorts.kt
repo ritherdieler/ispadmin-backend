@@ -158,10 +158,6 @@ interface HealthLabOpticalPort {
     fun refreshBySn(sn: String): HealthLabOpticalRefresh
 }
 
-interface HealthLabScopePort {
-    fun collectionSubscriptionIds(): Set<Int>
-}
-
 data class HealthCpeTelemetry(
     val sn: String,
     val uniqueExternalId: String? = null,

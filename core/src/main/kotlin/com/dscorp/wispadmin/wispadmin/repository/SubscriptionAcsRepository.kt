@@ -5,5 +5,4 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface SubscriptionAcsRepository : JpaRepository<SubscriptionAcs, Int> {
     fun findByGenieacsDeviceId(deviceId: String): List<SubscriptionAcs>
-    fun findByLabIsTrue(): List<SubscriptionAcs>
 }

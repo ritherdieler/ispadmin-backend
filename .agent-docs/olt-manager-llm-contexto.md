@@ -56,7 +56,7 @@ No se busca clonar SmartOLT completo. Prioridad: velocidad, estabilidad y bajo c
 | Circuit breaker / OLT offline | **DONE** | `OltReachabilityTracker` |
 | Mock | **DONE** | `olt.gateway.mock.enabled` |
 | Compat 6 ops SmartOLT (WispAdmin) | **DONE** | `SmartOltCompatController` + `OltHttpClient` |
-| SNMP GET/GETBULK / walk | **PARTIAL** | Inventario + óptica canónicos SNMP; SSH inventory/signal deprecados (`allow-ssh-*-fallback`) — [olt-ma5608t-snmp-capabilities.md](./olt-ma5608t-snmp-capabilities.md) |
+| SNMP GET/GETBULK / walk | **PARTIAL** | Inventario + óptica canónicos SNMP — [olt-ma5608t-snmp-capabilities.md](./olt-ma5608t-snmp-capabilities.md) |
 | SNMP Trap receiver | **PARTIAL** | `OltSnmpTrapReceiver` ASN.1 (udp/1162, off). OLT AS-IS: traps disabled + 0 targets. Sin mapeo NetDiag aún — [olt-ma5608t-snmp-capabilities.md](./olt-ma5608t-snmp-capabilities.md) §Traps |
 | Multi-OLT / adapters ZTE/VSOL | **TODO** | Modelo `olt_mgr_olt` preparado; una OLT en seed |
 | UI BackOffice OLT Manager | **TODO** | Consumo actual vía WispAdmin (alta FIBER) + scripts ops |
@@ -307,7 +307,7 @@ Actúa como arquitecto/backend en Kotlin/Spring, GPON Huawei MA5608T, SSH CLI y 
 | Facade / writes / query | `OltManagerFacade`, `OltGatewayCommandService`, `OltGatewayQueryService` |
 | SSH | `OltCliBus`, `HuaweiCliSession` |
 | SNMP | `OltSnmpBusRegistry`, `OltSnmpModelLimits`, `Snmp4jOltSnmpClient`, `OltSnmpTrapReceiver` |
-| Sync | `OltInventorySyncService`, `OltSignalPollService`, `ParallelOnuInventoryReader` |
+| Sync | `OltInventorySyncService`, `OltSignalPollService` |
 
 ---
 

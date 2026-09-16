@@ -1,0 +1,169 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Política de recolección 360 en staging",
+    "quality_profile": "showcase",
+    "viewBox": [1235, 720],
+    "output": "360-recoleccion-staging.html",
+    "views": [
+      {
+        "id": "flags-on",
+        "label": "Flags y lab",
+        "focus": ["overlay", "flags", "lab-meta"],
+        "note": "El overlay enciende collectors; lab es solo identidad."
+      },
+      {
+        "id": "ingest-paths",
+        "label": "Rutas de ingest",
+        "focus": ["flags", "inform", "optical", "traffic", "persist"],
+        "note": "Wi-Fi por Inform ACS, óptica por push SNMP y tráfico por poll MikroTik."
+      },
+      {
+        "id": "consume-360",
+        "label": "Consumo Vista 360",
+        "focus": ["persist", "evaluate", "api360"],
+        "note": "Samples alimentan diagnosis y el GET service-health."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "policy", "label": "Overlay y política" },
+    { "id": "sources", "label": "Fuentes de telemetría" },
+    { "id": "core", "label": "Core service-health" },
+    { "id": "client", "label": "Vista 360" }
+  ],
+  "phases": [
+    { "id": "decide", "label": "Encender módulo", "fromCol": 0, "toCol": 1 },
+    { "id": "ingest", "label": "Ingestar", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "serve", "label": "Exponer", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "staging-gate", "label": "Staging siempre on", "lane": "policy", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "source-fan", "label": "Tres fuentes", "lane": "sources", "fromCol": 2, "toCol": 4, "variant": "dashed" },
+    { "id": "core-pipeline", "label": "Persistir y evaluar", "lane": "core", "fromCol": 4, "toCol": 5, "variant": "emphasis" }
+  ],
+  "mainPath": ["overlay", "flags", "inform", "persist", "evaluate", "api360"],
+  "nodes": [
+    {
+      "id": "overlay",
+      "lane": "policy",
+      "col": 0,
+      "type": "cloud",
+      "label": "Overlay staging",
+      "sublabel": "tag=stg · WAR :8081",
+      "tag": "application-staging",
+      "width": 148
+    },
+    {
+      "id": "flags",
+      "lane": "policy",
+      "col": 2,
+      "type": "backend",
+      "label": "Flags de módulo",
+      "sublabel": "360 collectors on",
+      "tag": "independientes",
+      "width": 156
+    },
+    {
+      "id": "lab-meta",
+      "lane": "policy",
+      "col": 5,
+      "type": "database",
+      "label": "identity.lab",
+      "sublabel": "GenieACS tag lab",
+      "tag": "no es gate",
+      "width": 132
+    },
+    {
+      "id": "optical",
+      "lane": "sources",
+      "col": 2,
+      "type": "external",
+      "label": "Óptica SNMP",
+      "sublabel": "push → Redis batch",
+      "width": 140
+    },
+    {
+      "id": "inform",
+      "lane": "sources",
+      "col": 3,
+      "type": "messagebus",
+      "label": "cpe.inform",
+      "sublabel": "ACS → Redis Streams",
+      "tag": "Wi-Fi 180 s",
+      "width": 140
+    },
+    {
+      "id": "traffic",
+      "lane": "sources",
+      "col": 4,
+      "type": "external",
+      "label": "Traffic poll",
+      "sublabel": "MikroTik · poll on",
+      "width": 140
+    },
+    {
+      "id": "persist",
+      "lane": "core",
+      "col": 4,
+      "type": "backend",
+      "label": "Persist samples",
+      "sublabel": "Wi-Fi · óptica · tráfico",
+      "width": 148
+    },
+    {
+      "id": "evaluate",
+      "lane": "core",
+      "col": 5,
+      "type": "backend",
+      "label": "HealthEvaluation",
+      "sublabel": "findEvaluationIds + skip fresco",
+      "width": 148
+    },
+    {
+      "id": "api360",
+      "lane": "client",
+      "col": 5,
+      "type": "frontend",
+      "label": "Vista 360",
+      "sublabel": "GET service-health",
+      "width": 140
+    }
+  ],
+  "edges": [
+    { "id": "overlay-flags", "from": "overlay", "to": "flags", "label": "tag stg", "variant": "emphasis" },
+    { "id": "flags-inform", "from": "flags", "to": "inform", "label": "acs-enabled", "variant": "emphasis" },
+    { "id": "flags-optical", "from": "flags", "to": "optical", "label": "optical-enabled", "variant": "dashed", "role": "branch" },
+    { "id": "flags-traffic", "from": "flags", "to": "traffic", "label": "traffic.poll", "variant": "dashed", "role": "branch" },
+    { "id": "inform-persist", "from": "inform", "to": "persist", "label": "SN mapeado", "variant": "emphasis" },
+    { "id": "optical-persist", "from": "optical", "to": "persist", "variant": "dashed", "role": "branch" },
+    { "id": "traffic-persist", "from": "traffic", "to": "persist", "variant": "dashed", "role": "branch" },
+    { "id": "persist-evaluate", "from": "persist", "to": "evaluate", "label": "samples", "variant": "default" },
+    { "id": "evaluate-api", "from": "evaluate", "to": "api360", "label": "summary", "variant": "emphasis" },
+    { "id": "evaluate-lab", "from": "evaluate", "to": "lab-meta", "label": "solo metadata", "variant": "dashed", "role": "branch" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Invariante",
+      "items": [
+        "Censo findEvaluationIds; sweep 5 min y skip si HealthCurrent fresco"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Overlay",
+      "items": [
+        "health/acs/optical y traffic.poll en true"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Lab ≠ gate",
+      "items": [
+        "isLab() solo marca identity.lab"
+      ]
+    }
+  ]
+}

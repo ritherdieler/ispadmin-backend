@@ -17,7 +17,6 @@ interface AcsSubscriptionPort {
     fun find(subscriptionId: Int): AcsRegistryEntry?
     fun findDeviceId(subscriptionId: Int): String?
     fun findSubscriptionIdsByDeviceId(deviceId: String): List<Int>
-    fun labSubscriptionIds(): List<Int>
     fun isLab(subscriptionId: Int?): Boolean
     fun recordInform(
         subscriptionId: Int,

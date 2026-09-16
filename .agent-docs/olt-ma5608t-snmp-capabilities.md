@@ -215,16 +215,16 @@ Community: exportar en local como `OLT_SNMP_RO_COMMUNITY` (no commit). Modelo DB
 
 ## Próximo trabajo de código (parcialmente hecho)
 
-1. **DONE:** Cliente SNMP RO + sync inventario canónico (SSH inventory deprecado).  
-2. **DONE:** Sync óptico SNMP → DB (`OltSignalPollService` SNMP-first; SSH optical deprecado; intervalo default **5 min**).  
+1. **DONE:** Cliente SNMP RO + sync inventario canónico.  
+2. **DONE:** Sync óptico SNMP → DB (`OltSignalPollService`; intervalo default **5 min**).  
 3. **DONE:** `OltSnmpBusRegistry` — semáforo SNMP **por OLT**; MA5608T limitado a **1** walk (`OltSnmpModelLimits`).  
 4. **PARTIAL:** Receptor ASN.1 traps (`OltSnmpTrapReceiver`, puerto 1162, default off). Falta enable/target en OLT + mapeo Huawei→NetDiag.  
 5. Tests con fixtures de walks reales (anonimizados) si hace falta más cobertura.
 
-### Activar sync SNMP inventario + señal (canónico; SSH deprecado)
+### Activar sync SNMP inventario + señal
 
 Inventario (~10 min) y señal (~5 min) usan **SNMP** cuando enabled + community.  
-Fallbacks SSH solo con `OLT_GATEWAY_SNMP_ALLOW_SSH_FALLBACK` / `OLT_GATEWAY_SNMP_ALLOW_SSH_SIGNAL_FALLBACK`.
+Los fallbacks SSH de inventario (`display ont info`) y óptica (`display ont optical-info`) se eliminaron. El SSH lab on-demand (`lab-optical-ssh-enabled`) no es fallback.
 
 ```bash
 OLT_GATEWAY_SNMP_ENABLED=true

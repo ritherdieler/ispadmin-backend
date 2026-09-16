@@ -16,8 +16,6 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuTypeRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
 import com.dscorp.wispadmin.oltgateway.dto.ConfiguredOnuFilter
-import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
-import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
@@ -55,9 +53,8 @@ class OltInventorySyncServiceTest {
     private val properties = OltGatewayProperties().apply {
         oltId = "gigafiber-ma5608t"
         sync.skipWhenWriteRunning = true
-        // Legacy unit tests mock SSH inventory; production path is SNMP-first.
-        snmp.enabled = false
-        snmp.allowSshInventoryFallback = true
+        snmp.enabled = true
+        snmp.roCommunity = "test-ro"
     }
 
     private lateinit var service: OltInventorySyncService
@@ -127,7 +124,7 @@ class OltInventorySyncServiceTest {
 
     @Test
     fun `insert crea onu importada y status`() {
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNINSERT01", slot = 0, port = 2, ontId = 1, runState = "online", description = "cli-name")
         )
         val saved = slot<Iterable<OltMgrOnu>>()
@@ -172,7 +169,6 @@ class OltInventorySyncServiceTest {
     fun `syncInventory usa SNMP cuando snmp enabled (SSH deprecado)`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshInventoryFallback = false
         every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNSCHED001", slot = 0, port = 1, ontId = 0, runState = "offline")
         )
@@ -219,7 +215,6 @@ class OltInventorySyncServiceTest {
         )
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshInventoryFallback = false
         every { snmpClient.listConfiguredOnus() } answers {
             heldDuringSnmp.set(held.get())
             listOf(summary(sn = "SNLOCK0001", slot = 0, port = 3, ontId = 1, runState = "online"))
@@ -234,9 +229,8 @@ class OltInventorySyncServiceTest {
     }
 
     @Test
-    fun `syncInventory exige SNMP si fallback SSH desactivado`() {
+    fun `syncInventory exige SNMP`() {
         properties.snmp.enabled = false
-        properties.snmp.allowSshInventoryFallback = false
         val result = service.syncInventory()
         assertEquals("snmp_required", result.skippedReason)
         verify(exactly = 0) { queryFacade.listOnusParsed() }
@@ -429,7 +423,7 @@ class OltInventorySyncServiceTest {
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
         every { onuRepository.findBySn("SNUPDATE01") } returns Optional.of(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNUPDATE01", slot = 1, port = 5, ontId = 3, runState = "offline", description = "new-cli")
         )
         every { onuRepository.save(any()) } answers { firstArg() }
@@ -471,7 +465,7 @@ class OltInventorySyncServiceTest {
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
         every { onuRepository.findBySn("SNCRM00001") } returns Optional.of(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNCRM00001", slot = 0, port = 3, ontId = 2, runState = "online", description = "cli-desc")
         )
         every { onuRepository.save(any()) } answers { firstArg() }
@@ -500,7 +494,7 @@ class OltInventorySyncServiceTest {
             name = "keep",
             importedFromOlt = true
         )
-        every { queryFacade.listOnusParsed() } returns emptyList()
+        every { snmpClient.listConfiguredOnus() } returns emptyList()
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
 
@@ -525,7 +519,7 @@ class OltInventorySyncServiceTest {
         )
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNOTHER01", slot = 0, port = 1, ontId = 1, runState = "online")
         )
         every { onuRepository.save(any()) } answers { firstArg() }
@@ -555,7 +549,7 @@ class OltInventorySyncServiceTest {
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
         every { onuRepository.findBySn("SNREAPPEAR") } returns Optional.of(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNREAPPEAR", slot = 0, port = 2, ontId = 1, runState = "online")
         )
         every { onuRepository.save(any()) } answers { firstArg() }
@@ -589,7 +583,7 @@ class OltInventorySyncServiceTest {
         existing.status?.onu = existing
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNSTABLE01", slot = 0, port = 2, ontId = 1, runState = "online", matchState = "match", description = "same")
         )
 
@@ -626,7 +620,7 @@ class OltInventorySyncServiceTest {
         }
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns existing
         every { onuRepository.findByOlt_Id(1L) } returns existing
-        every { queryFacade.listOnusParsed() } returns existing.map { onu ->
+        every { snmpClient.listConfiguredOnus() } returns existing.map { onu ->
             summary(
                 sn = onu.sn,
                 slot = onu.board,
@@ -669,7 +663,7 @@ class OltInventorySyncServiceTest {
         existing.status?.onu = existing
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(existing)
         every { onuRepository.findByOlt_Id(1L) } returns listOf(existing)
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(sn = "SNSTATUS01", slot = 0, port = 2, ontId = 1, runState = "offline", matchState = "match", description = "same")
         )
         val savedStatuses = slot<Iterable<OltMgrOnuStatusCurrent>>()
@@ -696,7 +690,7 @@ class OltInventorySyncServiceTest {
 
     @Test
     fun `skip segundo sync concurrente`() {
-        every { queryFacade.listOnusParsed() } answers {
+        every { snmpClient.listConfiguredOnus() } answers {
             val parallel = service.syncInventory()
             assertEquals("sync_already_running", parallel.skippedReason)
             listOf(summary(sn = "SNONLY01", slot = 0, port = 1, ontId = 1, runState = "online"))
@@ -715,36 +709,6 @@ class OltInventorySyncServiceTest {
     }
 
     @Test
-    fun `skip cuando el bus CLI rechaza inventory`() {
-        every { queryFacade.listOnusParsed() } throws CliBusBusyException("already_queued")
-
-        val result = service.syncInventory()
-
-        assertEquals("already_queued", result.skippedReason)
-        assertFalse(service.isRunning())
-    }
-
-    @Test
-    fun `skip cuando la OLT no es alcanzable`() {
-        every { queryFacade.listOnusParsed() } throws CliBusBusyException("olt_unreachable")
-
-        val result = service.syncInventory()
-
-        assertEquals("olt_unreachable", result.skippedReason)
-        assertFalse(service.isRunning())
-    }
-
-    @Test
-    fun `skip cuando topology discovery reporta OLT inalcanzable`() {
-        every { queryFacade.listOnusParsed() } throws OltUnreachableException("Unable to reach OLT at 10.11.104.2:22")
-
-        val result = service.syncInventory()
-
-        assertEquals("olt_unreachable", result.skippedReason)
-        assertFalse(service.isRunning())
-    }
-
-    @Test
     fun `status incluye profundidad y tipo de job del bus`() {
         every { cliBus.queueDepth() } returns 3
         every { cliBus.busyJobType() } returns CliJobType.SIGNAL_POLL
@@ -757,7 +721,7 @@ class OltInventorySyncServiceTest {
 
     @Test
     fun `persiste sync run con conteos`() {
-        every { queryFacade.listOnusParsed() } returns emptyList()
+        every { snmpClient.listConfiguredOnus() } returns emptyList()
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
         every { onuRepository.findByOlt_Id(1L) } returns emptyList()
         val run = slot<OltMgrSyncRun>()
@@ -1341,7 +1305,7 @@ class OltInventorySyncServiceTest {
 
     @Test
     fun `insert persiste distancia lastDown y perfiles SNMP`() {
-        every { queryFacade.listOnusParsed() } returns listOf(
+        every { snmpClient.listConfiguredOnus() } returns listOf(
             summary(
                 sn = "SNEXTRAS01",
                 slot = 1,

@@ -16,13 +16,10 @@ import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.parser.AutofindParser
 import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
-import com.dscorp.wispadmin.oltgateway.parser.OnuSummaryParser
-import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuBySn
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.VersionParser
-import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
@@ -31,7 +28,6 @@ import org.slf4j.LoggerFactory
 
 class OltGatewayQueryService(
     private val commandExecutor: OltCommandExecutor,
-    private val inventoryReader: ParallelOnuInventoryReader,
     private val oltRepository: OltMgrOltRepository,
     private val smartOltCompatMapper: SmartOltCompatMapper,
     private val properties: OltGatewayProperties,
@@ -39,9 +35,7 @@ class OltGatewayQueryService(
     private val boardParser: BoardParser,
     private val autofindParser: AutofindParser,
     private val onuInfoBySnParser: OnuInfoBySnParser,
-    private val opticalInfoParser: OpticalInfoParser,
     private val snmpClient: OltSnmpClient? = null,
-    private val onuSummaryParser: OnuSummaryParser = OnuSummaryParser(),
 ) : OltGatewayQueryFacade {
 
     companion object {
@@ -135,12 +129,8 @@ class OltGatewayQueryService(
     }
 
     override fun listOnusParsed(): List<ParsedOnuSummary> {
-        if (snmpReady()) {
-            return snmpClient!!.listConfiguredOnus()
-        }
-        requireSshInventoryFallback("listOnus")
-        @Suppress("DEPRECATION")
-        return inventoryReader.listOnusParsed()
+        requireSnmp("listOnus")
+        return snmpClient!!.listConfiguredOnus()
     }
 
     override fun listOnus(): OnuSummaryListDto {
@@ -162,16 +152,8 @@ class OltGatewayQueryService(
     }
 
     override fun occupiedOntIds(board: Int, port: Int): Set<Int> {
-        if (snmpReady()) {
-            return snmpClient!!.listConfiguredOnus()
-                .asSequence()
-                .filter { it.slot == board && it.port == port }
-                .map { it.ontId }
-                .toSet()
-        }
-        requireSshInventoryFallback("occupiedOntIds")
-        val output = commandExecutor.run("display ont info 0 $board $port all")
-        return onuSummaryParser.parse(output)
+        requireSnmp("occupiedOntIds")
+        return snmpClient!!.listConfiguredOnus()
             .asSequence()
             .filter { it.slot == board && it.port == port }
             .map { it.ontId }
@@ -203,11 +185,8 @@ class OltGatewayQueryService(
     }
 
     override fun optical(slot: Int, port: Int, ontId: Int): OpticalInfoDto {
-        if (snmpReady()) {
-            return opticalViaSnmp(slot, port, ontId)
-        }
-        requireSshSignalFallback("optical")
-        return opticalViaSshDeprecated(slot, port, ontId)
+        requireSnmp("optical")
+        return opticalViaSnmp(slot, port, ontId)
     }
 
     private fun opticalViaSnmp(slot: Int, port: Int, ontId: Int): OpticalInfoDto {
@@ -234,56 +213,9 @@ class OltGatewayQueryService(
         return autofindParser.parse(output)
     }
 
-    @Deprecated("SSH optical is deprecated; use SNMP listOptical()")
-    private fun opticalViaSshDeprecated(slot: Int, port: Int, ontId: Int): OpticalInfoDto {
-        return commandExecutor.adhoc { session ->
-            session.execute("interface gpon 0/$slot")
-            val output = session.execute("display ont optical-info $port $ontId")
-            session.execute("quit")
-            val parsed = opticalInfoParser.parse(output, ontId)
-            OpticalInfoDto(
-                slot = slot,
-                port = port,
-                ontId = ontId,
-                rxPowerDbm = parsed.rxPowerDbm,
-                txPowerDbm = parsed.txPowerDbm,
-                temperatureC = parsed.temperatureC,
-                voltageV = parsed.voltageV,
-                biasCurrentMa = parsed.biasCurrentMa,
-                oltRxPowerDbm = parsed.oltRxPowerDbm
-            )
-        }
-    }
-
-    private fun requireSshInventoryFallback(op: String) {
-        if (properties.snmp.enabled && !properties.snmp.allowSshInventoryFallback) {
-            error(
-                "SNMP required for $op (set OLT_GATEWAY_SNMP_ENABLED + RO community, " +
-                    "or allow-ssh-inventory-fallback=true)"
-            )
-        }
-        if (properties.snmp.enabled) {
-            logger.warn(
-                "{} using deprecated SSH inventory fallback " +
-                    "(enable OLT_GATEWAY_SNMP_RO_COMMUNITY / snmp client)",
-                op
-            )
-        }
-    }
-
-    private fun requireSshSignalFallback(op: String) {
-        if (properties.snmp.enabled && !properties.snmp.allowSshSignalFallback) {
-            error(
-                "SNMP required for $op (set OLT_GATEWAY_SNMP_ENABLED + RO community, " +
-                    "or allow-ssh-signal-fallback=true)"
-            )
-        }
-        if (properties.snmp.enabled) {
-            logger.warn(
-                "{} using deprecated SSH optical fallback " +
-                    "(enable OLT_GATEWAY_SNMP_RO_COMMUNITY / snmp client)",
-                op
-            )
+    private fun requireSnmp(op: String) {
+        if (!snmpReady()) {
+            error("SNMP required for $op (set OLT_GATEWAY_SNMP_ENABLED + RO community)")
         }
     }
 }

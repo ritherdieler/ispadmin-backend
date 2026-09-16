@@ -14,7 +14,5 @@ class HealthOltGatewayHttpClientTest {
         assertEquals(emptyList<Any>(), client.findByOlt(1L))
         assertNull(client.findOltIdByName("olt"))
         assertEquals(false, client.refreshBySn("SN1").collected)
-        assertEquals(emptyList<Any>(), client.pullOptical())
-        assertEquals(emptyList<Any>(), client.pullStates())
     }
 }

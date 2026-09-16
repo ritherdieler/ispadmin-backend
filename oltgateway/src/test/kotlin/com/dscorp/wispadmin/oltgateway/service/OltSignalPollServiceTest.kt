@@ -9,20 +9,14 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOltRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
-import com.dscorp.wispadmin.oltgateway.parser.BoardParser
-import com.dscorp.wispadmin.oltgateway.parser.FixtureLoader
-import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
-import com.dscorp.wispadmin.oltgateway.parser.ParsedBoard
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOpticalInfo
-import com.dscorp.wispadmin.oltgateway.exception.OltCommandTimeoutException
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpFusedSnapshot
 import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntKey
 import com.dscorp.wispadmin.oltgateway.snmp.SnmpOntOptical
-import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliSession
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
@@ -54,17 +48,13 @@ class OltSignalPollServiceTest {
     private val onuRepository = mockk<OltMgrOnuRepository>()
     private val statusRepository = mockk<OltMgrOnuStatusCurrentRepository>()
     private val taskRepository = mockk<OltMgrTaskRepository>()
-    private val boardParser = mockk<BoardParser>()
-    private val opticalInfoParser = mockk<OpticalInfoParser>()
     private val signalCategoryCalculator = SignalCategoryCalculator()
     private val properties = OltGatewayProperties().apply {
         oltId = "gigafiber-ma5608t"
         sync.skipWhenWriteRunning = true
         inventory.maxSlotProbe = 1
         inventory.defaultPortsPerGponBoard = 2
-        // Legacy tests exercise deprecated SSH optical path
         snmp.enabled = false
-        snmp.allowSshSignalFallback = true
         // Full-table SNMP path; per-port / fused tests opt in explicitly.
         snmp.opticalPerPortWalks = false
         snmp.fusedInventoryOptical = false
@@ -91,15 +81,12 @@ class OltSignalPollServiceTest {
     @BeforeEach
     fun setUp() {
         properties.snmp.enabled = false
-        properties.snmp.allowSshSignalFallback = true
         properties.snmp.roCommunity = ""
         service = OltSignalPollService(
             oltRepository = oltRepository,
             onuRepository = onuRepository,
             statusRepository = statusRepository,
             taskRepository = taskRepository,
-            boardParser = boardParser,
-            opticalInfoParser = opticalInfoParser,
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
             cliBus = cliBus,
@@ -429,121 +416,6 @@ class OltSignalPollServiceTest {
     }
 
     @Test
-    fun `un solo job SIGNAL_POLL en el bus con slots y puertos secuenciales`() {
-        val session = mockk<HuaweiCliSession>()
-        val commands = mutableListOf<String>()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            commands += cmd
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd.startsWith("display ont optical-info") -> "optical-output"
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 0, boardName = "H801GPHF", status = "Normal"),
-            ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll("optical-output") } returns emptyList()
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        verify(exactly = 1) { cliBus.execute(CliJobType.SIGNAL_POLL, any<(HuaweiCliSession) -> Any>()) }
-        assertEquals(
-            listOf(
-                "display board 0",
-                "display board 1",
-                "interface gpon 0/0"
-            ) + (0 until 16).flatMap { port ->
-                listOf(
-                    "display ont optical-info $port all",
-                    "interface gpon 0/0",
-                    "display ont optical-info $port all"
-                )
-            } + listOf(
-                "quit",
-                "interface gpon 0/1"
-            ) + (0 until 16).flatMap { port ->
-                listOf(
-                    "display ont optical-info $port all",
-                    "interface gpon 0/1",
-                    "display ont optical-info $port all"
-                )
-            } + listOf(
-                "quit"
-            ),
-            commands
-        )
-        assertEquals(2, result.slotsPolled)
-        assertEquals(32, result.portsPolled)
-        assertEquals(0, result.onusUpdated)
-        assertNull(result.skippedReason)
-        assertNull(result.error)
-        assertTrue(result.durationMs >= 0)
-    }
-
-    @Test
-    fun `upsert optical fields sin pisar run_state ni match_state`() {
-        val session = mockk<HuaweiCliSession>()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd == "display ont optical-info 0 all" -> "opt-0"
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 0, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll("opt-0") } returns listOf(
-            ParsedOpticalInfo(
-                ontId = 1,
-                rxPowerDbm = -18.54,
-                txPowerDbm = 2.20,
-                oltRxPowerDbm = -24.82,
-                temperatureC = 57.0
-            )
-        )
-        every { opticalInfoParser.parseAll("ok") } returns emptyList()
-
-        val onu = OltMgrOnu(
-            id = 10L,
-            sn = "SNOPT001",
-            externalId = "gigafiber-ma5608t_0_0_1",
-            olt = olt,
-            board = 0,
-            port = 0,
-            onuIndex = 1
-        )
-        val status = OltMgrOnuStatusCurrent(
-            onuId = 10L,
-            onu = onu,
-            runState = "online",
-            matchState = "match"
-        )
-        onu.status = status
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu)
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        assertEquals(1, result.onusUpdated)
-        assertEquals("online", status.runState)
-        assertEquals("match", status.matchState)
-        assertEquals(0, BigDecimal("-18.54").compareTo(status.onuRxDbm))
-        assertEquals(0, BigDecimal("2.20").compareTo(status.onuTxDbm))
-        assertEquals(0, BigDecimal("-24.82").compareTo(status.oltRxDbm))
-        assertEquals(57, status.temperatureC)
-        assertEquals("good", status.signalCategory)
-        assertTrue(status.polledAt != null)
-        verify { statusRepository.saveAll(match<Iterable<OltMgrOnuStatusCurrent>> { it.single() === status }) }
-    }
-
-    @Test
     fun `skip cuando write task running`() {
         every { taskRepository.existsByStatus("running") } returns true
 
@@ -553,31 +425,27 @@ class OltSignalPollServiceTest {
         verify(exactly = 0) { cliBus.execute(any(), any<(HuaweiCliSession) -> Any>()) }
     }
 
-    @Test
-    fun `skip cuando el bus rechaza SIGNAL_POLL duplicado`() {
-        every {
-            cliBus.execute(CliJobType.SIGNAL_POLL, any<(HuaweiCliSession) -> Any>())
-        } returns CliBusResult.Skipped("already_running")
-
-        val result = service.pollSignals()
-
-        assertEquals("already_running", result.skippedReason)
-        assertFalse(service.isRunning())
-    }
 
     @Test
     fun `skip segundo poll concurrente`() {
-        val session = mockk<HuaweiCliSession>()
-        every { session.execute(any()) } returns "ok"
-        every { boardParser.parseAll(any()) } returns emptyList()
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
+        properties.snmp.enabled = true
+        properties.snmp.roCommunity = "test-ro"
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "SN001",
+            externalId = "gigafiber-ma5608t_0_1_1",
+            olt = olt,
+            board = 0,
+            port = 1,
+            onuIndex = 1
+        )
+        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu)
         val entered = AtomicInteger(0)
-        every { cliBus.execute(CliJobType.SIGNAL_POLL, any<(HuaweiCliSession) -> Any>()) } answers {
+        every { snmpClient.listOptical(any()) } answers {
             entered.incrementAndGet()
             val parallel = service.pollSignals()
             assertEquals("sync_already_running", parallel.skippedReason)
-            val block = secondArg<(HuaweiCliSession) -> Any>()
-            CliBusResult.Ok(block(session))
+            emptyList()
         }
 
         val result = service.pollSignals()
@@ -585,244 +453,28 @@ class OltSignalPollServiceTest {
         assertNull(result.skippedReason)
         assertEquals(1, entered.get())
         assertFalse(service.isRunning())
-    }
-
-    @Test
-    fun `signal poll parsea fixture live y actualiza ONUs por board port ontId`() {
-        val session = mockk<HuaweiCliSession>()
-        val liveOutput = FixtureLoader.load("display-ont-optical-info-all-live.txt")
-        val realParser = OpticalInfoParser()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd == "display ont optical-info 7 all" -> liveOutput
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll(liveOutput) } answers { realParser.parseAll(liveOutput) }
-        every { opticalInfoParser.parseAll("ok") } returns emptyList()
-
-        val onus = listOf(
-            OltMgrOnu(
-                id = 10L,
-                sn = "SN001",
-                externalId = "gigafiber-ma5608t_1_7_1",
-                olt = olt,
-                board = 1,
-                port = 7,
-                onuIndex = 1
-            ),
-            OltMgrOnu(
-                id = 11L,
-                sn = "SN002",
-                externalId = "gigafiber-ma5608t_1_7_2",
-                olt = olt,
-                board = 1,
-                port = 7,
-                onuIndex = 2
-            )
-        )
-        val statuses = onus.associate { onu ->
-            onu.id!! to OltMgrOnuStatusCurrent(
-                onuId = onu.id,
-                onu = onu,
-                runState = "online",
-                matchState = "match"
-            ).also { onu.status = it }
-        }
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns onus
-        properties.inventory.maxSlotProbe = 1
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        assertEquals(1, result.slotsPolled)
-        assertEquals(16, result.portsPolled)
-        assertEquals(2, result.onusUpdated)
-        assertEquals(0, BigDecimal("-18.54").compareTo(statuses[10L]!!.onuRxDbm))
-        assertEquals(0, BigDecimal("-24.82").compareTo(statuses[10L]!!.oltRxDbm))
-        assertEquals(0, BigDecimal("-25.08").compareTo(statuses[11L]!!.onuRxDbm))
-        assertEquals(0, BigDecimal("-30.46").compareTo(statuses[11L]!!.oltRxDbm))
+        verify(exactly = 0) { cliBus.execute(any(), any<(HuaweiCliSession) -> Any>()) }
     }
 
     @Test
     fun `status incluye lastResult y bus`() {
         every { cliBus.queueDepth() } returns 2
-        every { cliBus.busyJobType() } returns CliJobType.SIGNAL_POLL
-        every {
-            cliBus.execute(CliJobType.SIGNAL_POLL, any<(HuaweiCliSession) -> Any>())
-        } returns CliBusResult.Skipped("already_queued")
+        every { cliBus.busyJobType() } returns CliJobType.INVENTORY
+        properties.snmp.enabled = false
 
         service.pollSignals()
         val status = service.status()
 
         assertFalse(status.running)
-        assertEquals("already_queued", status.lastResult?.skippedReason)
+        assertEquals("snmp_required", status.lastResult?.skippedReason)
         assertEquals(2, status.busQueueDepth)
-        assertEquals("SIGNAL_POLL", status.busBusyJobType)
-    }
-
-    @Test
-    fun `tras timeout en un puerto reentra interface gpon y sigue polleando el resto`() {
-        properties.inventory.maxSlotProbe = 1
-        properties.inventory.defaultPortsPerGponBoard = 3
-        model.maxSlotProbe = 1
-        model.defaultPortsPerGponBoard = 3
-
-        val session = mockk<HuaweiCliSession>()
-        val commands = mutableListOf<String>()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            commands += cmd
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd == "display ont optical-info 0 all" -> "opt-0"
-                cmd == "display ont optical-info 1 all" -> throw OltCommandTimeoutException("CLI command timed out after 180000ms")
-                cmd == "display ont optical-info 2 all" -> "opt-2"
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll("opt-0") } returns listOf(
-            ParsedOpticalInfo(ontId = 1, rxPowerDbm = -18.0, txPowerDbm = 2.0, oltRxPowerDbm = -24.0)
-        )
-        every { opticalInfoParser.parseAll("opt-2") } returns listOf(
-            ParsedOpticalInfo(ontId = 2, rxPowerDbm = -19.0, txPowerDbm = 2.1, oltRxPowerDbm = -25.0)
-        )
-        every { opticalInfoParser.parseAll("ok") } returns emptyList()
-
-        val onu0 = OltMgrOnu(
-            id = 10L, sn = "SN10", externalId = "gigafiber-ma5608t_1_0_1",
-            olt = olt, board = 1, port = 0, onuIndex = 1
-        )
-        val onu2 = OltMgrOnu(
-            id = 12L, sn = "SN12", externalId = "gigafiber-ma5608t_1_2_2",
-            olt = olt, board = 1, port = 2, onuIndex = 2
-        )
-        val status0 = OltMgrOnuStatusCurrent(onuId = 10L, onu = onu0, runState = "online").also { onu0.status = it }
-        val status2 = OltMgrOnuStatusCurrent(onuId = 12L, onu = onu2, runState = "online").also { onu2.status = it }
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu0, onu2)
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        assertEquals(2, result.onusUpdated)
-        assertEquals(0, BigDecimal("-24.0").compareTo(status0.oltRxDbm))
-        assertEquals(0, BigDecimal("-25.0").compareTo(status2.oltRxDbm))
-        val idxAll1 = commands.indexOf("display ont optical-info 1 all")
-        val idxAll2 = commands.indexOf("display ont optical-info 2 all")
-        val reenterAfterTimeout = commands.withIndex().any { (idx, cmd) ->
-            idx > idxAll1 && idx < idxAll2 && cmd == "interface gpon 0/1"
-        }
-        assertTrue(idxAll1 >= 0 && idxAll2 > idxAll1, "commands=$commands")
-        assertTrue(reenterAfterTimeout, "expected re-enter interface gpon after timeout, commands=$commands")
-    }
-
-    @Test
-    fun `si optical-info all parsea vacio reentra interface y reintenta bulk sin comandos por onu`() {
-        properties.inventory.maxSlotProbe = 1
-        properties.inventory.defaultPortsPerGponBoard = 1
-        model.maxSlotProbe = 1
-        model.defaultPortsPerGponBoard = 1
-
-        val commands = mutableListOf<String>()
-        val bulkAttempts = AtomicInteger(0)
-        val session = mockk<HuaweiCliSession>()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            commands += cmd
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd == "display ont optical-info 0 all" -> {
-                    if (bulkAttempts.getAndIncrement() == 0) {
-                        "short-empty-128"
-                    } else {
-                        "opt-bulk-7"
-                    }
-                }
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll("short-empty-128") } returns emptyList()
-        every { opticalInfoParser.parseAll("opt-bulk-7") } returns listOf(
-            ParsedOpticalInfo(ontId = 7, rxPowerDbm = -21.0, txPowerDbm = 2.1, oltRxPowerDbm = -25.5, temperatureC = 48.0)
-        )
-
-        val onu7 = OltMgrOnu(
-            id = 17L, sn = "SN17", externalId = "gigafiber-ma5608t_1_0_7",
-            olt = olt, board = 1, port = 0, onuIndex = 7
-        )
-        val status7 = OltMgrOnuStatusCurrent(onuId = 17L, onu = onu7, runState = "online").also { onu7.status = it }
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu7)
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        assertEquals(1, result.onusUpdated)
-        assertEquals(0, BigDecimal("-25.5").compareTo(status7.oltRxDbm))
-        assertEquals(2, commands.count { it == "display ont optical-info 0 all" })
-        assertTrue(commands.count { it == "interface gpon 0/1" } >= 2)
-        assertFalse(commands.any { it.matches(Regex("display ont optical-info 0 \\d+")) })
-    }
-
-    @Test
-    fun `si optical-info all falla o sigue vacio no usa comandos por onu`() {
-        properties.inventory.maxSlotProbe = 1
-        properties.inventory.defaultPortsPerGponBoard = 1
-        model.maxSlotProbe = 1
-        model.defaultPortsPerGponBoard = 1
-
-        val commands = mutableListOf<String>()
-        val session = mockk<HuaweiCliSession>()
-        every { session.execute(any()) } answers {
-            val cmd = firstArg<String>()
-            commands += cmd
-            when {
-                cmd.startsWith("display board") -> "board-output"
-                cmd == "display ont optical-info 0 all" ->
-                    throw OltCommandTimeoutException("CLI command timed out after 180000ms")
-                else -> "ok"
-            }
-        }
-        every { boardParser.parseAll("board-output") } returns listOf(
-            ParsedBoard(slot = 1, boardName = "H801GPHF", status = "Normal")
-        )
-        every { opticalInfoParser.parseAll(any()) } returns emptyList()
-
-        val onu5 = OltMgrOnu(
-            id = 15L, sn = "SN15", externalId = "gigafiber-ma5608t_1_0_5",
-            olt = olt, board = 1, port = 0, onuIndex = 5
-        )
-        val onu6 = OltMgrOnu(
-            id = 16L, sn = "SN16", externalId = "gigafiber-ma5608t_1_0_6",
-            olt = olt, board = 1, port = 0, onuIndex = 6
-        )
-        val status5 = OltMgrOnuStatusCurrent(onuId = 15L, onu = onu5, runState = "online").also { onu5.status = it }
-        val status6 = OltMgrOnuStatusCurrent(onuId = 16L, onu = onu6, runState = "online").also { onu6.status = it }
-        every { onuRepository.findByOlt_IdWithStatus(1L) } returns listOf(onu5, onu6)
-        stubSignalPollExecute(session)
-
-        val result = service.pollSignals()
-
-        assertEquals(0, result.onusUpdated)
-        assertEquals(2, commands.count { it == "display ont optical-info 0 all" })
-        assertFalse(commands.any { it.matches(Regex("display ont optical-info 0 \\d+")) })
+        assertEquals("INVENTORY", status.busBusyJobType)
     }
 
     @Test
     fun `pollSignals via SNMP actualiza potencias sin CLI`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshSignalFallback = false
         val ifIndex = HuaweiGponSnmpCodec.encodeIfIndex(slot = 0, port = 1)
         every { snmpClient.listOptical(null) } returns listOf(
             SnmpOntOptical(
@@ -863,7 +515,6 @@ class OltSignalPollServiceTest {
     fun `pollSignals SNMP registra SSH pressure local al inicio y fin`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshSignalFallback = false
         every { cliBus.queueDepth() } returns 4
         every { cliBus.busyJobType() } returns CliJobType.WRITE
         every { snmpClient.listOptical(null) } returns emptyList()
@@ -981,9 +632,8 @@ class OltSignalPollServiceTest {
     }
 
     @Test
-    fun `pollSignals exige SNMP si fallback SSH desactivado`() {
+    fun `pollSignals exige SNMP`() {
         properties.snmp.enabled = false
-        properties.snmp.allowSshSignalFallback = false
         val result = service.pollSignals()
         assertEquals("snmp_required", result.skippedReason)
         verify(exactly = 0) { snmpClient.listOptical(any()) }
@@ -1008,8 +658,6 @@ class OltSignalPollServiceTest {
             onuRepository = onuRepository,
             statusRepository = statusRepository,
             taskRepository = taskRepository,
-            boardParser = boardParser,
-            opticalInfoParser = opticalInfoParser,
             signalCategoryCalculator = signalCategoryCalculator,
             properties = properties,
             cliBus = cliBus,
@@ -1020,7 +668,6 @@ class OltSignalPollServiceTest {
         )
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshSignalFallback = false
         every { snmpClient.listOptical(null) } returns emptyList()
         every { onuRepository.findByOlt_IdWithStatus(1L) } returns emptyList()
 
@@ -1101,7 +748,6 @@ class OltSignalPollServiceTest {
         }
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "test-ro"
-        properties.snmp.allowSshSignalFallback = false
         properties.snmp.opticalPerPortWalks = true
         properties.snmp.fusedInventoryOptical = true
         properties.inventory.defaultPortsPerGponBoard = 2
@@ -1137,10 +783,4 @@ class OltSignalPollServiceTest {
         assertTrue(states.single().payloadJson.contains("\"runState\":\"offline\""))
     }
 
-    private fun stubSignalPollExecute(session: HuaweiCliSession) {
-        every { cliBus.execute(CliJobType.SIGNAL_POLL, any<(HuaweiCliSession) -> Any>()) } answers {
-            val block = secondArg<(HuaweiCliSession) -> Any>()
-            CliBusResult.Ok(block(session))
-        }
-    }
 }

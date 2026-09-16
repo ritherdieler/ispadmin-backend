@@ -95,21 +95,17 @@ Unidad de transporte: **un evento por puerto GPON** (tras aplicar las filas de e
 
 Por ONU: **`onuExternalId` + `polledAt`** (mismo Instant → no inserta sample duplicado). Resolución: `HealthOnuPort.findByExternalId` (fallback SN). Scope lab/piloto igual que el resto de service-health.
 
-## 6. Cutover A — pull apagado
+## 6. Sin pull HTTP
 
-| Flag | Default | Propiedad |
-|------|---------|-----------|
-| `SERVICE_HEALTH_OPTICAL_PULL_ENABLED` | **`false`** | `service.health.optical-pull-enabled` |
+No existe `HealthOltOpticalPullService` ni `SERVICE_HEALTH_OPTICAL_PULL_ENABLED`. La óptica entra solo por `onu.optical-batch`.
 
-`HealthOltOpticalPullService` solo corre si health + optical + **opticalPullEnabled**. Con el consumer batch cableado, el pull HTTP permanece off (WiFi 360 tampoco hace poll: solo `cpe.inform`).
-
-`OLT/collector` del 360 lee `telemetry_source_run` (`source=OLT_OPTICAL`). Lo escribe **`OpticalBatchPersistService`** al persistir cada `onu.optical-batch` (un run por puerto). No hace falta encender el pull HTTP.
+`OLT/collector` del 360 lee `telemetry_source_run` (`source=OLT_OPTICAL`). Lo escribe **`OpticalBatchPersistService`** al persistir cada batch (un run por puerto).
 
 Charts 360 leen `olt_mgr_onu_optical_sample` alimentado por el push. Ventanas >90 días usan roll-up diario (`olt_mgr_onu_optical_daily`): [optical-daily-rollup-retention.md](./optical-daily-rollup-retention.md).
 
 ## 7. Secretos / env (solo nombres)
 
-Documentado en [vps-secrets-management.md](./vps-secrets-management.md): `SERVICE_HEALTH_OPTICAL_PULL_ENABLED`.
+Óptica 360: `SERVICE_HEALTH_OPTICAL_ENABLED`. `SERVICE_HEALTH_OPTICAL_PULL_ENABLED` ya no tiene binding.
 
 Contención SNMP (timeout 15 s, lock `olt-snmp-poll` prod↔staging, retry de puerto): [olt-snmp-optical-contention.md](./olt-snmp-optical-contention.md).
 

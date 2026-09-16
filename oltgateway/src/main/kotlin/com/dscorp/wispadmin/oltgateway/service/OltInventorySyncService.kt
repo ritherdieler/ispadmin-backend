@@ -517,36 +517,14 @@ open class OltInventorySyncService(
     }
 
     open fun syncInventory(): SyncResult {
-        return syncInventoryInternal(source = resolveInventorySource())
+        return syncInventoryInternal(source = InventorySource.SNMP)
     }
 
     open fun syncInventoryFromSnmp(): SyncResult {
         return syncInventoryInternal(source = InventorySource.SNMP)
     }
 
-    private enum class InventorySource { SSH, SNMP }
-
-    /**
-     * Inventory sync is SNMP-first. SSH is deprecated for this task and only used when
-     * [OltGatewayProperties.SnmpProperties.allowSshInventoryFallback] is true.
-     */
-    private fun resolveInventorySource(): InventorySource {
-        val properties = props()
-        val snmpReady = properties.snmp.enabled &&
-            properties.snmp.roCommunity.isNotBlank() &&
-            snmpClient() != null
-        if (snmpReady) {
-            return InventorySource.SNMP
-        }
-        if (properties.snmp.allowSshInventoryFallback) {
-            logger.warn(
-                "Inventory sync using deprecated SSH path " +
-                    "(enable olt.gateway.snmp + OLT_GATEWAY_SNMP_RO_COMMUNITY to use SNMP)"
-            )
-            return InventorySource.SSH
-        }
-        return InventorySource.SNMP
-    }
+    private enum class InventorySource { SNMP }
 
     private fun syncInventoryInternal(source: InventorySource): SyncResult {
         if (!running.compareAndSet(false, true)) {
@@ -565,10 +543,6 @@ open class OltInventorySyncService(
             val olt = oltRepository().findByName(properties.oltId)
                 .orElseThrow { IllegalStateException("OLT seed missing for ${properties.oltId}") }
             val snapshot = when (source) {
-                InventorySource.SSH -> {
-                    @Suppress("DEPRECATION")
-                    queryFacade().listOnusParsed()
-                }
                 InventorySource.SNMP -> {
                     val client = snmpClient()
                         ?: return finish(SyncResult(skippedReason = "snmp_client_unavailable"), startedAt)
@@ -593,7 +567,7 @@ open class OltInventorySyncService(
                                     fused.capturedAt
                                 )
                             } else {
-                                logger.info("Inventory sync via SNMP GETBULK (SSH inventory deprecated)")
+                                logger.info("Inventory sync via SNMP GETBULK")
                             }
                             client.listConfiguredOnus()
                         }

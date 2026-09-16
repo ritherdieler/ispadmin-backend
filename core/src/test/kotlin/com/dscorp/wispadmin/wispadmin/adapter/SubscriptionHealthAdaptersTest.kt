@@ -65,17 +65,13 @@ class SubscriptionHealthAdaptersTest {
     }
 
     @Test
-    fun `resuelve suscripciones por deviceId y lista las de laboratorio`() {
+    fun `resuelve suscripciones por deviceId`() {
         every { acsRepository.findByGenieacsDeviceId("dev-1") } returns listOf(
             SubscriptionAcs(subscriptionId = 3, genieacsDeviceId = "dev-1"),
             SubscriptionAcs(subscriptionId = 4, genieacsDeviceId = "dev-1")
         )
-        every { acsRepository.findByLabIsTrue() } returns listOf(
-            SubscriptionAcs(subscriptionId = 9, lab = true)
-        )
 
         assertEquals(listOf(3, 4), acsAdapter.findSubscriptionIdsByDeviceId("dev-1"))
-        assertEquals(listOf(9), acsAdapter.labSubscriptionIds())
     }
 
     @Test
@@ -184,7 +180,7 @@ class SubscriptionHealthAdaptersTest {
 
     @Test
     fun `el directorio expone existencia listado e id de identidad bloqueado`() {
-        every { subscriptionRepository.findAllIds() } returns listOf(1, 2, 3)
+        every { subscriptionRepository.findEvaluationIds() } returns listOf(1, 2, 3)
         every { subscriptionRepository.existsById(2) } returns true
         every { subscriptionRepository.lockIdentityOwner(2) } returns Subscription(id = 2, equipmentCondition = EquipmentCondition.LOAN)
 

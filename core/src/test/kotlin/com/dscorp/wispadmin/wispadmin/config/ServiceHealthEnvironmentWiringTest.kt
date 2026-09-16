@@ -30,6 +30,10 @@ class ServiceHealthEnvironmentWiringTest {
         assertFalse(defaults.contains("pilot-subscription-ids"), defaults)
         assertFalse(defaults.contains("pilot-acs-device-ids"), defaults)
         assertFalse(defaults.contains("SERVICE_HEALTH_PILOT"), defaults)
+        assertFalse(defaults.contains("SERVICE_HEALTH_SHARED_INCIDENT_NOTIFICATIONS"), defaults)
+        assertFalse(defaults.contains("lab-periodic-inform"), defaults)
+        assertFalse(defaults.contains("SERVICE_HEALTH_OPTICAL_PULL"), defaults)
+        assertFalse(defaults.contains("optical-pull"), defaults)
     }
 
     @Test

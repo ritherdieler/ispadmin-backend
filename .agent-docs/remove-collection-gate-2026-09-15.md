@@ -17,7 +17,7 @@ Sergio: quitar el gate en **todos** los ambientes. **Sin deploy.**
 - Poll de tráfico, persistencia ACS Inform y óptica
 - Tag GenieACS `lab` (candado de writes + Inform 60 s)
 - Flags de módulo: `service.health.enabled`, `acs-enabled`, `optical-*`, `actions-enabled`, `correlation-enabled`
-- `ServiceHealthScope.lab()` y `collectionSubscriptionIds()` = todos los ids del directorio
+- Identidad lab: `AcsSubscriptionPort.isLab()`. La lista `collectionSubscriptionIds()` / `ServiceHealthScope` se eliminaron; la evaluación usa `directory.allIds()`.
 - Recolección lab **sigue on**
 
 ## Verificación

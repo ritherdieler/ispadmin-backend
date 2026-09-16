@@ -7,7 +7,7 @@ En este stack no hay zonas de cobranza SmartMap. Recolección = telemetría 360 
 | Capa | Flag / fuente | Quién entra en lab |
 |------|---------------|--------------------|
 | Service-health 360 (ACS Inform, óptica, diagnosis) | `service.health.enabled` + `ServiceHealthProperties.collects()` | En tag no vacío (`stg`, `lpstg`, `dev`): **todas** las suscripciones (e2e). Prod (tag vacío) sigue excluyendo lab. |
-| Membresía lab | GenieACS `_tags` contiene `lab` → `subscription_acs.lab` | `AcsSubscriptionPort.isLab` / `labSubscriptionIds()` |
+| Membresía lab | GenieACS `_tags` contiene `lab` → `subscription_acs.lab` | `AcsSubscriptionPort.isLab()` |
 | Tráfico MikroTik | `traffic.poll.enabled` (WAR Traffic) | Directorio Core; no filtra por lab |
 | Overlay staging | `application-staging.properties` | `service.health.enabled=true`, `gigafiber.environment.tag=stg`, `gigafiber.subsystems.servicehealth.enabled=true` |
 | Master env compartido | `/opt/gigafiber/.env` `SERVICE_HEALTH_ENABLED` | Hoy `true` en `tomcat-staging` |

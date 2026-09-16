@@ -47,8 +47,6 @@ Dos `GET` de no autorizadas a la vez: un solo SSH. La segunda espera y recibe el
 | `OltGatewayQueryService.autofindParsed` | `UNCONFIGURED` |
 | `OltGatewayCommandService` (move/delete/reboot) | `WRITE` |
 | `OltGatewayQueryService` (health/optical/detail/oltInfo/…) | `ADHOC` |
-| `ParallelOnuInventoryReader` | `INVENTORY` |
-| `OltSignalPollService` | `SIGNAL_POLL` |
 | `OltAlarmCliService` | `ALARM_POLL` |
 | Keepalive del bus | `KEEPALIVE` (solo si esa sesión está idle) |
 

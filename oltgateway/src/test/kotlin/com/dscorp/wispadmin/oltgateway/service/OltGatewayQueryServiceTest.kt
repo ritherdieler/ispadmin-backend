@@ -7,11 +7,9 @@ import com.dscorp.wispadmin.oltgateway.parser.AutofindParser
 import com.dscorp.wispadmin.oltgateway.parser.BoardParser
 import com.dscorp.wispadmin.oltgateway.parser.FixtureLoader
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
-import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedAutofindOnt
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.VersionParser
-import com.dscorp.wispadmin.oltgateway.service.inventory.ParallelOnuInventoryReader
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
@@ -31,7 +29,6 @@ import java.util.Optional
 class OltGatewayQueryServiceTest {
 
     private val commandExecutor = mockk<OltCommandExecutor>()
-    private val inventoryReader = mockk<ParallelOnuInventoryReader>()
     private val oltRepository = mockk<OltMgrOltRepository>()
     private val snmpClient = mockk<OltSnmpClient>()
     private val properties = OltGatewayProperties().apply {
@@ -40,8 +37,6 @@ class OltGatewayQueryServiceTest {
         session.poolSize = 1
         snmp.enabled = false
         snmp.roCommunity = ""
-        snmp.allowSshInventoryFallback = true
-        snmp.allowSshSignalFallback = true
     }
     private lateinit var service: OltGatewayQueryService
 
@@ -49,11 +44,8 @@ class OltGatewayQueryServiceTest {
     fun setUp() {
         properties.snmp.enabled = false
         properties.snmp.roCommunity = ""
-        properties.snmp.allowSshInventoryFallback = true
-        properties.snmp.allowSshSignalFallback = true
         service = OltGatewayQueryService(
             commandExecutor = commandExecutor,
-            inventoryReader = inventoryReader,
             oltRepository = oltRepository,
             smartOltCompatMapper = SmartOltCompatMapper(),
             properties = properties,
@@ -61,7 +53,6 @@ class OltGatewayQueryServiceTest {
             boardParser = BoardParser(),
             autofindParser = AutofindParser(),
             onuInfoBySnParser = OnuInfoBySnParser(),
-            opticalInfoParser = OpticalInfoParser(),
             snmpClient = snmpClient
         )
     }
@@ -84,7 +75,6 @@ class OltGatewayQueryServiceTest {
     fun `autofind usa CLI aunque snmp este ready porque la tabla SNMP retiene fantasmas`() {
         properties.snmp.enabled = true
         properties.snmp.roCommunity = "ro"
-        properties.snmp.allowSshInventoryFallback = false
         every { commandExecutor.unconfigured<String>(any()) } returns FixtureLoader.load("display-ont-autofind-all.txt")
 
         val result = service.autofind()
@@ -122,29 +112,9 @@ class OltGatewayQueryServiceTest {
     }
 
     @Test
-    fun `listOnus delega al inventory reader cuando snmp off`() {
-        every { inventoryReader.listOnusParsed() } returns listOf(
-            ParsedOnuSummary(
-                frame = 0,
-                slot = 1,
-                port = 4,
-                ontId = 0,
-                sn = "4857544315F5B806",
-                controlFlag = "active",
-                runState = "online",
-                configState = "normal",
-                matchState = "match",
-                description = "Some customer name here"
-            )
-        )
-
-        val result = service.listOnus()
-
-        assertEquals(1, result.total)
-        assertEquals("4857544315F5B806", result.items[0].sn)
-        assertEquals(1, result.items[0].slot)
-        assertEquals(4, result.items[0].port)
-        verify(exactly = 1) { inventoryReader.listOnusParsed() }
+    fun `listOnusParsed exige SNMP`() {
+        org.junit.jupiter.api.assertThrows<IllegalStateException> { service.listOnus() }
+        verify(exactly = 0) { snmpClient.listConfiguredOnus() }
     }
 
     @Test
@@ -162,60 +132,17 @@ class OltGatewayQueryServiceTest {
             )
         )
 
-        val result = service.listOnusParsed()
+        val result = service.listOnus()
 
-        assertEquals(1, result.size)
-        assertEquals("VSOL0086F6E9", result[0].sn)
+        assertEquals(1, result.total)
+        assertEquals("VSOL0086F6E9", result.items[0].sn)
         verify(exactly = 1) { snmpClient.listConfiguredOnus() }
-        verify(exactly = 0) { inventoryReader.listOnusParsed() }
     }
 
     @Test
-    fun `listOnusParsed delega al inventory reader`() {
-        every { inventoryReader.listOnusParsed() } returns listOf(
-            ParsedOnuSummary(
-                frame = 0,
-                slot = 1,
-                port = 4,
-                ontId = 0,
-                sn = "4857544315F5B806",
-                controlFlag = "active",
-                runState = "online",
-                configState = "normal",
-                matchState = "match"
-            )
-        )
-
-        val result = service.listOnusParsed()
-
-        assertEquals(1, result.size)
-        assertEquals("online", result[0].runState)
-        verify(exactly = 1) { inventoryReader.listOnusParsed() }
-    }
-
-    @Test
-    fun `optical parsea formato detalle KV via CLI adhoc`() {
-        val session = mockk<HuaweiCliSession>()
-        val detailOutput = FixtureLoader.load("display-ont-optical-info-detail-live.txt")
-        every { session.execute("interface gpon 0/1") } returns "ok"
-        every { session.execute("display ont optical-info 7 0") } returns detailOutput
-        every { session.execute("quit") } returns "ok"
-        every { commandExecutor.adhoc(any<(HuaweiCliSession) -> Any>()) } answers {
-            val block = firstArg<(HuaweiCliSession) -> Any>()
-            block(session)
-        }
-
-        val result = service.optical(slot = 1, port = 7, ontId = 0)
-
-        assertEquals(1, result.slot)
-        assertEquals(7, result.port)
-        assertEquals(0, result.ontId)
-        assertEquals(-20.40, result.rxPowerDbm!!, 0.001)
-        assertEquals(2.17, result.txPowerDbm!!, 0.001)
-        assertEquals(-24.95, result.oltRxPowerDbm!!, 0.001)
-        assertEquals(37.0, result.temperatureC!!, 0.01)
-        assertEquals(3.220, result.voltageV!!, 0.001)
-        assertEquals(10.0, result.biasCurrentMa!!, 0.001)
+    fun `optical exige SNMP`() {
+        org.junit.jupiter.api.assertThrows<IllegalStateException> { service.optical(1, 7, 0) }
+        verify(exactly = 0) { snmpClient.listOptical(any()) }
     }
 
     @Test

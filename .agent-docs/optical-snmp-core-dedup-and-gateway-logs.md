@@ -8,7 +8,7 @@
 
 Doc canónico del push: [optical-push-gateway-core.md](./optical-push-gateway-core.md).
 
-El pull HTTP `HealthOltOpticalPullService` queda **apagado** (`SERVICE_HEALTH_OPTICAL_PULL_ENABLED=false`).
+No hay pull HTTP de óptica en Core. El camino es solo push Redis (`onu.optical-batch`).
 
 ## Gateway — lectura completa vs incompleta
 

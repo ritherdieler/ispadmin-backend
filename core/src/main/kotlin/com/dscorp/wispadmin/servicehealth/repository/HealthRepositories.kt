@@ -227,9 +227,6 @@ interface WifiStationHourlyRepository : JpaRepository<WifiStationHourly, Long> {
 interface WifiAggregationWatermarkRepository : JpaRepository<WifiAggregationWatermark, String>
 
 interface WifiCurrentRepository : JpaRepository<WifiCurrent, Int>
-interface ReadCapabilityProfileRepository : JpaRepository<ReadCapabilityProfile, Long> {
-    fun findByManufacturerAndModelAndFirmware(manufacturer: String, model: String, firmware: String): ReadCapabilityProfile?
-}
 interface TelemetryRunRepository : JpaRepository<TelemetryRun, Long> {
     fun findTopBySourceAndEquipmentKeyOrderByStartedAtDesc(source: String, key: String): TelemetryRun?
 }

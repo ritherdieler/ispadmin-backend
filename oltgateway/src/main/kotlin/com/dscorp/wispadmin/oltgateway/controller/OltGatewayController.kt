@@ -168,7 +168,7 @@ class OltGatewayController(
     ): SmartOltOnuBySnResponseDto = queryFacade.bySn(sn)
 
     @GetMapping("/onus")
-    @Operation(summary = "Listado de ONUs", description = "Resumen live vía SNMP listConfiguredOnus (SSH inventory deprecado). Preferir /onus/configured para DB.")
+    @Operation(summary = "Listado de ONUs", description = "Resumen live vía SNMP listConfiguredOnus. Preferir /onus/configured para DB.")
     @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
         value = [
@@ -258,8 +258,7 @@ class OltGatewayController(
     @PostMapping("/admin/sync/inventory")
     @Operation(
         summary = "Sync inventario (SNMP)",
-        description = "Inventario SN+estado vía SNMP→DB. SSH inventory está deprecado; " +
-            "solo si olt.gateway.snmp.allow-ssh-inventory-fallback=true."
+        description = "Inventario SN+estado vía SNMP→DB."
     )
     @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
@@ -325,8 +324,7 @@ class OltGatewayController(
     @PostMapping("/admin/sync/signal")
     @Operation(
         summary = "Sync señal óptica (SNMP)",
-        description = "GETBULK óptica SNMP→DB (~5 min scheduler). SSH display ont optical-info está deprecado; " +
-            "solo si olt.gateway.snmp.allow-ssh-signal-fallback=true."
+        description = "GETBULK óptica SNMP→DB (~5 min scheduler)."
     )
     @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(
@@ -491,7 +489,7 @@ class OltGatewayController(
     @GetMapping("/onus/{slot}/{port}/{ontId}/optical")
     @Operation(
         summary = "Info óptica de ONU",
-        description = "RX/TX/OLT-Rx vía SNMP listOptical por puerto (SSH optical-info deprecado)."
+        description = "RX/TX/OLT-Rx vía SNMP listOptical por puerto."
     )
     @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
     @ApiResponses(

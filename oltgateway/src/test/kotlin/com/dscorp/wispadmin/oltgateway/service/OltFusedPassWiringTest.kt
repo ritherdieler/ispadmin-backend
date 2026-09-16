@@ -12,8 +12,6 @@ import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrOnuStatusCurrentRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrSyncRunRepository
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltMgrTaskRepository
-import com.dscorp.wispadmin.oltgateway.parser.BoardParser
-import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
@@ -46,8 +44,6 @@ class OltFusedPassWiringTest {
     private val auditLogRepository = mockk<OltMgrAuditLogRepository>()
     private val syncRunRepository = mockk<OltMgrSyncRunRepository>()
     private val queryFacade = mockk<OltGatewayQueryFacade>()
-    private val boardParser = mockk<BoardParser>()
-    private val opticalInfoParser = mockk<OpticalInfoParser>()
     private val fusedCache = OltFusedInventoryCache()
     private val idSeq = AtomicLong(100)
 
@@ -119,8 +115,6 @@ class OltFusedPassWiringTest {
             onuRepository = onuRepository,
             statusRepository = statusRepository,
             taskRepository = taskRepository,
-            boardParser = boardParser,
-            opticalInfoParser = opticalInfoParser,
             signalCategoryCalculator = SignalCategoryCalculator(),
             properties = properties,
             cliBus = cliBus,

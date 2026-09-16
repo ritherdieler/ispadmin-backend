@@ -10,7 +10,7 @@ Cadencia de series Wi-Fi: **una perilla** (`PeriodicInformInterval` en GenieACS)
 - Estaciones: `observedAt = informAt` (un Inform = una columna X en WifiCharts).
 - Footnote 360: «Muestras ACS (Inform)».
 
-`periodicInformSeconds` / `labPeriodicInformSeconds` siguen para frescura de evidencia (`last_inform` STALE), no para decidir si se persiste.
+`periodicInformSeconds` sigue para frescura de evidencia (`last_inform` STALE), no para decidir si se persiste. `labPeriodicInformSeconds` se eliminó (nadie la leía).
 
 Hasta `apply-provisions` en el NBI, el CPE lab puede seguir en 30 s.
 

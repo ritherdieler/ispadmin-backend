@@ -1,5 +1,7 @@
 # Fix: GET /onus — timeout y lista vacía
 
+> 2026-09-16: el path SSH de inventario (`ParallelOnuInventoryReader`) se eliminó. Inventario live = SNMP. Ver `remove-ssh-fallbacks-2026-09-16.md`.
+
 ## Síntoma
 
 `GET /api/olt-gateway/onus` devolvía HTTP 200 con `{"items":[],"total":0}` tras ~180 s.
