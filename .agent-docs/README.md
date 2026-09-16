@@ -150,6 +150,7 @@
 | **MikroTik MK2 — uplink OLT (VLAN100)** | [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md) |
 | **Catálogo comandos RouterOS MK2 piloto** | [mikrotik-mk2-comandos-catalogo.md](./mikrotik-mk2-comandos-catalogo.md) |
 | **OLT VLAN 100 uplink 0/3/2 → MK2** | [olt-vlan100-mk2-uplink.md](./olt-vlan100-mk2-uplink.md) |
+| **Port hotfix VLAN 1000 mgmt + SSH retry (develop)** | [port-authorize-vlan1000-ssh-retry-2026-09-16.md](./port-authorize-vlan1000-ssh-retry-2026-09-16.md) |
 | **OLT Gateway Read-Only MVP (API SSH CLI)** | [olt-gateway-read-mvp.md](./olt-gateway-read-mvp.md) |
 | **Catálogo vivo de comandos CLI/API OLT Gateway** | [olt-gateway-comandos-catalogo.md](./olt-gateway-comandos-catalogo.md) |
 | **OLT Gateway 3 capas (A/B/C + SmartOLT-compat + olt_mgr_*)** | [olt-gateway-3layer.md](./olt-gateway-3layer.md) |

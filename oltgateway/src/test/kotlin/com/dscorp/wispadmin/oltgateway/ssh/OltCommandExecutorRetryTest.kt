@@ -74,6 +74,40 @@ class OltCommandExecutorRetryTest {
     }
 
     @Test
+    fun `run retries indefinitely on connection failures until success`() {
+        val unlimited = OltCommandExecutor(cliBus, maxRetryAttempts = 0, retryDelayMs = 1)
+        every { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
+            .throws(OltUnreachableException("SSH session down"))
+            .andThenThrows(java.io.IOException("Connection refused"))
+            .andThenThrows(java.net.SocketTimeoutException("Read timeout"))
+            .andThen(CliBusResult.Ok("MA5608T#"))
+
+        val result = unlimited.run("ont delete 1 1")
+
+        assertEquals("MA5608T#", result)
+        verify(exactly = 4) { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
+    }
+
+    @Test
+    fun `run with unlimited retries eventually succeeds after many connection failures`() {
+        val executorUnlimited = OltCommandExecutor(cliBus, maxRetryAttempts = 0, retryDelayMs = 1)
+
+        every { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
+            .throws(OltUnreachableException("Connection down"))
+            .andThenThrows(OltUnreachableException("Connection down"))
+            .andThenThrows(OltUnreachableException("Connection down"))
+            .andThenThrows(OltUnreachableException("Connection down"))
+            .andThenThrows(OltUnreachableException("Connection down"))
+            .andThenThrows(OltUnreachableException("Connection down"))
+            .andThen(CliBusResult.Ok("Success"))
+
+        val result = executorUnlimited.run("interface gpon 0/1")
+
+        assertEquals("Success", result)
+        verify(exactly = 7) { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
+    }
+
+    @Test
     fun `run does not retry business logic errors`() {
         every { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
             .throws(RuntimeException("The ont already exist"))

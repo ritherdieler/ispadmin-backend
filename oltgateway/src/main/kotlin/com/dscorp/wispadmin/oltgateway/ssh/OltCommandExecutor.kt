@@ -10,7 +10,7 @@ import java.net.SocketTimeoutException
 
 class OltCommandExecutor(
     private val cliBus: OltCliBus,
-    private val maxRetryAttempts: Int = 3,
+    private val maxRetryAttempts: Int = 0,
     private val retryDelayMs: Long = 2000
 ) {
 
@@ -39,33 +39,32 @@ class OltCommandExecutor(
 
     private fun <T> executeWithRetry(type: CliJobType, block: (HuaweiCliSession) -> T): T {
         var attempt = 0
-        var lastException: Exception? = null
+        val isUnlimited = maxRetryAttempts == 0
 
-        while (attempt <= maxRetryAttempts) {
+        while (true) {
             try {
                 return execute(type, block)
             } catch (ex: Exception) {
-                lastException = ex
+                if (!isConnectionFailure(ex)) {
+                    throw ex
+                }
 
-                if (!isConnectionFailure(ex) || attempt >= maxRetryAttempts) {
+                if (!isUnlimited && attempt >= maxRetryAttempts) {
                     throw ex
                 }
 
                 attempt++
-                logger.warn("OLT SSH connection failed (attempt $attempt/${maxRetryAttempts + 1}): ${ex.message}")
+                val attemptDisplay = if (isUnlimited) "$attempt" else "$attempt/${maxRetryAttempts + 1}"
+                logger.warn("OLT SSH connection failed (attempt $attemptDisplay): ${ex.message}")
 
-                if (attempt <= maxRetryAttempts) {
-                    try {
-                        Thread.sleep(retryDelayMs)
-                    } catch (interrupted: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        throw interrupted
-                    }
+                try {
+                    Thread.sleep(retryDelayMs)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw interrupted
                 }
             }
         }
-
-        throw lastException ?: IllegalStateException("Unexpected retry loop exit")
     }
 
     private fun isConnectionFailure(ex: Exception): Boolean {
