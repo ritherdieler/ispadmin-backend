@@ -167,6 +167,37 @@ def queue_matches_ip(queue, ip):
 mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; ip=os.environ['IP']
 ctx=ssl._create_unverified_context()
 cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
+def log_http(method, path, status, payload):
+  color = not os.environ.get('NO_COLOR')
+  def paint(code, text):
+    n=str(code)
+    c='37'
+    if n.startswith('2'): c='32'
+    elif n.startswith('3'): c='36'
+    elif n.startswith('4'): c='33'
+    elif n.startswith('5') or n=='000': c='31'
+    return f'\\033[{c}m{text}\\033[0m' if color else str(text)
+  ok = str(status).startswith(('2','3'))
+  tag = 'OK' if ok else 'FAIL'
+  line_c = '32' if ok else '31'
+  title = f'[{tag}] HTTP  HTTP {method} {path}'
+  print(f'\\033[{line_c}m{title}\\033[0m' if color else title, file=sys.stderr)
+  print(f'  endpoint={method} {path}  status={paint(status, status)}', file=sys.stderr)
+  if payload in (None, '', b''):
+    return
+  if isinstance(payload, (bytes, bytearray)):
+    text = payload.decode('utf-8', errors='replace')
+  elif isinstance(payload, (dict, list)):
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+  else:
+    text = str(payload)
+  try:
+    text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+  except Exception:
+    pass
+  print('  body=', file=sys.stderr)
+  for line in text.splitlines():
+    print(f'    {line}', file=sys.stderr)
 def call(method, path):
   req=urllib.request.Request(f'https://{mkip}{path}', method=method)
   req.add_header('Authorization', f'Basic {cred}')
@@ -174,17 +205,26 @@ def call(method, path):
     return r.status, r.read()
 st, body = call('GET', '/rest/queue/simple')
 matches=[q for q in json.loads(body) if queue_matches_ip(q, ip)]
+log_http('GET', '/rest/queue/simple', st, matches)
 print('queue_matches', len(matches))
 for q in matches:
   print('deleting', q.get('.id'), q.get('name'))
-  call('DELETE', f\"/rest/queue/simple/{q['.id']}\")
+  dst=f\"/rest/queue/simple/{q['.id']}\"
+  st, raw = call('DELETE', dst)
+  log_http('DELETE', dst, st, raw)
 st, body = call('GET', '/rest/ip/firewall/address-list')
+deudores=[]
 for a in json.loads(body):
   addr=str(a.get('address',''))
   host=addr.split('/',1)[0]
   if a.get('list')=='deudores' and host==ip:
-    call('DELETE', f\"/rest/ip/firewall/address-list/{a['.id']}\")
-    print('deudores_removed')
+    deudores.append(a)
+log_http('GET', '/rest/ip/firewall/address-list', st, deudores)
+for a in deudores:
+  dst=f\"/rest/ip/firewall/address-list/{a['.id']}\"
+  st, raw = call('DELETE', dst)
+  log_http('DELETE', dst, st, raw)
+  print('deudores_removed')
 print('MK_DONE')
 PY"
 fi
@@ -198,10 +238,41 @@ USER=\$(echo \"\${ROW[0]}\" | awk '{print \$2}')
 PASS=\$(echo \"\${ROW[0]}\" | cut -f3)
 export MKIP USER PASS PPPOE='$SUB_PPPOE'
 python3 - <<'PY'
-import json, os, urllib.request, ssl, base64
+import json, os, sys, urllib.request, ssl, base64
 mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; name=os.environ['PPPOE']
 ctx=ssl._create_unverified_context()
 cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
+def log_http(method, path, status, payload):
+  color = not os.environ.get('NO_COLOR')
+  def paint(code, text):
+    n=str(code)
+    c='37'
+    if n.startswith('2'): c='32'
+    elif n.startswith('3'): c='36'
+    elif n.startswith('4'): c='33'
+    elif n.startswith('5') or n=='000': c='31'
+    return f'\\033[{c}m{text}\\033[0m' if color else str(text)
+  ok = str(status).startswith(('2','3'))
+  tag = 'OK' if ok else 'FAIL'
+  line_c = '32' if ok else '31'
+  title = f'[{tag}] HTTP  HTTP {method} {path}'
+  print(f'\\033[{line_c}m{title}\\033[0m' if color else title, file=sys.stderr)
+  print(f'  endpoint={method} {path}  status={paint(status, status)}', file=sys.stderr)
+  if payload in (None, '', b''):
+    return
+  if isinstance(payload, (bytes, bytearray)):
+    text = payload.decode('utf-8', errors='replace')
+  elif isinstance(payload, (dict, list)):
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+  else:
+    text = str(payload)
+  try:
+    text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+  except Exception:
+    pass
+  print('  body=', file=sys.stderr)
+  for line in text.splitlines():
+    print(f'    {line}', file=sys.stderr)
 def call(method, path):
   req=urllib.request.Request(f'https://{mkip}{path}', method=method)
   req.add_header('Authorization', f'Basic {cred}')
@@ -209,10 +280,13 @@ def call(method, path):
     return r.status, r.read().decode('utf-8', errors='replace')
 for path in ('/rest/ppp/active', '/rest/ppp/secret'):
   st, body = call('GET', path)
-  for item in json.loads(body):
-    if item.get('name') == name:
-      print('deleting', path, item.get('.id'), name)
-      call('DELETE', f\"{path}/{item['.id']}\")
+  matches=[item for item in json.loads(body) if item.get('name') == name]
+  log_http('GET', path, st, matches)
+  for item in matches:
+    print('deleting', path, item.get('.id'), name)
+    dst=f\"{path}/{item['.id']}\"
+    st, raw = call('DELETE', dst)
+    log_http('DELETE', dst, st, raw)
 print('PPPOE_DONE')
 PY"
 fi
@@ -224,7 +298,13 @@ if [[ -n "$SUB_SN" ]]; then
     ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || true
     echo "== OLT Gateway delete $SUB_SN (ispadmin-staging) =="
     e2e_doing "Gateway lookup+delete SN=$SUB_SN via VPS 127.0.0.1:8081/ispadmin-staging"
-    ssh_vps "bash -s" <<EOF
+    {
+      cat "$SCRIPT_DIR/e2e_console.sh"
+      echo
+      echo 'export E2E_FORCE_COLOR=1'
+      echo "export E2E_ONU_SN=$(printf '%q' "$SUB_SN")"
+      echo 'export E2E_PHASE=alta'
+      cat <<EOF
 set -euo pipefail
 set -a
 # shellcheck disable=SC1091
@@ -239,16 +319,7 @@ for path in \
   "/api/olt-gateway/onu/get_onus_details_by_sn/\$SN" \
   "/api/olt-gateway/onus/by-sn/\$SN"
 do
-  echo "DOING: HTTP GET \$GW\$path"
-  echo "URL: GET \$GW\$path"
-  body=\$(curl -sS -w "\\nHTTP:%{http_code}" "\${hdr[@]}" "\$GW\$path" || true)
-  code=\$(echo "\$body" | sed -n 's/^HTTP://p' | tail -1)
-  body=\$(echo "\$body" | sed '/^HTTP:/d')
-  echo "HTTP: \${code:-000}"
-  echo "BODY: \$(echo "\$body" | head -c 1200)"
-  if [[ -n "\$code" && "\$code" != 2* ]]; then
-    echo "HTTP_FAIL: GET \$GW\$path code=\$code"
-  fi
+  body="\$(e2e_http GET "\$GW\$path" "\${hdr[@]}" || true)"
   EXT=\$(python3 -c 'import json,sys
 raw=sys.stdin.read().strip()
 if not raw:
@@ -271,15 +342,8 @@ if [[ -z "\$EXT" ]]; then
   exit 0
 fi
 echo "external_id=\$EXT"
-echo "DOING: HTTP POST \$GW/api/olt-gateway/onu/delete/\$EXT"
-echo "URL: POST \$GW/api/olt-gateway/onu/delete/\$EXT"
-resp=\$(curl -sS -w "\\nHTTP:%{http_code}" -X POST "\${hdr[@]}" "\$GW/api/olt-gateway/onu/delete/\$EXT" || true)
-echo "\$resp"
-code=\$(echo "\$resp" | sed -n 's/^HTTP://p' | tail -1)
-echo "HTTP: \${code:-000}"
-if [[ "\$code" != "200" ]]; then
-  echo "HTTP_FAIL: POST \$GW/api/olt-gateway/onu/delete/\$EXT code=\$code"
-fi
+e2e_http POST "\$GW/api/olt-gateway/onu/delete/\$EXT" "\${hdr[@]}" || true
+code="\${E2E_HTTP_CODE:-000}"
 docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
 if [[ "\$code" != "200" ]]; then
   echo "Gateway delete returned HTTP \$code" >&2
@@ -287,6 +351,7 @@ if [[ "\$code" != "200" ]]; then
 fi
 echo "ONU was deleted"
 EOF
+    } | ssh_vps "bash -s"
   else
     echo "== clear Gateway activation journal $SUB_SN (prod) =="
     ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\" 2>/dev/null" || true
@@ -297,6 +362,8 @@ EOF
       SMARTOLT_KEY="$(ssh_vps 'docker exec tomcat9027 bash -lc "grep -h olt.service.api-key /usr/local/tomcat/webapps/ispadmin/WEB-INF/classes/application-prod.properties | head -1 | cut -d= -f2-"' | tr -d '\r')"
     fi
     [[ -n "$SMARTOLT_KEY" ]] || { echo "Missing SmartOLT API key" >&2; exit 1; }
+    E2E_PHASE=alta
+    E2E_ONU_SN="$SUB_SN"
     EXT="$(e2e_http GET "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
       -H "X-Token: $SMARTOLT_KEY" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("onus") or [{}])[0].get("unique_external_id") or ""))' || true)"
@@ -306,6 +373,7 @@ EOF
     else
       echo "ONU not authorized in SmartOLT (ok)"
     fi
+    unset E2E_PHASE E2E_ONU_SN
   fi
 fi
 
