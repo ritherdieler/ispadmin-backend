@@ -26,7 +26,7 @@ El gate tagged era `lab=true`. El alta Android / STATIC_IP a menudo no deja `sub
 
 1. **Código** (este cambio): tagged env recolecta todos los ids. Tests: `ServiceHealthPropertiesTest`, `ServiceHealthScopeTest`, `DiagnosisEngineTest`.
 2. **Overlay**: `service.health.enabled/acs-enabled/optical-enabled=true`, `gigafiber.subsystems.traffic/servicehealth.enabled=true`, `traffic.poll.enabled=true`. Contrato: `ServiceHealthEnvironmentWiringTest`, `StagingEnvironmentPropertiesTest`.
-3. **Tras el alta**, `GET /subscription/{id}/service-health` debe traer `pilot_enabled=true`. El GET pisa snapshots viejos con `scope.collects()`. El script Espresso falla si no. Si el banner sigue off, el WAR no tiene este decorate.
+3. **Tras el alta**, `GET /subscription/{id}/service-health` debe traer `pilot_enabled=true`. El GET pisa snapshots viejos con `scope.collects()`. El script Espresso falla si no. WAR staging `1.0.3+61fdeef` ya tiene este decorate ([deploy](./deploy-staging-360-collect-banner-2026-09-15.md)).
 4. **No** apagar `SERVICE_HEALTH_ENABLED` / ACS / traffic en el overlay de staging para “probar”. Prod se apaga con tag vacío + flags, no tocando staging.
 
 ## Verificación

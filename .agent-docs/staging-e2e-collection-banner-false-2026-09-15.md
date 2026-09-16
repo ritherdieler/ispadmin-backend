@@ -22,3 +22,7 @@ API minutos después ya podía devolver `pilot_enabled=true`; la UI seguía en e
 - Script Android `e2e_register_fiber_staging_espresso.sh` falla si el 360 no trae `pilot_enabled=true`.
 
 Tests: `HealthSummaryQueryServiceTest`, `DiagnosisEngineTest`, `E2ePlaceLocationFixtureTest`.
+
+## Deploy
+
+Staging Tomcat tiene este decorate (`1.0.3+61fdeef`). `#12` GET `pilot_enabled=true` con `identity.lab=false`. Detalle: [deploy-staging-360-collect-banner-2026-09-15.md](./deploy-staging-360-collect-banner-2026-09-15.md).
