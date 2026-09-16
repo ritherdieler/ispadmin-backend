@@ -2,9 +2,7 @@ package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.events.HealthSnapshotCache
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort
 import com.dscorp.wispadmin.servicehealth.domain.HealthCurrent
-import com.dscorp.wispadmin.servicehealth.domain.HealthEvent
 import com.dscorp.wispadmin.servicehealth.dto.HealthSummary
 import com.dscorp.wispadmin.servicehealth.dto.ServiceContext
 import com.dscorp.wispadmin.servicehealth.dto.SubscriberContext
@@ -22,6 +20,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import java.time.Instant
@@ -40,7 +39,6 @@ class HealthSummaryQueryServiceTest {
     private val json = jacksonObjectMapper().findAndRegisterModules()
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
     private val properties = ServiceHealthProperties().apply { snapshotFreshSeconds = 60; actionsEnabled = true }
-    private val scope = mockk<HealthLabScopePort>()
 
     private val service = HealthSummaryQueryService(
         reader = reader,
@@ -52,7 +50,6 @@ class HealthSummaryQueryServiceTest {
         subscriptionContext = contextReader,
         properties = properties,
         json = json,
-        scope = scope,
     )
 
     private val evaluatedAt = Instant.parse("2026-09-03T18:10:00Z")
@@ -65,21 +62,19 @@ class HealthSummaryQueryServiceTest {
             ServiceContext("ACTIVE", "Fibra", "10.0.0.5"),
         )
         every { cache.getSummaryJson(42) } returns null
-        every { scope.collects(42) } returns true
     }
 
     @Test
-    fun `staging e2e snapshot cannot keep collection off`() {
-        val stored = baseSummary().copy(pilotEnabled = false, actionsEnabled = false)
+    fun `decorate applies actions without a collection flag`() {
+        val stored = baseSummary().copy(actionsEnabled = false)
         every { current.findById(42) } returns Optional.of(
             HealthCurrent(42, evaluatedAt, json.writeValueAsString(stored))
         )
-        every { scope.collects(42) } returns true
 
         val result = service.summary(42, now = evaluatedAt.plusSeconds(10))
 
-        assertEquals(true, result.pilotEnabled)
         assertEquals(true, result.actionsEnabled)
+        assertFalse(json.writeValueAsString(result).contains("pilot_enabled"))
         verify(exactly = 0) { engine.evaluate(any()) }
     }
 
@@ -125,7 +120,6 @@ class HealthSummaryQueryServiceTest {
         diagnoses = emptyList(),
         missingEvidence = emptyList(),
         identity = emptyMap(),
-        pilotEnabled = false,
         actionsEnabled = false,
     )
 }

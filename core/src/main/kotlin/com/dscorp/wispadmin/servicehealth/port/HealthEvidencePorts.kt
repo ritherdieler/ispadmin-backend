@@ -159,7 +159,6 @@ interface HealthLabOpticalPort {
 }
 
 interface HealthLabScopePort {
-    fun collects(subscriptionId: Int?): Boolean
     fun collectionSubscriptionIds(): Set<Int>
 }
 

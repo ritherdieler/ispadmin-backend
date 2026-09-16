@@ -40,7 +40,7 @@ class OltAlarmHistoryService(
                     val oltId=onuPort.ifAvailable?.findOltIdByName(oltName)
                     val onu=oltId?.let { onuPort.ifAvailable?.findByOltBoardPortOnu(it,event.board,event.port,event.onuIndex) }
                     val id=onu?.sn?.let(identity::resolveOnu)
-                    if(onu!=null && id!=null && properties.collects(id)) {
+                    if(onu!=null && id!=null) {
                         val link=links.findBySubscriptionIdAndValidToIsNull(id).firstOrNull { it.kind=="PON" && it.identityValue=="${onu.oltId}:${onu.board}:${onu.port}" }
                         if(link!=null && !event.receivedAt.isBefore(link.validFrom)) {
                             val previous=states.findTopByOnuIdOrderByObservedAtDesc(onu.id)

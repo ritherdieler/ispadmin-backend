@@ -32,7 +32,7 @@ class BlastRadiusServiceTest {
     private val target=HealthNetDiagTarget(id=10,name="PON-test",deviceRefId=1,parentTargetId=20,pollIntervalMs=60000,monitorConfig=null)
     private val rows=mutableListOf<IncidentSubscription>()
     private val service=BlastRadiusService(ServiceHealthProperties().apply {
-        enabled=true; correlationEnabled=true; sharedIncidentsEnabled=true; pilotSubscriptionIds=setOf(1,2,3)
+        enabled=true; correlationEnabled=true; sharedIncidentsEnabled=true
     },reader,events,availableProvider(port),affected,cursors,
         TransactionTemplate(mockk<PlatformTransactionManager>(relaxed=true)),ObjectMapper())
     init {
@@ -81,7 +81,7 @@ class BlastRadiusServiceTest {
     }
     @Test fun `without netdiag port blast radius is skipped`() {
         val isolated=BlastRadiusService(ServiceHealthProperties().apply {
-            enabled=true; correlationEnabled=true; sharedIncidentsEnabled=true; pilotSubscriptionIds=setOf(1,2,3)
+            enabled=true; correlationEnabled=true; sharedIncidentsEnabled=true
         },reader,events,emptyProvider(),affected,cursors,
             TransactionTemplate(mockk<PlatformTransactionManager>(relaxed=true)),ObjectMapper())
         prepare(listOf(1,2,3)); isolated.reconcile()

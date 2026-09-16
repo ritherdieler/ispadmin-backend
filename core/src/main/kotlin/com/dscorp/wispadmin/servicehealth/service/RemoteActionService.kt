@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.RemoteAction
 import com.dscorp.wispadmin.servicehealth.port.HealthCpePort
@@ -36,7 +35,6 @@ data class ActionResult(val actionId: Long,val subscriptionId: Int,val status: S
 @Service
 class RemoteActionService(
     private val properties: ServiceHealthProperties,
-    private val scope: ServiceHealthScope,
     private val actions: RemoteActionRepository,
     private val cursors: HealthCursorRepository,
     private val directory: SubscriptionDirectoryPort,
@@ -55,7 +53,7 @@ class RemoteActionService(
         return mac.doFinal(value.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     fun reserve(id: Int,actor: HealthActor,key: String,action: String,payloadDigest: String,needsCr: Boolean): Pair<RemoteAction,Boolean> {
-        if(!properties.actionsEnabled || !scope.collects(id)) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones deshabilitadas para esta suscripción")
+        if(!properties.actionsEnabled) throw ResponseStatusException(HttpStatus.CONFLICT,"Acciones deshabilitadas para esta suscripción")
         return tx.execute {
             cursors.lock("actions") ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Coordinador no inicializado")
             val existing=actions.findByActorIdAndRequestKey(actor.id,key)
@@ -166,7 +164,6 @@ class RemoteActionService(
     fun confirmPending() {
         if(!properties.enabled || !properties.actionsEnabled) return
         for(a in actions.findByStatus("PENDING")) {
-            if(!scope.collects(a.subscriptionId)) continue
             if(a.createdAt<Instant.now().minusSeconds(21600)) { finish(a.id!!,"UNVERIFIED",error="CONFIRMATION_TIMEOUT"); continue }
             val currentSub=directory.find(a.subscriptionId)
             if(currentSub?.onuSn?.uppercase()?.let { "ONU:$it" }!=a.deviceKey) {

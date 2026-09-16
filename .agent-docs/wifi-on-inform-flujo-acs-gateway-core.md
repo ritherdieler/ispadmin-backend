@@ -77,7 +77,7 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 | 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS WAR con el payload en el body. Timeout 2500 ms, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
 | 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
 | 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
-| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Gate `ServiceHealthScope.collects`; idempotente por `informAt`; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC, `observedAt` = `informAt`) y `acs_wifi_status_current`. |
+| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC, `observedAt` = `informAt`) y `acs_wifi_status_current`. |
 | 7 | Backoffice 360 | `GET …/service-health/series` → `WifiCharts` / estaciones. |
 
 `ACS/collector` del 360 sale de `acs_wifi_status_current.observedAt` de la suscripción,

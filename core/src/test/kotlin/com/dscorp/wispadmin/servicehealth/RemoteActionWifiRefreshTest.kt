@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.servicehealth
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.controller.HealthActor
 import com.dscorp.wispadmin.servicehealth.domain.HealthCursor
 import com.dscorp.wispadmin.servicehealth.domain.Quality
@@ -15,7 +14,6 @@ import com.dscorp.wispadmin.servicehealth.repository.RemoteActionRepository
 import com.dscorp.wispadmin.servicehealth.repository.WifiCurrentRepository
 import com.dscorp.wispadmin.servicehealth.service.IdentityService
 import com.dscorp.wispadmin.servicehealth.service.RemoteActionService
-import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -80,18 +78,13 @@ class RemoteActionWifiRefreshTest {
         val properties = ServiceHealthProperties().apply {
             enabled = true
             actionsEnabled = true
-            pilotSubscriptionIds = setOf(1)
             stationHmacKey = "k".repeat(32)
             periodicInformSeconds = 3600
         }
-        val acs = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
-        every { acs.isLab(any()) } returns false
-        every { acs.labSubscriptionIds() } returns emptyList()
-        val scope = ServiceHealthScope(properties, GigafiberEnvironmentProperties(), directory, acs)
         val cpeProvider = mockk<ObjectProvider<HealthCpePort>>()
         every { cpeProvider.ifAvailable } returns cpe
         remote = RemoteActionService(
-            properties, scope, actions, cursors, directory, wifi, identity, cpeProvider,
+            properties, actions, cursors, directory, wifi, identity, cpeProvider,
             TransactionTemplate(txManager), ObjectMapper(),
         )
     }

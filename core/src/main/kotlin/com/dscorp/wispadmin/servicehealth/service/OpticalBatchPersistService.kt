@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.events.LiveTelemetryPort
 import com.dscorp.wispadmin.events.OnuOpticalBatchItem
 import com.dscorp.wispadmin.events.OnuOpticalBatchPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.OpticalSample
 import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
@@ -22,7 +21,6 @@ import java.time.Instant
 @Service
 class OpticalBatchPersistService(
     private val properties: ServiceHealthProperties,
-    private val scope: ServiceHealthScope,
     private val identity: IdentityService,
     private val onuPort: ObjectProvider<HealthOnuPort>,
     private val optical: OpticalSampleRepository,
@@ -82,7 +80,6 @@ class OpticalBatchPersistService(
             run.unmappedCount++
             return null
         }
-        if (!scope.collects(subscriptionId)) return null
         if (optical.findByOnuIdAndObservedAt(onu.id, item.polledAt) != null) {
             return subscriptionId
         }

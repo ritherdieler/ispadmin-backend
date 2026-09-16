@@ -2,7 +2,6 @@ package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.events.CpeInformPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.UtcInstantText
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
@@ -24,7 +23,6 @@ class CpeInformPersistService(
     private val counts: WifiCountSampleRepository,
     private val stationWriter: WifiStationSampleWriter,
     private val current: WifiCurrentRepository,
-    private val scope: ServiceHealthScope,
     private val properties: ServiceHealthProperties,
     private val objectMapper: ObjectMapper,
     private val acsRegistry: AcsSubscriptionPort,
@@ -36,13 +34,6 @@ class CpeInformPersistService(
         val subscriptionId = identity.resolveOnu(payload.sn)
         if (subscriptionId == null) {
             logger.info("Discarding cpe.inform for unknown SN={}", payload.sn)
-            return
-        }
-        // Every ONU informs on its own interval whether or not this environment
-        // is meant to collect it, so the scope gate belongs here and not only on
-        // the (now gone) poll.
-        if (!scope.collects(subscriptionId)) {
-            logger.debug("Out of collection scope, skipping cpe.inform for subscription={}", subscriptionId)
             return
         }
         val observedAt = payload.observedAt

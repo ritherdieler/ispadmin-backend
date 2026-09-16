@@ -4,14 +4,13 @@ import com.dscorp.wispadmin.servicehealth.service.*
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.dto.*
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
 class DiagnosisEngineTest {
     private val now=Instant.parse("2026-08-30T15:00:00Z")
-    private val engine=DiagnosisEngine(ServiceHealthProperties().apply { enabled=true; correlationEnabled=true; pilotSubscriptionIds=setOf(1) })
+    private val engine=DiagnosisEngine(ServiceHealthProperties().apply { enabled=true; correlationEnabled=true })
     private fun source(metric: String,value: Any?,quality: Quality=Quality.FRESH,domain: String="OLT")=Evidence(domain,metric,now,value,quality)
     private fun input(sources: List<Evidence>)=HealthInputs(1,now,mapOf("ONU" to "sn","PON" to "1:0:1","ACS" to "device"),sources,
         emptyList(),emptyList(),emptyList(),emptyList(),emptySet(),emptyList(),"ACTIVE",emptyMap())
@@ -80,28 +79,15 @@ class DiagnosisEngineTest {
         val result=engine.evaluate(input(listOf(source("run_state","online"))).copy(targets=listOf(target)))
         assertTrue(result.missingEvidence.any { it.source=="IDENTITY" && it.metric=="PON" })
     }
-    @Test fun `staging marks every subscription as pilot for e2e`() {
-        val props=ServiceHealthProperties().apply { enabled=true; correlationEnabled=true; pilotSubscriptionIds=setOf(1) }
-        val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
-        val customer=input(listOf(source("run_state","online")))
-        assertTrue(staging.evaluate(customer).pilotEnabled)
-        assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
+    @Test fun `lab identity still diagnoses when correlation is on`() {
+        val lab=input(listOf(source("run_state","offline"))).copy(identity=mapOf("ONU" to "sn","PON" to "1:0:1","ACS" to "device","lab" to "true"))
+        assertEquals("GPON_DOWN",engine.evaluate(lab).diagnoses.single().diagnosisCode)
+        assertTrue(engine.evaluate(lab).actionsEnabled.not())
     }
-    @Test fun `staging stays pilot when health enabled is off`() {
-        val props=ServiceHealthProperties().apply { enabled=false; correlationEnabled=true }
-        val staging=DiagnosisEngine(props,environment=GigafiberEnvironmentProperties().apply { tag="stg" })
-        val customer=input(listOf(source("run_state","online")))
-        assertTrue(staging.evaluate(customer.copy(identity=customer.identity+("lab" to "true"))).pilotEnabled)
-        assertTrue(staging.evaluate(customer).pilotEnabled)
-    }
-    @Test fun `scope wins when engine environment tag is blank after e2e`() {
-        val props=ServiceHealthProperties().apply { enabled=true; correlationEnabled=true }
-        val scope=object: com.dscorp.wispadmin.servicehealth.port.HealthLabScopePort {
-            override fun collects(subscriptionId: Int?) = subscriptionId==1
-            override fun collectionSubscriptionIds() = setOf(1)
-        }
-        val engine=DiagnosisEngine(props, scope=scope)
-        val lab=input(listOf(source("run_state","online"))).copy(identity=mapOf("ONU" to "sn","PON" to "1:0:1","ACS" to "device","lab" to "true"))
-        assertTrue(engine.evaluate(lab).pilotEnabled)
+    @Test fun `correlation off keeps diagnoses empty without a collection flag`() {
+        val isolated=DiagnosisEngine(ServiceHealthProperties().apply { enabled=true; correlationEnabled=false; actionsEnabled=true })
+        val result=isolated.evaluate(input(listOf(source("run_state","offline"))))
+        assertTrue(result.diagnoses.isEmpty())
+        assertTrue(result.actionsEnabled)
     }
 }

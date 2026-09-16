@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.events.LiveTelemetryPort
 import com.dscorp.wispadmin.events.OnuOpticalBatchItem
 import com.dscorp.wispadmin.events.OnuOpticalBatchPayload
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.OpticalSample
 import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.TelemetryRun
@@ -33,7 +32,6 @@ class OpticalBatchPersistServiceTest {
         enabled = true
         opticalEnabled = true
     }
-    private val scope = mockk<ServiceHealthScope>()
     private val identity = mockk<IdentityService>()
     private val onuPort = mockk<HealthOnuPort>()
     private val onuProvider = mockk<ObjectProvider<HealthOnuPort>>()
@@ -44,7 +42,7 @@ class OpticalBatchPersistServiceTest {
     private val json = ObjectMapper().registerModule(JavaTimeModule()).findAndRegisterModules()
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
     private val service = OpticalBatchPersistService(
-        properties, scope, identity, onuProvider, optical, runs, liveProvider, json,
+        properties, identity, onuProvider, optical, runs, liveProvider, json,
     )
     private val polledAt = Instant.parse("2026-09-08T20:00:00Z")
     private val onu = HealthOnuRef(
@@ -63,7 +61,6 @@ class OpticalBatchPersistServiceTest {
         every { liveProvider.ifUnique } returns live
         every { onuPort.findByExternalId("gigafiber-ma5608t_1_6_10") } returns onu
         every { identity.resolveOnuForCollection("VSOL0031C0B6") } returns 2389
-        every { scope.collects(2389) } returns true
         every { runs.save(any()) } answers { firstArg() }
     }
 
@@ -150,8 +147,9 @@ class OpticalBatchPersistServiceTest {
     }
 
     @Test
-    fun `out of collection scope does not persist sample`() {
-        every { scope.collects(2389) } returns false
+    fun `mapped subscription persists optical sample without a collection gate`() {
+        every { optical.findByOnuIdAndObservedAt(7987L, polledAt) } returns null
+        every { optical.save(any()) } answers { firstArg() }
         val touched = service.persist(
             OnuOpticalBatchPayload(
                 oltId = 2L,
@@ -170,7 +168,7 @@ class OpticalBatchPersistServiceTest {
                 ),
             ),
         )
-        assertEquals(emptyList<Int>(), touched)
-        verify(exactly = 0) { optical.save(any()) }
+        assertEquals(listOf(2389), touched)
+        verify(exactly = 1) { optical.save(any()) }
     }
 }

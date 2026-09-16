@@ -5,7 +5,6 @@ import com.dscorp.wispadmin.events.CpeInformStation
 import com.dscorp.wispadmin.events.PlatformEvent
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.Quality
 import com.dscorp.wispadmin.servicehealth.domain.WifiCountSample
 import com.dscorp.wispadmin.servicehealth.domain.WifiCurrent
@@ -40,20 +39,17 @@ class CpeInformPersistServiceTest {
     private val counts = mockk<WifiCountSampleRepository>(relaxed = true)
     private val stations = mockk<WifiStationSampleWriter>(relaxed = true)
     private val current = mockk<WifiCurrentRepository>(relaxed = true)
-    private val scope = mockk<ServiceHealthScope>()
     private val properties = ServiceHealthProperties().apply {
         stationHmacKey = "test-only-key-of-at-least-32-bytes-long"
     }
     private val json = informMapper()
     private val acsRegistry = mockk<com.dscorp.wispadmin.servicehealth.port.AcsSubscriptionPort>(relaxed = true)
-    private val service = CpeInformPersistService(identity, counts, stations, current, scope, properties, json, acsRegistry)
+    private val service = CpeInformPersistService(identity, counts, stations, current, properties, json, acsRegistry)
 
     private val inserted = mutableListOf<List<WifiStationSample>>()
 
     @org.junit.jupiter.api.BeforeEach
     fun allowCollection() {
-        every { scope.collects(any()) } returns true
-        every { scope.lab(any()) } returns false
         inserted.clear()
         every { stations.insertAll(any()) } answers { inserted += firstArg<List<WifiStationSample>>(); Unit }
     }
@@ -297,9 +293,19 @@ class CpeInformPersistServiceTest {
     }
 
     @Test
-    fun `subscription outside the collection scope is discarded without writes`() {
+    fun `mapped subscription persists without a collection gate`() {
         every { identity.resolveOnu("12345B4641531C0B6") } returns 77
-        every { scope.collects(77) } returns false
+        every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 77, informAt) } returns null
+        every { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 1
+        every {
+            counts.findIdByDeviceIdAndSubscriptionIdAndObservedAtSql(
+                "dev",
+                77,
+                com.dscorp.wispadmin.servicehealth.domain.UtcInstantText.format(observedAt),
+            )
+        } returns 11L
+        every { current.findById(77) } returns Optional.of(WifiCurrent(subscriptionId = 77))
+        every { current.save(any()) } answers { firstArg() }
         service.persist(
             CpeInformPayload(
                 sn = "12345B4641531C0B6",
@@ -317,16 +323,15 @@ class CpeInformPersistServiceTest {
                 ),
             )
         )
-        verify(exactly = 0) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
-        verify(exactly = 0) { current.save(any()) }
-        assertEquals(emptyList<WifiStationSample>(), stationRows())
+        verify(exactly = 1) { counts.upsertAtomic(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+        verify { current.save(any()) }
+        assertEquals(1, stationRows().size)
     }
 
     @Test
     fun `complete inform persists a series sample even inside PeriodicInformInterval`() {
         val lastAt = informAt.minusSeconds(5)
         every { identity.resolveOnu("12345B4641531C0B6") } returns 42
-        every { scope.lab(42) } returns true
         every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 42, informAt) } returns null
         every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 42) } returns
             WifiCountSample(id = 88, subscriptionId = 42, deviceId = "dev", informAt = lastAt, observedAt = lastAt)
@@ -366,7 +371,6 @@ class CpeInformPersistServiceTest {
     fun `lab inform at PeriodicInformInterval persists a series sample`() {
         val lastAt = informAt.minusSeconds(30)
         every { identity.resolveOnu("12345B4641531C0B6") } returns 42
-        every { scope.lab(42) } returns true
         every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 42, informAt) } returns null
         every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 42) } returns
             WifiCountSample(id = 88, subscriptionId = 42, deviceId = "dev", informAt = lastAt, observedAt = lastAt)
@@ -400,7 +404,6 @@ class CpeInformPersistServiceTest {
     fun `fleet complete inform persists a series sample even inside PeriodicInformInterval`() {
         val lastAt = informAt.minusSeconds(60)
         every { identity.resolveOnu("ZTEG12345678") } returns 7
-        every { scope.lab(7) } returns false
         every { counts.findByDeviceIdAndSubscriptionIdAndInformAt("dev", 7, informAt) } returns null
         every { counts.findTopByDeviceIdAndSubscriptionIdOrderByInformAtDesc("dev", 7) } returns
             WifiCountSample(id = 3, subscriptionId = 7, deviceId = "dev", informAt = lastAt, observedAt = lastAt)

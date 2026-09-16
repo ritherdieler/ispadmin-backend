@@ -1,7 +1,6 @@
 package com.dscorp.wispadmin.servicehealth.service
 
 import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthScope
 import com.dscorp.wispadmin.servicehealth.domain.*
 import com.dscorp.wispadmin.servicehealth.port.HealthOltIngestPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
@@ -16,7 +15,6 @@ import java.time.Instant
 @Service
 class OltHistoryService(
     private val properties: ServiceHealthProperties,
-    private val scope: ServiceHealthScope,
     private val identity: IdentityService,
     private val onuPort: ObjectProvider<HealthOnuPort>,
     private val optical: OpticalSampleRepository,
@@ -46,7 +44,6 @@ class OltHistoryService(
                 ?: run { run.unmappedCount++; return@forEach }
             val subId = identity.resolveOnuForCollection(onu.sn)
             if (subId == null) { run.unmappedCount++; return@forEach }
-            if (!scope.collects(subId)) return@forEach
             val hasValue = listOf(row.rxPowerDbm,row.txPowerDbm,row.oltRxPowerDbm,row.temperatureC,row.biasCurrentMa,row.distanceM).any { it != null }
             val last = optical.findTopByOnuIdOrderByObservedAtDesc(onu.id)
             if (last != null && !observation.observedAt.isAfter(last.observedAt)) {
@@ -67,8 +64,7 @@ class OltHistoryService(
     override fun onState(sn: String, state: String?, cause: String?, observedAt: Instant) {
         if (!properties.enabled || !properties.opticalEnabled || state == null) return
         val onu = onuPort.ifAvailable?.findBySn(sn) ?: return
-        val subId = identity.resolveOnuForCollection(sn)
-        if (!scope.collects(subId)) return
+        val subId = identity.resolveOnuForCollection(sn) ?: return
         val previous = states.findTopByOnuIdOrderByObservedAtDesc(onu.id)
         val oltId = onu.oltId ?: return
         if (previous == null || previous.state != state || previous.subscriptionId != subId || previous.oltId!=oltId || previous.board!=onu.board || previous.port!=onu.port) {

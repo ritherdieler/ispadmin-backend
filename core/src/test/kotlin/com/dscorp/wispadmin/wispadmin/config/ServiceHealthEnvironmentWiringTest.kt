@@ -14,7 +14,7 @@ class ServiceHealthEnvironmentWiringTest {
         Files.readString(root.resolve("core/src/main/resources/$name"))
 
     @Test
-    fun prod_must_not_set_environment_tag_or_360_would_collect_every_id() {
+    fun prod_must_not_set_environment_tag() {
         val prod = overlay("application-prod.properties")
         assertFalse(
             Regex("""^gigafiber\.environment\.tag=""", RegexOption.MULTILINE).containsMatchIn(prod),
@@ -22,6 +22,14 @@ class ServiceHealthEnvironmentWiringTest {
         )
         assertFalse(prod.contains("gigafiber.environment.tag=stg"), prod)
         assertFalse(prod.contains("gigafiber.environment.tag=lpstg"), prod)
+    }
+
+    @Test
+    fun service_health_properties_have_no_pilot_collection_list() {
+        val defaults = overlay("application.properties")
+        assertFalse(defaults.contains("pilot-subscription-ids"), defaults)
+        assertFalse(defaults.contains("pilot-acs-device-ids"), defaults)
+        assertFalse(defaults.contains("SERVICE_HEALTH_PILOT"), defaults)
     }
 
     @Test

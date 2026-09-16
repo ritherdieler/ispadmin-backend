@@ -1,6 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.adapter
 
-import com.dscorp.wispadmin.servicehealth.config.ServiceHealthProperties
 import com.dscorp.wispadmin.servicehealth.service.SubscriptionIdentityChanged
 import com.dscorp.wispadmin.wispadmin.data.model.Subscription
 import org.aspectj.lang.annotation.AfterReturning
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Component
 )
 class IdentityChangePublisher(
     private val publisher: ApplicationEventPublisher,
-    private val properties: ServiceHealthProperties,
 ) {
     @AfterReturning(
         pointcut = "execution(* org.springframework.data.repository.CrudRepository+.save(..)) || execution(* org.springframework.data.jpa.repository.JpaRepository+.saveAndFlush(..)) || execution(* org.springframework.data.repository.CrudRepository+.saveAll(..))",
@@ -32,7 +30,7 @@ class IdentityChangePublisher(
                 is Subscription -> value.id
                 else -> null
             }
-            if (properties.collects(id)) publisher.publishEvent(SubscriptionIdentityChanged(id!!))
+            if (id != null) publisher.publishEvent(SubscriptionIdentityChanged(id))
         }
     }
 }

@@ -27,6 +27,7 @@ class HealthSummaryContractTest {
         assertEquals("Fibra 500 Mbps", json.at("/service_context/plan_name").asText())
         assertEquals("10.0.0.5", json.at("/service_context/ip").asText())
         assertEquals(2329, json.at("/subscription_id").asInt())
+        assertFalse(json.has("pilot_enabled"))
     }
 
     @Test
@@ -34,9 +35,9 @@ class HealthSummaryContractTest {
         val summary = baseSummary()
 
         assertEquals(2329, summary.subscriptionId)
-        assertFalse(summary.pilotEnabled)
         assertEquals(null, summary.subscriber)
         assertEquals(null, summary.serviceContext)
+        assertFalse(mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(summary).has("pilot_enabled"))
     }
 
     private fun baseSummary() = HealthSummary(
@@ -47,7 +48,6 @@ class HealthSummaryContractTest {
         diagnoses = emptyList(),
         missingEvidence = emptyList(),
         identity = emptyMap(),
-        pilotEnabled = false,
         actionsEnabled = false,
     )
 }
