@@ -160,6 +160,8 @@ class OltGatewayProperties {
 
     class SshProperties {
         var legacyAlgorithms: Boolean = true
+        var maxRetryAttempts: Int = 3
+        var retryDelayMs: Long = 2000
     }
 
     class SessionProperties {

@@ -108,8 +108,12 @@ class OltGatewayConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
-    fun oltCommandExecutor(oltCliBus: OltCliBus): OltCommandExecutor {
-        return OltCommandExecutor(oltCliBus)
+    fun oltCommandExecutor(oltCliBus: OltCliBus, properties: OltGatewayProperties): OltCommandExecutor {
+        return OltCommandExecutor(
+            cliBus = oltCliBus,
+            maxRetryAttempts = properties.ssh.maxRetryAttempts,
+            retryDelayMs = properties.ssh.retryDelayMs
+        )
     }
 
     @Bean
