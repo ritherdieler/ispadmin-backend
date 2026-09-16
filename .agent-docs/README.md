@@ -53,7 +53,7 @@
 | **Staging e2e: 360/tráfico/Wi‑Fi/estaciones siempre on** | [staging-e2e-recoleccion-siempre-on-2026-09-15.md](./staging-e2e-recoleccion-siempre-on-2026-09-15.md) |
 | **Gate de recolección 360 eliminado (prod + staging)** | [remove-collection-gate-2026-09-15.md](./remove-collection-gate-2026-09-15.md) |
 | **Banner recolección desactivada post-e2e (histórico)** | [staging-e2e-collection-banner-false-2026-09-15.md](./staging-e2e-collection-banner-false-2026-09-15.md) |
-| **Backoffice staging = solo Vite local (no VPS)** | [../ispadmin-backoffice/.agent-docs/backoffice-staging-solo-local.md](./backoffice-staging-solo-local.md) — regla `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc` |
+| **Backoffice staging = solo Vite local (no VPS)** | [backoffice-staging-solo-local.md](./backoffice-staging-solo-local.md) |
 | **Deploy staging unify 360 WAR 2026-09-16** | [deploy-staging-unify-360-2026-09-16.md](./deploy-staging-unify-360-2026-09-16.md) |
 | **Deploy staging decorate 360 recolección on** | [deploy-staging-360-collect-banner-2026-09-15.md](./deploy-staging-360-collect-banner-2026-09-15.md) |
 | **VSOL e2e = STATIC_IP (360 clientes IP legacy)** | [vsol-static-ip-legacy-360-2026-09-15.md](./vsol-static-ip-legacy-360-2026-09-15.md) |
