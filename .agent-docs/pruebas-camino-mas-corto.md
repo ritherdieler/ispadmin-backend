@@ -33,15 +33,12 @@ Resultado: `LIVE GATEWAY DELETE OK` sin deploy. El deploy queda para cuando haga
 - [ ] ¿El fallo sospechado es de **código** o de **empaquetado/overlay/env en VPS**?
 - [ ] Si es código puro → local primero. Si es bake/perfiles/Tomcat → staging.
 
-## Pruebas largas: mecanismo de fin de job (agentes)
+## Pruebas largas: consola visible (agentes)
 
-Fuente de verdad: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».
+Fuente de verdad: `gigafiber/AGENTS.md` → «Pruebas largas: consola visible».
 
 En **cada** prueba larga (incluye Espresso Android, ping MK con reintentos, cleanup duro, live OLT, deploy):
 
-1. Background (`block_until_ms: 0`).
-2. Mensaje corto al usuario.
-3. Cerrar turno — **sin** `AwaitShell` ni polls.
-4. Al llegar la notificación de fin de job → leer salida y reportar.
-
-No existe (ni se pide) un callback desde la app Android: el canal es la notificación del shell en background de Cursor.
+1. Ejecutar con salida visible en el chat (sin redirigir a un log oculto).
+2. Mantener el turno abierto con `AwaitShell` hasta que termine.
+3. Reportar PASS/FAIL al finalizar.

@@ -3,6 +3,7 @@
 | Tema | Archivo |
 |------|---------|
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
+| **Pruebas largas: consola visible (agentes)** | [agente-pruebas-largas-consola-visible-2026-09-15.md](./agente-pruebas-largas-consola-visible-2026-09-15.md) |
 | **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |
 | **Ambiente `local-prestaging` (Core+Gateway+ACS en Mac, OLT LAN, GenieACS túnel)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#ambiente-local-prestaging) |
 | **E2E FIBER `local-prestaging` (curl Core `:8082`, ACS `:8090`)** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md#e2e-alta-fiber-local-prestaging) |

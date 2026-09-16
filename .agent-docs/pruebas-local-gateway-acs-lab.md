@@ -161,7 +161,7 @@ GET http://127.0.0.1:8082/ispadmin/subscription/{id}/registration-progress
 
 COMPLETE ACS exige en WAN cliente (índice 2 / path F6600R): IP del alta, `ConnectionStatus=Connected`, SSIDs iguales a los pedidos. Timeout verify 90 s → `PENDING` (no FAILED).
 
-Lanzar el POST+poll en **background** si puede pasar de ~1–2 min; cerrar el turno y reportar al aviso de fin de job.
+Ejecutar el POST+poll con **salida visible** y mantener el turno abierto con `AwaitShell` hasta COMPLETE/timeout.
 
 ### 10. Entregar WiFi al usuario
 
@@ -190,7 +190,7 @@ No usar NAP `NO-001` / lugar `9 de octubre` (puerto GPON distinto). Lab local:
 | ONU | `ZTEGDC47BFFD` (única con tag `lab`; el script de prod toma la primera ONU) |
 | Paquete | `com.dscorp.ispadmin.dev` (BASE_URL local; no prodDebug) |
 
-Desde el repo Android (background; no `AwaitShell`):
+Desde el repo Android (consola visible; `AwaitShell` hasta el final):
 
 ```bash
 ./scripts/e2e_register_fiber_local_espresso.sh --cleanup-mode ask

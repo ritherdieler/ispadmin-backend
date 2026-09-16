@@ -84,9 +84,9 @@ Cómo:
 
 Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
 
-### Pruebas largas: notificación de fin (obligatorio)
+### Pruebas largas: consola visible (obligatorio)
 
-Smoke VPS, live OLT, cleanup duro, suites Gradle largas o cualquier script >~1–2 min: lanzar en background, **cerrar el turno** y continuar solo cuando Cursor notifique que el job terminó. No bloquear con `AwaitShell`/polling. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: no bloquear el turno».
+Smoke VPS, live OLT, cleanup duro, suites Gradle largas o cualquier script >~1–2 min: ejecutar con **salida visible** y mantener el turno abierto con `AwaitShell` hasta el final. No ocultar el progreso en un log y cerrar el turno. Regla de plataforma: `gigafiber/AGENTS.md` → «Pruebas largas: consola visible».
 
 ## Desacople de subsistemas (obligatorio)
 
