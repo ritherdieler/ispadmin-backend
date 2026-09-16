@@ -28,6 +28,8 @@ El 5 GHz es siempre `{ssid} - 5G` y la clave es la misma en ambas bandas. Flags 
 
 El wrapper: precleanup → login API → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso (`tr069ProvisionStatus=COMPLETE` vía ACS: SSID + WiFi) → cleanup según `--cleanup-mode`.
 
+Cada paso imprime en **consola** (stderr/stdout, no `/tmp`): `DOING` / `URL` / `HTTP` / `BODY` (recorte, tokens redactados) / `HTTP_FAIL` / `RETRY`. Mismo estilo en `tr069-e2e-hard-cleanup.sh` y `e2e_onu_activation_status_staging.sh`. Helper: `scripts/e2e_console.sh` (Android y backend). `--cleanup-mode skip` y `--access-mode` no cambian.
+
 `--cleanup-mode auto` (default) ejecuta `tr069-e2e-hard-cleanup.sh --env staging` al terminar. `--cleanup-mode ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]` (`s` limpia; Enter/`n` deja la suscripción). `--cleanup-mode skip` no limpia. Aliases: `--ask-cleanup`, `--auto-cleanup` / `--cleanup`, `--no-cleanup`. Env: `CLEANUP_MODE`. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
 
 Tiempos del cableado (Core/Gateway/ACS, no prod): grep `REG_TIMING` en logs. Detalle: [registration-timing-logs.md](./registration-timing-logs.md).
