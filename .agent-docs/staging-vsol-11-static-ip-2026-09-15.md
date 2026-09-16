@@ -31,7 +31,7 @@ Alta lab de la ONU **VSOL** `VSOL0031C0B6` como cliente IP legado. No se tocó l
 
 El directorio de tráfico ya resuelve XOR por `accessMode`: `#9` usuario PPPoE, `#11` IP `/32`. `GET /subscription/{id}/traffic/latest` ve ambas colas en MK2.
 
-TR-069 de la VSOL quedó `FAILED` (“No hay perfiles TR-069 importados”) aunque `stg_acs.tr069_model_profile` tiene `F6600R`, `HG8145X6` y `V2804AX15T` (alias `VSOLVA74`) y `GET /admin/tr069-profiles` los lista. El registry ACS en el WAR único no los carga en memoria (JDBC primario ≠ `stg_acs`). Wi‑Fi/estaciones ACS de `#11` no arrancan hasta recargar ese registry. `#9` ya tenía TR-069 COMPLETE de antes.
+TR-069 de `#11` falló porque el alta STATIC_IP caía al provisioner de **perfiles CSV importados** (ya no se usan). El camino vivo es HTTP NBI a GenieACS: ACS encola el script `gf-wifi-ssid-poc` (STATIC_IP) o `gf-pppoe-wan2-poc` (PPPoE); el JS orquesta F6600R vs VSOL. Tras el fix, `POST /subscription/{id}/acs/retry-tr069` debe encolar ese provision, no pedir perfiles. `#9` ya tenía TR-069 COMPLETE por el script PPPoE.
 
 ## No tocar
 

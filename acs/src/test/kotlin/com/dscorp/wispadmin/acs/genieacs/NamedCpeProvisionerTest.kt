@@ -250,6 +250,68 @@ class NamedCpeProvisionerTest {
     }
 
     @Test
+    fun `STATIC_IP enqueues gf-wifi-ssid-poc for VSOL layout then COMPLETE after SSIDs`() {
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(
+                id = "B46415-V2804AX15T-12345B4641531C0B6",
+                serialNumber = "VSOL0031C0B6",
+                productClass = "V2804AX15T",
+            )
+        )
+        every { client.enqueueProvisions(any(), any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 202,
+            body = "ok",
+            accepted = true,
+        )
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
+            statusCode = 200,
+            body = "ok",
+            accepted = true,
+        )
+        every {
+            client.getDeviceParameterValue(
+                "B46415-V2804AX15T-12345B4641531C0B6",
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID",
+            )
+        } returns "lab-vsol-e2e-24"
+        every {
+            client.getDeviceParameterValue(
+                "B46415-V2804AX15T-12345B4641531C0B6",
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID",
+            )
+        } returns "lab-vsol-e2e-24 - 5G"
+        val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })
+
+        val outcome = provisioner.provision(
+            Tr069ProvisionRequest(
+                onuSerial = "VSOL0031C0B6",
+                onuTypeName = "VSOLVA74",
+                ip = "192.168.250.11",
+                ipSegment = "192.168.250.1/24",
+                wifiSsid24 = "lab-vsol-e2e-24",
+                wifiPassword24 = "LabVsolWifi24!",
+                wifiSsid5 = "lab-vsol-e2e-24 - 5G",
+                wifiPassword5 = "other",
+                wanVlanId = 100,
+            )
+        )
+
+        assertEquals(CpeStatus.COMPLETE, outcome.status)
+        verify(exactly = 0) {
+            client.enqueueProvisions(any(), NamedGenieAcsProvisions.PPPOE, any(), any())
+        }
+        verify {
+            client.enqueueProvisions(
+                "B46415-V2804AX15T-12345B4641531C0B6",
+                NamedGenieAcsProvisions.WIFI,
+                listOf("lab-vsol-e2e-24", "lab-vsol-e2e-24 - 5G", "LabVsolWifi24!"),
+                connectionRequest = true,
+            )
+        }
+    }
+
+    @Test
     fun `setWifi rejects passphrase shorter than 8`() {
         val client = mockk<GenieAcsClient>(relaxed = true)
         val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })

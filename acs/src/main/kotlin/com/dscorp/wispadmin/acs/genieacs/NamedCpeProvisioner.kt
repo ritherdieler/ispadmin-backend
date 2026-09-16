@@ -31,7 +31,7 @@ class NamedCpeProvisioner(
             return Tr069ProvisionOutcome(status = CpeStatus.NA)
         }
         if (!request.usesPppoe()) {
-            return failed("Faltan credenciales PPPoE para aprovisionar WAN.")
+            return provisionStatic(request)
         }
         val found = timing.span("acs.genieacs.find-device", mapOf("sn" to request.onuSerial)) {
             waitForDevice(request)
@@ -77,6 +77,64 @@ class NamedCpeProvisioner(
         return timing.span("acs.genieacs.wait-complete", mapOf("sn" to request.onuSerial)) {
             waitForComplete(device, layout, request)
         }
+    }
+
+    private fun provisionStatic(request: Tr069ProvisionRequest): Tr069ProvisionOutcome {
+        val found = timing.span("acs.genieacs.find-device", mapOf("sn" to request.onuSerial)) {
+            waitForDevice(request)
+        } ?: return lastFindFailure(request)
+        val device = found.device
+        val layout = NamedCpeLayouts.of(device.productClass)
+            ?: return failed("unsupported productClass=${device.productClass}", device.id, snapshotFromDevice(device, request))
+        try {
+            client.purgeDeviceQueue(device.id)
+        } catch (ex: Exception) {
+            log.warn("Could not purge GenieACS queue for {}: {}", device.id, ex.message)
+        }
+        val hasWifi = !request.wifiSsid24.isNullOrBlank() || !request.wifiSsid5.isNullOrBlank()
+        if (hasWifi) {
+            val passphrase = request.wifiPassword24.orEmpty()
+            if (passphrase.length < NamedGenieAcsProvisions.MIN_WIFI_PASSPHRASE) {
+                return failed("WiFi passphrase shorter than 8", device.id, snapshotFromDevice(device, request))
+            }
+            val args = listOf(request.wifiSsid24.orEmpty(), request.wifiSsid5.orEmpty(), passphrase)
+            var result = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.WIFI, args, connectionRequest = true)
+            if (result.connectionRequestFailed) {
+                result = client.enqueueProvisions(device.id, NamedGenieAcsProvisions.WIFI, args, connectionRequest = false)
+            }
+            if (!result.accepted) {
+                val error = result.toErrorDetail()
+                return Tr069ProvisionOutcome(
+                    status = CpeStatus.FAILED,
+                    deviceId = device.id,
+                    error = error,
+                    message = error,
+                    acsSnapshot = snapshotFromDevice(device, request),
+                )
+            }
+            val wifiOk = waitForWifi(
+                device.id,
+                layout,
+                request.wifiSsid24,
+                request.wifiSsid5,
+                request.waitTimeoutMs ?: properties.waitTimeoutMs,
+            )
+            if (!wifiOk) {
+                return Tr069ProvisionOutcome(
+                    status = CpeStatus.PENDING,
+                    deviceId = device.id,
+                    error = "SSID no se confirmaron en el ACS dentro del tiempo de espera.",
+                    message = "SSID no se confirmaron en el ACS dentro del tiempo de espera.",
+                    acsSnapshot = snapshotFromDevice(device, request),
+                )
+            }
+        }
+        return Tr069ProvisionOutcome(
+            status = CpeStatus.COMPLETE,
+            deviceId = device.id,
+            message = "ONU configurada automáticamente por TR-069.",
+            acsSnapshot = snapshotFromDevice(device, request),
+        )
     }
 
     fun setWifi(sn: String, ssid24: String?, ssid5: String?, passphrase: String): CpeCommandResult {

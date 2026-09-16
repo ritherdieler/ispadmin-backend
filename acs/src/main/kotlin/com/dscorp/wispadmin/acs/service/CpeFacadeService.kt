@@ -54,17 +54,13 @@ class CpeFacadeService(
             return CpeProvisionResult(command.sn, CpeStatus.NA, "ACS disabled")
         }
         val request = toProvisionRequest(command)
-        val outcome = if (request.usesPppoe()) {
-            timing.span("acs.provision", mapOf("sn" to command.sn)) {
-                namedProvisioner?.provision(request)
-                    ?: Tr069ProvisionOutcome(status = CpeStatus.FAILED, error = "named provisioner missing", message = "named provisioner missing")
-            }
-        } else if (properties.vparams.enabled) {
-            val provisioner = vparamProvisioner
-                ?: return CpeProvisionResult(command.sn, CpeStatus.FAILED, "vparams provisioner missing")
-            timing.span("acs.provision", mapOf("sn" to command.sn)) { provisioner.provision(request) }
-        } else {
-            timing.span("acs.provision", mapOf("sn" to command.sn)) { provisioningService.provision(request) }
+        val outcome = timing.span("acs.provision", mapOf("sn" to command.sn)) {
+            namedProvisioner?.provision(request)
+                ?: Tr069ProvisionOutcome(
+                    status = CpeStatus.FAILED,
+                    error = "named provisioner missing",
+                    message = "named provisioner missing",
+                )
         }
         record.status = outcome.status
         record.message = outcome.error ?: outcome.message
