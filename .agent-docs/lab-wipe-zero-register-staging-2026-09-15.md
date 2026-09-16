@@ -36,4 +36,4 @@ Desde `IpsAdmin-android app`, emulator `emulator-5554`, `--cleanup-mode skip` pa
 E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_register_fiber_staging_espresso.sh --cleanup-mode skip
 ```
 
-Primer intento: Espresso timeout en éxito. El POST síncrono superó el `readTimeout` de 90 s de la app; Core sí dejó `#8` COMPLETE. Se limpió `#8` + delete Gateway de `ZTEGDC47BFFD` (ONU otra vez en autofind). Reintento con timeout HTTP de 4 min en Android.
+Primer intento: Espresso timeout en éxito. El POST síncrono superó el `readTimeout` de 90 s de la app; Core sí dejó `#8` COMPLETE. Se limpió `#8` + delete Gateway de `ZTEGDC47BFFD` (ONU otra vez en autofind). Reintento con timeout HTTP de 4 min en Android: **PASS** `#9` dni `99520221` `gf9` PPPoE, OLT/TR-069/MK COMPLETE, WiFi `lab-zte-e2e-24` / `lab-zte-e2e-24 - 5G`. Cleanup skip.
