@@ -19,6 +19,37 @@ DNI=""
 ALLOW_EMPTY=0
 FORCE=0
 E2E_ENV="prod"
+PRINT_FIREBASE_SA=0
+
+resolve_firebase_sa() {
+  local env_path="${FIREBASE_SERVICE_ACCOUNT_JSON:-}"
+  if [[ -n "$env_path" && -f "$env_path" ]]; then
+    printf '%s' "$env_path"
+    return 0
+  fi
+  local prod="$BACKEND_ROOT/core/src/main/resources/firebase_service_account_prod.json"
+  local staging="$BACKEND_ROOT/core/src/main/resources/firebase_service_account_staging.json"
+  local first="$prod"
+  local second="$staging"
+  if [[ "${E2E_ENV:-}" == "staging" ]]; then
+    first="$staging"
+    second="$prod"
+  fi
+  if [[ -f "$first" ]]; then
+    printf '%s' "$first"
+    return 0
+  fi
+  if [[ -f "$second" ]]; then
+    printf '%s' "$second"
+    return 0
+  fi
+  if [[ -n "$env_path" ]]; then
+    printf '%s' "$env_path"
+    return 1
+  fi
+  printf '%s' "$prod"
+  return 1
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --env) E2E_ENV="${2:-}"; shift 2 ;;
     --allow-empty) ALLOW_EMPTY=1; shift ;;
     --force) FORCE=1; shift ;;
+    --print-firebase-sa) PRINT_FIREBASE_SA=1; shift ;;
     -h|--help)
       sed -n '1,14p' "$0"
       exit 0
@@ -50,7 +82,7 @@ case "$E2E_ENV" in
   *) echo "Invalid --env $E2E_ENV (prod|staging)" >&2; exit 2 ;;
 esac
 
-if [[ -z "$ID" && -z "$SN" && -z "$DNI" ]]; then
+if [[ "$PRINT_FIREBASE_SA" -eq 0 && -z "$ID" && -z "$SN" && -z "$DNI" ]]; then
   echo "Provide --id and/or --sn and/or --dni" >&2
   exit 2
 fi
@@ -60,12 +92,19 @@ if [[ -f "$CONFIG_LOCAL" ]]; then
   set -a; source "$CONFIG_LOCAL"; set +a
 fi
 
+FIREBASE_BUCKET="${FIREBASE_BUCKET:-ispadmin-687ca.appspot.com}"
+FIREBASE_SA="$(resolve_firebase_sa || true)"
+export FIREBASE_SERVICE_ACCOUNT_JSON="$FIREBASE_SA"
+if [[ "$PRINT_FIREBASE_SA" -eq 1 ]]; then
+  printf '%s\n' "$FIREBASE_SA"
+  [[ -f "$FIREBASE_SA" ]]
+  exit $?
+fi
+
 VPS_HOST="${VPS_HOST:?VPS_HOST required}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:?DEPLOY_SSH_PASSWORD required}"
-FIREBASE_BUCKET="${FIREBASE_BUCKET:-ispadmin-687ca.appspot.com}"
-FIREBASE_SA="${FIREBASE_SERVICE_ACCOUNT_JSON:-$BACKEND_ROOT/src/main/resources/firebase_service_account_prod.json}"
 
 export SSHPASS="$DEPLOY_SSH_PASSWORD"
 ssh_vps() {

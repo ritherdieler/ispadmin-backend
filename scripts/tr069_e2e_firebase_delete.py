@@ -83,8 +83,32 @@ def google_access_token(sa: dict) -> str:
         return json.load(resp)["access_token"]
 
 
+def default_sa_candidates() -> list[str]:
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return [
+        os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON") or "",
+        os.path.join(root, "core/src/main/resources/firebase_service_account_prod.json"),
+        os.path.join(root, "core/src/main/resources/firebase_service_account_staging.json"),
+    ]
+
+
+def resolve_sa_path(explicit: str | None = None) -> str:
+    ordered: list[str] = []
+    if explicit:
+        ordered.append(explicit)
+    ordered.extend(default_sa_candidates())
+    seen: set[str] = set()
+    for path in ordered:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        if os.path.isfile(path):
+            return path
+    return explicit or os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON") or default_sa_candidates()[1]
+
+
 def delete_object(sa_path: str, bucket: str, object_path: str) -> str:
-    sa = json.load(open(sa_path))
+    sa = json.load(open(resolve_sa_path(sa_path)))
     token = google_access_token(sa)
     encoded_obj = urllib.parse.quote(object_path, safe="")
     del_url = f"https://storage.googleapis.com/storage/v1/b/{bucket}/o/{encoded_obj}"
@@ -112,8 +136,12 @@ def main(argv: list[str]) -> int:
     if len(argv) == 2 and argv[1] == "--check-ssl":
         check_ssl()
         return 0
+    if len(argv) == 3:
+        delete_object(resolve_sa_path(None), argv[1], argv[2])
+        return 0
     if len(argv) != 4:
         print("usage: tr069_e2e_firebase_delete.py <sa.json> <bucket> <object>", file=sys.stderr)
+        print("       tr069_e2e_firebase_delete.py <bucket> <object>", file=sys.stderr)
         print("       tr069_e2e_firebase_delete.py --check-ssl", file=sys.stderr)
         return 2
     delete_object(argv[1], argv[2], argv[3])
