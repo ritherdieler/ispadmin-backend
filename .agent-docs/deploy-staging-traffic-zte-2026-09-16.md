@@ -54,3 +54,12 @@ Script: `IpsAdmin-android app/scripts/e2e_register_fiber_staging_espresso.sh` (s
 | `--access-mode pppoe` → `PPPOE_DYNAMIC` | **PASS** | `#34` | PPPoE `gf34` · DNI `99613387` · TR-069 COMPLETE · cleanup OK |
 
 Backoffice: Vite `--mode staging` en `http://localhost:3002` (no VPS).
+
+## Vivos para pruebas (2026-09-16 noche, `--no-cleanup`)
+
+| Cliente | Sub | SN | Modo | WAN | WiFi | Pass |
+|---------|-----|----|------|-----|------|------|
+| EEEFIBER STATIC | **#35** | `ZTEGDC47BFFD` | STATIC_IP | `192.168.250.10` | `ztelab` / `ztelab - 5G` | `11111111` |
+| EEEFIBER VSOL | **#36** | `VSOL0031C0B6` | PPPOE_DYNAMIC | `gf36` | `lab-vsol-e2e-24` / `lab-vsol-e2e-24 - 5G` | `11111111` |
+
+No se ejecutó post-cleanup. Siguen en staging.
