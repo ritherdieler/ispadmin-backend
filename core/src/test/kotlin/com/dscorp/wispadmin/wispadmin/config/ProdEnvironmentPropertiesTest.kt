@@ -98,6 +98,45 @@ class ProdEnvironmentPropertiesTest {
     }
 
     @Test
+    fun prodBindsInProcessAcsGatewayKeysBecauseProdProfileDoesNotLoadSatelliteOverlays() {
+        assertTrue(
+            Regex("""^olt\.gateway\.acs\.api-key=\$\{ACS_API_KEY:\}\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            "Gateway→ACS must send X-Acs-Key; prod does not load application-oltgateway.properties: $prod",
+        )
+        assertFalse(prod.contains("ACS_API_KEY:dev-acs-key"), prod)
+        assertTrue(
+            Regex("""^acs\.genieacs-to-acs-api-key=\$\{GENIEACS_TO_ACS_API_KEY:\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex(
+                """^acs\.gateway\.internal-base-url=\$\{ACS_GATEWAY_BASE_URL:http://127\.0\.0\.1:8080/ispadmin\}\s*$""",
+                RegexOption.MULTILINE,
+            ).containsMatchIn(prod),
+            prod,
+        )
+        assertFalse(prod.contains("ispadmin-oltgateway"), prod)
+        assertTrue(
+            Regex("""^acs\.gateway\.api-key=\$\{ACS_TO_GATEWAY_API_KEY:\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^olt\.gateway\.acs-to-gateway-api-key=\$\{ACS_TO_GATEWAY_API_KEY:\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex(
+                """^olt\.gateway\.operation-secret=\$\{OLT_GATEWAY_OPERATION_SECRET:\$\{olt\.gateway\.api-key:\}\}\s*$""",
+                RegexOption.MULTILINE,
+            ).containsMatchIn(prod),
+            prod,
+        )
+    }
+
+    @Test
     fun prodKeepsTrafficPollEnabled() {
         assertTrue(
             Regex("""^traffic\.poll\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),

@@ -29,6 +29,28 @@ class DeployDisabledModulesPreflightScriptTest {
     }
 
     @Test
+    fun missing_gateway_acs_api_key_binding_aborts_without_confirmation() {
+        val props = tmp.resolve("application-prod.properties")
+        Files.writeString(
+            props,
+            """
+            gigafiber.subsystems.acs.enabled=true
+            gigafiber.subsystems.oltgateway.enabled=true
+            olt.gateway.client-enabled=true
+            olt.gateway.acs.enabled=true
+            olt.gateway.acs.internal-base-url=http://127.0.0.1:8080/ispadmin
+            acs.client-enabled=true
+            acs.internal-base-url=http://127.0.0.1:8080/ispadmin
+            genieacs.enabled=true
+            """.trimIndent() + "\n",
+        )
+        val out = run("--env", "prod", "--properties", props.toString())
+        assertEquals(1, out.exit, out.combined)
+        assertTrue(out.combined.contains("olt.gateway.acs.api-key"), out.combined)
+        assertTrue(out.combined.contains("X-Acs-Key"), out.combined)
+    }
+
+    @Test
     fun missing_gateway_acs_client_aborts_without_confirmation() {
         val props = tmp.resolve("application-staging.properties")
         Files.writeString(

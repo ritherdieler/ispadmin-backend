@@ -45,8 +45,11 @@ OBS_API_KEY=
 # (staging WARs inside tomcat-staging talk on :8080; host→staging is :8081).
 # Do not put them in /opt/gigafiber/.env.
 # ACS_API_KEY=   # openssl rand -hex 16; misma key Gateway ↔ ACS WAR y ahora también Core → ACS (X-Acs-Key)
+# ACS_TO_GATEWAY_API_KEY=   # ACS → Gateway Inform (X-Acs-To-Gateway-Key); no commitear el valor
+# GENIEACS_TO_ACS_API_KEY=   # GenieACS ext → ACS inform-notify; también acepta ACS_API_KEY
 # ACS_CLIENT_ENABLED=   # Core HTTP client hacia ACS WAR; staging lo hornea en true
 # ACS_INTERNAL_BASE_URL=   # no en .env compartido; staging Core hornea http://127.0.0.1:8080/ispadmin-staging-acs
+# ACS_GATEWAY_BASE_URL=   # no en .env compartido; prod hornea http://127.0.0.1:8080/ispadmin
 # PPPOE_MIGRATION_QUARANTINE_DAYS=7  # no es secreto; default 7
 # OLT_GATEWAY_ACS_BASE_URL is baked (staging: http://127.0.0.1:8080/ispadmin-staging-acs)
 # Staging deploy must keep embedded modules in Core and enable HTTP clients:

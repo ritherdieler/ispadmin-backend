@@ -264,6 +264,12 @@ class StagingEnvironmentPropertiesTest {
         val example = Files.readString(root.resolve("scripts/deploy.config.example"))
         assertTrue(secrets.contains("ACS_API_KEY"), secrets)
         assertTrue(example.contains("ACS_API_KEY"), example)
+        assertTrue(secrets.contains("ACS_TO_GATEWAY_API_KEY"), secrets)
+        assertTrue(example.contains("ACS_TO_GATEWAY_API_KEY"), example)
+        assertTrue(secrets.contains("GENIEACS_TO_ACS_API_KEY"), secrets)
+        assertTrue(example.contains("GENIEACS_TO_ACS_API_KEY"), example)
         assertFalse(Regex("ACS_API_KEY=\\S+").containsMatchIn(example), example)
+        assertFalse(Regex("ACS_TO_GATEWAY_API_KEY=\\S+").containsMatchIn(example), example)
+        assertFalse(Regex("GENIEACS_TO_ACS_API_KEY=\\S+").containsMatchIn(example), example)
     }
 }
