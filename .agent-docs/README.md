@@ -2,6 +2,8 @@
 
 | Tema | Archivo |
 |------|---------|
+| **Ensayo Flyway scratch (V39–V54 PASS, 2026-09-17)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md#resultado-del-clon-flyway) |
+| **Restore prod pre-cutover (83de8fe + dump 2026-09-16, sin deploy)** | [restore-prod-pre-cutover-2026-09-16.md](./restore-prod-pre-cutover-2026-09-16.md) |
 | **Cutover prod ← develop (preparación 2026-09-16, sin deploy)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md) |
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
 | **Pruebas largas: consola visible (agentes)** | [agente-pruebas-largas-consola-visible-2026-09-15.md](./agente-pruebas-largas-consola-visible-2026-09-15.md) |

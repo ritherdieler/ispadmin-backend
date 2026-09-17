@@ -21,6 +21,14 @@ class DeployDisabledModulesPreflightScriptTest {
     }
 
     @Test
+    fun current_prod_properties_pass_fiber_chain() {
+        val out = run("--env", "prod")
+        assertEquals(0, out.exit, out.combined)
+        assertTrue(out.combined.contains("cadena FIBER/TR-069 completa"), out.combined)
+        assertFalse(out.combined.contains("ADVERTENCIA"), out.combined)
+    }
+
+    @Test
     fun missing_gateway_acs_client_aborts_without_confirmation() {
         val props = tmp.resolve("application-staging.properties")
         Files.writeString(

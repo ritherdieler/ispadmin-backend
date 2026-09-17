@@ -70,6 +70,34 @@ class ProdEnvironmentPropertiesTest {
     }
 
     @Test
+    fun prodKeepsFiberTr069ChainOn() {
+        assertTrue(
+            Regex("""^gigafiber\.subsystems\.acs\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^gigafiber\.subsystems\.oltgateway\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^olt\.gateway\.acs\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex(
+                """^olt\.gateway\.acs\.internal-base-url=\$\{OLT_GATEWAY_ACS_BASE_URL:http://127\.0\.0\.1:8080/ispadmin\}\s*$""",
+                RegexOption.MULTILINE,
+            ).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^genieacs\.enabled=\$\{GENIEACS_ENABLED:true\}\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            prod,
+        )
+        assertFalse(prod.contains("ispadmin-staging"), prod)
+    }
+
+    @Test
     fun prodKeepsTrafficPollEnabled() {
         assertTrue(
             Regex("""^traffic\.poll\.enabled=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),

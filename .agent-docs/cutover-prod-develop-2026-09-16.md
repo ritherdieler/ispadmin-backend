@@ -140,7 +140,7 @@ Un solo runtime abre MK2: **Traffic** (`e2849b6`+). Core/NetDiag no inyectan `Mi
 2. Quitar leftover `ispadmin-staging*` exploded/WAR en `tomcat9027` **después** de confirmar nginx.
 3. `APP_RELEASE` no puede vivir solo en `/opt/gigafiber/.env` compartido (staging miente `83de8fe`). Hornear por contenedor o env file propio.
 4. Rollback = WAR `83de8fe` ya en `/opt/gigafiber/ispadmin.war` (`sha256 986f736b…`).
-5. Backup `mysqldump` de `ispadmin` (y `ispadmin_telemetry` si aplica) **antes** de cualquier WAR prod.
+5. Backup `mysqldump` de `ispadmin` (y `ispadmin_telemetry` si aplica) **antes** de cualquier WAR prod. **Hecho 2026-09-16 23:08–23:22 Lima** (caliente, `tomcat9027` no se paró): `/opt/gigafiber/backups/pre-cutover-2026-09-16_23-08/` · runbook [restore-prod-pre-cutover-2026-09-16.md](./restore-prod-pre-cutover-2026-09-16.md).
 
 ## Criterio “ya se puede cortar”
 
@@ -148,7 +148,7 @@ Un solo runtime abre MK2: **Traffic** (`e2849b6`+). Core/NetDiag no inyectan `Mi
 |---|---|
 | Pin limpio en `develop` local (V52 partido + overlay) | sí, tras los commits de este turno |
 | Pin en `origin/develop` | **no** (sin push) |
-| Clon Flyway verde V39–V54 | ver resultado abajo |
+| Clon Flyway verde V39–V54 | **sí** 2026-09-17 — `ispadmin_flyway_clone` V38–V54 `success=1` |
 | V52 sin backfill ciego ni UNIQUE roto | sí |
 | Overlay prod ≠ staging | sí |
 | Decisión `prod_*` vs flags | Opción A; scripts listos, **no** creados en prod |
@@ -156,12 +156,12 @@ Un solo runtime abre MK2: **Traffic** (`e2849b6`+). Core/NetDiag no inyectan `Mi
 | Preflight módulos con OK del usuario | **no** (prohibido `--yes` por iniciativa) |
 | `deploy.sh --env prod` | **no ejecutar** |
 
-Hasta `origin` alineado, clon verde y schemas `prod_*` creados en ventana: **no cortar**.
+Clon **verde**. Hasta schemas `prod_*` creados en ventana + preflight con OK explícito: **no cortar**. Push a `origin` no es requisito si el deploy sale de este HEAD local.
 
 ## Checklist de cutover (cuando alguien lo ejecute)
 
-1. Backup `ispadmin`.
-2. `SCRATCH_SCHEMA=ispadmin_flyway_clone ./scripts/flyway-clone-ispadmin.sh --vps` verde.
+1. Backup `ispadmin` — **ya existe** `pre-cutover-2026-09-16_23-08` (ver restore runbook).
+2. Clon Flyway — **hecho** sobre dump `pre-cutover-2026-09-16_23-08` → `ispadmin_flyway_clone` (no `--vps` live dump). Verde.
 3. `scripts/sql/create-prod-satellite-schemas.sql` en el MySQL del VPS.
 4. `scripts/deploy-disabled-modules-preflight.sh --env prod` — parar si avisa; no `--yes` solo.
 5. `./scripts/deploy.sh --env prod` **solo** con pin acordado y confirmación explícita.
@@ -170,16 +170,12 @@ Hasta `origin` alineado, clon verde y schemas `prod_*` creados en ventana: **no 
 
 ## Resultado del clon Flyway
 
-**No corrió contra un dump de `ispadmin`.** SSH `root@212.85.13.47` en BatchMode → `Permission denied (publickey,password)`. No hay `SSH_IDENTITY_FILE` en `deploy.config.local`. No se pidió ni se usó password. No se hizo DML/DDL en `ispadmin` ni `ispadmin_staging`.
+**PASS 2026-09-17 00:26–00:37 Lima.** Import del dump `pre-cutover-2026-09-16_23-08` → schema `ispadmin_flyway_clone` (123 tablas, 1349 subs). Apply V39–V54 del pin `e9fe23a`. Todas `success=1`. V39 tardó 230 s; el resto ≤10 s.
 
-`--dry-run` local **PASS**: lista V39–V46, V48–V54 (no hay V47) y se niega `SCRATCH_SCHEMA=ispadmin` / `ispadmin_staging`.
+`--dry-run` local **PASS** (V39–V46, V48–V54; no hay V47). No se usó `--vps` (evita un segundo dump en vivo). SSH vía `sshpass` + `DEPLOY_SSH_PASSWORD` (no se imprime).
 
-Comando exacto cuando haya llave SSH:
+Post-check clone: `access_mode` 1349 `STATIC_IP`, 0 `PPPOE_FIXED`, 0 `pppoe_username`; `tr069_model_profile` ausente; FK `fiber_onu_sn`→`onu` = 0; `192.168.26.199` ×2 (UNIQUE NULL OK).
 
-```bash
-cd ispadmin-backend
-SCRATCH_SCHEMA=ispadmin_flyway_clone ./scripts/flyway-clone-ispadmin.sh --dry-run
-SCRATCH_SCHEMA=ispadmin_flyway_clone ./scripts/flyway-clone-ispadmin.sh --vps
-```
+Post-check **ispadmin** (intacto): `access_mode` 0 cols, sin `flyway_schema_history`, `tr069_model_profile` sigue, 1349 subs. Staging `#35`/`#36` = 1+1. `tomcat9027` `APP_RELEASE=1.0.3+83de8fe` / 200.
 
-Luego: `SELECT version, success FROM ispadmin_flyway_clone.flyway_schema_history ORDER BY installed_rank;` — anotar FAIL por versión aquí. Nunca `DROP`/`USE` `ispadmin`.
+Nunca `DROP`/`USE` `ispadmin`. El scratch se puede borrar después: `DROP DATABASE ispadmin_flyway_clone`.

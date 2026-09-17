@@ -602,7 +602,7 @@ ensure_war_profile_isolation() {
     echo "Staging uses tomcat-staging; skipping prod compose isolation"
     return 0
   fi
-  echo "Removing shared SPRING_PROFILES_ACTIVE / SPRING_DATASOURCE_URL so each WAR uses its baked profile..."
+  echo "Removing shared SPRING_DATASOURCE_URL; pin SPRING_PROFILES_ACTIVE: prod on tomcat (Gradle WAR bakes dev,local)"
   local changed
   changed="$(run_ssh "bash -s" <<EOF
 set -euo pipefail
@@ -611,7 +611,8 @@ ENV_FILE='$BACKEND_ENV_FILE'
 python3 - <<'PY'
 from pathlib import Path
 
-drop = {"SPRING_PROFILES_ACTIVE", "SPRING_DATASOURCE_URL"}
+drop_env = {"SPRING_PROFILES_ACTIVE", "SPRING_DATASOURCE_URL"}
+drop_compose = {"SPRING_DATASOURCE_URL"}
 changed = False
 
 compose_path = Path("$DOCKER_COMPOSE_FILE")
@@ -619,6 +620,8 @@ lines = compose_path.read_text().splitlines()
 out = []
 in_tomcat = False
 in_environment = False
+env_indent = "      "
+has_prod_profile = False
 for line in lines:
     if line.rstrip() == "  tomcat:":
         in_tomcat = True
@@ -636,10 +639,36 @@ for line in lines:
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
             key = stripped.split(":", 1)[0].split("=", 1)[0].strip()
-            if key in drop:
+            if key in drop_compose:
                 changed = True
                 continue
+            if key == "SPRING_PROFILES_ACTIVE":
+                indent = line[: len(line) - len(line.lstrip())]
+                env_indent = indent
+                if "prod" in stripped and "staging" not in stripped and "dev" not in stripped:
+                    has_prod_profile = True
+                    out.append(line)
+                else:
+                    out.append(f"{indent}SPRING_PROFILES_ACTIVE: prod")
+                    changed = True
+                    has_prod_profile = True
+                continue
     out.append(line)
+if not has_prod_profile:
+    rebuilt = []
+    pin_tomcat = False
+    inserted = False
+    for line in out:
+        rebuilt.append(line)
+        if line.rstrip() == "  tomcat:":
+            pin_tomcat = True
+        elif pin_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
+            pin_tomcat = False
+        if pin_tomcat and (not inserted) and line.strip() == "environment:":
+            rebuilt.append(f"{env_indent}SPRING_PROFILES_ACTIVE: prod")
+            inserted = True
+            changed = True
+    out = rebuilt
 if changed:
     compose_path.write_text("\\n".join(out) + "\\n")
 
@@ -650,7 +679,7 @@ if env_path.exists():
     env_changed = False
     for line in env_lines:
         key = line.split("=", 1)[0].strip()
-        if key in drop:
+        if key in drop_env:
             env_changed = True
             continue
         kept.append(line)

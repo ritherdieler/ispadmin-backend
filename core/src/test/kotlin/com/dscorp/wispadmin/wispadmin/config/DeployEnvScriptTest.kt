@@ -23,6 +23,11 @@ class DeployEnvScriptTest {
         assertTrue(script.contains("ensure_war_profile_isolation"))
         assertTrue(script.contains("SPRING_DATASOURCE_URL"))
         assertTrue(script.contains("SPRING_PROFILES_ACTIVE"))
+        val isolation = script.substringAfter("ensure_war_profile_isolation()").substringBefore("prepare_prod_war_on_host_if_splitting")
+        assertTrue(
+            isolation.contains("SPRING_PROFILES_ACTIVE: prod") || isolation.contains("\"SPRING_PROFILES_ACTIVE: prod\""),
+            "prod Tomcat must keep SPRING_PROFILES_ACTIVE=prod; the Gradle WAR bakes dev,local: $isolation",
+        )
         assertTrue(script.contains("restore_host_wars"))
         assertTrue(script.contains("prepare_prod_war_on_host_if_splitting"))
         assertTrue(script.contains("sync_war_to_host"))
