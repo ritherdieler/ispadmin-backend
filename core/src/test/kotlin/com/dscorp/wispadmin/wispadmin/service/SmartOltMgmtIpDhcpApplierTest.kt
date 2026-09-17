@@ -2,9 +2,11 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.requestbody.smartoltrequest.OnuAuthorizationRequest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.util.MultiValueMap
+import java.lang.reflect.Modifier
 
 class SmartOltMgmtIpDhcpApplierTest {
 
@@ -62,5 +64,10 @@ class SmartOltMgmtIpDhcpApplierTest {
         )
 
         assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun `class is open so staging CGLIB can proxy the bean`() {
+        assertFalse(Modifier.isFinal(SmartOltMgmtIpDhcpApplier::class.java.modifiers))
     }
 }

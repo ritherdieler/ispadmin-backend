@@ -6,7 +6,7 @@ import org.springframework.util.MultiValueMap
 import org.springframework.web.util.UriUtils
 import java.nio.charset.StandardCharsets
 
-class SmartOltMgmtIpDhcpApplier(
+open class SmartOltMgmtIpDhcpApplier(
     private val policy: SmartOltMgmtVlanPolicy,
     private val poster: (String, MultiValueMap<String, Any>) -> Unit,
 ) {

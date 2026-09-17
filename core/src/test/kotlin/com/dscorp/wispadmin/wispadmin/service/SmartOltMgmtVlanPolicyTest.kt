@@ -1,8 +1,10 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import java.lang.reflect.Modifier
 
 class SmartOltMgmtVlanPolicyTest {
 
@@ -22,5 +24,10 @@ class SmartOltMgmtVlanPolicyTest {
         assertNull(policy.mgmtVlanForCustomerVlan("1"))
         assertNull(policy.mgmtVlanForCustomerVlan("1100"))
         assertNull(policy.mgmtVlanForCustomerVlan(""))
+    }
+
+    @Test
+    fun `class is open so staging CGLIB can proxy the bean`() {
+        assertFalse(Modifier.isFinal(SmartOltMgmtVlanPolicy::class.java.modifiers))
     }
 }

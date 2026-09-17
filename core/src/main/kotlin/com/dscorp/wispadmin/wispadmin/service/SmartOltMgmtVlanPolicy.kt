@@ -1,6 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-class SmartOltMgmtVlanPolicy(
+open class SmartOltMgmtVlanPolicy(
     private val customerVlans: Set<String>,
     private val mgmtVlan: String,
 ) {
