@@ -168,6 +168,8 @@ Clon **verde**. Hasta schemas `prod_*` creados en ventana + preflight con OK exp
 6. Health: `/ispadmin/` 200, `APP_RELEASE` del WAR nuevo, `flyway_schema_history` V39–V54 `success=1`, `access_mode` = `STATIC_IP` (no 97 `PPPOE_FIXED`), FK `fiber_onu_sn` ausente, login + search deuda.
 7. No borrar lab staging `#35` / `#36`.
 
+**Ventana 2026-09-17: FAIL.** WAR `1.0.3+56991bd` no levantó (`/ispadmin/` 404). Flyway Core no corrió en `ispadmin`. Restore a `83de8fe`. Ver [cutover-prod-resultado-2026-09-17.md](./cutover-prod-resultado-2026-09-17.md).
+
 ## Resultado del clon Flyway
 
 **PASS 2026-09-17 00:26–00:37 Lima.** Import del dump `pre-cutover-2026-09-16_23-08` → schema `ispadmin_flyway_clone` (123 tablas, 1349 subs). Apply V39–V54 del pin `e9fe23a`. Todas `success=1`. V39 tardó 230 s; el resto ≤10 s.
