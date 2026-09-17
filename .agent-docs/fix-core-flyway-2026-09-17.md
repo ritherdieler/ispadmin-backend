@@ -6,6 +6,6 @@ V55: `error_log.error` → TEXT. `Place.area` mapping `geometry` (Hibernate Spat
 
 Ensayo Spring validate contra `ispadmin_flyway_clone`: **PASS** (V39–V55 + Hibernate validate). `ispadmin` vivo no se tocó (`83de8fe` / 200).
 
-No deploy prod. No reintento del WAR `56991bd`.
+No deploy prod. No reintento del WAR `56991bd`. Pin siguiente: `f45dcc0`.
 
 Store: `docs/fix-core-flyway.md`.
