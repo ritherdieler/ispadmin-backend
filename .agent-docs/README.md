@@ -2,6 +2,7 @@
 
 | Tema | Archivo |
 |------|---------|
+| **Fix coreFlyway + validate clon PASS (2026-09-17)** | [fix-core-flyway-2026-09-17.md](./fix-core-flyway-2026-09-17.md) |
 | **Ensayo Flyway scratch (V39–V54 PASS, 2026-09-17)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md#resultado-del-clon-flyway) |
 | **Restore prod pre-cutover (83de8fe + dump 2026-09-16, sin deploy)** | [restore-prod-pre-cutover-2026-09-16.md](./restore-prod-pre-cutover-2026-09-16.md) |
 | **Cutover prod ← develop (preparación 2026-09-16, sin deploy)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md) |
