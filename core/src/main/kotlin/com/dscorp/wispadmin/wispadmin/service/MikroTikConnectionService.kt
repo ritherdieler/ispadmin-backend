@@ -1,11 +1,10 @@
 package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.routeros.RouterOsEntryId
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionManager
-import com.dscorp.wispadmin.wispadmin.service.mikrotik.MikrotikDeviceRefMapper
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsCommandUseCase
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsSession
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.concurrent.Executors
@@ -15,8 +14,7 @@ import java.util.concurrent.TimeUnit
 
 @Service
 class MikroTikConnectionService(
-    private val mikrotikClient: MikrotikClient,
-    private val routerOsClientProperties: RouterOsClientProperties
+    private val routerOsCommands: TrafficRouterOsCommandUseCase,
 ) {
     
     private val logger = LoggerFactory.getLogger(MikroTikConnectionService::class.java)
@@ -145,10 +143,7 @@ class MikroTikConnectionService(
             return getMockPrint(path, query)
         }
         return try {
-            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
-            mikrotikClient.withSession(deviceRef) { session ->
-                session.print(path, query)
-            }.also { result ->
+            sessionFor(device).print(path, query).also { result ->
                 logger.info("✅ [DISPOSITIVO-${device.id}] print OK - ${result.size} resultados")
             }
         } catch (e: Exception) {
@@ -167,10 +162,7 @@ class MikroTikConnectionService(
             return getMockCall(path, args)
         }
         return try {
-            val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
-            mikrotikClient.withSession(deviceRef) { session ->
-                session.call(path, args)
-            }.also { result ->
+            sessionFor(device).call(path, args).also { result ->
                 logger.info("✅ [DISPOSITIVO-${device.id}] call OK - ${result.size} resultados")
             }
         } catch (e: Exception) {
@@ -184,10 +176,11 @@ class MikroTikConnectionService(
         if (isMockModeEnabled()) {
             return
         }
-        val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(device, routerOsClientProperties.rest.port)
-        mikrotikClient.withSession(deviceRef) { session ->
-            session.set(path, id, args)
-        }
+        sessionFor(device).set(path, id, args)
+    }
+
+    private fun sessionFor(device: NetworkDevice): TrafficRouterOsSession {
+        return TrafficRouterOsSession(routerOsCommands, device.id)
     }
 
     @Deprecated("Use printOnDevice", ReplaceWith("printOnDevice(device, path, query)"))
@@ -299,33 +292,26 @@ class MikroTikConnectionService(
     
     fun closeConnection(deviceId: Int) {
         logger.info("🔌 [DISPOSITIVO-$deviceId] Cerrando conexión")
-        mikrotikClient.closeSession(deviceId.toString())
         logger.info("✅ [DISPOSITIVO-$deviceId] Conexión cerrada exitosamente")
     }
     
     fun closeAllConnections() {
-        val deviceIds = mikrotikClient.activeSessionDeviceIds()
-        logger.info("🔌 Cerrando todas las conexiones activas (${deviceIds.size} conexiones)")
-        deviceIds.forEach { deviceId ->
-            mikrotikClient.closeSession(deviceId)
-        }
+        logger.info("🔌 Cerrando scheduler de monitoreo")
         scheduler.shutdown()
-        logger.info("✅ Todas las conexiones cerradas y scheduler detenido")
+        logger.info("✅ Scheduler detenido")
     }
     
     fun isConnectionActive(deviceId: Int): Boolean {
-        val isActive = mikrotikClient.isSessionActive(deviceId.toString())
-        logger.debug("🔍 [DISPOSITIVO-$deviceId] Conexión activa: $isActive")
-        return isActive
+        logger.debug("🔍 [DISPOSITIVO-$deviceId] Conexión activa: false")
+        return false
     }
     
     fun getConnectionStats(): Map<String, Any> {
-        val deviceIds = mikrotikClient.activeSessionDeviceIds()
         val stats = mapOf(
-            "activeConnections" to deviceIds.size,
-            "connectionLocks" to deviceIds.size,
+            "activeConnections" to 0,
+            "connectionLocks" to 0,
             "schedulerActive" to !scheduler.isShutdown,
-            "connectedDevices" to deviceIds.mapNotNull { it.toIntOrNull() }
+            "connectedDevices" to emptyList<Int>()
         )
         
         logger.info("📊 Estadísticas de conexiones MikroTik: $stats")

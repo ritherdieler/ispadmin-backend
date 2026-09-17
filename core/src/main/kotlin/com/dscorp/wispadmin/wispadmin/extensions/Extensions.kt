@@ -1,7 +1,5 @@
 package com.dscorp.wispadmin.wispadmin.extensions
 
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.controller.ModuleException
 import com.dscorp.wispadmin.wispadmin.data.model.Modules
@@ -10,7 +8,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceDto
 import com.dscorp.wispadmin.wispadmin.service.EnvironmentService
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
-import com.dscorp.wispadmin.wispadmin.service.mikrotik.MikrotikDeviceRefMapper
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsGatewayAccessor
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsSession
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -98,30 +97,6 @@ object NetworkDeviceConnectionManager {
     }
 }
 
-object MikrotikClientAccessor {
-    private var client: MikrotikClient? = null
-    private var properties: RouterOsClientProperties? = null
-
-    fun setClient(client: MikrotikClient, properties: RouterOsClientProperties) {
-        this.client = client
-        this.properties = properties
-    }
-
-    fun client(): MikrotikClient {
-        return client ?: throw IllegalStateException("MikrotikClient is not initialized")
-    }
-
-    fun restPort(): Int {
-        return properties?.rest?.port ?: 443
-    }
-
-    @Deprecated("Classic API port is unused; REST remaps 8728 to rest.port", ReplaceWith("restPort()"))
-    fun classicPort(): Int {
-        return restPort()
-    }
-}
-
-
 fun String.getBaseIpFromRange(): String {
     val segment = this.split("/")
     val a = segment[0].split(".")
@@ -134,11 +109,9 @@ fun NetworkDeviceConnection.executeCommand(block: (session: MikrotikSession) -> 
     if (NetworkDeviceConnectionManager.isMikroTikMockModeEnabled()) {
         return
     }
-
-    val deviceRef = MikrotikDeviceRefMapper.toDeviceRef(this, MikrotikClientAccessor.restPort())
-    MikrotikClientAccessor.client().withSession(deviceRef) { session ->
-        block(session)
-    }
+    val hostDeviceId = (this as? NetworkDevice)?.id
+        ?: throw IllegalStateException("hostDeviceId is required to call Traffic")
+    block(TrafficRouterOsSession(TrafficRouterOsGatewayAccessor.useCase(), hostDeviceId))
 }
 
 

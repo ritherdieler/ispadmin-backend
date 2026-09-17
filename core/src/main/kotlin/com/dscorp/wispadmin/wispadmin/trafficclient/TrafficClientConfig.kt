@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.trafficclient
 
+import com.dscorp.wispadmin.routeros.port.RouterOsSessionFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.web.servlet.FilterRegistrationBean
@@ -36,4 +37,13 @@ class TrafficClientConfig {
         properties: TrafficClientProperties,
         @Qualifier("trafficRestTemplate") restTemplate: RestTemplate,
     ): TrafficHttpClient = TrafficHttpClient(properties, restTemplate)
+
+    @Bean
+    fun trafficRouterOsSessionFactory(
+        useCase: TrafficRouterOsCommandUseCase,
+    ): RouterOsSessionFactory {
+        return RouterOsSessionFactory { hostDeviceId ->
+            TrafficRouterOsSession(useCase, hostDeviceId)
+        }
+    }
 }

@@ -5,10 +5,10 @@ import com.dscorp.wispadmin.netdiag.domain.entity.NetDiagTarget
 import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.port.NetDiagDeviceDirectoryPort
 import com.dscorp.wispadmin.routeros.port.MikrotikAuthException
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.routeros.port.MikrotikUnreachableException
+import com.dscorp.wispadmin.routeros.port.RouterOsSessionFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -23,14 +23,14 @@ import java.util.Optional
 
 class MikrotikPollAdapterTest {
 
-    private val mikrotikClient = mockk<MikrotikClient>()
+    private val sessionFactory = mockk<RouterOsSessionFactory>()
     private val deviceDirectory = mockk<NetDiagDeviceDirectoryPort>()
     private val probeRunRepository = mockk<NetDiagProbeRunRepository>()
     private val objectMapper = ObjectMapper()
     private val netwatchAdapter = MikrotikNetwatchAdapter()
     private val opticalAdapter = MikrotikOpticalAdapter()
     private val adapter = MikrotikPollAdapter(
-        mikrotikClient = mikrotikClient,
+        sessionFactory = sessionFactory,
         deviceDirectory = deviceDirectory,
         probeRunRepository = probeRunRepository,
         objectMapper = objectMapper,
@@ -64,12 +64,7 @@ class MikrotikPollAdapterTest {
     fun `poll exitoso persiste probe_run SUCCESS con payload de interfaces health routerboard resource`() {
         every { deviceDirectory.findMikrotikDeviceRef(7L) } returns deviceRef
         val session = mockk<MikrotikSession>()
-        every {
-            mikrotikClient.withSession(deviceRef, any<(MikrotikSession) -> PollSnapshot>())
-        } answers {
-            val block = arg<(MikrotikSession) -> PollSnapshot>(1)
-            block(session)
-        }
+        every { sessionFactory.open(7) } returns session
         every { session.print("/interface") } returns listOf(
             mapOf("name" to "ether1", "type" to "ether", "running" to "true", "disabled" to "false"),
             mapOf("name" to "gre-tunnel1", "type" to "gre-tunnel", "running" to "true", "disabled" to "false")
@@ -106,9 +101,7 @@ class MikrotikPollAdapterTest {
     @Test
     fun `poll inalcanzable persiste probe_run FAILED con reason DEVICE_UNREACHABLE`() {
         every { deviceDirectory.findMikrotikDeviceRef(7L) } returns deviceRef
-        every {
-            mikrotikClient.withSession(deviceRef, any<(MikrotikSession) -> PollSnapshot>())
-        } throws MikrotikUnreachableException("down")
+        every { sessionFactory.open(7) } throws MikrotikUnreachableException("down")
         val saved = slot<NetDiagProbeRun>()
         every { probeRunRepository.save(capture(saved)) } answers { firstArg() }
 
@@ -129,17 +122,13 @@ class MikrotikPollAdapterTest {
 
         assertEquals("FAILED", result.status)
         assertEquals("DEVICE_NOT_FOUND", result.errorReasonCode)
-        verify(exactly = 0) {
-            mikrotikClient.withSession(any(), any<(MikrotikSession) -> PollSnapshot>())
-        }
+        verify(exactly = 0) { sessionFactory.open(any()) }
     }
 
     @Test
     fun `poll auth failure mapea AUTH_FAILURE`() {
         every { deviceDirectory.findMikrotikDeviceRef(7L) } returns deviceRef
-        every {
-            mikrotikClient.withSession(deviceRef, any<(MikrotikSession) -> PollSnapshot>())
-        } throws MikrotikAuthException("bad creds")
+        every { sessionFactory.open(7) } throws MikrotikAuthException("bad creds")
         every { probeRunRepository.save(any()) } answers { firstArg() }
 
         val result = adapter.poll(target)

@@ -6,15 +6,14 @@ import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.port.NetDiagDeviceDirectoryPort
 import com.dscorp.wispadmin.routeros.RouterOsUptimeParser
 import com.dscorp.wispadmin.routeros.port.MikrotikAuthException
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
 import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
 import com.dscorp.wispadmin.routeros.port.MikrotikException
 import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.routeros.port.MikrotikTimeoutException
 import com.dscorp.wispadmin.routeros.port.MikrotikUnreachableException
+import com.dscorp.wispadmin.routeros.port.RouterOsSessionFactory
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -23,7 +22,7 @@ import java.util.Optional
 @Service
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class MikrotikPollAdapter(
-    @Qualifier("netDiagMikrotikClient") private val mikrotikClient: MikrotikClient,
+    private val sessionFactory: RouterOsSessionFactory,
     private val deviceDirectory: NetDiagDeviceDirectoryPort,
     private val probeRunRepository: NetDiagProbeRunRepository,
     private val objectMapper: ObjectMapper,
@@ -47,9 +46,8 @@ class MikrotikPollAdapter(
         return try {
             val previousUptime = previousSuccessfulUptimeSeconds(target.id!!)
             val monitorConfig = parseMonitorConfig(target.monitorConfig)
-            val snapshot = mikrotikClient.withSession(deviceRef) { session ->
-                collectSnapshot(session, monitorConfig, previousUptime)
-            }
+            val session = sessionFactory.open(target.deviceRefId.toInt())
+            val snapshot = collectSnapshot(session, monitorConfig, previousUptime)
             val payload = objectMapper.writeValueAsString(snapshot)
             val finishedAt = Instant.now()
             probe.status = "SUCCESS"

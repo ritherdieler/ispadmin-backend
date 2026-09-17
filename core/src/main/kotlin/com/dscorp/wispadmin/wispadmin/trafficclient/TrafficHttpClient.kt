@@ -27,15 +27,27 @@ class TrafficHttpClient(
     }
 
     fun postJson(path: String): ResponseEntity<String> {
+        return postJson(path, null)
+    }
+
+    fun postJson(path: String, body: String?): ResponseEntity<String> {
         val base = properties.internalBaseUrl.trim().trimEnd('/')
         require(base.isNotEmpty()) { "traffic.internal-base-url is blank" }
         val headers = HttpHeaders()
         headers.set(CoreTrafficApiKeyFilter.HEADER, properties.apiKey)
         headers.accept = listOf(MediaType.APPLICATION_JSON)
+        if (body != null) {
+            headers.contentType = MediaType.APPLICATION_JSON
+        }
+        val entity = if (body == null) {
+            HttpEntity<Void>(headers)
+        } else {
+            HttpEntity(body, headers)
+        }
         return com.dscorp.wispadmin.transport.InternalJson.validate(restTemplate.exchange(
             java.net.URI.create("$base$path"),
             HttpMethod.POST,
-            HttpEntity<Void>(headers),
+            entity,
             String::class.java,
         ))
     }

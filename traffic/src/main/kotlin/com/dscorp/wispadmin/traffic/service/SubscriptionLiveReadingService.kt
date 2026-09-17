@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
 
-@Service
+@Service("trafficSubscriptionLiveReadingService")
 class SubscriptionLiveReadingService(
     private val routerRepository: TrafficRouterRepository,
     @Qualifier("trafficPollMikrotikClient")

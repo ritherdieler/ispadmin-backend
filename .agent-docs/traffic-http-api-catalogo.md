@@ -19,7 +19,13 @@ Auth: header `X-Traffic-Key` (`TRAFFIC_API_KEY`). Base interna staging: `http://
 | GET | `/api/traffic/v1/anomalies/changes` | Cursor de cambios para Health |
 | GET | `/api/traffic/v1/routers/{id}/latest-run` | Último poll de un router |
 | GET | `/api/traffic/v1/config` | `minimumCoveragePct` |
+| GET | `/api/traffic/v1/by-subscription/{id}/live-readings` | Lectura viva 360 (RouterOS) |
 | POST | `/api/traffic/v1/admin/poll` | Poll inmediato |
+| POST | `/api/traffic/v1/routeros/{hostDeviceId}/print` | Gateway RouterOS print |
+| POST | `/api/traffic/v1/routeros/{hostDeviceId}/add` | Gateway RouterOS add |
+| POST | `/api/traffic/v1/routeros/{hostDeviceId}/set` | Gateway RouterOS set |
+| POST | `/api/traffic/v1/routeros/{hostDeviceId}/remove` | Gateway RouterOS remove |
+| POST | `/api/traffic/v1/routeros/{hostDeviceId}/call` | Gateway RouterOS call |
 | GET | `/internal/traffic/targets` (core) | Directorio `{subscriptionId, ip, routerHint, plan*}`. Auth `X-Traffic-Key`; `PlatformAuthFilter` no exige JWT. |
 
 BFF público (core, `--with traffic`): mismas URLs de siempre (`/subscription/{id}/traffic*`, `/traffic/bandwidth/v1/*`).

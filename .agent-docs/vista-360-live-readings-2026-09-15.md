@@ -16,7 +16,7 @@ Path desplegado: `/ispadmin-staging/subscription/{id}/live-readings` (staging) o
 
 `PPPOE_DYNAMIC` no lee `rate` de simple queue. En `pppoe-in` el RX del router es upload del cliente y el TX es download.
 
-Core `SubscriptionLiveReadingService` (`repository` + `TrafficHttpClient` + env + `ObjectMapper`) arma query `accessMode`, `ip`, `pppoeLastIp`, `pppoeUsername`, `hostDeviceId`, `envTag`. Traffic `SubscriptionLiveReadingService` abre `trafficPollMikrotikClient`. Escrituras MK (colas, secret, cortes) siguen en Core. WS de tráfico por suscripción ya vivía en Traffic.
+Core `SubscriptionLiveReadingService` (`repository` + `TrafficHttpClient` + env + `ObjectMapper`) arma query `accessMode`, `ip`, `pppoeLastIp`, `pppoeUsername`, `hostDeviceId`, `envTag`. Traffic `SubscriptionLiveReadingService` abre `trafficPollMikrotikClient`. Escrituras MK (colas, secret, cortes) también van por Traffic (`[mikrotik-only-via-traffic-2026-09-16.md](./mikrotik-only-via-traffic-2026-09-16.md)`). WS de tráfico por suscripción ya vivía en Traffic.
 
 ## Tests
 

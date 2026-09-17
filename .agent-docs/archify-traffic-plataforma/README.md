@@ -7,4 +7,4 @@ Diagrama Archify (`architecture`, showcase) de cómo el WAR Traffic se integra c
 
 La UI fija del viewer queda en inglés (`html lang` fallback). El contenido del diagrama está en español.
 
-Hechos: clientes solo hablan con Core; Traffic polléa RouterOS REST, persiste rollups y publica `gigafiber.events`; el live 360 (`GET /subscription/{id}/live-readings`) va Core → Traffic HTTP → MikroTik.
+Hechos: clientes solo hablan con Core; Traffic es el único que abre RouterOS REST (poll, live 360 y escrituras). Core llama Traffic HTTP. Detalle: [mikrotik-only-via-traffic-2026-09-16.md](../mikrotik-only-via-traffic-2026-09-16.md).

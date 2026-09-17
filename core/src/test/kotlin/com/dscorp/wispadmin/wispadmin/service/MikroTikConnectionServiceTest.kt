@@ -1,63 +1,43 @@
 package com.dscorp.wispadmin.wispadmin.service
 
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
-import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
-import com.dscorp.wispadmin.routeros.port.MikrotikSession
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsCommandUseCase
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class MikroTikConnectionServiceTest {
 
-    private val mikrotikClient = mockk<MikrotikClient>(relaxed = true)
-    private val properties = RouterOsClientProperties().apply {
-        rest.port = 443
-    }
-
+    private val routerOsCommands = mockk<TrafficRouterOsCommandUseCase>(relaxed = true)
     private lateinit var service: MikroTikConnectionService
 
     @BeforeEach
     fun setUp() {
-        service = MikroTikConnectionService(mikrotikClient, properties)
+        service = MikroTikConnectionService(routerOsCommands)
     }
 
     @Test
-    fun `printOnDevice delegates to MikrotikClient session print`() {
-        val deviceRefSlot = slot<MikrotikDeviceRef>()
-        val session = mockk<MikrotikSession>()
-        every { session.print("/system/identity", emptyMap()) } returns listOf(mapOf("name" to "MK1"))
+    fun `printOnDevice delegates to Traffic gateway print`() {
         every {
-            mikrotikClient.withSession(capture(deviceRefSlot), any<(MikrotikSession) -> List<Map<String, String>>>())
-        } answers {
-            val block = arg<(MikrotikSession) -> List<Map<String, String>>>(1)
-            block(session)
-        }
+            routerOsCommands.print(1, "/system/identity", emptyMap(), emptyList())
+        } returns Result.success(listOf(mapOf("name" to "MK1")))
 
         val result = service.printOnDevice(sampleDevice(), "/system/identity")
 
         assertEquals(listOf(mapOf("name" to "MK1")), result)
-        assertEquals("1", deviceRefSlot.captured.id)
-        assertEquals(443, deviceRefSlot.captured.port)
-        verify(exactly = 1) { session.print("/system/identity", emptyMap()) }
+        verify(exactly = 1) { routerOsCommands.print(1, "/system/identity", emptyMap(), emptyList()) }
     }
 
     @Test
     fun `executeCommand maps legacy interface print to REST path`() {
-        val session = mockk<MikrotikSession>()
-        every { session.print("/interface", emptyMap()) } returns listOf(mapOf("name" to "ether1"))
         every {
-            mikrotikClient.withSession(any(), any<(MikrotikSession) -> List<Map<String, String>>>())
-        } answers {
-            val block = arg<(MikrotikSession) -> List<Map<String, String>>>(1)
-            block(session)
-        }
+            routerOsCommands.print(1, "/interface", emptyMap(), emptyList())
+        } returns Result.success(listOf(mapOf("name" to "ether1")))
 
         val result = service.executeCommand(sampleDevice(), "/interface/print")
 
@@ -66,17 +46,10 @@ class MikroTikConnectionServiceTest {
     }
 
     @Test
-    fun `callOnDevice delegates to MikrotikClient session call`() {
-        val session = mockk<MikrotikSession>()
+    fun `callOnDevice delegates to Traffic gateway call`() {
         every {
-            session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
-        } returns listOf(mapOf("tx-bits-per-second" to "8500000", "rx-bits-per-second" to "145000"))
-        every {
-            mikrotikClient.withSession(any(), any<(MikrotikSession) -> List<Map<String, String>>>())
-        } answers {
-            val block = arg<(MikrotikSession) -> List<Map<String, String>>>(1)
-            block(session)
-        }
+            routerOsCommands.call(1, "/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
+        } returns Result.success(listOf(mapOf("tx-bits-per-second" to "8500000", "rx-bits-per-second" to "145000")))
 
         val result = service.callOnDevice(
             sampleDevice(),
@@ -87,54 +60,45 @@ class MikroTikConnectionServiceTest {
         assertEquals(1, result.size)
         assertEquals("8500000", result.first()["tx-bits-per-second"])
         verify(exactly = 1) {
-            session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
+            routerOsCommands.call(1, "/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf6>", "once" to ""))
         }
     }
 
     @Test
-    fun `setOnDevice delegates to session set`() {
-        val session = mockk<MikrotikSession>(relaxed = true)
+    fun `setOnDevice delegates to Traffic gateway set`() {
         every {
-            mikrotikClient.withSession(any(), any<(MikrotikSession) -> Unit>())
-        } answers {
-            val block = arg<(MikrotikSession) -> Unit>(1)
-            block(session)
-        }
+            routerOsCommands.set(1, "/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
+        } returns Result.success(Unit)
 
         service.setOnDevice(sampleDevice(), "/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
 
         verify(exactly = 1) {
-            session.set("/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
+            routerOsCommands.set(1, "/ip/firewall/address-list", "*9", mapOf("disabled" to "no"))
         }
     }
 
     @Test
-    fun `closeConnection delegates to MikrotikClient`() {
+    fun `closeConnection does not open RouterOS`() {
         service.closeConnection(8)
-        verify(exactly = 1) { mikrotikClient.closeSession("8") }
+        verify(exactly = 0) { routerOsCommands.print(any(), any(), any(), any()) }
     }
 
     @Test
-    fun `isConnectionActive delegates to MikrotikClient`() {
-        every { mikrotikClient.isSessionActive("3") } returns true
-        assertTrue(service.isConnectionActive(3))
+    fun `isConnectionActive is false for stateless Traffic sessions`() {
+        assertFalse(service.isConnectionActive(3))
     }
 
     @Test
     fun `enableAddressListEntry normalizes id without asterisk`() {
-        val session = mockk<MikrotikSession>(relaxed = true)
         every {
-            mikrotikClient.withSession(any(), any<(MikrotikSession) -> Unit>())
-        } answers {
-            val block = arg<(MikrotikSession) -> Unit>(1)
-            block(session)
-        }
+            routerOsCommands.set(1, "/ip/firewall/address-list", "*19916B", mapOf("disabled" to "no"))
+        } returns Result.success(Unit)
 
         val ok = service.enableAddressListEntry(sampleDevice(), "19916B")
 
         assertTrue(ok)
         verify(exactly = 1) {
-            session.set("/ip/firewall/address-list", "*19916B", mapOf("disabled" to "no"))
+            routerOsCommands.set(1, "/ip/firewall/address-list", "*19916B", mapOf("disabled" to "no"))
         }
     }
 

@@ -6,10 +6,13 @@ import com.dscorp.wispadmin.netdiag.domain.repository.NetDiagProbeRunRepository
 import com.dscorp.wispadmin.netdiag.port.NetDiagDeviceDirectoryPort
 import com.dscorp.wispadmin.routeros.Mk1LiveSupport
 import com.dscorp.wispadmin.routeros.adapter.RouterOs7RestAdapter
+import com.dscorp.wispadmin.routeros.port.MikrotikCommandException
+import com.dscorp.wispadmin.routeros.port.MikrotikDeviceRef
+import com.dscorp.wispadmin.routeros.port.MikrotikSession
+import com.dscorp.wispadmin.routeros.port.RouterOsSessionFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -24,8 +27,13 @@ class MikrotikPollAdapterLiveTest {
     private val probeRunRepository = mockk<NetDiagProbeRunRepository>()
     private val deviceDirectory = mockk<NetDiagDeviceDirectoryPort>()
     private val objectMapper = ObjectMapper()
+    private val liveClient = RouterOs7RestAdapter(Mk1LiveSupport.liveRestProperties(timeoutMs = 30000))
     private val adapter = MikrotikPollAdapter(
-        mikrotikClient = RouterOs7RestAdapter(Mk1LiveSupport.liveRestProperties(timeoutMs = 30000)),
+        sessionFactory = RouterOsSessionFactory { hostDeviceId ->
+            val device = deviceDirectory.findMikrotikDeviceRef(hostDeviceId.toLong())
+                ?: error("device ref missing")
+            LiveDelegatingSession(liveClient, device)
+        },
         deviceDirectory = deviceDirectory,
         probeRunRepository = probeRunRepository,
         objectMapper = objectMapper,
@@ -61,5 +69,34 @@ class MikrotikPollAdapterLiveTest {
         assertTrue(result.snapshot!!.interfaces.any { it.name == "sfp-sfpplus1" })
         assertNotNull(result.probeRun.latencyMs)
         assertTrue(result.probeRun.latencyMs!! < 30000)
+    }
+
+    private class LiveDelegatingSession(
+        private val client: RouterOs7RestAdapter,
+        private val device: MikrotikDeviceRef,
+    ) : MikrotikSession {
+        override fun print(path: String, query: Map<String, String>, proplist: List<String>): List<Map<String, String>> {
+            return client.withSession(device) { it.print(path, query, proplist) }
+        }
+
+        override fun call(path: String, args: Map<String, String>): List<Map<String, String>> {
+            return client.withSession(device) { it.call(path, args) }
+        }
+
+        override fun add(path: String, args: Map<String, String>) {
+            client.withSession(device) { it.add(path, args) }
+        }
+
+        override fun set(path: String, id: String, args: Map<String, String>) {
+            client.withSession(device) { it.set(path, id, args) }
+        }
+
+        override fun remove(path: String, id: String) {
+            client.withSession(device) { it.remove(path, id) }
+        }
+
+        override fun execute(command: String): List<Map<String, String>> {
+            throw MikrotikCommandException("Raw execute is not supported: $command")
+        }
     }
 }

@@ -7,4 +7,4 @@ Diagrama Archify (`architecture`, showcase) de quién abre REST `:443` hoy.
 
 La UI fija del viewer queda en inglés. El contenido está en español.
 
-Tres clientes REST: Core wispadmin, NetDiag y Traffic. La OLT solo la toca el Gateway; MikroTik debería quedar igual detrás de Traffic.
+Un cliente REST de runtime: Traffic. Core, NetDiag y consola llaman HTTP a Traffic. La OLT solo la toca el Gateway. Detalle: [mikrotik-only-via-traffic-2026-09-16.md](../mikrotik-only-via-traffic-2026-09-16.md).

@@ -1,29 +1,25 @@
 package com.dscorp.wispadmin.wispadmin.config
 
-import com.dscorp.wispadmin.routeros.config.RouterOsClientProperties
-import com.dscorp.wispadmin.routeros.port.MikrotikClient
-import com.dscorp.wispadmin.wispadmin.extensions.MikrotikClientAccessor
 import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionHelper
 import com.dscorp.wispadmin.wispadmin.extensions.NetworkDeviceConnectionManager
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsCommandUseCase
+import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficRouterOsGatewayAccessor
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.annotation.Configuration
 import javax.annotation.PostConstruct
 
 @Configuration
 class NetworkDeviceConnectionConfig {
-    
+
     @Autowired
     private lateinit var helper: NetworkDeviceConnectionHelper
 
     @Autowired
-    private lateinit var mikrotikClient: MikrotikClient
+    private lateinit var routerOsCommands: TrafficRouterOsCommandUseCase
 
-    @Autowired
-    private lateinit var routerOsClientProperties: RouterOsClientProperties
-    
     @PostConstruct
     fun init() {
         NetworkDeviceConnectionManager.setHelper(helper)
-        MikrotikClientAccessor.setClient(mikrotikClient, routerOsClientProperties)
+        TrafficRouterOsGatewayAccessor.setUseCase(routerOsCommands)
     }
 }
