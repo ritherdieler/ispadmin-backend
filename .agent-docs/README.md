@@ -2,6 +2,7 @@
 
 | Tema | Archivo |
 |------|---------|
+| **Cutover prod ← develop (preparación 2026-09-16, sin deploy)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md) |
 | **Pruebas: camino más corto (local antes que deploy)** | [pruebas-camino-mas-corto.md](./pruebas-camino-mas-corto.md) |
 | **Pruebas largas: consola visible (agentes)** | [agente-pruebas-largas-consola-visible-2026-09-15.md](./agente-pruebas-largas-consola-visible-2026-09-15.md) |
 | **Pruebas locales Gateway + ACS VPS + MK2 + ONU `lab`** | [pruebas-local-gateway-acs-lab.md](./pruebas-local-gateway-acs-lab.md) |

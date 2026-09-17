@@ -20,6 +20,8 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 
 Último deploy staging: `./scripts/deploy.sh --war-only --env staging --with oltgateway,traffic,acs,servicehealth` → `1.0.3+a1f0dfe` (`develop` Traffic + open CGLIB SmartOLT). Detalle: [deploy-staging-traffic-zte-2026-09-16.md](./deploy-staging-traffic-zte-2026-09-16.md). Prod y backoffice no se tocaron. Staging split ahora también construye `ispadmin-staging-acs.war` (ACS WAR; solo Gateway lo llama).
 
+Preparación para llevar **prod** al código/esquema de `develop` (V52 partido, overlay, schemas `prod_*`, clon Flyway scratch): **no desplegar** hasta el criterio del runbook. Detalle: [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md).
+
 ## Resumen
 
 | Escenario | Comando |
