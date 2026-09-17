@@ -10,6 +10,7 @@ import com.dscorp.wispadmin.traffic.port.TrafficDirectoryPort
 import com.dscorp.wispadmin.traffic.repository.TrafficRouterRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -26,7 +27,7 @@ class SubscriptionTrafficLiveMonitorTest {
         val routers = mockk<TrafficRouterRepository>()
         val mikrotik = mockk<MikrotikClient>()
         val session = mockk<MikrotikSession>()
-        every { directory.list() } returns emptyList()
+        every { directory.find(5) } returns null
         every { routers.findById(8) } returns Optional.of(
             TrafficRouter(id = 8, name = "MK2", host = "38.224.231.4", username = "u", password = "p"),
         )
@@ -65,6 +66,8 @@ class SubscriptionTrafficLiveMonitorTest {
             assertTrue(latch.await(3, TimeUnit.SECONDS), "expected an in-process live tick")
             val tick = ticks.first() as SubscriptionTrafficLiveTickDto
             assertEquals(5, tick.subscriptionId)
+            verify(exactly = 1) { directory.find(5) }
+            verify(exactly = 0) { directory.list() }
         } finally {
             monitor.stop(5)
             monitor.close()

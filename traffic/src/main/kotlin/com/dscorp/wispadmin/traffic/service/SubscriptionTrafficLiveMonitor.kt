@@ -46,7 +46,7 @@ class SubscriptionTrafficLiveMonitor(
     override fun start(command: Map<String, Any>, receive: (Any) -> Unit) {
         val subscriptionId = (command["subscriptionId"] as? Number)?.toInt() ?: return
         val directoryTarget = try {
-            directory.list().firstOrNull { it.subscriptionId == subscriptionId }
+            directory.find(subscriptionId)
         } catch (ex: Exception) {
             logger.warn("Live traffic directory failed for {}: {}", subscriptionId, ex.message)
             null

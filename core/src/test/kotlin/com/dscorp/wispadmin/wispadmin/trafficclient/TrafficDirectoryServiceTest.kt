@@ -20,6 +20,26 @@ class TrafficDirectoryServiceTest {
     private val service = TrafficDirectoryService(repository)
 
     @Test
+    fun `find emite un target por id sin listar el padron`() {
+        val subscription = subscription(
+            id = 2360,
+            firstName = "EEEFIBER",
+            lastName = "PRUEBA",
+            ip = "192.168.250.20",
+            accessMode = AccessMode.STATIC_IP,
+            installationType = InstallationType.FIBER,
+        )
+        every { repository.findById(2360) } returns java.util.Optional.of(subscription)
+
+        val target = service.find(2360)
+
+        assertEquals(2360, target!!.subscriptionId)
+        assertEquals("192.168.250.20", target.ip)
+        assertNull(target.pppoeUsername)
+        io.mockk.verify(exactly = 0) { repository.findForTrafficPolling() }
+    }
+
+    @Test
     fun `lista id ip y plan desde suscripciones de poll`() {
         val subscription = subscription(
             id = 2360,

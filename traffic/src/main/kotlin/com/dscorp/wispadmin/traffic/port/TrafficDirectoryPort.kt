@@ -14,4 +14,5 @@ data class TrafficDirectoryTarget(
 
 interface TrafficDirectoryPort {
     fun list(): List<TrafficDirectoryTarget>
+    fun find(subscriptionId: Int): TrafficDirectoryTarget?
 }

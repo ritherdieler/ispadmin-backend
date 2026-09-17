@@ -18,7 +18,7 @@ class TrafficApiKeyFilter(
         if ("OPTIONS".equals(request.method, ignoreCase = true)) return true
         val path = gatewayPath(request)
         if (path == "/actuator/health" || path.startsWith("/actuator/health/")) return true
-        return !path.startsWith("/api/traffic")
+        return !isProtected(path)
     }
 
     override fun doFilterInternal(
@@ -45,6 +45,11 @@ class TrafficApiKeyFilter(
 
     companion object {
         const val HEADER = "X-Traffic-Key"
+        private val LEGACY_ADMIN = setOf("/traffic/poll", "/traffic/aggregation/catch-up")
+
+        fun isProtected(path: String): Boolean {
+            return path.startsWith("/api/traffic") || path in LEGACY_ADMIN
+        }
 
         fun gatewayPath(request: HttpServletRequest): String {
             val servletPath = request.servletPath?.takeIf { it.isNotBlank() }

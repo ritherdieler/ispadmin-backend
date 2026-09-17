@@ -16,5 +16,6 @@ class HttpTrafficDirectoryClientTest {
             com.fasterxml.jackson.databind.ObjectMapper(),
         )
         assertTrue(client.list().isEmpty())
+        assertTrue(client.find(12) == null)
     }
 }

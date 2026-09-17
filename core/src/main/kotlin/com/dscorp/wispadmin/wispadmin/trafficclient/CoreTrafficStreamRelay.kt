@@ -39,7 +39,7 @@ class CoreTrafficStreamRelay(
 
     private fun liveStartCommand(id: Int): Map<String, Any> {
         val command = mutableMapOf<String, Any>("subscriptionId" to id)
-        val entry = directory.list().firstOrNull { it.subscriptionId == id } ?: return command
+        val entry = directory.find(id) ?: return command
         val ip = entry.ip.trim().takeIf { it.isNotEmpty() }
         val pppoe = entry.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() }
         check(ip == null || pppoe == null) { "Traffic directory emitted ip and pppoeUsername for $id" }

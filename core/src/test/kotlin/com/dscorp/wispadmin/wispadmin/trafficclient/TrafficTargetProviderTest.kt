@@ -25,4 +25,24 @@ class TrafficTargetProviderTest {
         mvc.get("/internal/traffic/targets/page?after=0&size=0").andExpect { status { isBadRequest() } }
         verify(exactly=2) { repo.findTrafficTargetsAfter(any(), any()) }
     }
+
+    @Test fun `get by id returns one target without paging the directory`() {
+        val repo = mockk<SubscriptionRepository>()
+        val row = Subscription(
+            equipmentCondition = com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition.LOAN,
+            id = 2360,
+            ip = "192.168.250.20",
+        )
+        every { repo.findById(2360) } returns java.util.Optional.of(row)
+        every { repo.findById(999) } returns java.util.Optional.empty()
+        val mvc = MockMvcBuilders.standaloneSetup(TrafficDirectoryController(TrafficDirectoryService(repo))).build()
+        mvc.get("/internal/traffic/targets/2360").andExpect {
+            status { isOk() }
+            jsonPath("$.subscriptionId") { value(2360) }
+            jsonPath("$.ip") { value("192.168.250.20") }
+        }
+        mvc.get("/internal/traffic/targets/999").andExpect { status { isNotFound() } }
+        verify(exactly = 0) { repo.findForTrafficPolling() }
+        verify(exactly = 0) { repo.findTrafficTargetsAfter(any(), any()) }
+    }
 }

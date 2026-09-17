@@ -42,9 +42,9 @@ open class SubscriptionTrafficQueryService(
         val rangeFrom = from ?: defaultFrom(normalized, rangeTo)
         val points = when (normalized) {
             "sample" -> sampleRepository
-                .findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(subscriptionId, rangeFrom, rangeTo)
+                .findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(subscriptionId, rangeFrom, rangeTo)
+                .asReversed()
                 .filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }
-                .takeLast(MAX_POINTS)
                 .map {
                     SubscriptionTrafficPointDto(
                         bucketStart = it.bucketStart.toString(),
@@ -55,8 +55,8 @@ open class SubscriptionTrafficQueryService(
                     )
                 }
             "hourly" -> hourlyRepository
-                .findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(subscriptionId, rangeFrom, rangeTo)
-                .takeLast(MAX_POINTS)
+                .findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(subscriptionId, rangeFrom, rangeTo)
+                .asReversed()
                 .map {
                     SubscriptionTrafficPointDto(
                         bucketStart = it.bucketStart.toString(),
@@ -67,12 +67,12 @@ open class SubscriptionTrafficQueryService(
                     )
                 }
             "daily" -> dailyRepository
-                .findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(
+                .findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(
                     subscriptionId,
                     rangeFrom.toLocalDate(),
                     rangeTo.toLocalDate()
                 )
-                .takeLast(MAX_POINTS)
+                .asReversed()
                 .map {
                     SubscriptionTrafficPointDto(
                         bucketStart = it.bucketStart.toString(),
@@ -103,9 +103,9 @@ open class SubscriptionTrafficQueryService(
         val rangeFrom = from ?: defaultFrom(normalized, rangeTo)
         val points = when (normalized) {
             "sample" -> sampleRepository
-                .findByClientIpAndBucketStartBetweenOrderByBucketStartAsc(clientIp, rangeFrom, rangeTo)
+                .findTop500ByClientIpAndBucketStartBetweenOrderByBucketStartDesc(clientIp, rangeFrom, rangeTo)
+                .asReversed()
                 .filter { it.sampleStatus == TrafficSampleStatus.OK && it.rxBytesDelta != null && it.txBytesDelta != null }
-                .takeLast(MAX_POINTS)
                 .map {
                     SubscriptionTrafficPointDto(
                         bucketStart = it.bucketStart.toString(),

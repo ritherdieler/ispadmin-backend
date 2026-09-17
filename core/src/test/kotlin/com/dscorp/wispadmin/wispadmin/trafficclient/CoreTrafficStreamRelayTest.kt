@@ -16,15 +16,15 @@ class CoreTrafficStreamRelayTest {
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()
         every { subscriptions.existsById(7) } returns true
-        every { directory.list() } returns listOf(
-            TrafficDirectoryEntryDto(subscriptionId = 7, ip = "192.168.250.16", routerHint = 8),
-        )
+        every { directory.find(7) } returns TrafficDirectoryEntryDto(subscriptionId = 7, ip = "192.168.250.16", routerHint = 8)
         val callback=slot<(Any)->Unit>()
         every { upstream.start(match<Map<String, Any>> { it["subscriptionId"] == 7 },capture(callback)) } just Runs
         val relay=CoreTrafficStreamRelay(upstream,messaging,subscriptions,directory)
         relay.start(mapOf("subscriptionId" to 7),headers("a","TECHNICIAN"))
         relay.start(mapOf("subscriptionId" to 7),headers("b","ADMIN"))
         callback.captured(mapOf("subscriptionId" to 7,"rxMbps" to 20.0))
+        verify(exactly=1) { directory.find(7) }
+        verify(exactly=0) { directory.list() }
         verify(exactly=1) { upstream.start(match<Map<String, Any>> { it["subscriptionId"] == 7 && it["ip"] == "192.168.250.16" && it["routerHint"] == 8 },any()) }
         verify { messaging.convertAndSend("/topic/subscription-traffic/7",any<Any>()) }
         relay.disconnect("a")
@@ -38,9 +38,7 @@ class CoreTrafficStreamRelayTest {
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()
         every { subscriptions.existsById(5) } returns true
-        every { directory.list() } returns listOf(
-            TrafficDirectoryEntryDto(subscriptionId = 5, ip = "192.168.250.20", routerHint = 8, pppoeUsername = null),
-        )
+        every { directory.find(5) } returns TrafficDirectoryEntryDto(subscriptionId = 5, ip = "192.168.250.20", routerHint = 8, pppoeUsername = null)
         val relay=CoreTrafficStreamRelay(upstream,mockk(relaxed=true),subscriptions,directory)
         relay.start(mapOf("subscriptionId" to 5, "ip" to "10.1.1.1", "pppoeUsername" to "gf5"),headers("a","TECHNICIAN"))
         verify {
@@ -60,9 +58,7 @@ class CoreTrafficStreamRelayTest {
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()
         every { subscriptions.existsById(6) } returns true
-        every { directory.list() } returns listOf(
-            TrafficDirectoryEntryDto(subscriptionId = 6, ip = "", routerHint = 8, pppoeUsername = "gf6"),
-        )
+        every { directory.find(6) } returns TrafficDirectoryEntryDto(subscriptionId = 6, ip = "", routerHint = 8, pppoeUsername = "gf6")
         val relay=CoreTrafficStreamRelay(upstream,mockk(relaxed=true),subscriptions,directory)
         relay.start(mapOf("subscriptionId" to 6),headers("a","TECHNICIAN"))
         verify {
@@ -82,9 +78,7 @@ class CoreTrafficStreamRelayTest {
         val subscriptions=mockk<SubscriptionRepository>()
         val directory=mockk<TrafficDirectoryService>()
         every { subscriptions.existsById(5) } returns true
-        every { directory.list() } returns listOf(
-            TrafficDirectoryEntryDto(subscriptionId = 5, ip = "192.168.250.20", routerHint = 8, pppoeUsername = null),
-        )
+        every { directory.find(5) } returns TrafficDirectoryEntryDto(subscriptionId = 5, ip = "192.168.250.20", routerHint = 8, pppoeUsername = null)
         val relay=CoreTrafficStreamRelay(upstream,mockk(relaxed=true),subscriptions,directory)
         relay.start(mapOf("subscriptionId" to 5),headers("a","TECHNICIAN"))
         verify {

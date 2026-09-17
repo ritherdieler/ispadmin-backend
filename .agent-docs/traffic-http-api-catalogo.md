@@ -27,5 +27,9 @@ Auth: header `X-Traffic-Key` (`TRAFFIC_API_KEY`). Base interna staging: `http://
 | POST | `/api/traffic/v1/routeros/{hostDeviceId}/remove` | Gateway RouterOS remove |
 | POST | `/api/traffic/v1/routeros/{hostDeviceId}/call` | Gateway RouterOS call |
 | GET | `/internal/traffic/targets` (core) | Directorio `{subscriptionId, ip, routerHint, plan*}`. Auth `X-Traffic-Key`; `PlatformAuthFilter` no exige JWT. |
+| GET | `/internal/traffic/targets/{id}` (core) | Un target. 404 si no entra al XOR IP/PPPoE. |
+| GET | `/internal/traffic/targets/page` (core) | Página cursor del directorio. |
+| POST | `/traffic/poll` | Legacy admin poll. Ahora exige `X-Traffic-Key`. Canónico: `/api/traffic/v1/admin/poll`. |
+| POST | `/traffic/aggregation/catch-up` | Legacy catch-up. Ahora exige `X-Traffic-Key`. |
 
 BFF público (core, `--with traffic`): mismas URLs de siempre (`/subscription/{id}/traffic*`, `/traffic/bandwidth/v1/*`).

@@ -12,13 +12,31 @@ class TrafficBoundarySecurityTest {
     @Test
     fun `non traffic routes are not gated by the traffic key`() {
         val filter = TrafficApiKeyFilter(TrafficProperties().apply { apiKey = "test-key" }, ObjectMapper())
-        for (path in listOf("/traffic/poll", "/traffic/aggregation/catch-up", "/subscription/1/traffic", "/traffic/network/insights", "/unknown")) {
+        for (path in listOf("/subscription/1/traffic", "/traffic/network/insights", "/unknown")) {
             for (method in listOf("GET", "POST")) {
                 val response = MockHttpServletResponse()
                 var called = false
                 filter.doFilter(MockHttpServletRequest(method, path), response) { _, _ -> called = true }
                 assertTrue(called, path)
             }
+        }
+    }
+
+    @Test
+    fun `legacy poll and catch-up require the traffic key`() {
+        val filter = TrafficApiKeyFilter(TrafficProperties().apply { apiKey = "test-key" }, ObjectMapper())
+        for (path in listOf("/traffic/poll", "/traffic/aggregation/catch-up")) {
+            val missing = MockHttpServletResponse()
+            var calledWithoutKey = false
+            filter.doFilter(MockHttpServletRequest("POST", path), missing) { _, _ -> calledWithoutKey = true }
+            assertFalse(calledWithoutKey, path)
+            assertEquals(401, missing.status)
+
+            val allowed = MockHttpServletResponse()
+            var calledWithKey = false
+            val request = MockHttpServletRequest("POST", path).apply { addHeader("X-Traffic-Key", "test-key") }
+            filter.doFilter(request, allowed) { _, _ -> calledWithKey = true }
+            assertTrue(calledWithKey, path)
         }
     }
 
@@ -47,7 +65,10 @@ class TrafficBoundarySecurityTest {
     @Test
     fun `filter registration protects only traffic API paths`() {
         val registration = TrafficWebConfig().trafficApiKeyFilterRegistration(TrafficProperties(), ObjectMapper())
-        assertEquals(listOf("/api/traffic/*"), registration.urlPatterns.toList())
+        assertEquals(
+            listOf("/api/traffic/*", "/traffic/poll", "/traffic/aggregation/catch-up"),
+            registration.urlPatterns.toList(),
+        )
     }
 
     @Test

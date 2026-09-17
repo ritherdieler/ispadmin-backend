@@ -29,6 +29,12 @@ interface SubscriptionTrafficSampleRepository : JpaRepository<SubscriptionTraffi
         to: LocalDateTime
     ): List<SubscriptionTrafficSample>
 
+    fun findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(
+        subscriptionId: Int,
+        from: LocalDateTime,
+        to: LocalDateTime
+    ): List<SubscriptionTrafficSample>
+
     fun findTopBySubscriptionIdOrderByBucketStartDesc(subscriptionId: Int): SubscriptionTrafficSample?
 
     fun findBySubscriptionIdAndBucketStart(subscriptionId: Int, bucketStart: LocalDateTime): SubscriptionTrafficSample?
@@ -38,6 +44,12 @@ interface SubscriptionTrafficSampleRepository : JpaRepository<SubscriptionTraffi
     fun findTopByClientIpOrderByBucketStartDesc(clientIp: String): SubscriptionTrafficSample?
 
     fun findByClientIpAndBucketStartBetweenOrderByBucketStartAsc(
+        clientIp: String,
+        from: LocalDateTime,
+        to: LocalDateTime
+    ): List<SubscriptionTrafficSample>
+
+    fun findTop500ByClientIpAndBucketStartBetweenOrderByBucketStartDesc(
         clientIp: String,
         from: LocalDateTime,
         to: LocalDateTime
@@ -271,6 +283,12 @@ interface SubscriptionTrafficHourlyRepository : JpaRepository<SubscriptionTraffi
         to: LocalDateTime
     ): List<SubscriptionTrafficHourly>
 
+    fun findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(
+        subscriptionId: Int,
+        from: LocalDateTime,
+        to: LocalDateTime
+    ): List<SubscriptionTrafficHourly>
+
     fun findBySubscriptionIdAndBucketStart(subscriptionId: Int, bucketStart: LocalDateTime): SubscriptionTrafficHourly?
 
     @Modifying
@@ -403,6 +421,12 @@ interface SubscriptionTrafficHourlyRepository : JpaRepository<SubscriptionTraffi
 
 interface SubscriptionTrafficDailyRepository : JpaRepository<SubscriptionTrafficDaily, Long> {
     fun findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(
+        subscriptionId: Int,
+        from: LocalDate,
+        to: LocalDate
+    ): List<SubscriptionTrafficDaily>
+
+    fun findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(
         subscriptionId: Int,
         from: LocalDate,
         to: LocalDate

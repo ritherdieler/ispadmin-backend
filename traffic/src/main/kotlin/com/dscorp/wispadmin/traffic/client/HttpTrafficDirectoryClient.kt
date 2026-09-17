@@ -8,7 +8,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 @Component
@@ -47,6 +49,24 @@ class HttpTrafficDirectoryClient(
             } else {
                 throw ex
             }
+        }
+    }
+
+    override fun find(subscriptionId: Int): TrafficDirectoryTarget? {
+        val base = properties.coreBaseUrl.trim().trimEnd('/')
+        if (base.isEmpty()) return null
+        val headers = HttpHeaders()
+        headers.set(TRAFFIC_KEY_HEADER, properties.apiKey)
+        return try {
+            val response = restTemplate.exchange(
+                "$base/internal/traffic/targets/$subscriptionId",
+                HttpMethod.GET,
+                HttpEntity<Void>(headers),
+                String::class.java,
+            )
+            objectMapper.readValue(response.body, TrafficDirectoryTarget::class.java)
+        } catch (ex: HttpClientErrorException) {
+            if (ex.statusCode == HttpStatus.NOT_FOUND) null else throw ex
         }
     }
 

@@ -31,7 +31,7 @@ class SubscriptionTrafficQueryServiceTest {
     fun `getSeries retorna puntos sample`() {
         val bucket = LocalDateTime.of(2026, 8, 27, 10, 0)
         every {
-            sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())
+            sampleRepository.findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(1, any(), any())
         } returns listOf(
             SubscriptionTrafficSample(
                 subscriptionId = 1,
@@ -56,7 +56,7 @@ class SubscriptionTrafficQueryServiceTest {
         val t1 = LocalDateTime.of(2026, 8, 20, 10, 0)
         val t2 = LocalDateTime.of(2026, 8, 21, 10, 0)
         every {
-            sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(10, any(), any())
+            sampleRepository.findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(10, any(), any())
         } returns listOf(
             SubscriptionTrafficSample(
                 clientIp = "192.168.250.20",
@@ -110,8 +110,8 @@ class SubscriptionTrafficQueryServiceTest {
             )
         }
         every {
-            sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())
-        } returns samples
+            sampleRepository.findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(1, any(), any())
+        } returns samples.takeLast(500).reversed()
 
         val series = service.getSeries(1, "sample", null, LocalDateTime.of(2026, 8, 28, 0, 0))
 
@@ -119,6 +119,12 @@ class SubscriptionTrafficQueryServiceTest {
         assertEquals(500, series!!.points.size)
         assertEquals(100, series.points.first().rxBytes)
         assertEquals(599, series.points.last().rxBytes)
+        io.mockk.verify(exactly = 1) {
+            sampleRepository.findTop500BySubscriptionIdAndBucketStartBetweenOrderByBucketStartDesc(1, any(), any())
+        }
+        io.mockk.verify(exactly = 0) {
+            sampleRepository.findBySubscriptionIdAndBucketStartBetweenOrderByBucketStartAsc(1, any(), any())
+        }
     }
 
     @Test

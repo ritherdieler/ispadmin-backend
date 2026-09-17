@@ -14,6 +14,11 @@ class TrafficDirectoryService(
         return subscriptionRepository.findForTrafficPolling().mapNotNull { it.toEntry() }
     }
 
+    fun find(subscriptionId: Int): TrafficDirectoryEntryDto? {
+        val subscription = subscriptionRepository.findById(subscriptionId).orElse(null) ?: return null
+        return subscription.toEntry()
+    }
+
     fun page(after: Int, size: Int): TrafficTargetPage {
         if (after < 0 || size !in 1..200) throw org.springframework.web.server.ResponseStatusException(
             org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid target page")

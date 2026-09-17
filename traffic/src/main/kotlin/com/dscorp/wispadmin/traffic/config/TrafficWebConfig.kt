@@ -15,7 +15,7 @@ class TrafficWebConfig {
     ): FilterRegistrationBean<TrafficApiKeyFilter> {
         val registration = FilterRegistrationBean<TrafficApiKeyFilter>()
         registration.filter = TrafficApiKeyFilter(properties, objectMapper)
-        registration.addUrlPatterns("/api/traffic/*")
+        registration.addUrlPatterns("/api/traffic/*", "/traffic/poll", "/traffic/aggregation/catch-up")
         registration.order = 26
         return registration
     }
