@@ -43,3 +43,14 @@ Preflight: cadena FIBER/TR-069 completa. `traffic.poll.enabled=true`.
 | Prod `/ispadmin/` | 200 (no se tocó) |
 
 WAR único Core con `oltgateway`, `traffic`, `acs`, `servicehealth` in-process.
+
+## E2E ZTE lab (`ZTEGDC47BFFD`)
+
+Script: `IpsAdmin-android app/scripts/e2e_register_fiber_staging_espresso.sh` (solo flags). Cleanup `auto`. WiFi `ztelab` / `11111111` (5 GHz `ztelab - 5G`).
+
+| Flujo | Resultado | Sub | Detalle |
+|-------|-----------|-----|---------|
+| `--access-mode STATIC_IP` | **PASS** | `#33` | IP `192.168.250.10` · DNI `99613071` · TR-069 COMPLETE · cleanup OK |
+| `--access-mode pppoe` → `PPPOE_DYNAMIC` | **PASS** | `#34` | PPPoE `gf34` · DNI `99613387` · TR-069 COMPLETE · cleanup OK |
+
+Backoffice: Vite `--mode staging` en `http://localhost:3002` (no VPS).
