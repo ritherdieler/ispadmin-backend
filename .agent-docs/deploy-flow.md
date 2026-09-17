@@ -18,7 +18,7 @@ Fix CORS 401 (`CorsFilter` antes de `PlatformAuthFilter`): [fix-cors-401-platfor
 
 ---
 
-Último deploy staging: `./scripts/deploy.sh --war-only --env staging --with oltgateway,traffic,acs,servicehealth` → `1.0.3+4ee17ee` (WAR único `ispadmin-staging` con stack acumulado + logs e2e). Detalle: [deploy-staging-e2e-console-logs-2026-09-16.md](./deploy-staging-e2e-console-logs-2026-09-16.md). Prod y backoffice no se tocaron. Staging split ahora también construye `ispadmin-staging-acs.war` (ACS WAR; solo Gateway lo llama).
+Último deploy staging: `./scripts/deploy.sh --war-only --env staging --with oltgateway,traffic,acs,servicehealth` → `1.0.3+a1f0dfe` (`develop` Traffic + open CGLIB SmartOLT). Detalle: [deploy-staging-traffic-zte-2026-09-16.md](./deploy-staging-traffic-zte-2026-09-16.md). Prod y backoffice no se tocaron. Staging split ahora también construye `ispadmin-staging-acs.war` (ACS WAR; solo Gateway lo llama).
 
 ## Resumen
 
