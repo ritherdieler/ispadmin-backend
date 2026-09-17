@@ -2,8 +2,9 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.events.RecordingEventBus
-import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredItemDto
+import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeClient
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionRequest
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionResponse
@@ -12,13 +13,14 @@ import com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.OltActivationStatus
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
-import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -28,6 +30,11 @@ class OnuActivationServiceTest {
     private val facade = mockk<OltManagerFacade>()
     private val acs = mockk<AcsCpeClient>()
     private val events = RecordingEventBus()
+
+    @BeforeEach
+    fun stubOnuAbsentFromInventory() {
+        every { facade.externalIdBySn(any()) } returns null
+    }
 
     @Test
     fun `olt failure does not call ACS and returns cpe NA`() {
@@ -72,9 +79,22 @@ class OnuActivationServiceTest {
     }
 
     @Test
-    fun `already authorized ONU still kicks ACS and returns olt COMPLETE`() {
-        every { facade.authorizeOnu(any()) } throws OltGatewayConflictException("already authorized")
+    fun `already authorized ONU is deleted and reauthorized after autofind`() {
         every { facade.externalIdBySn("ALCL12345678") } returns "gigafiber-ma5608t_1_0_3"
+        every { facade.deleteOnu("gigafiber-ma5608t_1_0_3") } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_0_3",
+        )
+        every { facade.unconfiguredOnus() } returns SmartOltUnconfiguredOnusResponseDto(
+            status = true,
+            response = listOf(
+                SmartOltUnconfiguredItemDto(sn = "ALCL12345678", board = "1", port = "1"),
+            ),
+        )
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_0_9",
+        )
         every { acs.provision(any()) } returns AcsCpeProvisionResponse(
             status = CpeProvisionStatus.PENDING,
             sn = "ALCL12345678",
@@ -85,8 +105,60 @@ class OnuActivationServiceTest {
 
         assertEquals(OltActivationStatus.COMPLETE, result.oltStatus)
         assertEquals(CpeProvisionStatus.PENDING, result.cpeStatus)
-        assertEquals("gigafiber-ma5608t_1_0_3", result.uniqueExternalId)
+        assertEquals("gigafiber-ma5608t_1_0_9", result.uniqueExternalId)
+        verifyOrder {
+            facade.externalIdBySn("ALCL12345678")
+            facade.deleteOnu("gigafiber-ma5608t_1_0_3")
+            facade.unconfiguredOnus()
+            facade.authorizeOnu(any())
+        }
+        verify(exactly = 1) { facade.authorizeOnu(any()) }
         verify(exactly = 1) { acs.provision(match<AcsCpeProvisionRequest> { it.sn == "ALCL12345678" }) }
+    }
+
+    @Test
+    fun `already authorized delete failure does not authorize or call ACS`() {
+        every { facade.externalIdBySn("ALCL12345678") } returns "gigafiber-ma5608t_1_0_3"
+        every { facade.deleteOnu("gigafiber-ma5608t_1_0_3") } throws IllegalStateException("ONU delete failed")
+        val service = OnuActivationService(facade, acs, events, acsExecutor = Executor { it.run() })
+
+        val result = service.activate(activateRequest())
+
+        assertEquals(OltActivationStatus.FAILED, result.oltStatus)
+        assertEquals(CpeProvisionStatus.NA, result.cpeStatus)
+        assertTrue(result.message!!.contains("ONU delete failed"))
+        verify(exactly = 0) { facade.authorizeOnu(any()) }
+        verify(exactly = 0) { acs.provision(any()) }
+    }
+
+    @Test
+    fun `already authorized without autofind does not authorize`() {
+        every { facade.externalIdBySn("ALCL12345678") } returns "gigafiber-ma5608t_1_0_3"
+        every { facade.deleteOnu("gigafiber-ma5608t_1_0_3") } returns SmartOltActionResponseDto(
+            status = true,
+            unique_external_id = "gigafiber-ma5608t_1_0_3",
+        )
+        every { facade.unconfiguredOnus() } returns SmartOltUnconfiguredOnusResponseDto(
+            status = true,
+            response = emptyList(),
+        )
+        val service = OnuActivationService(
+            facade,
+            acs,
+            events,
+            acsExecutor = Executor { it.run() },
+            sleeper = { },
+            autofindTimeoutMs = 0,
+            autofindPollMs = 0,
+        )
+
+        val result = service.activate(activateRequest())
+
+        assertEquals(OltActivationStatus.FAILED, result.oltStatus)
+        assertEquals(CpeProvisionStatus.NA, result.cpeStatus)
+        assertTrue(result.message!!.contains("autofind"))
+        verify(exactly = 0) { facade.authorizeOnu(any()) }
+        verify(exactly = 0) { acs.provision(any()) }
     }
 
     @Test

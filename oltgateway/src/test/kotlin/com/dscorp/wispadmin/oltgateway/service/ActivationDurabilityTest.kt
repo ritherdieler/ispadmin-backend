@@ -23,6 +23,7 @@ class ActivationDurabilityTest {
         val json=jacksonObjectMapper().findAndRegisterModules()
         fun journal()=JdbcActivationJournal(jdbc,json,"test-key-at-least-thirty-two-characters")
         val facade=mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
         every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status=true,unique_external_id="external-1")
         val acs=mockk<AcsCpeClient>()
         every { acs.provision(any()) } returns AcsCpeProvisionResponse("SN1",CpeProvisionStatus.COMPLETE)

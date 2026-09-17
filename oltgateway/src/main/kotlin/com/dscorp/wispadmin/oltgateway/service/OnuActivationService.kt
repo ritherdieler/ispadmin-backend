@@ -30,6 +30,9 @@ class OnuActivationService(
     private val journal: ActivationJournal = MemoryActivationJournal(),
     private val acsExecutor: Executor = Executors.newFixedThreadPool(4),
     private val timing: RegistrationTiming = RegistrationTiming.NOOP,
+    private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
+    private val autofindTimeoutMs: Long = DEFAULT_AUTOFIND_TIMEOUT_MS,
+    private val autofindPollMs: Long = DEFAULT_AUTOFIND_POLL_MS,
 ) {
     private val log = LoggerFactory.getLogger(OnuActivationService::class.java)
     fun activate(rawRequest: OnuActivateRequestDto): OnuActivateResponseDto {
@@ -136,17 +139,47 @@ class OnuActivationService(
 
     private fun authorizeOlt(request: OnuActivateRequestDto): Pair<String?, String?>? {
         return try {
-            val response = oltManagerFacade.authorizeOnu(request.toAuthorizeForm())
-            val id = response.unique_external_id?.takeIf { it.isNotBlank() }
-            if (id == null) null to (response.message ?: "missing unique_external_id")
-            else id to null
+            val existing = oltManagerFacade.externalIdBySn(request.sn)
+            if (!existing.isNullOrBlank()) {
+                oltManagerFacade.deleteOnu(existing)
+                if (!waitUntilUnconfigured(request.sn)) {
+                    return null to "ONU deleted but not back in autofind"
+                }
+            }
+            authorizeOnce(request)
         } catch (ex: OltGatewayConflictException) {
             val existing = oltManagerFacade.externalIdBySn(request.sn)
-            if (existing.isNullOrBlank()) null to (ex.message ?: "already authorized")
-            else existing to null
+            if (existing.isNullOrBlank()) return null to (ex.message ?: "already authorized")
+            try {
+                oltManagerFacade.deleteOnu(existing)
+                if (!waitUntilUnconfigured(request.sn)) {
+                    return null to "ONU deleted but not back in autofind"
+                }
+                authorizeOnce(request)
+            } catch (deleteEx: Exception) {
+                log.warn("OLT delete failed for SN={}: {}", request.sn, deleteEx.message)
+                null to (deleteEx.message ?: "ONU delete failed")
+            }
         } catch (ex: Exception) {
             log.warn("OLT authorize failed for SN={}: {}", request.sn, ex.message)
             null to (ex.message ?: "OLT authorize failed")
+        }
+    }
+
+    private fun authorizeOnce(request: OnuActivateRequestDto): Pair<String?, String?> {
+        val response = oltManagerFacade.authorizeOnu(request.toAuthorizeForm())
+        val id = response.unique_external_id?.takeIf { it.isNotBlank() }
+        return if (id == null) null to (response.message ?: "missing unique_external_id")
+        else id to null
+    }
+
+    private fun waitUntilUnconfigured(sn: String): Boolean {
+        val deadline = System.currentTimeMillis() + autofindTimeoutMs
+        while (true) {
+            val items = runCatching { oltManagerFacade.unconfiguredOnus().response }.getOrDefault(emptyList())
+            if (items.any { OnuSerialMatcher.matches(sn, it.sn) }) return true
+            if (System.currentTimeMillis() >= deadline) return false
+            sleeper(autofindPollMs)
         }
     }
 
@@ -202,5 +235,7 @@ class OnuActivationService(
 
     companion object {
         const val MAX_PROVISION_ATTEMPTS = 3
+        const val DEFAULT_AUTOFIND_TIMEOUT_MS = 90_000L
+        const val DEFAULT_AUTOFIND_POLL_MS = 5_000L
     }
 }

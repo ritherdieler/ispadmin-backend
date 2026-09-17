@@ -33,6 +33,7 @@ class ActivationRecoveryTest {
     @Test
     fun `acs timeout stays pending and later status can complete without a second provision`() {
         val facade = mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
         every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
         val acs = mockk<AcsCpeClient>()
         every { acs.provision(any()) } throws ResourceAccessException("timeout", SocketTimeoutException("fixture"))
@@ -52,6 +53,7 @@ class ActivationRecoveryTest {
     @Test
     fun `absent remote status retries provision until the attempt budget is spent`() {
         val facade = mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
         every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
         val acs = mockk<AcsCpeClient>()
         every { acs.provision(any()) } throws ResourceAccessException("timeout", SocketTimeoutException("fixture"))
@@ -103,6 +105,7 @@ class ActivationRecoveryTest {
     @Test
     fun `clear removes journal so a later activate can authorize again`() {
         val facade = mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
         every { facade.authorizeOnu(any()) } returnsMany listOf(
             SmartOltActionResponseDto(status = true, unique_external_id = "ext-1"),
             SmartOltActionResponseDto(status = true, unique_external_id = "ext-2"),

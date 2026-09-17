@@ -31,6 +31,10 @@ La coincidencia de SN admite match exacto y por sufijo de 8 caracteres para cubr
 
 `bash mvnw -o test -Dtest=CancelledOnuReuseServiceTest` — OK (2026-07-13).
 
+## Gateway (prod, 2026-09-17)
+
+El alta FIBER en prod no usa este servicio: `FiberInstallationStrategy` llama `Gateway.activate`. Si el SN ya está autorizado, el Gateway **borra** y espera autofind antes de `ont add`. Ver [activate-delete-si-existe-2026-09-17.md](./activate-delete-si-existe-2026-09-17.md).
+
 ## Fuera de alcance
 
 - Liberar la ONU automáticamente en `cancelService` al cancelar (mejora futura).
