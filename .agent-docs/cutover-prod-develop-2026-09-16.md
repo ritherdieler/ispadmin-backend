@@ -8,7 +8,7 @@ El informe de factibilidad `staging-a-prod.md` está desfasado: `develop` local 
 
 | Superficie | SHA / release | Notas |
 |---|---|---|
-| **Pin recomendado** | HEAD de `develop` **después** de los commits de este cutover (incluye `6c555b3` + V52 partido) | Traffic MK + CGLIB + poll lock + allowlist + V52 sin backfill |
+| **Pin recomendado** | `966a701` (`develop` local; incluye `6c555b3` + V52 partido) | Traffic MK + CGLIB + poll lock + allowlist + V52 sin backfill |
 | Prod vivo | `1.0.3+83de8fe` en `tomcat9027` `/ispadmin/` | No tocar. Rollback = `/opt/gigafiber/ispadmin.war` |
 | Staging vivo | `1.0.3+a1f0dfe` en `tomcat-staging` `/ispadmin-staging/` | Lab `#35` ZTE `ZTEGDC47BFFD` / `#36` VSOL `VSOL0031C0B6` — no borrar |
 | `origin/develop` | atrasado (~76 commits) | Este turno **no** pushea |
