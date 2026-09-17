@@ -24,6 +24,7 @@ class SubscriptionTrafficLiveMonitor(
     @Qualifier("trafficPollMikrotikClient")
     private val mikrotikClient: MikrotikClient,
     private val routerOsClientProperties: RouterOsClientProperties,
+    private val queueSnapshotCache: SimpleQueueSnapshotCache,
 ) : LiveTrafficStreamPort {
     private val logger = LoggerFactory.getLogger(javaClass)
     private data class Target(
@@ -92,7 +93,7 @@ class SubscriptionTrafficLiveMonitor(
             }
             try {
                 mikrotikClient.withSession(deviceRef) { session ->
-                    val queues = session.print("/queue/simple", proplist = listOf(".id", "target", "name", "bytes", "rate"))
+                    val queues = queueSnapshotCache.getOrLoad(deviceId) { session.print("/queue/simple") }
                     publishTicksForDevice(deviceId, queues)
                 }
             } catch (ex: Exception) {

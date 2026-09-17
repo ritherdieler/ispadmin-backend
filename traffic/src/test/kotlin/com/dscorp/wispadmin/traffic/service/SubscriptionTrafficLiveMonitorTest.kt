@@ -48,7 +48,13 @@ class SubscriptionTrafficLiveMonitorTest {
 
         val ticks = CopyOnWriteArrayList<Any>()
         val latch = CountDownLatch(1)
-        val monitor = SubscriptionTrafficLiveMonitor(directory, routers, mikrotik, RouterOsClientProperties())
+        val monitor = SubscriptionTrafficLiveMonitor(
+            directory,
+            routers,
+            mikrotik,
+            RouterOsClientProperties(),
+            SimpleQueueSnapshotCache(),
+        )
         try {
             monitor.start(
                 mapOf("subscriptionId" to 5, "ip" to "192.168.250.20", "routerHint" to 8),

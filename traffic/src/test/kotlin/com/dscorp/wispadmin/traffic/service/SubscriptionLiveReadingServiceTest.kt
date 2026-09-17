@@ -25,10 +25,12 @@ class SubscriptionLiveReadingServiceTest {
     private val mikrotik = mockk<MikrotikClient>()
     private val session = mockk<MikrotikSession>()
     private val clock = Clock.fixed(Instant.parse("2026-09-15T17:40:00Z"), ZoneOffset.UTC)
+    private val queueCache = SimpleQueueSnapshotCache()
     private val service = SubscriptionLiveReadingService(
         routers,
         mikrotik,
         RouterOsClientProperties(),
+        queueCache,
     ).also { it.clock = clock }
     private val router = TrafficRouter(id = 8, name = "MK2", host = "10.0.0.1", username = "u", password = "p")
 
@@ -47,9 +49,7 @@ class SubscriptionLiveReadingServiceTest {
     fun `static ip leftover pppoe session at same ip reads pppoe-in not empty queue`() {
         stubRouterAndSession()
         every { session.print("/ppp/active", any(), any()) } returns listOf(mapOf("name" to "gf5", "address" to "10.64.0.11"))
-        every { session.print("/interface", any(), any()) } returns listOf(
-            mapOf("name" to "<pppoe-gf5>", "type" to "pppoe-in", "rx-byte" to "14946412", "tx-byte" to "212694048"),
-        )
+        every { session.print("/queue/simple", any(), any()) } returns emptyList()
         every {
             session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf5>", "once" to ""))
         } returns listOf(mapOf("rx-bits-per-second" to "25096", "tx-bits-per-second" to "29848"))
@@ -68,9 +68,7 @@ class SubscriptionLiveReadingServiceTest {
         assertEquals("gf5", reading.pppoe)
         assertEquals(29848L, reading.downloadBps)
         assertEquals(25096L, reading.uploadBps)
-        assertEquals(212694048L, reading.rxBytes)
-        assertEquals(14946412L, reading.txBytes)
-        verify(exactly = 0) { session.print("/queue/simple", any(), any()) }
+        verify(exactly = 0) { session.print("/interface", any(), any()) }
     }
 
     @Test
@@ -180,6 +178,115 @@ class SubscriptionLiveReadingServiceTest {
         assertEquals("QUEUE", reading.source)
         assertEquals(4000L, reading.downloadBps)
         assertEquals(2000L, reading.uploadBps)
+        verify(exactly = 0) { session.print("/interface", any(), any()) }
+    }
+
+    @Test
+    fun `static ip leftover plus matching queue uses queue not leftover pppoe`() {
+        stubRouterAndSession()
+        every { session.print("/ppp/active", any(), any()) } returns listOf(mapOf("name" to "gf5", "address" to "10.64.0.11"))
+        every { session.print("/interface", any(), any()) } returns listOf(
+            mapOf("name" to "<pppoe-gf5>", "type" to "pppoe-in", "rx-byte" to "1", "tx-byte" to "2"),
+        )
+        every { session.print("/queue/simple", any(), any()) } returns listOf(
+            mapOf(
+                "name" to "id:5, usuario:Static",
+                "target" to "10.64.0.11/32",
+                "rate" to "1000/2000",
+                "bytes" to "10/20",
+            ),
+        )
+
+        val reading = service.read(
+            LiveReadingIdentity(
+                subscriptionId = 5,
+                accessMode = "STATIC_IP",
+                ip = "10.64.0.11",
+                hostDeviceId = 8,
+            ),
+        )
+
+        assertEquals("QUEUE", reading.source)
+        assertEquals(2000L, reading.downloadBps)
+        assertEquals(1000L, reading.uploadBps)
+        verify(exactly = 0) { session.print("/interface", any(), any()) }
+        verify(exactly = 0) { session.call(any(), any()) }
+    }
+
+    @Test
+    fun `leftover pppoe user from active does not print interface`() {
+        stubRouterAndSession()
+        every { session.print("/ppp/active", any(), any()) } returns listOf(mapOf("name" to "gf5", "address" to "10.64.0.11"))
+        every { session.print("/queue/simple", any(), any()) } returns emptyList()
+        every {
+            session.call("/interface/monitor-traffic", mapOf("interface" to "<pppoe-gf5>", "once" to ""))
+        } returns listOf(mapOf("rx-bits-per-second" to "25096", "tx-bits-per-second" to "29848"))
+
+        val reading = service.read(
+            LiveReadingIdentity(
+                subscriptionId = 5,
+                accessMode = "STATIC_IP",
+                ip = "10.64.0.11",
+                hostDeviceId = 8,
+            ),
+        )
+
+        assertTrue(reading.available)
+        assertEquals("PPPOE", reading.source)
+        assertEquals("gf5", reading.pppoe)
+        assertEquals(29848L, reading.downloadBps)
+        assertEquals(25096L, reading.uploadBps)
+        verify(exactly = 0) { session.print("/interface", any(), any()) }
+    }
+
+    @Test
+    fun `queue snapshot cache hit does not print simple queue twice`() {
+        stubRouterAndSession()
+        every { session.print("/ppp/active", any(), any()) } returns emptyList()
+        every { session.print("/queue/simple", any(), any()) } returns listOf(
+            mapOf(
+                "name" to "id:7, usuario:Static",
+                "target" to "192.168.250.16/32",
+                "rate" to "145000/1800000",
+                "bytes" to "152043520/2147483648",
+            ),
+        )
+
+        val identity = LiveReadingIdentity(
+            subscriptionId = 7,
+            accessMode = "STATIC_IP",
+            ip = "192.168.250.16",
+            hostDeviceId = 8,
+        )
+        service.read(identity)
+        service.read(identity)
+
+        verify(exactly = 1) { session.print("/queue/simple", any(), any()) }
+    }
+
+    @Test
+    fun `blank accessMode uses simple queue not pppoe dynamic`() {
+        stubRouterAndSession()
+        every { session.print("/ppp/active", any(), any()) } returns emptyList()
+        every { session.print("/queue/simple", any(), any()) } returns listOf(
+            mapOf(
+                "name" to "id:7, usuario:Static",
+                "target" to "192.168.250.16/32",
+                "rate" to "145000/1800000",
+                "bytes" to "10/20",
+            ),
+        )
+
+        val reading = service.read(
+            LiveReadingIdentity(
+                subscriptionId = 7,
+                accessMode = "",
+                ip = "192.168.250.16",
+                hostDeviceId = 8,
+            ),
+        )
+
+        assertEquals("QUEUE", reading.source)
         verify(exactly = 0) { session.print("/interface", any(), any()) }
     }
 

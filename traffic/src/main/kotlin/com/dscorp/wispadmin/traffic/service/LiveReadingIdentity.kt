@@ -10,6 +10,6 @@ data class LiveReadingIdentity(
     val envTag: String? = null,
 ) {
     fun usesSimpleQueue(): Boolean {
-        return accessMode == "STATIC_IP" || accessMode == "PPPOE_FIXED"
+        return accessMode != "PPPOE_DYNAMIC"
     }
 }

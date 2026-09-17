@@ -18,6 +18,7 @@ class SubscriptionLiveReadingService(
     @Qualifier("trafficPollMikrotikClient")
     private val mikrotikClient: MikrotikClient,
     private val routerOsClientProperties: RouterOsClientProperties,
+    private val queueSnapshotCache: SimpleQueueSnapshotCache,
 ) {
     internal var clock: Clock = Clock.systemUTC()
 
@@ -47,18 +48,19 @@ class SubscriptionLiveReadingService(
         identity: LiveReadingIdentity,
         session: MikrotikSession,
     ): SubscriptionLiveReadingDto {
+        val hostDeviceId = identity.hostDeviceId ?: return unavailable(identity.subscriptionId)
+        val queues = queueSnapshotCache.getOrLoad(hostDeviceId) { session.print("/queue/simple") }
+        val queue = pickQueue(queues, identity)
+        if (queue != null) {
+            return fromQueue(identity.subscriptionId, queue)
+        }
         val assignedIps = listOfNotNull(
             identity.ip?.trim()?.takeIf { it.isNotEmpty() },
             identity.pppoeLastIp?.trim()?.takeIf { it.isNotEmpty() },
         )
-        val livePppoe = findPppoeInterfaceByAssignedIp(session, assignedIps)
-        if (livePppoe != null) {
-            return fromPppoe(identity.subscriptionId, session, livePppoe)
-        }
-        val queues = session.print("/queue/simple")
-        val queue = pickQueue(queues, identity)
-        if (queue != null) {
-            return fromQueue(identity.subscriptionId, queue)
+        val leftoverUser = findLeftoverPppoeUsername(session, assignedIps)
+        if (leftoverUser != null) {
+            return fromPppoeUsername(identity.subscriptionId, session, leftoverUser)
         }
         return unavailable(identity.subscriptionId)
     }
@@ -151,18 +153,24 @@ class SubscriptionLiveReadingService(
         return owner.subscriptionId == identity.subscriptionId && owner.envTag == envTag
     }
 
-    private fun findPppoeInterfaceByAssignedIp(
+    private fun findLeftoverPppoeUsername(
         session: MikrotikSession,
         ips: List<String>,
-    ): Map<String, String>? {
+    ): String? {
         if (ips.isEmpty()) return null
         val sessions = runCatching { session.print("/ppp/active") }.getOrElse { return null }
-        val username = sessions.firstOrNull { row ->
+        return sessions.firstOrNull { row ->
             val address = RouterOsTrafficCounterParser.normalizeTarget(row["address"])
             address != null && ips.any { it == address }
-        }?.get("name")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val interfaces = session.print("/interface")
-        return interfaces.firstOrNull { matchesPppoeInterface(it, username) }
+        }?.get("name")?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun fromPppoeUsername(
+        subscriptionId: Int,
+        session: MikrotikSession,
+        username: String,
+    ): SubscriptionLiveReadingDto {
+        return fromPppoe(subscriptionId, session, mapOf("name" to "<pppoe-$username>"))
     }
 
     private fun matchesPppoeInterface(iface: Map<String, String>, username: String?): Boolean {

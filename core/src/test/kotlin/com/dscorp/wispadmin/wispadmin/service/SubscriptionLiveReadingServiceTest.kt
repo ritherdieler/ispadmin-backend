@@ -10,6 +10,7 @@ import com.dscorp.wispadmin.wispadmin.trafficclient.TrafficHttpClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -108,6 +109,33 @@ class SubscriptionLiveReadingServiceTest {
         assertEquals("gf6", reading.pppoe)
         assertEquals(8_500_000L, reading.downloadBps)
         assertEquals(3_134_442_266L, reading.rxBytes)
+    }
+
+    @Test
+    fun `read always sends accessMode on the internal query`() {
+        every { repository.findById(6) } returns Optional.of(subscription())
+        val query = slot<String>()
+        every {
+            trafficHttpClient.getJson("/api/traffic/v1/by-subscription/6/live-readings", capture(query))
+        } returns ResponseEntity.ok(
+            """
+            {
+              "subscriptionId": 6,
+              "available": false,
+              "pppoe": null,
+              "timestamp": "2026-09-15T17:40:00Z",
+              "downloadBps": 0,
+              "uploadBps": 0,
+              "rxBytes": 0,
+              "txBytes": 0,
+              "source": "NONE"
+            }
+            """.trimIndent(),
+        )
+
+        service.read(6)
+
+        assertTrue(query.captured.contains("accessMode=PPPOE_DYNAMIC"))
     }
 
     @Test
