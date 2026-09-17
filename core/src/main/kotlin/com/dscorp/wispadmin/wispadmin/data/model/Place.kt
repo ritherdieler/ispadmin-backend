@@ -16,6 +16,6 @@ data class Place(
     val latitude: Float? = null,
     val longitude: Float? = null,
 
-    @Column(columnDefinition = "POLYGON SRID 4326")
+    @Column(columnDefinition = "geometry")
     val area: Polygon? = null
 )

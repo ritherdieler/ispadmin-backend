@@ -1,0 +1,2 @@
+ALTER TABLE error_log
+    MODIFY COLUMN error TEXT NULL;

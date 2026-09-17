@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clone Core schema ispadmin (mysqldump = SELECT) into a scratch schema and apply
-# Flyway baseline 38 plus V39–V54. Refuses ispadmin and ispadmin_staging as the target.
+# Flyway baseline 38 plus V39–V55. Refuses ispadmin and ispadmin_staging as the target.
 #
 # Allowed SCRATCH_SCHEMA: ispadmin_flyway_clone or scratch_*
 #
@@ -91,11 +91,11 @@ while IFS= read -r _mig; do
 done <<EOF
 $(find "$MIGRATION_DIR" -maxdepth 1 -name 'V*.sql' -print \
     | awk -F/ '{print $NF}' \
-    | awk -F__ '{n=$1; sub(/^V/,"",n); if (n+0>=39 && n+0<=54) print}' \
+    | awk -F__ '{n=$1; sub(/^V/,"",n); if (n+0>=39 && n+0<=55) print}' \
     | sort -t_ -k1.2,1n)
 EOF
 if [[ ${#MIGRATIONS[@]} -eq 0 ]]; then
-  echo "No V39–V54 files under $MIGRATION_DIR" >&2
+  echo "No V39–V55 files under $MIGRATION_DIR" >&2
   exit 1
 fi
 
@@ -212,7 +212,7 @@ apply_migrations() {
       return 1
     fi
   done
-  echo "Clone Flyway finished: all V39–V54 success=1 on ${SCRATCH_SCHEMA}"
+  echo "Clone Flyway finished: all V39–V55 success=1 on ${SCRATCH_SCHEMA}"
   return "$failed"
 }
 

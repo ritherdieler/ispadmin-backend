@@ -42,8 +42,18 @@ class ProdCutoverScriptsTest {
             script.contains("refuses") || script.contains("Refuse") || script.contains("forbidden"),
             script.take(800),
         )
-        assertTrue(script.contains("V39") && script.contains("V54"), script)
+        assertTrue(script.contains("V39") && script.contains("V55"), script)
         assertTrue(script.contains("baseline") || script.contains("baseline-version"), script)
+        assertFalse(script.contains("deploy.sh --env prod"), script)
+    }
+
+    @Test
+    fun flywayCloneHibernateValidateScriptRefusesLiveCatalogs() {
+        val script = read("scripts/flyway-clone-hibernate-validate.sh")
+        assertTrue(script.contains("ispadmin_flyway_clone"), script)
+        assertTrue(script.contains("CORE_FLYWAY_CLONE_JDBC"), script)
+        assertTrue(script.contains("Refuse") || script.contains("refuse"), script)
+        assertTrue(script.contains("ispadmin_staging"), script)
         assertFalse(script.contains("deploy.sh --env prod"), script)
     }
 
