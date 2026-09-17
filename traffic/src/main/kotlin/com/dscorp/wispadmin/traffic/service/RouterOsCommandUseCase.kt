@@ -21,30 +21,35 @@ class RouterOsCommandUseCase(
     private val routerOsClientProperties: RouterOsClientProperties,
 ) {
     fun print(hostDeviceId: Int, request: RouterOsPrintRequest): Result<List<Map<String, String>>> = runCatching {
+        RouterOsPathAllowlist.requireAllowed(request.path)
         withSession(hostDeviceId) { session ->
             session.print(request.path, request.query, request.proplist)
         }
     }
 
     fun add(hostDeviceId: Int, request: RouterOsAddRequest): Result<Unit> = runCatching {
+        RouterOsPathAllowlist.requireAllowed(request.path)
         withSession(hostDeviceId) { session ->
             session.add(request.path, request.args)
         }
     }
 
     fun set(hostDeviceId: Int, request: RouterOsSetRequest): Result<Unit> = runCatching {
+        RouterOsPathAllowlist.requireAllowed(request.path)
         withSession(hostDeviceId) { session ->
             session.set(request.path, request.id, request.args)
         }
     }
 
     fun remove(hostDeviceId: Int, request: RouterOsRemoveRequest): Result<Unit> = runCatching {
+        RouterOsPathAllowlist.requireAllowed(request.path)
         withSession(hostDeviceId) { session ->
             session.remove(request.path, request.id)
         }
     }
 
     fun call(hostDeviceId: Int, request: RouterOsCallRequest): Result<List<Map<String, String>>> = runCatching {
+        RouterOsPathAllowlist.requireAllowed(request.path)
         withSession(hostDeviceId) { session ->
             session.call(request.path, request.args)
         }

@@ -71,6 +71,18 @@ class RouterOsCommandUseCaseTest {
     }
 
     @Test
+    fun `rejects path outside the core allowlist without opening RouterOS`() {
+        stubSession()
+
+        assertTrue(useCase.print(8, RouterOsPrintRequest(path = "/file")).isFailure)
+        assertTrue(useCase.add(8, RouterOsAddRequest("/file", emptyMap())).isFailure)
+        assertTrue(useCase.set(8, RouterOsSetRequest("/file", "*1", emptyMap())).isFailure)
+        assertTrue(useCase.remove(8, RouterOsRemoveRequest("/file", "*1")).isFailure)
+        assertTrue(useCase.call(8, RouterOsCallRequest("/file", emptyMap())).isFailure)
+        verify(exactly = 0) { mikrotik.withSession(any<MikrotikDeviceRef>(), any<(MikrotikSession) -> Any>()) }
+    }
+
+    @Test
     fun `missing router is failure and does not open RouterOS`() {
         every { routers.findById(9) } returns Optional.empty()
 
