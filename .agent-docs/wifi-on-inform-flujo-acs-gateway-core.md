@@ -163,6 +163,7 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | UI `WifiCharts` formatea ticks en **HH:mm** (`formatHealthTime`) | Varios samples en el mismo minuto colapsan visualmente el eje | Tooltip / rango; no asumir un tick = un sample |
 | Leer con GPV / `refreshObject` en paralelo al Inform | Compite con la fuente única y devuelve la sesión anterior | `POST /cpe/{sn}/wifi-refresh` es **solo** un Connection Request que reencola el provision; no hay cooldown de GPV que mantener |
 | Keys GenieACS ↔ Tomcat desalineadas | Auto-ext 401; Inform sí, Core no | Sync + recreate contenedores |
+| Un solo hilo `snapshot-core` reevalúa tráfico/óptica y persiste `cpe.inform` | ACS last-state fresco; series Core viejas; lag = MAXLEN | Carril `wifi-inform-core` solo para Inform; `snapshot-core` persiste óptica/tráfico sin `reevaluate` (GET 360 recalcula a los 60 s). Ver [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md) |
 
 ## 8. Artefactos de código (referencia)
 
@@ -175,13 +176,15 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | Cobertura / faults | `scripts/genieacs/inform-channel-coverage.py` |
 | ACS notify | `WifiInformNotifyService`, `POST /api/acs/v1/cpe/inform-notify` |
 | Gateway ingest | `CpeInformIngestService`, `POST /api/olt-gateway/acs/cpe-inform` |
-| Core persist | `CpeInformPersistService` / `HealthSnapshotIngestService` |
+| Core persist Wi‑Fi | `CpeInformEventConsumer` (grupo `wifi-inform-core`) → `CpeInformPersistService` |
+| Core óptica/tráfico | `HealthSnapshotConsumer` (grupo `snapshot-core`) → `HealthSnapshotIngestService` (sin `reevaluate`) |
 | Evento | `PlatformEventTypes.CPE_INFORM` = `cpe.inform` |
 
 ## 9. Evidencia y notas fechadas (no canónicas)
 
 | Nota | Contenido |
 |------|-----------|
+| [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md) | Carril `wifi-inform-core` + snapshot sin reevaluate en tráfico/óptica |
 | [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md) | Allowlist, 180 s, apply/rollback |
 | [wifi-on-inform-cableado-2026-09-08.md](./wifi-on-inform-cableado-2026-09-08.md) | Resumen corto del cableado (apunta aquí) |
 | [wifi-on-inform-validacion-staging-2026-09-08.md](./wifi-on-inform-validacion-staging-2026-09-08.md) | E2E staging PASS (count + Redis) |

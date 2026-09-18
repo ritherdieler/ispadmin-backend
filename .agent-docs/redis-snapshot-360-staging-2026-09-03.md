@@ -8,8 +8,8 @@ GET `/subscription/{id}/service-health` deja de reevaluar siempre en vivo. Orden
 |-------|--------|
 | Paquete compartido | `com.dscorp.wispadmin.events` (escaneado por core, traffic, oltgateway) |
 | GET 360 | `HealthSummaryQueryService` |
-| Consumer | `HealthSnapshotConsumer` (solo `gigafiber.redis.enabled=true`) |
-| Productores | `SubscriptionTrafficPollService`, `TrafficAnomalyService`, `OltSignalPollService`, `LabOpticalSshPollService` |
+| Consumer | `HealthSnapshotConsumer` (`snapshot-core`: óptica/tráfico) + `CpeInformEventConsumer` (`wifi-inform-core`: `cpe.inform`) |
+| Productores | `SubscriptionTrafficPollService`, `TrafficAnomalyService`, `OltSignalPollService`, `LabOpticalSshPollService`, ACS/`CpeInformIngestService` (`cpe.inform`) |
 | Local | `docker-compose.redis.yml`, `scripts/redis-local.sh` |
 | Staging | `REDIS_HOST=redis` + `REDIS_PASSWORD` en `/opt/gigafiber/.env` (sin `REDIS_ENABLED`). Core staging default `enabled=true`. Prod sigue `false`. |
 
@@ -17,7 +17,7 @@ GET `/subscription/{id}/service-health` deja de reevaluar siempre en vivo. Orden
 
 `traffic.latest`, `traffic.poll-run`, `traffic.anomaly-opened`, `traffic.anomaly-cleared`, `onu.optical`, `onu.state`.
 
-Stream `gigafiber.events`, `MAXLEN ~ 20000`, grupo `snapshot-core`. Cache TTL = `service.health.snapshot-fresh-seconds` (default 60). Live hash `health:live:{id}:traffic|onu`. Con Redis on, los beans no-op no se registran.
+Stream `gigafiber.events`, `MAXLEN ~ 20000`, grupos `snapshot-core`, `wifi-inform-core` y `cpe-provision-core`. Cache TTL = `service.health.snapshot-fresh-seconds` (default 60). Live hash `health:live:{id}:traffic|onu`. Con Redis on, los beans no-op no se registran. Carril Inform: [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md).
 
 ## Fallback
 

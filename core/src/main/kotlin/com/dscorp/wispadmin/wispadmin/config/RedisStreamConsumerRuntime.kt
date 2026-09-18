@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.config
 
+import com.dscorp.wispadmin.servicehealth.service.CpeInformEventConsumer
 import com.dscorp.wispadmin.servicehealth.service.HealthSnapshotConsumer
 import com.dscorp.wispadmin.wispadmin.service.CpeProvisioningEventConsumer
 import org.slf4j.LoggerFactory
@@ -16,14 +17,15 @@ import java.util.concurrent.TimeUnit
  * Polls Redis Streams even when [gigafiber.scheduling.enabled] is false.
  * Prestaging keeps billing/OLT jobs off; 360 still needs [HealthSnapshotConsumer].
  *
- * One thread per consumer group: a slow Inform batch on `snapshot-core` must not
- * stall `cpe-provision-core`, and vice versa.
+ * One thread per consumer group: optical/traffic on `snapshot-core` must not
+ * stall `wifi-inform-core` or `cpe-provision-core`, and vice versa.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "gigafiber.redis", name = ["enabled"], havingValue = "true")
 class RedisStreamConsumerRuntime(
     private val snapshot: ObjectProvider<HealthSnapshotConsumer>,
     private val cpe: ObjectProvider<CpeProvisioningEventConsumer>,
+    private val wifiInform: ObjectProvider<CpeInformEventConsumer>,
     @Value("\${gigafiber.redis.consumer-interval-ms:1000}") private val intervalMs: Long,
 ) : SmartLifecycle {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -33,6 +35,7 @@ class RedisStreamConsumerRuntime(
     private fun groups(): List<Pair<String, () -> Unit>> = listOf(
         "snapshot-core" to { snapshot.ifAvailable?.poll(); Unit },
         "cpe-provision-core" to { cpe.ifAvailable?.poll(); Unit },
+        "wifi-inform-core" to { wifiInform.ifAvailable?.poll(); Unit },
     )
 
     override fun start() {

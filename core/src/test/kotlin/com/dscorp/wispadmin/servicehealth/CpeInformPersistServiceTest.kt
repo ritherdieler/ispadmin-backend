@@ -282,7 +282,7 @@ class CpeInformPersistServiceTest {
 
 class CpeInformIngestWiringTest {
     @Test
-    fun `snapshot ingest routes cpe inform to persist service`() {
+    fun `snapshot ingest skips cpe inform for wifi-inform-core lane`() {
         val identity = mockk<IdentityService>()
         every { identity.resolveOnu("12345B4641531C0B6") } returns 42
         val summaries = mockk<HealthSummaryQueryService>(relaxed = true)
@@ -308,7 +308,7 @@ class CpeInformIngestWiringTest {
                 payloadJson = """{"sn":"12345B4641531C0B6","deviceId":"dev","informAt":"$informAt","complete":true,"associatedDeviceCount":0,"qualityStatus":"FRESH","stations":[]}""",
             )
         )
-        verify { persist.persistFromEventJson(any()) }
-        verify { summaries.reevaluate(42, informAt) }
+        verify(exactly = 0) { persist.persistFromEventJson(any()) }
+        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 }
