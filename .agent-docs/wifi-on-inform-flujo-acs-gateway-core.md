@@ -74,7 +74,7 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 |---|--------|----------|
 | 1 | ONU | Envía CWMP Inform (PERIODIC, CONNECTION REQUEST u otro evento). |
 | 2 | GenieACS | Provision `gigafiber-wifi-telemetry`: refresca TotalAssociations / AssociatedDevice / Hosts con wildcards contra el reloj de la sesión y **después** llama `ext("wifi-inform-notify", serial, deviceId, payload)` con las hojas crudas. |
-| 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS WAR con el payload en el body. Timeout 2500 ms, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
+| 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS prod (`GENIEACS_TO_ACS_NOTIFY_URL`). ONU lab (`ZTEGDC47BFFD`, `12345B4641531C0B6`) también POST a staging (`GENIEACS_TO_ACS_STAGING_NOTIFY_URL`). Timeout 2500 ms, paralelo, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
 | 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
 | 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
 | 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC, `observedAt` = `informAt`) y `acs_wifi_status_current`. |
@@ -97,25 +97,23 @@ En TR-069, un **Inform** es la sesión CWMP en la que la ONU reporta eventos al 
 | `6 CONNECTION REQUEST` | ACS/GenieACS pidió CR (Summon / task) | Sí |
 | `1 BOOT`, `0 BOOTSTRAP`, `4 VALUE CHANGE`, otros | Boot, bootstrap, cambios, etc. | Sí (si hay sesión Inform) |
 
-El preset piloto usa canal `inform` con `events: {}`: **cualquier** Inform del allowlist ejecuta el script (no solo `2 PERIODIC`).
+El preset de flota usa canal `gigafiber-wifi-telemetry` con `events: {}`: **cualquier** Inform de F6600R/V2804AX15T ejecuta el script (no solo `2 PERIODIC`).
 
 `PeriodicInformInterval` (**1800 s + jitter derivado del serial**) **solo agenda** Informs de tipo PERIODIC. No limita CONNECTION REQUEST ni otros eventos: un CR puede producir un Inform inmediato aunque el intervalo PERIODIC no haya vencido.
 
-## 3. Alcance del piloto (VSOL lab)
+## 3. Alcance (flota prod)
+
+Preset `gigafiber-wifi-telemetry` en prod (2026-09-17): **todas** las ONUs cuyo `ProductClass` tiene radios mapeados.
 
 | Campo | Valor |
 |-------|--------|
-| GenieACS `_id` | `B46415-V2804AX15T-12345B4641531C0B6` |
-| Serial | `12345B4641531C0B6` |
-| ProductClass | `V2804AX15T` |
-| Tag | `lab` |
-| Suscripción staging (evidencia) | `subscription_id=2389` |
-| `PeriodicInformInterval` | Lab: **60 s** (serial de banco). Flota: **1800 s + jitter**. Todo en `gigafiber-bootstrap.js` / `gf-inform-interval.js`; el provision de telemetría ya no escribe cadencia |
-| Radios VSOL | WLAN **1** (5 GHz), WLAN **5** (2.4 GHz) |
+| Precondition | `DeviceID.ProductClass = "F6600R" OR DeviceID.ProductClass = "V2804AX15T"` |
+| Canal / eventos | `gigafiber-wifi-telemetry` / `{}` (cualquier Inform) |
+| `PeriodicInformInterval` | Lab: **60 s** (tag `lab` / serial de banco). Flota: **1800 s + jitter**. Todo en `gigafiber-bootstrap.js` / `gf-inform-interval.js` |
+| Radios | F6600R: WLAN 1 = 2.4 GHz, 5 = 5 GHz. VSOL: WLAN 1 = 5 GHz, 5 = 2.4 GHz |
+| Fuera de alcance | `HG8145X6`, `IGD`, `XC220-G3`, `XC220-G3v` (sin mapa de radios; `WifiNbiTelemetry` → `UNSUPPORTED`) |
 
-No se toca el preset/provision global `inform` / `inform.js` de flota. Allowlist = Serial + ProductClass del `_id` anterior.
-
-Detalle apply/rollback: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md).
+Apply/rollback: `python3 scripts/genieacs/apply-wifi-telemetry.py --all-models --apply`. Evidencia del escalón lab: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md). Apply prod: [prod-wifi-telemetry-all-models-2026-09-17.md](./prod-wifi-telemetry-all-models-2026-09-17.md).
 
 ## 4. Responsabilidades por capa
 
@@ -134,7 +132,8 @@ Detalle apply/rollback: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-
 | Variable | Rol | Dónde vive (típico) |
 |----------|-----|---------------------|
 | `GENIEACS_TO_ACS_API_KEY` | Ext → ACS (`X-Acs-Key`; endpoint también acepta `ACS_API_KEY`) | `/opt/gigafiber/genieacs/.env` + runtime Tomcat ACS |
-| `GENIEACS_TO_ACS_NOTIFY_URL` | Base URL ACS vista desde GenieACS | `/opt/gigafiber/genieacs/.env` |
+| `GENIEACS_TO_ACS_NOTIFY_URL` | Base URL ACS **prod** vista desde GenieACS | `/opt/gigafiber/genieacs/.env` |
+| `GENIEACS_TO_ACS_STAGING_NOTIFY_URL` | Base URL ACS staging; solo lab | `/opt/gigafiber/genieacs/.env` |
 | `ACS_TO_GATEWAY_API_KEY` | ACS → Gateway (`X-Acs-To-Gateway-Key`) | Pareja ACS ↔ Gateway |
 | `ACS_GATEWAY_BASE_URL` | Base URL Gateway desde ACS → `acs.gateway.internal-base-url` | **Hornear por WAR**; no `.env` compartido |
 
@@ -186,7 +185,8 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 
 | Nota | Contenido |
 |------|-----------|
-| [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md) | Allowlist, 180 s, apply/rollback |
+| [prod-wifi-telemetry-all-models-2026-09-17.md](./prod-wifi-telemetry-all-models-2026-09-17.md) | Preset flota F6600R+V2804AX15T en NBI prod |
+| [wifi-refresh-instant-series-2026-09-17.md](./wifi-refresh-instant-series-2026-09-17.md) | Actualizar Wi-Fi: CR + poll series / confirm perezoso |
 | [wifi-on-inform-cableado-2026-09-08.md](./wifi-on-inform-cableado-2026-09-08.md) | Resumen corto del cableado (apunta aquí) |
 | [wifi-on-inform-validacion-staging-2026-09-08.md](./wifi-on-inform-validacion-staging-2026-09-08.md) | E2E staging PASS (count + Redis) |
 | [wifi-on-inform-fix-stations-status-2026-09-08.md](./wifi-on-inform-fix-stations-status-2026-09-08.md) | Fix lookup post-upsert; stations + status |
