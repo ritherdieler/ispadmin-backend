@@ -21,6 +21,15 @@ POSTs en paralelo (timeout 2500 ms). Si staging está caído, lab igual entrega 
 
 Tras cambiar `.env` o el JS: copiar ext al volumen `GENIEACS_EXT_DIR` y recreate `gigafiber-genieacs`.
 
+## Aplicado VPS (2026-09-17)
+
+`gigafiber-genieacs` recreate. Runtime:
+
+- `GENIEACS_TO_ACS_NOTIFY_URL=http://tomcat9027:8080/ispadmin` (health 200)
+- `GENIEACS_TO_ACS_STAGING_NOTIFY_URL=http://tomcat-staging:8080/ispadmin-staging` (`tomcat-staging` sigue down; lab no bloquea prod)
+- Ext con `LAB_SERIALS` en `/opt/genieacs/ext/wifi-inform-notify.js`
+- Backups: `.env.bak.notify-dual-*`, `docker-compose.yml.bak.notify-dual-*`
+
 ## Tests
 
 `node --test scripts/tests/wifi-inform-notify-ext.test.cjs`
