@@ -113,7 +113,7 @@ Preset `gigafiber-wifi-telemetry` en prod (2026-09-17): **todas** las ONUs cuyo 
 | Radios | F6600R: WLAN 1 = 2.4 GHz, 5 = 5 GHz. VSOL: WLAN 1 = 5 GHz, 5 = 2.4 GHz |
 | Fuera de alcance | `HG8145X6`, `IGD`, `XC220-G3`, `XC220-G3v` (sin mapa de radios; `WifiNbiTelemetry` → `UNSUPPORTED`) |
 
-Apply/rollback: `python3 scripts/genieacs/apply-wifi-telemetry.py --all-models --apply`. Evidencia del escalón lab: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md). Apply prod: [prod-wifi-telemetry-all-models-2026-09-17.md](./prod-wifi-telemetry-all-models-2026-09-17.md).
+Apply/rollback: `python3 scripts/genieacs/apply-wifi-telemetry.py --all-models --apply`. Evidencia del escalón lab: [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md).
 
 ## 4. Responsabilidades por capa
 
