@@ -29,7 +29,7 @@ class HealthSnapshotIngestServiceTest {
     }
 
     @Test
-    fun `traffic latest writes live hash and reevaluates`() {
+    fun `traffic latest writes live hash without reevaluate`() {
         service.apply(
             PlatformEvent(
                 type = PlatformEventTypes.TRAFFIC_LATEST,
@@ -44,11 +44,11 @@ class HealthSnapshotIngestServiceTest {
                 match<LiveTrafficSample> { it.avgMbpsDown == 8.1 && it.avgMbpsUp == 0.4 },
             )
         }
-        verify { summaries.reevaluate(42, Instant.parse("2026-09-03T18:10:00Z")) }
+        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 
     @Test
-    fun `optical event resolves sn then reevaluates`() {
+    fun `optical event resolves sn without reevaluate`() {
         service.apply(
             PlatformEvent(
                 type = PlatformEventTypes.ONU_OPTICAL,
@@ -58,11 +58,11 @@ class HealthSnapshotIngestServiceTest {
             )
         )
         verify { live.putOnu(42, match { it.rxPowerDbm == -28.4 && it.runState == "online" }) }
-        verify { summaries.reevaluate(42, Instant.parse("2026-09-03T18:10:00Z")) }
+        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 
     @Test
-    fun `cpe provisioning updates coarse flags by serial`() {
+    fun `cpe provisioning updates coarse flags by serial without reevaluate`() {
         val flags = mockk<CpeProvisionFlagPort>(relaxed = true)
         val flagsProvider = mockk<ObjectProvider<CpeProvisionFlagPort>>()
         every { flagsProvider.ifAvailable } returns flags
@@ -76,11 +76,11 @@ class HealthSnapshotIngestServiceTest {
             )
         )
         verify { flags.apply("ZTEGDC47BFFD", "COMPLETE", any(), any()) }
-        verify { summaries.reevaluate(42, Instant.parse("2026-09-03T18:10:00Z")) }
+        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 
     @Test
-    fun `optical batch event persists and reevaluates each subscription`() {
+    fun `optical batch event persists without reevaluate`() {
         val batch = mockk<com.dscorp.wispadmin.servicehealth.service.OpticalBatchPersistService>(relaxed = true)
         val batchProvider = mockk<ObjectProvider<com.dscorp.wispadmin.servicehealth.service.OpticalBatchPersistService>>()
         every { batchProvider.ifAvailable } returns batch
@@ -96,7 +96,6 @@ class HealthSnapshotIngestServiceTest {
             )
         )
         verify { batch.persistFromEventJson(any()) }
-        verify { summaries.reevaluate(42, Instant.parse("2026-09-08T20:00:00Z")) }
-        verify { summaries.reevaluate(99, Instant.parse("2026-09-08T20:00:00Z")) }
+        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 }

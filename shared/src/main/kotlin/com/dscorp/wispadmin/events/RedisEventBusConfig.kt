@@ -30,6 +30,7 @@ class GigafiberRedisProperties {
     var streamMaxlen: Long = 20_000
     var consumerGroup: String = "snapshot-core"
     var cpeConsumerGroup: String = "cpe-provision-core"
+    var informConsumerGroup: String = "wifi-inform-core"
     var cacheTtlSeconds: Long = 15
 }
 

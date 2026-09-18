@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.config
 
 import com.dscorp.wispadmin.wispadmin.WispAdminApplication
+import com.dscorp.wispadmin.servicehealth.service.CpeInformEventConsumer
 import com.dscorp.wispadmin.servicehealth.service.HealthSnapshotConsumer
 import com.dscorp.wispadmin.wispadmin.scheduled.CutServiceMonthlyTaskScheduler
 import com.dscorp.wispadmin.wispadmin.scheduled.MonthlyBillingCloseScheduler
@@ -54,5 +55,6 @@ class SchedulingConfigurationTest {
         assertTrue(SmartLifecycle::class.java.isAssignableFrom(runtime))
         assertNull(HealthSnapshotConsumer::class.java.getDeclaredMethod("poll").getAnnotation(Scheduled::class.java))
         assertNull(CpeProvisioningEventConsumer::class.java.getDeclaredMethod("poll").getAnnotation(Scheduled::class.java))
+        assertNull(CpeInformEventConsumer::class.java.getDeclaredMethod("poll").getAnnotation(Scheduled::class.java))
     }
 }
