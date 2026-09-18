@@ -124,7 +124,7 @@ La ONU ZTE `ZTEGDC47BFFD` (`0/1/6` ONT 117) sigue **offline** (`dying-gasp`). El
 - **Tagged 1000 en `0/3/3`**: no. El parque VLAN 1 se migra a **VLAN 100** (mismo NNI `0/3/2` que ya lleva 1000), no se le pone gestión en el uplink legado. [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md).
 - **Perfiles de fábrica / GenieACS de stock**: la preconfiguración masiva se hace por USB en almacén, no desde aquí. Esta VSOL se movió en caliente porque ya estaba en GenieACS.
 - **Apagar `.255`/`.250` de la VLAN 100**: cuando terminen las oleadas.
-- **Segundo service-port en ONUs de producción**: solo laboratorio (`lab` en GenieACS).
+- **Segundo service-port en ONUs de producción**: fase 1 del parque ZTE/VSOL. Planificador `scripts/olt_vlan1000_onu_plan.py`. Detalle: [fase1-olt-vlan1000-parque-2026-09-18.md](./fase1-olt-vlan1000-parque-2026-09-18.md). GenieACS (retag WAN TR-069) es fase 2.
 
 ## Relacionado
 

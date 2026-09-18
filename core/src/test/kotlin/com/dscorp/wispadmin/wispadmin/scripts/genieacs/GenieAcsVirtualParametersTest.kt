@@ -154,6 +154,24 @@ class GenieAcsVirtualParametersTest {
         assertFalse(src.contains("WLANConfiguration"), src)
     }
 
+    @Test
+    fun tr069_vlan1000_finds_mgmt_wan_by_dhcp_pool_and_never_hardcodes_wcd_index() {
+        val src = read("scripts/genieacs/provisions/gf-tr069-vlan1000.js")
+        assertTrue(src.contains("V2804AX15T"), src)
+        assertTrue(src.contains("VSOLVA74"), src)
+        assertTrue(src.contains("F6600R"), src)
+        assertTrue(src.contains("function findTr069Wan"), src)
+        assertTrue(src.contains("function applyTr069Vlan"), src)
+        assertTrue(src.contains("192.168.252.0"), src)
+        assertTrue(src.contains("function collectWans"), src)
+        assertTrue(src.contains("WANConnectionDevice."), src)
+        assertTrue(src.contains("X_CT-COM_VLANIDMark"), src)
+        assertTrue(src.contains("X_ZTE-COM_VLANID"), src)
+        assertTrue(src.contains("unsupported productClass"), src)
+        assertFalse(src.contains("WANConnectionDevice.2.WANIPConnection.1"), src)
+        assertFalse(src.contains("WANConnectionDevice.*.WANIPConnection.*.ExternalIPAddress"), src)
+    }
+
     private fun read(relative: String): String {
         val path = root.resolve(relative)
         assertTrue(Files.exists(path), "missing $path")
