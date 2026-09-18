@@ -165,6 +165,7 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | UI `WifiCharts` formatea ticks en **HH:mm** (`formatHealthTime`) | Varios samples en el mismo minuto colapsan visualmente el eje | Tooltip / rango; no asumir un tick = un sample |
 | Leer con GPV / `refreshObject` en paralelo al Inform | Compite con la fuente única y devuelve la sesión anterior | `POST /cpe/{sn}/wifi-refresh` es **solo** un Connection Request que reencola el provision; no hay cooldown de GPV que mantener |
 | Keys GenieACS ↔ Tomcat desalineadas | Auto-ext 401; Inform sí, Core no | Sync + recreate contenedores |
+| `snapshot-core` reevalúa `traffic.latest` / `onu.optical-batch` en el mismo hilo que `cpe.inform` | ACS last-state fresco; series Core viejas; lag = MAXLEN y el XADD recorta Informs no leídos | No reevaluar 360 en esos tipos, o grupo/hilo aparte. Evidencia: [core-series-gap-snapshot-lag-2026-09-17.md](./core-series-gap-snapshot-lag-2026-09-17.md) |
 
 ## 8. Artefactos de código (referencia)
 
@@ -185,6 +186,7 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 
 | Nota | Contenido |
 |------|-----------|
+| [core-series-gap-snapshot-lag-2026-09-17.md](./core-series-gap-snapshot-lag-2026-09-17.md) | Prod: ACS XADD `cpe.inform` sí; Core `snapshot-core` clavado en reevaluate 360 |
 | [prod-wifi-telemetry-all-models-2026-09-17.md](./prod-wifi-telemetry-all-models-2026-09-17.md) | Preset flota F6600R+V2804AX15T en NBI prod |
 | [wifi-refresh-instant-series-2026-09-17.md](./wifi-refresh-instant-series-2026-09-17.md) | Actualizar Wi-Fi: CR + poll series / confirm perezoso |
 | [wifi-on-inform-cableado-2026-09-08.md](./wifi-on-inform-cableado-2026-09-08.md) | Resumen corto del cableado (apunta aquí) |
