@@ -2,32 +2,53 @@ const http = require("http");
 const https = require("https");
 const { URL } = require("url");
 
-// GenieACS abandons an ext call at EXT_TIMEOUT (3000 ms by default), so waiting
-// longer than that only loses the notify without telling anyone.
 const REQUEST_TIMEOUT_MS = 2500;
+const LAB_SERIALS = {
+  ZTEGDC47BFFD: true,
+  "12345B4641531C0B6": true,
+};
 
 function notify(args, callback) {
   const serial = args[0];
   const deviceId = args[1];
   const payload = args[2];
-  const base = process.env.GENIEACS_TO_ACS_NOTIFY_URL;
+  const prodBase = process.env.GENIEACS_TO_ACS_NOTIFY_URL;
+  const stagingBase = process.env.GENIEACS_TO_ACS_STAGING_NOTIFY_URL;
   const key = process.env.GENIEACS_TO_ACS_API_KEY;
-  if (!base || !key || !serial) {
+  if (!prodBase || !key || !serial) {
     callback(null, "skipped");
     return;
   }
-  let url;
-  try {
-    url = new URL(base.replace(/\/$/, "") + "/api/acs/v1/cpe/inform-notify");
-  } catch (err) {
-    callback(null, "bad-url");
-    return;
+  const targets = [prodBase];
+  if (LAB_SERIALS[serial] && stagingBase) {
+    targets.push(stagingBase);
   }
   const body = JSON.stringify({
     serial: serial,
     deviceId: deviceId || null,
     payload: payload || null,
   });
+  let remaining = targets.length;
+  const results = [];
+  targets.forEach((base, index) => {
+    postNotify(base, key, body, (status) => {
+      results[index] = status;
+      remaining -= 1;
+      if (remaining === 0) {
+        callback(null, results[0]);
+      }
+    });
+  });
+}
+
+function postNotify(base, key, body, done) {
+  let url;
+  try {
+    url = new URL(String(base).replace(/\/$/, "") + "/api/acs/v1/cpe/inform-notify");
+  } catch (err) {
+    done("bad-url");
+    return;
+  }
   const lib = url.protocol === "https:" ? https : http;
   const req = lib.request(
     {
@@ -44,15 +65,15 @@ function notify(args, callback) {
     },
     (res) => {
       res.resume();
-      callback(null, "http-" + res.statusCode);
+      done("http-" + res.statusCode);
     },
   );
   req.on("timeout", () => {
     req.destroy();
-    callback(null, "timeout");
+    done("timeout");
   });
   req.on("error", () => {
-    callback(null, "error");
+    done("error");
   });
   req.write(body);
   req.end();

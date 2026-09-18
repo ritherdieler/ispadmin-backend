@@ -92,6 +92,107 @@ test("wifi-inform-notify sends a null payload when the provision omits it", asyn
   }
 });
 
+test("fleet serial notifies only prod even when staging url is set", async () => {
+  const prodHits = [];
+  const stagingHits = [];
+  const prod = http.createServer((req, res) => {
+    prodHits.push(req.url);
+    res.writeHead(200);
+    res.end("{}");
+  });
+  const staging = http.createServer((req, res) => {
+    stagingHits.push(req.url);
+    res.writeHead(200);
+    res.end("{}");
+  });
+  await new Promise((resolve) => prod.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => staging.listen(0, "127.0.0.1", resolve));
+  try {
+    const notify = loadExt({
+      GENIEACS_TO_ACS_NOTIFY_URL: `http://127.0.0.1:${prod.address().port}/ispadmin`,
+      GENIEACS_TO_ACS_STAGING_NOTIFY_URL: `http://127.0.0.1:${staging.address().port}/ispadmin-staging`,
+      GENIEACS_TO_ACS_API_KEY: "test-key",
+    });
+    const result = await new Promise((resolve, reject) => {
+      notify(["HWTC15F5BB66", "HWTC-V2804AX15T-HWTC15F5BB66", "{\"v\":1}"], (err, value) => {
+        if (err) reject(err);
+        else resolve(value);
+      });
+    });
+    assert.equal(result, "http-200");
+    assert.equal(prodHits.length, 1);
+    assert.equal(stagingHits.length, 0);
+    assert.equal(prodHits[0], "/ispadmin/api/acs/v1/cpe/inform-notify");
+  } finally {
+    await new Promise((resolve) => prod.close(resolve));
+    await new Promise((resolve) => staging.close(resolve));
+  }
+});
+
+test("lab serial notifies prod and staging in the same ext call", async () => {
+  const received = [];
+  const prod = http.createServer((req, res) => {
+    received.push("prod:" + req.url);
+    res.writeHead(200);
+    res.end("{}");
+  });
+  const staging = http.createServer((req, res) => {
+    received.push("staging:" + req.url);
+    res.writeHead(202);
+    res.end("{}");
+  });
+  await new Promise((resolve) => prod.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => staging.listen(0, "127.0.0.1", resolve));
+  try {
+    const notify = loadExt({
+      GENIEACS_TO_ACS_NOTIFY_URL: `http://127.0.0.1:${prod.address().port}/ispadmin`,
+      GENIEACS_TO_ACS_STAGING_NOTIFY_URL: `http://127.0.0.1:${staging.address().port}/ispadmin-staging`,
+      GENIEACS_TO_ACS_API_KEY: "test-key",
+    });
+    const result = await new Promise((resolve, reject) => {
+      notify(["ZTEGDC47BFFD", "ZTEG-F6600R-ZTEGDC47BFFD", "{\"v\":1}"], (err, value) => {
+        if (err) reject(err);
+        else resolve(value);
+      });
+    });
+    assert.equal(result, "http-200");
+    assert.deepEqual(received.sort(), [
+      "prod:/ispadmin/api/acs/v1/cpe/inform-notify",
+      "staging:/ispadmin-staging/api/acs/v1/cpe/inform-notify",
+    ]);
+  } finally {
+    await new Promise((resolve) => prod.close(resolve));
+    await new Promise((resolve) => staging.close(resolve));
+  }
+});
+
+test("lab still notifies prod when staging is down", async () => {
+  const prodHits = [];
+  const prod = http.createServer((req, res) => {
+    prodHits.push(req.url);
+    res.writeHead(200);
+    res.end("{}");
+  });
+  await new Promise((resolve) => prod.listen(0, "127.0.0.1", resolve));
+  try {
+    const notify = loadExt({
+      GENIEACS_TO_ACS_NOTIFY_URL: `http://127.0.0.1:${prod.address().port}/ispadmin`,
+      GENIEACS_TO_ACS_STAGING_NOTIFY_URL: "http://127.0.0.1:1/ispadmin-staging",
+      GENIEACS_TO_ACS_API_KEY: "test-key",
+    });
+    const result = await new Promise((resolve, reject) => {
+      notify(["12345B4641531C0B6", "B46415-V2804AX15T-12345B4641531C0B6", "{\"v\":1}"], (err, value) => {
+        if (err) reject(err);
+        else resolve(value);
+      });
+    });
+    assert.equal(result, "http-200");
+    assert.equal(prodHits.length, 1);
+  } finally {
+    await new Promise((resolve) => prod.close(resolve));
+  }
+});
+
 test("ext waits less than the GenieACS EXT_TIMEOUT default", () => {
   const source = fs.readFileSync(extPath, "utf8");
   const match = source.match(/REQUEST_TIMEOUT_MS\s*=\s*(\d+)/);

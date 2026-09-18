@@ -19,12 +19,13 @@ En prod: **`cwmp.auth = true`** — el ACS no exige usuario/contraseña HTTP en 
 | `provisions/inform.js` | Inform global: passwords con SPV (`null` timestamp). No declara `PeriodicInform*` (ZTE F6600R 9007) |
 | `provisions/gigafiber-bootstrap.js` | Bootstrap: `declare` + **SPV** (`null` timestamp) de passwords |
 
-## Wi‑Fi telemetry piloto (canal Inform)
+## Wi‑Fi telemetry (canal Inform, flota)
 
-Provision `gigafiber-wifi-telemetry` + `apply-wifi-telemetry.py`: allowlist explícita, canal `inform`, radios 1+5 en F6600R/V2804AX15T. Ext `ext/wifi-inform-notify.js` + env `GENIEACS_TO_ACS_*`. **No** envolver `declare`/`ext` en `try/catch` (rompe Symbols GenieACS). `ext` va **antes** de los `declare` WLAN.
+Provision `gigafiber-wifi-telemetry` + `apply-wifi-telemetry.py --all-models`: `ProductClass` F6600R y V2804AX15T, canal propio, radios 1+5. Ext `ext/wifi-inform-notify.js` + env `GENIEACS_TO_ACS_NOTIFY_URL` (prod) y `GENIEACS_TO_ACS_STAGING_NOTIFY_URL` (solo lab). **No** envolver `declare`/`ext` en `try/catch` (rompe Symbols GenieACS). `ext` va **después** de los `declare` WLAN.
 
 - **Flujo canónico** (GenieACS → ACS → Gateway → Redis `cpe.inform` → Core → WifiCharts): `.agent-docs/wifi-on-inform-flujo-acs-gateway-core.md`
-- Piloto allowlist / 180 s: `.agent-docs/piloto-wifi-on-inform-vsol-lab-2026-09-08.md`
+- Apply prod `--all-models` (2026-09-17): `.agent-docs/prod-wifi-telemetry-all-models-2026-09-17.md`
+- Escalón lab / rollback: `.agent-docs/piloto-wifi-on-inform-vsol-lab-2026-09-08.md`
 - Diagnóstico auto-ext VSOL: `.agent-docs/wifi-inform-auto-ext-vsol-2026-09-08.md`
 
 Rollback: `--disable --apply`.
