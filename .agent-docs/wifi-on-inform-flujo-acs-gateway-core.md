@@ -77,7 +77,7 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 | 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS prod (`GENIEACS_TO_ACS_NOTIFY_URL`). ONU lab (`ZTEGDC47BFFD`, `12345B4641531C0B6`) también POST a staging (`GENIEACS_TO_ACS_STAGING_NOTIFY_URL`). Timeout 2500 ms, paralelo, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
 | 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
 | 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
-| 6 | Core `HealthSnapshotIngestService` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_count_sample`, `acs_wifi_station_sample` (batch JDBC, `observedAt` = `informAt`) y `acs_wifi_status_current`. |
+| 6 | Core `CpeInformEventConsumer` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_*`. **Sin** `reevaluate` (el ACK de Redis no espera el 360). |
 | 7 | Backoffice 360 | `GET …/service-health/series` → `WifiCharts` / estaciones. |
 
 `ACS/collector` del 360 sale de `acs_wifi_status_current.observedAt` de la suscripción,
@@ -165,7 +165,7 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | UI `WifiCharts` formatea ticks en **HH:mm** (`formatHealthTime`) | Varios samples en el mismo minuto colapsan visualmente el eje | Tooltip / rango; no asumir un tick = un sample |
 | Leer con GPV / `refreshObject` en paralelo al Inform | Compite con la fuente única y devuelve la sesión anterior | `POST /cpe/{sn}/wifi-refresh` es **solo** un Connection Request que reencola el provision; no hay cooldown de GPV que mantener |
 | Keys GenieACS ↔ Tomcat desalineadas | Auto-ext 401; Inform sí, Core no | Sync + recreate contenedores |
-| Un solo hilo `snapshot-core` reevalúa tráfico/óptica y persiste `cpe.inform` | ACS last-state fresco; series Core viejas; lag = MAXLEN | Carril `wifi-inform-core` solo para Inform; `snapshot-core` persiste óptica/tráfico sin `reevaluate` (GET 360 recalcula a los 60 s). Ver [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md). Evidencia previa: [core-series-gap-snapshot-lag-2026-09-17.md](./core-series-gap-snapshot-lag-2026-09-17.md) |
+| Un solo hilo `snapshot-core` reevalúa tráfico/óptica y persiste `cpe.inform` | ACS last-state fresco; series Core viejas; lag = MAXLEN | Carril `wifi-inform-core` solo para Inform; **ningún** consumer hace `reevaluate` (GET 360 recalcula a los 60 s). Ver [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md). Recaída: [wifi-inform-reevaluate-stall-2026-09-18.md](./wifi-inform-reevaluate-stall-2026-09-18.md). |
 
 ## 8. Artefactos de código (referencia)
 
@@ -187,7 +187,8 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 
 | Nota | Contenido |
 |------|-----------|
-| [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md) | Carril `wifi-inform-core` + snapshot sin reevaluate en tráfico/óptica |
+| [wifi-inform-reevaluate-stall-2026-09-18.md](./wifi-inform-reevaluate-stall-2026-09-18.md) | Recaída: `wifi-inform-core` clavado porque el ACK esperaba `reevaluate` |
+| [wifi-inform-consumer-lane-2026-09-18.md](./wifi-inform-consumer-lane-2026-09-18.md) | Carril `wifi-inform-core`; persist Inform sin `reevaluate` |
 | [core-series-gap-snapshot-lag-2026-09-17.md](./core-series-gap-snapshot-lag-2026-09-17.md) | Prod: ACS XADD `cpe.inform` sí; Core `snapshot-core` clavado en reevaluate 360 |
 | [piloto-wifi-on-inform-vsol-lab-2026-09-08.md](./piloto-wifi-on-inform-vsol-lab-2026-09-08.md) | Allowlist, 180 s, apply/rollback |
 | [wifi-on-inform-cableado-2026-09-08.md](./wifi-on-inform-cableado-2026-09-08.md) | Resumen corto del cableado (apunta aquí) |

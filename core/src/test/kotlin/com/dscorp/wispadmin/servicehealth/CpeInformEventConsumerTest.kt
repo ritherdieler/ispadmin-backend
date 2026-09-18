@@ -4,9 +4,6 @@ import com.dscorp.wispadmin.events.GigafiberRedisProperties
 import com.dscorp.wispadmin.events.PlatformEventTypes
 import com.dscorp.wispadmin.servicehealth.service.CpeInformEventConsumer
 import com.dscorp.wispadmin.servicehealth.service.CpeInformPersistService
-import com.dscorp.wispadmin.servicehealth.service.HealthSummaryQueryService
-import com.dscorp.wispadmin.servicehealth.service.IdentityService
-import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -15,24 +12,16 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import java.time.Instant
 
 class CpeInformEventConsumerTest {
-    private val identity = mockk<IdentityService>()
     private val persist = mockk<CpeInformPersistService>(relaxed = true)
-    private val summaries = mockk<HealthSummaryQueryService>(relaxed = true)
     private val props = GigafiberRedisProperties().apply { informConsumerGroup = "wifi-inform-core" }
     private val consumer = CpeInformEventConsumer(
         redis = mockk<StringRedisTemplate>(relaxed = true),
         properties = props,
-        identity = identity,
         persist = persist,
-        summaries = summaries,
     )
 
-    init {
-        every { identity.resolveOnu("12345B4641531C0B6") } returns 42
-    }
-
     @Test
-    fun `persists cpe inform and reevaluates`() {
+    fun `persists cpe inform without reevaluating snapshot`() {
         val informAt = Instant.parse("2026-09-18T05:00:00Z")
         consumer.applyFields(
             mapOf(
@@ -43,7 +32,6 @@ class CpeInformEventConsumerTest {
             )
         )
         verify { persist.persistFromEventJson(any()) }
-        verify { summaries.reevaluate(42, informAt) }
     }
 
     @Test
@@ -57,7 +45,6 @@ class CpeInformEventConsumerTest {
             )
         )
         verify(exactly = 0) { persist.persistFromEventJson(any()) }
-        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 
     @Test
@@ -70,7 +57,6 @@ class CpeInformEventConsumerTest {
             )
         )
         verify(exactly = 0) { persist.persistFromEventJson(any()) }
-        verify(exactly = 0) { summaries.reevaluate(any(), any()) }
     }
 
     @Test

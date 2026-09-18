@@ -45,10 +45,9 @@ class HealthSummaryQueryService(
     }
 
     /**
-     * Write path for the Inform stream: evaluates and persists, but does not
-     * decorate. Callers are the stream consumers, which discard the return
-     * value, and `decorate` costs a subscription-context read plus an open-event
-     * query per Inform. At 3000 ONUs that is once every 600 ms.
+     * Forces a 360 evaluation. Not used by Redis stream consumers: those
+     * persist samples or live hashes only. GET [summary] recalculates when
+     * the stored photo is older than [ServiceHealthProperties.snapshotFreshSeconds].
      */
     fun reevaluate(id: Int, now: Instant = Instant.now()): HealthSummary {
         val evaluated = engine.evaluate(reader.read(id, now))

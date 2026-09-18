@@ -14,9 +14,7 @@ import org.springframework.stereotype.Service
 class CpeInformEventConsumer(
     redis: StringRedisTemplate,
     private val properties: GigafiberRedisProperties,
-    private val identity: IdentityService,
     private val persist: CpeInformPersistService,
-    private val summaries: HealthSummaryQueryService,
 ) {
     private val logger = LoggerFactory.getLogger(CpeInformEventConsumer::class.java)
     private val pump = RedisStreamPump(redis, properties, properties.informConsumerGroup)
@@ -32,23 +30,6 @@ class CpeInformEventConsumer(
             persist.persistFromEventJson(event.payloadJson)
         } catch (ex: Exception) {
             logger.warn("cpe.inform persist failed sn={}: {}", event.sn, ex.message)
-            return
         }
-        val subscriptionId = event.subscriptionId ?: event.sn?.let { identity.resolveOnu(it) } ?: return
-        val startedAt = System.nanoTime()
-        try {
-            summaries.reevaluate(subscriptionId, event.occurredAt)
-        } catch (ex: Exception) {
-            logger.warn("Snapshot reevaluate failed subscription={}: {}", subscriptionId, ex.message)
-            return
-        }
-        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
-        if (elapsedMs >= SLOW_REEVALUATE_MS) {
-            logger.warn("Slow reevaluate subscription={} type={} elapsedMs={}", subscriptionId, event.type, elapsedMs)
-        }
-    }
-
-    private companion object {
-        const val SLOW_REEVALUATE_MS = 250L
     }
 }

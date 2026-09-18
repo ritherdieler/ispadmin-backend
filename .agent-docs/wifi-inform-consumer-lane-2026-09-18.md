@@ -8,11 +8,11 @@ Mismo stream `gigafiber.events` (namespaced). Tres grupos, un hilo cada uno:
 
 | Grupo | Hilo | Atiende |
 |-------|------|---------|
-| `wifi-inform-core` | `gigafiber-redis-wifi-inform-core` | `cpe.inform` → persist `acs_wifi_*` + un `reevaluate` |
+| `wifi-inform-core` | `gigafiber-redis-wifi-inform-core` | `cpe.inform` → persist `acs_wifi_*` **sin** `reevaluate` |
 | `snapshot-core` | `gigafiber-redis-snapshot-core` | óptica / estado / tráfico → persist + hash live; **sin** `reevaluate` |
 | `cpe-provision-core` | sin cambio | `cpe.provisioning` |
 
-`HealthSnapshotIngestService` ignora `cpe.inform` (ACK y sale). El diagnóstico 360 del GET recalcula si la foto tiene más de 60 s.
+`HealthSnapshotIngestService` ignora `cpe.inform` (ACK y sale). El diagnóstico 360 del GET recalcula si la foto tiene más de 60 s. `WifiCharts` lee las tablas de series, no el snapshot.
 
 Propiedad: `gigafiber.redis.inform-consumer-group=wifi-inform-core`.
 
