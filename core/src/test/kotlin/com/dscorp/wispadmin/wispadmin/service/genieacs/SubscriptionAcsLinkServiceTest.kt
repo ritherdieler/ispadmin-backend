@@ -54,7 +54,6 @@ class SubscriptionAcsLinkServiceTest {
             tagger = tagger,
             gatewayHttp = gatewayHttp,
             eventPublisher = events,
-            objectMapper = com.fasterxml.jackson.databind.ObjectMapper(),
         )
         service.clock = clock
     }

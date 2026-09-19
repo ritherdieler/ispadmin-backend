@@ -27,9 +27,9 @@ class SubscriptionAcsLinkService(
     private val tagger: GenieAcsSubscriptionTagger,
     private val gatewayHttp: ObjectProvider<OltGatewayHttpClient>,
     private val eventPublisher: ApplicationEventPublisher,
-    private val objectMapper: ObjectMapper,
 ) {
     var clock: Clock = Clock.systemUTC()
+    private val objectMapper = ObjectMapper()
     private val logger = LoggerFactory.getLogger(SubscriptionAcsLinkService::class.java)
 
     @Transactional
