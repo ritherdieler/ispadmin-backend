@@ -1,5 +1,7 @@
 # Flujo de deploy — ispadmin-backend (Tomcat Docker)
 
+Último deploy prod: `develop` @ `50f2c50` → `APP_RELEASE=1.0.3+50f2c50` (ensure-mgmt VLAN 1000 sin `ont modify`). Detalle: [deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md](./deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md).
+
 Guía operativa para desplegar el backend en producción con **DJL/PyTorch** en el VPS.
 
 Build verificado: `./gradlew :core:war :core:tomcatLibs -Pdjl.linux` + `./scripts/deploy.sh --full`.

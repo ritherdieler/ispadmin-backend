@@ -25,7 +25,7 @@ El provision GenieACS `gf-tr069-vlan1000` solo escribe la WAN TR-069 identificad
 
 El primer `commit` de un profile compartido (p. ej. `Generic_1_HF291F96D` id 5, ~273 ONUs) empuja OMCI a todas las vinculadas. El mapping es aditivo; no quita VLAN 1 ni 100.
 
-**No usar staging para el retag del parque.** Staging y prod hablan con la **misma** MA5608T; staging no aísla al cliente. El inventario de clientes está en prod (`olt_mgr_onu`); staging 404 salvo copias puntuales. Staging además ocupa 2 de 4 VTY. El runner va contra Core prod (`https://api.gigafiberperu.cloud/ispadmin`) cuando este WAR (ensure-mgmt sin `ont modify`) esté en **tomcat9027**.
+**Prod 2026-09-19:** WAR `1.0.3+50f2c50` en `tomcat9027`. `GET /ispadmin/` HTTP 200. El runner del parque va contra Core prod. Detalle: [deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md](./deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md).
 
 Por cada ONU: ping de la WAN de internet (IP fuera de `192.168.252.0/22` y `10.20.0.0/22`) desde el VPS por `wg-olt` **antes**, tras ensure-mgmt y tras el retag CPE. Si estaba reachable y deja de estarlo, el runner aborta y no sigue con GenieACS.
 
