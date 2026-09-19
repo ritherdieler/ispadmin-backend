@@ -33,6 +33,8 @@ class CrossSchemaJdbcForbiddenTest {
         "scripts/sql/staging-e2e-place-nap.sql",
         "scripts/sql/staging-ip-pool.sql",
         "scripts/whatsapp-normalize-message-log-phones.sql",
+        "scripts/sql/release-duplicate-fiber-onu-sn-vsol-2026-09-19.sql",
+        "scripts/sql/release-duplicate-fiber-onu-sn-core-2026-09-19.sql",
     )
 
     @Test
