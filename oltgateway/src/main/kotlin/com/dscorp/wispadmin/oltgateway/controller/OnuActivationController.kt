@@ -90,6 +90,14 @@ class OnuActivationController(
         @PathVariable sn: String,
         @RequestBody body: RemoveServicePortRequest,
     ): OnuServicePortsDto = servicePortService.removeVlan(sn, body.vlan)
+
+    @PostMapping("/onus/{sn}/service-port/ensure-mgmt")
+    fun ensureMgmtServicePort(
+        @PathVariable sn: String,
+        @RequestBody(required = false) body: EnsureMgmtServicePortBody?,
+    ): OnuServicePortsDto = servicePortService.ensureMgmtVlan(sn, body?.vlan)
 }
 
 data class RemoveServicePortRequest(val vlan: Int = 1)
+
+data class EnsureMgmtServicePortBody(val vlan: Int? = null)

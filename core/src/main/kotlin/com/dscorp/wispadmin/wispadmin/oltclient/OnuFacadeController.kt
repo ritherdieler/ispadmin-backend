@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.client.RestClientException
@@ -45,6 +46,15 @@ class OnuFacadeController(
 
     @PostMapping("/sync/inventory")
     fun syncInventory(): ResponseEntity<String> = post("/api/olt-gateway/admin/sync/snmp-inventory")
+
+    @PostMapping("/{sn}/service-port/ensure-mgmt")
+    fun ensureMgmtServicePort(
+        @PathVariable sn: String,
+        @RequestBody(required = false) body: EnsureMgmtServicePortRequestBody?,
+    ): ResponseEntity<String> {
+        val vlan = body?.vlan ?: 1000
+        return postBody("/api/olt-gateway/onus/$sn/service-port/ensure-mgmt", """{"vlan":$vlan}""")
+    }
 
     @PostMapping("/sync/signal")
     fun syncSignal(): ResponseEntity<String> = post("/api/olt-gateway/admin/sync/signal")
@@ -96,4 +106,23 @@ class OnuFacadeController(
             throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure("olt-gateway","UPSTREAM_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE)
         }
     }
+
+    private fun postBody(path: String, body: String): ResponseEntity<String> {
+        return try {
+            val upstream = oltGatewayHttpClient.postJsonBody(path, body)
+            ResponseEntity.status(upstream.statusCode)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(upstream.body ?: "{}")
+        } catch (ex: org.springframework.web.client.RestClientResponseException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: com.dscorp.wispadmin.transport.InvalidSubsystemResponse) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: RestClientException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemHttpErrors.translate(ex, "olt-gateway")
+        } catch (ex: IllegalArgumentException) {
+            throw com.dscorp.wispadmin.wispadmin.util.SubsystemFailure("olt-gateway","UPSTREAM_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE)
+        }
+    }
 }
+
+data class EnsureMgmtServicePortRequestBody(val vlan: Int? = null)

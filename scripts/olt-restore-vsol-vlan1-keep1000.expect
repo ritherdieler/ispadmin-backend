@@ -1,0 +1,96 @@
+#!/usr/bin/env expect -f
+# Restore internet VLAN 1 on VSOL00872649 while keeping TR-069 VLAN 1000.
+# Bind only 0/1/1 ont 91 to existing lineprofile 13 (gem1 maps VLAN 100, 1, 1000).
+# Do not create or rename profiles 3, 12, or 13.
+# Uso: olt-restore-vsol-vlan1-keep1000.expect [inspect|apply]
+set timeout 180
+set mode "inspect"
+if {[llength $argv] > 0} { set mode [lindex $argv 0] }
+
+set board 1
+set port 1
+set ontId 91
+set lpId 13
+set sn "VSOL00872649"
+
+if {![info exists env(OLT_GATEWAY_PASSWORD)] || $env(OLT_GATEWAY_PASSWORD) eq ""} {
+    if {[info exists env(OLT_PASSWORD)] && $env(OLT_PASSWORD) ne ""} {
+        set env(OLT_GATEWAY_PASSWORD) $env(OLT_PASSWORD)
+    }
+}
+if {![info exists env(OLT_GATEWAY_PASSWORD)] || $env(OLT_GATEWAY_PASSWORD) eq ""} {
+    puts "ERROR: set OLT_GATEWAY_PASSWORD"
+    exit 1
+}
+
+set ssh_opts "-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o KexAlgorithms=diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa -o Ciphers=aes128-cbc -o ConnectionAttempts=1"
+set log_file "/tmp/olt-restore-vsol-vlan1-$mode.log"
+file delete -force $log_file
+
+proc log_line {msg} {
+    global log_file
+    set f [open $log_file a]
+    puts $f $msg
+    close $f
+    puts $msg
+}
+
+proc wait_prompt {} {
+    expect {
+        -re "---- More \\( Press 'Q' to break \\) ----" { send " "; exp_continue }
+        -re "More \\( Press 'Q' to break \\)" { send " "; exp_continue }
+        -re "MA5608T\\(config-if-gpon-0/\[0-9\]+\\)#" { return }
+        -re "MA5608T\\(config\\)#" { return }
+        -re "MA5608T#" { return }
+        -re "MA5608T>" { return }
+        -re "\\(y/n\\)" { send -- "y\r"; exp_continue }
+        -re "Reenter times have reached" { log_line "LOCKOUT"; exit 2 }
+        timeout { log_line "TIMEOUT waiting prompt"; return }
+    }
+}
+
+proc send_cmd {line} {
+    log_line ">>> $line"
+    send -- "$line\r"
+    wait_prompt
+}
+
+spawn ssh {*}$ssh_opts oltadmin@10.11.104.2
+expect {
+    -re "(?i)password:" { send -- "$env(OLT_GATEWAY_PASSWORD)\r" }
+    timeout { log_line "LOGIN TIMEOUT"; exit 1 }
+}
+wait_prompt
+
+send_cmd "enable"
+send_cmd "config"
+send_cmd "mmi-mode enable"
+
+log_line "=== ESTADO PREVIO ==="
+send_cmd "display ont info by-sn $sn"
+send_cmd "display service-port port 0/$board/$port ont $ontId"
+send_cmd "display ont-lineprofile gpon profile-id 3"
+send_cmd "display ont-lineprofile gpon profile-id 12"
+send_cmd "display ont-lineprofile gpon profile-id $lpId"
+
+if {$mode eq "apply"} {
+    log_line "=== QUITAR SERVICE-PORTS ANTES DEL ONT MODIFY ==="
+    send_cmd "undo service-port port 0/$board/$port ont $ontId"
+
+    log_line "=== REVINCULAR ONU AL LINEPROFILE $lpId ==="
+    send_cmd "interface gpon 0/$board"
+    send_cmd "ont modify $port $ontId ont-lineprofile-id $lpId"
+    send_cmd "display ont info $port $ontId"
+    send_cmd "quit"
+
+    log_line "=== SERVICE-PORTS VLAN 1 + 1000 GEMPORT 1 ==="
+    send_cmd "service-port vlan 1 gpon 0/$board/$port ont $ontId gemport 1 multi-service user-vlan 1 tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+    send_cmd "service-port vlan 1000 gpon 0/$board/$port ont $ontId gemport 1 multi-service user-vlan 1000 tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+    send_cmd "display service-port port 0/$board/$port ont $ontId"
+    send_cmd "display ont info by-sn $sn"
+    send_cmd "save configuration"
+}
+
+send_cmd "quit"
+send_cmd "quit"
+expect eof

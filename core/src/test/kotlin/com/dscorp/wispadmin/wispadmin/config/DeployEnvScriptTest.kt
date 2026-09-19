@@ -338,6 +338,7 @@ class DeployEnvScriptTest {
         assertEquals(0, proc.waitFor(), out)
         val text = Files.readString(compose)
         assertTrue(text.contains("SPRING_PROFILES_ACTIVE: prod,staging"), text)
+        assertTrue(text.contains("OLT_GATEWAY_WRITES_ENABLED: true"), text)
         assertTrue(text.contains("ACS_DATASOURCE_PASSWORD: dummy-db-pass"), text)
         assertTrue(text.contains("OLTGATEWAY_DATASOURCE_PASSWORD: dummy-db-pass"), text)
         assertTrue(text.contains("TRAFFIC_DATASOURCE_PASSWORD: dummy-db-pass"), text)

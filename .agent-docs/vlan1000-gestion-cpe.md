@@ -117,6 +117,10 @@ Migrada **2026-09-10** sin USB: OLT primero (profile 12 + SP 1857), después SPV
 
 Orden: nunca cambiar la VLAN del CPE antes del service-port. GPV con `?connection_request` tras el SPV → HTTP 200, 0 faults, TCP `:7547` abierto en `10.20.0.2`.
 
+## Pre-registro OLT en el runner de retag
+
+`scripts/genieacs/retag-tr069-vlan1000.sh` registra el service-port VLAN 1000 **antes** de encolar GenieACS. Login JWT al Core y `POST /onu/{sn}/service-port/ensure-mgmt` (el Core proxya al Gateway). El Gateway, si falta la VLAN: `ont modify … ont-lineprofile-id 12` + `service-port vlan 1000 … gemport 2`. Idempotente si el CLI dice `already exists` y el display ya lista 1000. Si el SP no queda, el runner aborta y **no** hace PUT/task NBI. No abre SSH a `10.11.104.2` ni llama `/api/olt-gateway/` desde el script.
+
 La ONU ZTE `ZTEGDC47BFFD` (`0/1/6` ONT 117) sigue **offline** (`dying-gasp`). El stock nuevo sigue necesitando USB en almacén a VLAN 1000.
 
 ## Fuera de alcance
@@ -134,3 +138,4 @@ La ONU ZTE `ZTEGDC47BFFD` (`0/1/6` ONT 117) sigue **offline** (`dying-gasp`). El
 - [vlan1-desuso-destino-vlan100.md](./vlan1-desuso-destino-vlan100.md)
 - [olt-gateway-comandos-catalogo.md](./olt-gateway-comandos-catalogo.md)
 - [mikrotik-mk2-comandos-catalogo.md](./mikrotik-mk2-comandos-catalogo.md)
+- [fase2-tr069-vlan1000-lab-fix-2026-09-18.md](./fase2-tr069-vlan1000-lab-fix-2026-09-18.md) — retag TR-069 100→1000 (GenieACS) con pre-registro OLT vía Core

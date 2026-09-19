@@ -76,6 +76,26 @@ class SchemaGovernancePropertiesFileTest {
             names.any { it.matches(Regex("V4[6-9]__onu_unique_external_id\\.sql")) },
             "unique_external_id debe ir en una versión posterior a V45: $names",
         )
+        val v39 = read("core/src/main/resources/db/migration/V39__netdiag_retention_and_indexes.sql")
+        assertTrue(v39.contains("information_schema.TABLES"), v39)
+        assertTrue(v39.contains("AND TABLE_NAME = p_table"), v39)
+        val v40 = read("core/src/main/resources/db/migration/V40__obs_span_indexes.sql")
+        assertTrue(v40.contains("information_schema.TABLES"), v40)
+    }
+
+    @Test
+    fun v42_inserta_lab_y_no_asume_tabla_onu() {
+        val v42 = read("core/src/main/resources/db/migration/V42__subscription_acs_canonical.sql")
+        assertTrue(v42.contains("lab"), v42)
+        assertTrue(v42.contains("information_schema.TABLES"), v42)
+        assertTrue(v42.contains("TABLE_NAME = 'onu'"), v42)
+    }
+
+    @Test
+    fun v52_no_altera_columnas_pppoe_si_ya_existen() {
+        val v52 = read("core/src/main/resources/db/migration/V52__subscription_pppoe.sql")
+        assertTrue(v52.contains("information_schema.COLUMNS"), v52)
+        assertTrue(v52.contains("information_schema.STATISTICS"), v52)
     }
 
     @Test

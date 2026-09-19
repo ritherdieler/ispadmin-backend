@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
 class OnuFacadeControllerTest {
@@ -26,6 +27,28 @@ class OnuFacadeControllerTest {
             status { isOk() }
             content { contentTypeCompatibleWith(MediaType.APPLICATION_JSON) }
             jsonPath("$.items[0].sn") { value("HWTC1") }
+        }
+    }
+
+    @Test
+    fun `ensure-mgmt proxies gateway service-port API`() {
+        every {
+            client.postJsonBody(
+                "/api/olt-gateway/onus/VSOL0031C0B6/service-port/ensure-mgmt",
+                """{"vlan":1000}""",
+            )
+        } returns ResponseEntity.ok(
+            """{"sn":"VSOL0031C0B6","board":1,"port":6,"ontId":116,"vlans":[100,1000]}""",
+        )
+
+        mockMvc.post("/onu/VSOL0031C0B6/service-port/ensure-mgmt") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"vlan":1000}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.sn") { value("VSOL0031C0B6") }
+            jsonPath("$.ontId") { value(116) }
+            jsonPath("$.vlans[0]") { exists() }
         }
     }
 }

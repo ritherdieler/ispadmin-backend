@@ -14,7 +14,10 @@ CREATE PROCEDURE obs_add_index_if_missing(
     IN p_columns VARCHAR(255)
 )
 BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
+        SELECT 1 FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table
+    ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
     ) THEN

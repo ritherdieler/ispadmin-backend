@@ -53,7 +53,7 @@ class StagingEnvironmentPropertiesTest {
             staging,
         )
         assertTrue(staging.contains("olt.gateway.enabled=true"), staging)
-        assertTrue(staging.contains("olt.gateway.writes.enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.writes.enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.sync.signal-enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.sync.inventory-enabled=false"), staging)
         assertTrue(staging.contains("olt.gateway.sync.alarm-enabled=false"), staging)
@@ -210,7 +210,7 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("gigafiber.redis.enabled=\${REDIS_ENABLED:true}"), staging)
         assertTrue(staging.contains("gigafiber.redis.host=\${REDIS_HOST:redis}"), staging)
         assertTrue(staging.contains("gigafiber.redis.namespace=stg"), staging)
-        assertTrue(staging.contains("olt.gateway.writes.enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.writes.enabled=true"), staging)
     }
 
     @Test

@@ -4,6 +4,8 @@ from pathlib import Path
 
 PROFILE_KEY = "SPRING_PROFILES_ACTIVE"
 PROFILE_VALUE = "prod,staging"
+WRITES_KEY = "OLT_GATEWAY_WRITES_ENABLED"
+WRITES_VALUE = "true"
 SATELLITE_PASSWORD_KEYS = (
     "ACS_DATASOURCE_PASSWORD",
     "OLTGATEWAY_DATASOURCE_PASSWORD",
@@ -72,6 +74,57 @@ def ensure_spring_profiles(block):
     inserted.extend(out)
     inserted.append(f"    environment:{nl}")
     inserted.append(f"      {PROFILE_KEY}: {PROFILE_VALUE}{nl}")
+    return inserted, True
+
+
+def ensure_olt_writes(block):
+    out = []
+    has_env = False
+    has_writes = False
+    changed = False
+    for line in block:
+        if line.strip() == "environment:" or line.lstrip().startswith("environment:"):
+            has_env = True
+        if WRITES_KEY in line:
+            has_writes = True
+            indent = line[: len(line) - len(line.lstrip())]
+            nl = "\n" if line.endswith("\n") else ""
+            if line.lstrip().startswith("-"):
+                new = f"{indent}- {WRITES_KEY}={WRITES_VALUE}{nl}"
+            else:
+                new = f"{indent}{WRITES_KEY}: {WRITES_VALUE}{nl}"
+            if line != new:
+                changed = True
+            out.append(new)
+            continue
+        out.append(line)
+    if has_writes:
+        return out, changed
+    nl = "\n"
+    inserted = []
+    injected = False
+    if has_env:
+        for line in out:
+            inserted.append(line)
+            if not injected and PROFILE_KEY in line:
+                indent = line[: len(line) - len(line.lstrip())]
+                if line.lstrip().startswith("-"):
+                    inserted.append(f"{indent}- {WRITES_KEY}={WRITES_VALUE}{nl}")
+                else:
+                    inserted.append(f"{indent}{WRITES_KEY}: {WRITES_VALUE}{nl}")
+                injected = True
+        if injected:
+            return inserted, True
+        for i, line in enumerate(inserted):
+            if line.strip() == "environment:" or line.lstrip().startswith("environment:"):
+                indent = line[: len(line) - len(line.lstrip())]
+                inserted.insert(i + 1, f"{indent}  {WRITES_KEY}: {WRITES_VALUE}{nl}")
+                return inserted, True
+        inserted.append(f"      {WRITES_KEY}: {WRITES_VALUE}{nl}")
+        return inserted, True
+    inserted.extend(out)
+    inserted.append(f"    environment:{nl}")
+    inserted.append(f"      {WRITES_KEY}: {WRITES_VALUE}{nl}")
     return inserted, True
 
 
@@ -148,7 +201,8 @@ def rewrite_staging_block(block):
         out.append(f"    ports:{nl}")
         out.append(f'      - "8081:8080"{nl}')
     profiled, _ = ensure_spring_profiles(out)
-    return ensure_satellite_passwords(profiled)[0]
+    with_writes, _ = ensure_olt_writes(profiled)
+    return ensure_satellite_passwords(with_writes)[0]
 
 
 def ensure(path: Path) -> str:
@@ -157,8 +211,9 @@ def ensure(path: Path) -> str:
     start, end, block = extract_service_block(lines, "tomcat-staging")
     if block is not None:
         new_block, changed = ensure_spring_profiles(block)
+        new_block, writes_changed = ensure_olt_writes(new_block)
         new_block, pass_changed = ensure_satellite_passwords(new_block)
-        if changed or pass_changed:
+        if changed or writes_changed or pass_changed:
             path.write_text("".join(lines[:start] + new_block + lines[end:]))
             return "updated"
         return "already"

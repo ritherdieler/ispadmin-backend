@@ -28,6 +28,7 @@ Product class fuera de `F6600R` / `V2804AX15T` / `VSOLVA74` (Huawei incluido): `
 | `gf-static-wan2-poc` | `scripts/genieacs/provisions/gf-static-wan2-poc.js` | Sustituye la WAN PPP leftover por STATIC y, si vienen SSIDs, escribe WiFi |
 | `gf-wifi-ssid-poc` | `scripts/genieacs/provisions/gf-wifi-ssid-poc.js` | Cambia SSID 2.4 y 5.8 con una passphrase |
 | `gf-reboot-poc` | `scripts/genieacs/provisions/gf-reboot-poc.js` | Reinicia la ONU (RPC CWMP `Reboot`) |
+| `gf-tr069-vlan1000` | `scripts/genieacs/provisions/gf-tr069-vlan1000.js` | Retag **solo** la WAN TR-069 (DHCP `192.168.252.0/22` + VLAN 100) a VLAN 1000. El runner **primero** registra el SP VLAN 1000 en la OLT (`POST /onu/{sn}/service-port/ensure-mgmt`). |
 
 ## Dispositivos de lab
 
@@ -121,6 +122,22 @@ declare("Reboot", null, { value: Date.now() });
 {"name":"provisions","provisions":[["gf-reboot-poc"]]}
 ```
 
-## Qué no son estos cuatro
+## `gf-tr069-vlan1000`
+
+Args: `[vlanId]` (default 1000). One-shot de laboratorio/parque: busca la WAN cuyo DHCP está en `192.168.252.0/22` y VLAN 100, escribe CT-COM (VSOL) o `X_ZTE-COM_VLANID` (F6600R). No asume que TR-069 es `WCD.2`. No toca la WAN de internet.
+
+El runner `retag-tr069-vlan1000.sh` **no** retaguea el CPE si la OLT no tiene el service-port VLAN 1000. Orden: login Core → `POST /onu/{sn}/service-port/ensure-mgmt` (lineprofile **12** + `service-port vlan 1000 … gemport 2`, idempotente) → PUT NBI + task. No abre SSH a la OLT (usa el Gateway del WAR). `--lab` usa SN `VSOL0031C0B6`.
+
+GenieACS `declare()` no es un array; el script recorre instancias por `.path` / `size` (sin sondeo 1..8). WAN IP primero; PPP solo si no hay match. Cliente no-lab 2026-09-18 (`VSOL00872649`): OLT SP 1000 + CPE VLAN 1000 / `10.20.0.161`; WCD.1 intacta. [deploy-staging-writes-retag-vsol-2026-09-18.md](./deploy-staging-writes-retag-vsol-2026-09-18.md). Fallo lab 2026-09-18 (HTTP 200 sin `Script: gf-tr069-vlan1000`) y corrección: [fase2-tr069-vlan1000-lab-fix-2026-09-18.md](./fase2-tr069-vlan1000-lab-fix-2026-09-18.md).
+
+```json
+{"name":"provisions","provisions":[["gf-tr069-vlan1000","1000"]]}
+```
+
+```bash
+GENIEACS_NBI_URL=http://127.0.0.1:7557 ./scripts/genieacs/retag-tr069-vlan1000.sh --lab
+```
+
+## Qué no son estos scripts de lab
 
 Los presets `bootstrap`, `gigafiber-bootstrap`, `inform`, `default`, `huawei-writeonly-acs-credentials` y `gigafiber-wifi-telemetry` siguen en el NBI. Borrarlos rompe ACS URL, summon y telemetría WiFi. Estos cuatro no sustituyen ese canal.

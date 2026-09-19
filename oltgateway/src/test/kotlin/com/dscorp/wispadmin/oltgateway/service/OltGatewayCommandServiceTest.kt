@@ -339,6 +339,103 @@ class OltGatewayCommandServiceTest {
         assertEquals(setOf(1, 100), service.parseServicePortVlans(output))
     }
 
+    @Test
+    fun `ensureMgmtServicePort no escribe si VLAN 1000 ya esta`() {
+        val existing = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("display service-port")) {
+                    "service-port 18 vlan 100 gpon 0/1/6 ont 116 gemport 1\n" +
+                        "service-port 1857 vlan 1000 gpon 0/1/6 ont 116 gemport 2\n"
+                } else {
+                    cliOk(cmd)
+                }
+            },
+            properties = properties,
+        )
+
+        val vlans = existing.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(board = 1, port = 6, ontId = 116),
+        )
+
+        assertEquals(setOf(100, 1000), vlans)
+        assertTrue(commands.none { it.startsWith("ont modify") })
+        assertTrue(commands.none { it.startsWith("service-port vlan 1000") })
+    }
+
+    @Test
+    fun `ensureMgmtServicePort revincular lineprofile 12 y abre SP VLAN 1000 gem 2`() {
+        var displays = 0
+        val creating = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                if (cmd.startsWith("display service-port")) {
+                    displays += 1
+                    if (displays == 1) {
+                        "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n"
+                    } else {
+                        "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n" +
+                            "service-port 99 vlan 1000 gpon 0/1/6 ont 10 gemport 2\n"
+                    }
+                } else {
+                    cliOk(cmd)
+                }
+            },
+            properties = properties,
+        )
+
+        val vlans = creating.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(
+                board = 1,
+                port = 6,
+                ontId = 10,
+                vlan = 1000,
+                gemport = 2,
+                lineProfileId = 12,
+            ),
+        )
+
+        assertEquals(setOf(100, 1000), vlans)
+        assertTrue(commands.any { it == "interface gpon 0/1" })
+        assertTrue(commands.any { it == "ont modify 6 10 ont-lineprofile-id 12" })
+        assertTrue(
+            commands.any {
+                it == "service-port vlan 1000 gpon 0/1/6 ont 10 gemport 2 multi-service user-vlan 1000 " +
+                    "tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
+            },
+        )
+    }
+
+    @Test
+    fun `ensureMgmtServicePort trata already exists como exito si el display muestra 1000`() {
+        var displays = 0
+        val colliding = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                when {
+                    cmd.startsWith("display service-port") -> {
+                        displays += 1
+                        if (displays == 1) {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n"
+                        } else {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n" +
+                                "service-port 99 vlan 1000 gpon 0/1/6 ont 10 gemport 2\n"
+                        }
+                    }
+                    cmd.startsWith("service-port vlan 1000") ->
+                        "  Failure: The service virtual port already exists\nMA5608T#"
+                    else -> cliOk(cmd)
+                }
+            },
+            properties = properties,
+        )
+
+        val vlans = colliding.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(board = 1, port = 6, ontId = 10),
+        )
+        assertEquals(setOf(100, 1000), vlans)
+    }
+
     private fun cliOk(cmd: String): String = when {
         cmd.startsWith("ont delete") ->
             "  Number of ONTs that can be deleted: 1, success: 1\nMA5608T#"

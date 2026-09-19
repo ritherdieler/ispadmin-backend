@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.service
 
+import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.port.OltInventoryPort
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpStatus
@@ -19,6 +20,7 @@ data class OnuServicePortsDto(
 class OltServicePortService(
     private val inventory: OltInventoryPort,
     private val commandService: OltGatewayCommandService,
+    private val properties: OltGatewayProperties,
 ) {
     fun listBySn(sn: String): OnuServicePortsDto {
         val onu = inventory.findBySn(sn) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "ONU not found for SN=$sn")
@@ -42,6 +44,30 @@ class OltServicePortService(
             port = onu.port,
             ontId = onu.onuIndex,
             vlans = commandService.parseServicePortVlans(output),
+        )
+    }
+
+    fun ensureMgmtVlan(sn: String, vlan: Int? = null): OnuServicePortsDto {
+        val onu = inventory.findBySn(sn) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "ONU not found for SN=$sn")
+        val target = if (vlan != null && vlan > 0) vlan else properties.writes.labAcsMgmtVlan
+        val current = listBySn(sn)
+        if (target in current.vlans) return current
+        val vlans = commandService.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(
+                board = onu.board,
+                port = onu.port,
+                ontId = onu.onuIndex,
+                vlan = target,
+                gemport = properties.writes.labAcsMgmtGemport,
+                lineProfileId = properties.writes.labAcsLineProfileId,
+            ),
+        )
+        return OnuServicePortsDto(
+            sn = onu.sn,
+            board = onu.board,
+            port = onu.port,
+            ontId = onu.onuIndex,
+            vlans = vlans,
         )
     }
 }

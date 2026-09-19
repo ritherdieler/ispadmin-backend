@@ -41,6 +41,15 @@ data class DeleteCliRequest(
     val ontId: Int
 )
 
+data class EnsureMgmtServicePortRequest(
+    val board: Int,
+    val port: Int,
+    val ontId: Int,
+    val vlan: Int = 1000,
+    val gemport: Int = 2,
+    val lineProfileId: Int = 12,
+)
+
 data class RebootCliRequest(
     val board: Int,
     val port: Int,
@@ -160,6 +169,42 @@ class OltGatewayCommandService(
 
     fun parseServicePortVlans(output: String): Set<Int> =
         VLAN_PATTERN.findAll(output).mapNotNull { it.groupValues[1].toIntOrNull() }.toSet()
+
+    fun ensureMgmtServicePort(request: EnsureMgmtServicePortRequest): Set<Int> {
+        val before = parseServicePortVlans(displayServicePorts(request.board, request.port, request.ontId))
+        if (request.vlan in before) return before
+        ensureWritesEnabled()
+        inWriteJob {
+            runCommand("interface gpon 0/${request.board}")
+            val modify = "ont modify ${request.port} ${request.ontId} ont-lineprofile-id ${request.lineProfileId}"
+            val modifyOut = runCommand(modify)
+            if (looksLikeCliFailure(modifyOut) && !isAlreadyApplied(modifyOut)) {
+                throw IllegalStateException("OLT CLI failed for '$modify': ${modifyOut.takeLast(300)}")
+            }
+            runCommand("quit")
+            val sp = servicePortCommand(
+                vlan = request.vlan,
+                board = request.board,
+                port = request.port,
+                ontId = request.ontId,
+                gemport = request.gemport,
+            )
+            val spOut = runCommand(sp)
+            if (looksLikeCliFailure(spOut) && !isAlreadyApplied(spOut)) {
+                throw IllegalStateException("OLT CLI failed for '$sp': ${spOut.takeLast(300)}")
+            }
+        }
+        val after = parseServicePortVlans(displayServicePorts(request.board, request.port, request.ontId))
+        if (request.vlan !in after) {
+            throw IllegalStateException(
+                "OLT did not register VLAN ${request.vlan} on 0/${request.board}/${request.port} ont ${request.ontId}",
+            )
+        }
+        return after
+    }
+
+    private fun isAlreadyApplied(output: String): Boolean =
+        output.contains(Regex("(?i)already exist"))
 
     private fun runChecked(command: String): String {
         val output = runCommand(command)
