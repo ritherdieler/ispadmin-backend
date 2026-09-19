@@ -30,7 +30,8 @@ class SubscriptionPppoeMigrationTest {
     @Test
     fun v52AddsAccessModeAndPppoeColumnsWithoutBackfill() {
         assertTrue(v52.contains("ADD COLUMN `access_mode`"), v52)
-        assertTrue(v52.contains("DEFAULT 'STATIC_IP'"), v52)
+        assertTrue(v52.contains("STATIC_IP"), v52)
+        assertTrue(v52.contains("information_schema.COLUMNS"), v52)
         assertTrue(v52.contains("ADD COLUMN `pppoe_username`"), v52)
         assertTrue(v52.contains("ADD COLUMN `pppoe_password_enc`"), v52)
         assertTrue(v52.contains("ADD COLUMN `pppoe_profile`"), v52)
