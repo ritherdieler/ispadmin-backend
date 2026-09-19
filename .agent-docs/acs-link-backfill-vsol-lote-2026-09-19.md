@@ -4,7 +4,7 @@ Cruza GenieACS `_id` con la suscripción ACTIVE por sufijo hex de 6. No re-provi
 
 ## Deploy prod
 
-`develop` @ `c4bb7aa` (`1.0.3+c4bb7aa`). Preflight: cadena FIBER/TR-069 completa. `GET /ispadmin/` HTTP **200**.
+`develop` @ `d03d27c` (`1.0.3+d03d27c`). Preflight: cadena FIBER/TR-069 completa. `GET /ispadmin/` HTTP **200**.
 
 Incluye `FiberOnuSnClaimService` (alta sin duplicar SN) y `POST /subscription/acs/link`.
 
@@ -27,6 +27,8 @@ Los intentos `ffc6deb` / `21f38b3` dejaron Tomcat abajo: el paquete `service.gen
 ./scripts/genieacs/link-acs-lote.sh --prod --from-ghosts --dry-run
 ./scripts/genieacs/link-acs-lote.sh --prod --from-ghosts
 ```
+
+Prod 2026-09-19: 106 fantasmas → **39 LINKED** (IP internet 1:1, SN vacío), 61 SKIP_NONE, 6 SKIP_NOT_ACTIVE, 0 ambiguos. Sin `--delete-ghosts`.
 
 `listGhosts` / `deleteGhost` son `open` (mismo proxy CGLIB). `GET /subscription/acs/ghosts` → HTTP **200**, **106** filas. No se usó `--delete-ghosts`.
 
