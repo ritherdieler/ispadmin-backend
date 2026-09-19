@@ -18,7 +18,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.LocalDateTime
 
-class SubscriptionAcsLinkService(
+open class SubscriptionAcsLinkService(
     private val subscriptionRepository: SubscriptionRepository,
     private val client: GenieAcsClient,
     private val syncService: SubscriptionAcsSyncService,
@@ -31,7 +31,7 @@ class SubscriptionAcsLinkService(
     private val logger = LoggerFactory.getLogger(SubscriptionAcsLinkService::class.java)
 
     @Transactional
-    fun link(deviceId: String, dryRun: Boolean = false): SubscriptionAcsLinkResult {
+    open fun link(deviceId: String, dryRun: Boolean = false): SubscriptionAcsLinkResult {
         val id = deviceId.trim()
         val device = client.findDeviceById(id)
             ?: return SubscriptionAcsLinkResult(

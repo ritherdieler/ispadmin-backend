@@ -14,9 +14,11 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import java.lang.reflect.Modifier
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
@@ -261,6 +263,15 @@ class SubscriptionAcsLinkServiceTest {
 
         assertTrue(service.deleteGhost("ghost-31FAE6"))
         verify { client.deleteDevice("ghost-31FAE6") }
+    }
+
+    @Test
+    fun `class and link method are open for Spring CGLIB proxy`() {
+        assertFalse(Modifier.isFinal(SubscriptionAcsLinkService::class.java.modifiers))
+        val method = SubscriptionAcsLinkService::class.java.methods.first {
+            it.name == "link" && it.parameterCount == 2
+        }
+        assertFalse(Modifier.isFinal(method.modifiers))
     }
 
     private fun vsolDevice(lastInform: String = "2026-09-19T15:00:00.000Z") = GenieAcsDevice(
