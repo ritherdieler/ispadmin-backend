@@ -49,6 +49,7 @@ class SubscriptionAcsLinkServiceTest {
         every { gateway.getJson(any()) } returns ResponseEntity.ok("""{"onus":[{"sn":"VSOL0086D819"}],"status":true}""")
         every { gateway.postJsonBody(any(), any()) } returns ResponseEntity.ok("{}")
         every { subscriptionRepository.save(any()) } answers { firstArg() }
+        every { subscriptionRepository.findByIp(any()) } returns emptyList()
         service = SubscriptionAcsLinkService(
             subscriptionRepository = subscriptionRepository,
             client = client,
@@ -122,6 +123,56 @@ class SubscriptionAcsLinkServiceTest {
         verify(exactly = 0) { subscriptionRepository.save(any()) }
         verify(exactly = 0) { syncService.upsertFromProvision(any(), any(), any()) }
         verify(exactly = 0) { tagger.apply(any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { subscriptionRepository.findByIp("192.168.211.157") }
+    }
+
+    @Test
+    fun `suffix miss unique internet IP with empty SN links`() {
+        val device = vsolDevice().copy(internetIps = listOf("192.168.211.157"))
+        every { client.findDeviceById(DEVICE_ID) } returns device
+        every { subscriptionRepository.findByOnuSerialOrSuffix(any(), "86D819") } returns emptyList()
+        val subscription = holder(1808, null, ServiceStatus.ACTIVE)
+        every { subscriptionRepository.findByIp("192.168.211.157") } returns listOf(subscription)
+
+        val result = service.link(DEVICE_ID)
+
+        assertEquals(AcsLinkStatus.LINKED, result.status)
+        assertEquals(1808, result.subscriptionId)
+        assertEquals(DEVICE_ID, subscription.tr069DeviceId)
+        assertEquals("VSOL0086D819", subscription.fiberOnuSn)
+        verify { subscriptionRepository.save(subscription) }
+        verify(exactly = 0) { client.setParameterValues(any(), any(), any()) }
+    }
+
+    @Test
+    fun `suffix miss unique IP with other SN is SKIP_NONE`() {
+        val device = vsolDevice().copy(internetIps = listOf("192.168.211.157"))
+        every { client.findDeviceById(DEVICE_ID) } returns device
+        every { subscriptionRepository.findByOnuSerialOrSuffix(any(), "86D819") } returns emptyList()
+        every { subscriptionRepository.findByIp("192.168.211.157") } returns listOf(
+            holder(99, "TPLGE6EC8818", ServiceStatus.ACTIVE),
+        )
+
+        val result = service.link(DEVICE_ID)
+
+        assertEquals(AcsLinkStatus.SKIP_NONE, result.status)
+        verify(exactly = 0) { subscriptionRepository.save(any()) }
+    }
+
+    @Test
+    fun `suffix miss two occupied IPs is SKIP_AMBIGUOUS`() {
+        val device = vsolDevice().copy(internetIps = listOf("192.168.30.12"))
+        every { client.findDeviceById(DEVICE_ID) } returns device
+        every { subscriptionRepository.findByOnuSerialOrSuffix(any(), "86D819") } returns emptyList()
+        every { subscriptionRepository.findByIp("192.168.30.12") } returns listOf(
+            holder(2031, null, ServiceStatus.ACTIVE),
+            holder(2260, null, ServiceStatus.CUT_OFF),
+        )
+
+        val result = service.link(DEVICE_ID)
+
+        assertEquals(AcsLinkStatus.SKIP_AMBIGUOUS, result.status)
+        verify(exactly = 0) { subscriptionRepository.save(any()) }
     }
 
     @Test
@@ -284,9 +335,10 @@ class SubscriptionAcsLinkServiceTest {
         ssid24 = "GIGA-24",
         ssid5 = "GIGA-5",
         connectionRequestUrl = "http://10.20.0.10:7547/",
+        internetIps = listOf("192.168.211.157"),
     )
 
-    private fun holder(id: Int, sn: String, status: ServiceStatus) = Subscription(
+    private fun holder(id: Int, sn: String?, status: ServiceStatus) = Subscription(
         id = id,
         firstName = "A",
         lastName = "B",

@@ -245,6 +245,8 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
 
     fun findByIpAndServiceStatus(ip: String, serviceStatus: ServiceStatus): List<Subscription>
 
+    fun findByIp(ip: String): List<Subscription>
+
     
     // Método para obtener las suscripciones canceladas
     @Query("SELECT s FROM Subscription s WHERE s.serviceStatus = 'CANCELLED'")

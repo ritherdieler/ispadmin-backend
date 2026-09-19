@@ -18,7 +18,15 @@ Los intentos `ffc6deb` / `21f38b3` dejaron Tomcat abajo: el paquete `service.gen
 - `POST /subscription/acs/ghosts/delete` `{ "deviceId" }` borra NBI solo si no hay ACTIVE/CUT_OFF/SUSPENDED.
 - COMPLETE en `tr069ProvisionStatus` solo si lastInform < 24 h. Inform viejo: vínculo sí, badge `—`.
 - SN de Core se unifica al de Gateway (`GET …/onu/get_onus_details_by_sn/{sn}`) si existe.
+- Si el sufijo no tiene dueño, se intenta un cruce **1:1 por IP de WAN internet** (`ExternalIPAddress`, no TR-069 `192.168.252/22` ni `10.20/22`) contra `subscription.ip` con SN vacío.
 - `ensure-mgmt` VLAN 1000 vía Gateway; 404 no aborta el vínculo.
+
+## Reconcile por IP
+
+```bash
+./scripts/genieacs/link-acs-lote.sh --prod --from-ghosts --dry-run
+./scripts/genieacs/link-acs-lote.sh --prod --from-ghosts
+```
 
 `listGhosts` / `deleteGhost` son `open` (mismo proxy CGLIB). `GET /subscription/acs/ghosts` → HTTP **200**, **106** filas. No se usó `--delete-ghosts`.
 

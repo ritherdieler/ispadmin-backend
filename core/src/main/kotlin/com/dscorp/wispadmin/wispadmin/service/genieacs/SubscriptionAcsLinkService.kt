@@ -59,12 +59,37 @@ open class SubscriptionAcsLinkService(
                 status = AcsLinkStatus.SKIP_NOT_ACTIVE,
                 deviceId = id,
             )
-            occupied.isEmpty() -> return SubscriptionAcsLinkResult(
-                status = AcsLinkStatus.SKIP_NONE,
-                deviceId = id,
-            )
         }
-        val subscription = occupied.single()
+        val subscription = if (occupied.isEmpty()) {
+            val byIp = ownersByInternetIp(device)
+            when {
+                byIp.size > 1 -> return SubscriptionAcsLinkResult(
+                    status = AcsLinkStatus.SKIP_AMBIGUOUS,
+                    deviceId = id,
+                    message = byIp.joinToString(",") { "#${it.id}" },
+                )
+                byIp.isEmpty() -> return SubscriptionAcsLinkResult(
+                    status = AcsLinkStatus.SKIP_NONE,
+                    deviceId = id,
+                )
+            }
+            val candidate = byIp.single()
+            val existingSn = candidate.fiberOnuSn
+            if (!existingSn.isNullOrBlank()) {
+                val snSuffix = Tr069SerialMatcher.normalizeSuffix(existingSn)
+                if (snSuffix != null && snSuffix != suffix) {
+                    return SubscriptionAcsLinkResult(
+                        status = AcsLinkStatus.SKIP_NONE,
+                        deviceId = id,
+                        subscriptionId = candidate.id,
+                        message = "ip de #${candidate.id} con SN $existingSn",
+                    )
+                }
+            }
+            candidate
+        } else {
+            occupied.single()
+        }
         val subscriptionId = subscription.id
             ?: return SubscriptionAcsLinkResult(status = AcsLinkStatus.SKIP_NONE, deviceId = id)
         if (dryRun) {
@@ -115,6 +140,13 @@ open class SubscriptionAcsLinkService(
             throw IllegalStateException("El CPE $id tiene dueño $detail")
         }
         return client.deleteDevice(id)
+    }
+
+    private fun ownersByInternetIp(device: GenieAcsDevice): List<Subscription> {
+        return device.internetIps
+            .flatMap { ip -> subscriptionRepository.findByIp(ip) }
+            .distinctBy { it.id }
+            .filter { it.serviceStatus != ServiceStatus.CANCELLED }
     }
 
     private fun persistLink(subscription: Subscription, device: GenieAcsDevice, suffix: String) {

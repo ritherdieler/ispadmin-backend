@@ -21,6 +21,7 @@ class LinkAcsLoteScriptTest {
         assertTrue(text.contains("api.gigafiberperu.cloud/ispadmin"), text)
         assertTrue(text.contains("/tmp/vsol-tr069-inverted-todo.tsv"), text)
         assertTrue(text.contains("--list-ghosts"), text)
+        assertTrue(text.contains("--from-ghosts"), text)
         assertTrue(text.contains("--delete-ghosts"), text)
         assertTrue(text.contains("/subscription/acs/ghosts"), text)
         assertFalse(text.contains("retry-tr069"), text)

@@ -13,6 +13,7 @@ data class GenieAcsDevice(
     val connectionRequestUrl: String? = null,
     val ssid24: String? = null,
     val ssid5: String? = null,
+    val internetIps: List<String> = emptyList(),
 )
 
 sealed class Tr069SerialMatch {

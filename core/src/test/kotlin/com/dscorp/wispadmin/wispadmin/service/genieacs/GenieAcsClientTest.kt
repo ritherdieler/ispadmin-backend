@@ -546,7 +546,12 @@ class GenieAcsClientTest {
                         "LANDevice":{"1":{"WLANConfiguration":{
                           "1":{"SSID":{"_value":"GIGA-5"}},
                           "5":{"SSID":{"_value":"GIGA-24"}}
-                        }}}
+                        }}},
+                        "WANDevice":{"1":{"WANConnectionDevice":{
+                          "1":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.211.157"}}}},
+                          "2":{"WANIPConnection":{"1":{"ExternalIPAddress":{"_value":"192.168.255.204"}}}}
+                        }}},
+                        "ManagementServer":{"ConnectionRequestURL":{"_value":"http://192.168.255.204:7547/"}}
                       }
                     }]
                     """.trimIndent()
@@ -558,6 +563,7 @@ class GenieAcsClientTest {
         assertEquals("B46415-V2804AX15T-12345B4641586D819", device!!.id)
         assertEquals("GIGA-24", device.ssid24)
         assertEquals("GIGA-5", device.ssid5)
+        assertEquals(listOf("192.168.211.157"), device.internetIps)
         val request = server.takeRequest()
         assertEquals("GET", request.method)
         assertTrue(request.path!!.startsWith("/devices/"))

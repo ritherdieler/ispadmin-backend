@@ -581,7 +581,26 @@ class GenieAcsClient(
             ),
             ssid24 = readWlanSsid(node, band24 = true),
             ssid5 = readWlanSsid(node, band24 = false),
+            internetIps = internetIpsOf(node),
         )
+    }
+
+    private fun internetIpsOf(node: JsonNode): List<String> {
+        val cr = InternetWanIp.crHost(
+            readNestedValue(node, "InternetGatewayDevice.ManagementServer.ConnectionRequestURL"),
+        )
+        val fromWan = InternetWanIp.internetHosts(node, cr)
+        val fromGf = gfInternetIp(node)
+        return (fromWan + listOfNotNull(fromGf?.takeIf { InternetWanIp.isInternetHost(it, cr) })).distinct()
+    }
+
+    private fun gfInternetIp(node: JsonNode): String? {
+        val raw = readNestedValue(node, "VirtualParameters.GfInternetStatus") ?: return null
+        return try {
+            objectMapper.readTree(raw).path("ip").asText(null)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun readWlanSsid(node: JsonNode, band24: Boolean): String? {
@@ -613,7 +632,9 @@ class GenieAcsClient(
         const val LINK_DEVICE_PROJECTION =
             "$DEFAULT_DEVICE_PROJECTION," +
                 "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID," +
-                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID"
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID," +
+                "InternetGatewayDevice.WANDevice," +
+                "VirtualParameters.GfInternetStatus"
 
         fun formatTaskError(result: GenieAcsTaskResult): String {
             val detail = extractErrorDetail(result.body)
