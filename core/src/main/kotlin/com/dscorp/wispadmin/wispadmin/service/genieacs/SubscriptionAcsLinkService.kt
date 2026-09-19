@@ -13,13 +13,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
 import java.time.LocalDateTime
 
-@Service
 class SubscriptionAcsLinkService(
     private val subscriptionRepository: SubscriptionRepository,
     private val client: GenieAcsClient,
