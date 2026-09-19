@@ -266,12 +266,14 @@ class SubscriptionAcsLinkServiceTest {
     }
 
     @Test
-    fun `class and link method are open for Spring CGLIB proxy`() {
+    fun `class and public methods are open for Spring CGLIB proxy`() {
         assertFalse(Modifier.isFinal(SubscriptionAcsLinkService::class.java.modifiers))
-        val method = SubscriptionAcsLinkService::class.java.methods.first {
-            it.name == "link" && it.parameterCount == 2
+        val names = setOf("link", "listGhosts", "deleteGhost")
+        val methods = SubscriptionAcsLinkService::class.java.methods.filter { it.name in names }
+        assertTrue(methods.isNotEmpty())
+        methods.forEach { method ->
+            assertFalse(Modifier.isFinal(method.modifiers), method.name)
         }
-        assertFalse(Modifier.isFinal(method.modifiers))
     }
 
     private fun vsolDevice(lastInform: String = "2026-09-19T15:00:00.000Z") = GenieAcsDevice(

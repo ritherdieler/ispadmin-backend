@@ -82,7 +82,7 @@ open class SubscriptionAcsLinkService(
         )
     }
 
-    fun listGhosts(): List<AcsGhostDevice> {
+    open fun listGhosts(): List<AcsGhostDevice> {
         return client.listDevices().mapNotNull { device ->
             val suffix = suffixOf(device) ?: return@mapNotNull null
             val holders = subscriptionRepository.findByOnuSerialOrSuffix(
@@ -100,7 +100,7 @@ open class SubscriptionAcsLinkService(
         }
     }
 
-    fun deleteGhost(deviceId: String): Boolean {
+    open fun deleteGhost(deviceId: String): Boolean {
         val id = deviceId.trim()
         val device = client.findDeviceById(id)
             ?: throw NoSuchElementException("Device $id no está en GenieACS")

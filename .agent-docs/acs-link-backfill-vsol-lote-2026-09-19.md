@@ -2,6 +2,14 @@
 
 Cruza GenieACS `_id` con la suscripción ACTIVE por sufijo hex de 6. No re-provisiona WAN ni WiFi.
 
+## Deploy prod
+
+`develop` @ `04194e4` (`1.0.3+04194e4`). Preflight: cadena FIBER/TR-069 completa. `GET /ispadmin/` HTTP **200**.
+
+Incluye `FiberOnuSnClaimService` (alta sin duplicar SN) y `POST /subscription/acs/link`.
+
+Los intentos `ffc6deb` / `21f38b3` dejaron Tomcat abajo: el paquete `service.genieacs` no se escanea, y la clase Kotlin final no admite proxy CGLIB de `@Transactional`. Arreglo: `SubscriptionAcsLinkConfig` + `open class` / `open fun link`.
+
 ## Core
 
 - `FiberOnuSnClaimService` en el alta (un SN ocupado).
@@ -12,15 +20,37 @@ Cruza GenieACS `_id` con la suscripción ACTIVE por sufijo hex de 6. No re-provi
 - SN de Core se unifica al de Gateway (`GET …/onu/get_onus_details_by_sn/{sn}`) si existe.
 - `ensure-mgmt` VLAN 1000 vía Gateway; 404 no aborta el vínculo.
 
-## Lote
+`listGhosts` / `deleteGhost` deben ser `open` (mismo proxy CGLIB). En `04194e4` el GET fantasmas responde **500** (`NPE` en el proxy). El cruce se listó por NBI × Core; no se usó `--delete-ghosts`.
+
+## Lote (prod, 2026-09-19)
+
+Archivo `/tmp/vsol-tr069-inverted-todo.tsv` (108 `_id`).
+
+| Paso | Resultado |
+|------|-----------|
+| Dry-run | HTTP 200 × 108. `LINKED` 101, `SKIP_NONE` 7, `SKIP_AMBIGUOUS` 0 |
+| Write | igual. Sin PUT NBI de WAN / sin `retryTr069` |
+
+`SKIP_NONE` (sin ACTIVE/CUT_OFF/SUSPENDED):
+
+- `12345B4641586D849`
+- `12345B46415F5F566`
+- `12345B46415F5ECD6`
+- `12345B4641500CBB4`
+- `12345B46415F5DFA6`
+- `12345B4641531FAE6` (TESTHU)
+- `12345B4641531EF96`
+
+## Fantasmas
+
+NBI 403 CPE × sufijos ocupados en Core: **106** sin dueño. No se borró ninguno.
+
+Incluye la lab `ZTEGDC47BFFD` (sigue conectada) y los 7 `SKIP_NONE` del lote.
 
 ```bash
-./scripts/genieacs/link-acs-lote.sh --prod --dry-run --file /tmp/vsol-tr069-inverted-todo.tsv
-./scripts/genieacs/link-acs-lote.sh --prod --file /tmp/vsol-tr069-inverted-todo.tsv
 ./scripts/genieacs/link-acs-lote.sh --prod --list-ghosts
+# --delete-ghosts es explícito y no forma parte del backfill
 ```
-
-`--delete-ghosts` es explícito y no forma parte del backfill.
 
 ## Duplicados Core
 
