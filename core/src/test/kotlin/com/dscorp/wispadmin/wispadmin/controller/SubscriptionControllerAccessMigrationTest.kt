@@ -39,6 +39,7 @@ class SubscriptionControllerAccessMigrationTest {
         ipConflictNocNotifier = mockk(relaxed = true),
         subscriptionProvisionService = mockk<SubscriptionProvisionService>(relaxed = true),
         gatewayCpe = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient>>(relaxed = true),
+        subscriptionAcsLinkService = mockk(relaxed = true),
         accessMigrationService = accessMigrationService,
     )
 

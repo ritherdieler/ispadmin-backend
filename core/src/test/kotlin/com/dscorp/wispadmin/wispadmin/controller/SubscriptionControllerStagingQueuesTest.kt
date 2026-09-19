@@ -32,6 +32,7 @@ class SubscriptionControllerStagingQueuesTest {
             ipConflictNocNotifier = mockk(relaxed = true),
             subscriptionProvisionService = mockk<SubscriptionProvisionService>(relaxed = true),
             gatewayCpe = mockk(relaxed = true),
+            subscriptionAcsLinkService = mockk(relaxed = true),
             environment = environment
         )
     }
@@ -65,6 +66,7 @@ class SubscriptionControllerStagingQueuesTest {
             ipConflictNocNotifier = mockk(relaxed = true),
             subscriptionProvisionService = mockk(relaxed = true),
             gatewayCpe = mockk(relaxed = true),
+            subscriptionAcsLinkService = mockk(relaxed = true),
             environment = environment
         )
 

@@ -57,10 +57,10 @@ class SubscriptionController(
     private val ipConflictNocNotifier: SubscriptionIpConflictNocNotifier,
     private val subscriptionProvisionService: SubscriptionProvisionService,
     private val gatewayCpe: ObjectProvider<GatewayOnuActivationClient>,
+    private val subscriptionAcsLinkService: ObjectProvider<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService>,
     private val accessMigrationService: com.dscorp.wispadmin.wispadmin.service.subscription.AccessMigrationService? = null,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
     private val subscriptionAcsRepository: SubscriptionAcsRepository? = null,
-    private val subscriptionAcsLinkService: com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService? = null,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -267,7 +267,7 @@ class SubscriptionController(
 
     @PostMapping("/acs/link")
     fun linkSubscriptionAcs(@RequestBody request: SubscriptionAcsLinkRequest): ResponseEntity<Any> {
-        val service = subscriptionAcsLinkService
+        val service = subscriptionAcsLinkService.ifAvailable
             ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "ACS link no disponible"))
         val deviceId = request.deviceId.trim()
@@ -285,7 +285,7 @@ class SubscriptionController(
 
     @GetMapping("/acs/ghosts")
     fun listAcsGhosts(): ResponseEntity<Any> {
-        val service = subscriptionAcsLinkService
+        val service = subscriptionAcsLinkService.ifAvailable
             ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "ACS link no disponible"))
         return ResponseEntity.ok(service.listGhosts())
@@ -293,7 +293,7 @@ class SubscriptionController(
 
     @PostMapping("/acs/ghosts/delete")
     fun deleteAcsGhost(@RequestBody request: SubscriptionAcsLinkRequest): ResponseEntity<Any> {
-        val service = subscriptionAcsLinkService
+        val service = subscriptionAcsLinkService.ifAvailable
             ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "ACS link no disponible"))
         val deviceId = request.deviceId.trim()

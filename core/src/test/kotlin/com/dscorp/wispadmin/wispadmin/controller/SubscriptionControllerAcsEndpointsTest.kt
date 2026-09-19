@@ -37,6 +37,7 @@ class SubscriptionControllerAcsEndpointsTest {
     private val acsRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository>()
     private val subscriptionProvisionService = mockk<com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService>()
     private val acsLinkService = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService>()
+    private val acsLinkProvider = mockk<ObjectProvider<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService>>()
     private val controller = SubscriptionController(
         repository = repository,
         subscriptionService = mockk(relaxed = true),
@@ -52,12 +53,13 @@ class SubscriptionControllerAcsEndpointsTest {
         ipConflictNocNotifier = mockk(relaxed = true),
         subscriptionProvisionService = subscriptionProvisionService,
         gatewayCpe = gatewayCpe,
+        subscriptionAcsLinkService = acsLinkProvider,
         subscriptionAcsRepository = acsRepository,
-        subscriptionAcsLinkService = acsLinkService,
     )
 
     init {
         every { gatewayCpe.ifAvailable } returns gateway
+        every { acsLinkProvider.ifAvailable } returns acsLinkService
         every { repository.findById(42) } returns Optional.of(
             Subscription(id = 42, fiberOnuSn = "SN1", equipmentCondition = com.dscorp.wispadmin.wispadmin.data.model.EquipmentCondition.values().first()).apply {
                 tr069ProvisionStatus = Tr069ProvisionStatus.COMPLETE

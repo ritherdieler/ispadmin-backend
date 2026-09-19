@@ -54,6 +54,7 @@ class SubscriptionControllerMultipartIdempotencyTest {
         ipConflictNocNotifier = ipConflictNocNotifier,
         subscriptionProvisionService = mockk(relaxed = true),
         gatewayCpe = gatewayCpe,
+        subscriptionAcsLinkService = mockk(relaxed = true),
     )
 
     @BeforeEach
