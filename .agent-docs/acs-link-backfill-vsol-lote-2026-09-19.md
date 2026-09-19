@@ -4,7 +4,7 @@ Cruza GenieACS `_id` con la suscripción ACTIVE por sufijo hex de 6. No re-provi
 
 ## Deploy prod
 
-`develop` @ `04194e4` (`1.0.3+04194e4`). Preflight: cadena FIBER/TR-069 completa. `GET /ispadmin/` HTTP **200**.
+`develop` @ `c4bb7aa` (`1.0.3+c4bb7aa`). Preflight: cadena FIBER/TR-069 completa. `GET /ispadmin/` HTTP **200**.
 
 Incluye `FiberOnuSnClaimService` (alta sin duplicar SN) y `POST /subscription/acs/link`.
 
@@ -20,7 +20,7 @@ Los intentos `ffc6deb` / `21f38b3` dejaron Tomcat abajo: el paquete `service.gen
 - SN de Core se unifica al de Gateway (`GET …/onu/get_onus_details_by_sn/{sn}`) si existe.
 - `ensure-mgmt` VLAN 1000 vía Gateway; 404 no aborta el vínculo.
 
-`listGhosts` / `deleteGhost` deben ser `open` (mismo proxy CGLIB). En `04194e4` el GET fantasmas responde **500** (`NPE` en el proxy). El cruce se listó por NBI × Core; no se usó `--delete-ghosts`.
+`listGhosts` / `deleteGhost` son `open` (mismo proxy CGLIB). `GET /subscription/acs/ghosts` → HTTP **200**, **106** filas. No se usó `--delete-ghosts`.
 
 ## Lote (prod, 2026-09-19)
 
