@@ -58,8 +58,6 @@ class OltServicePortService(
                 port = onu.port,
                 ontId = onu.onuIndex,
                 vlan = target,
-                gemport = properties.writes.labAcsMgmtGemport,
-                lineProfileId = properties.writes.labAcsLineProfileId,
             ),
         )
         return OnuServicePortsDto(

@@ -39,6 +39,12 @@ data class ParsedOnuBySn(
     val serviceProfileName: String? = null
 )
 
+data class ParsedGemVlanMapping(
+    val gem: Int,
+    val mapIndex: Int,
+    val vlan: Int,
+)
+
 data class ParsedOnuSummary(
     val frame: Int,
     val slot: Int,

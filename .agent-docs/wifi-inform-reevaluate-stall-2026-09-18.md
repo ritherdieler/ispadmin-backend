@@ -32,3 +32,5 @@ El carril nuevo evitó que óptica/tráfico bloquearan Inform, pero **copió el 
 ## Tests
 
 `CpeInformEventConsumerTest.persists cpe inform without reevaluating snapshot` (RED → GREEN).
+
+Deploy prod: [deploy-prod-wifi-inform-persist-only-2026-09-18.md](./deploy-prod-wifi-inform-persist-only-2026-09-18.md). #2373 WifiCharts en Vite prod: 5 / 3+2 + estaciones RSSI.

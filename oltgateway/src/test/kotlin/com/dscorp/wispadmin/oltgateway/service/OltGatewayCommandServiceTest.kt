@@ -361,49 +361,142 @@ class OltGatewayCommandServiceTest {
         assertEquals(setOf(100, 1000), vlans)
         assertTrue(commands.none { it.startsWith("ont modify") })
         assertTrue(commands.none { it.startsWith("service-port vlan 1000") })
+        assertTrue(commands.none { it.startsWith("gem mapping") })
     }
 
     @Test
-    fun `ensureMgmtServicePort revincular lineprofile 12 y abre SP VLAN 1000 gem 2`() {
+    fun `ensureMgmtServicePort abre SP 1000 en gem del profile actual sin ont modify`() {
         var displays = 0
         val creating = OltGatewayCommandService(
             runCommand = { cmd ->
                 commands.add(cmd)
-                if (cmd.startsWith("display service-port")) {
-                    displays += 1
-                    if (displays == 1) {
-                        "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n"
-                    } else {
-                        "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n" +
-                            "service-port 99 vlan 1000 gpon 0/1/6 ont 10 gemport 2\n"
+                when {
+                    cmd.startsWith("display service-port") -> {
+                        displays += 1
+                        if (displays == 1) {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n"
+                        } else {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 10 gemport 1\n" +
+                                "service-port 99 vlan 1000 gpon 0/1/6 ont 10 gemport 2\n"
+                        }
                     }
-                } else {
-                    cliOk(cmd)
+                    cmd.startsWith("display ont info") ->
+                        "  F/S/P                   : 0/1/6\n" +
+                            "  ONT-ID                  : 10\n" +
+                            "  SN                      : 56534F4C0031C0B6 (VSOL-0031C0B6)\n" +
+                            "  Line profile ID      : 12\n" +
+                            "  Line profile name    : Generic_1_V100M1000MGM\n"
+                    cmd.startsWith("display ont-lineprofile") ->
+                        "   <Gem Index 1>\n    1       100   -        -\n" +
+                            "   <Gem Index 2>\n    1       1000  -        -\n"
+                    else -> cliOk(cmd)
                 }
             },
             properties = properties,
         )
 
         val vlans = creating.ensureMgmtServicePort(
-            EnsureMgmtServicePortRequest(
-                board = 1,
-                port = 6,
-                ontId = 10,
-                vlan = 1000,
-                gemport = 2,
-                lineProfileId = 12,
-            ),
+            EnsureMgmtServicePortRequest(board = 1, port = 6, ontId = 10, vlan = 1000),
         )
 
         assertEquals(setOf(100, 1000), vlans)
-        assertTrue(commands.any { it == "interface gpon 0/1" })
-        assertTrue(commands.any { it == "ont modify 6 10 ont-lineprofile-id 12" })
+        assertTrue(commands.none { it.startsWith("ont modify") })
+        assertTrue(commands.none { it.contains("ont-lineprofile-id 12") })
         assertTrue(
             commands.any {
                 it == "service-port vlan 1000 gpon 0/1/6 ont 10 gemport 2 multi-service user-vlan 1000 " +
                     "tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9"
             },
         )
+    }
+
+    @Test
+    fun `ensureMgmtServicePort con VLAN 1 anade mapping 1000 al profile actual`() {
+        var displays = 0
+        val creating = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                when {
+                    cmd.startsWith("display service-port") -> {
+                        displays += 1
+                        if (displays == 1) {
+                            "service-port 1191 vlan 1 gpon 0/1/2 ont 77 gemport 1\n" +
+                                "service-port 666 vlan 100 gpon 0/1/2 ont 77 gemport 1\n"
+                        } else {
+                            "service-port 1191 vlan 1 gpon 0/1/2 ont 77 gemport 1\n" +
+                                "service-port 666 vlan 100 gpon 0/1/2 ont 77 gemport 1\n" +
+                                "service-port 99 vlan 1000 gpon 0/1/2 ont 77 gemport 1\n"
+                        }
+                    }
+                    cmd.startsWith("display ont info") ->
+                        "  F/S/P                   : 0/1/2\n" +
+                            "  ONT-ID                  : 77\n" +
+                            "  SN                      : 56534F4C0000E274 (VSOL-0000E274)\n" +
+                            "  Line profile ID      : 5\n" +
+                            "  Line profile name    : Generic_1_HF291F96D\n"
+                    cmd.startsWith("display ont-lineprofile") ->
+                        "   <Gem Index 1>\n    1       1     -        -\n" +
+                            "    2       100   -        -\n"
+                    else -> cliOk(cmd)
+                }
+            },
+            properties = properties,
+        )
+
+        val vlans = creating.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(board = 1, port = 2, ontId = 77, vlan = 1000),
+        )
+
+        assertEquals(setOf(1, 100, 1000), vlans)
+        assertTrue(commands.none { it.startsWith("ont modify") })
+        assertTrue(commands.any { it == "ont-lineprofile gpon profile-id 5" })
+        assertTrue(commands.any { it == "gem mapping 1 3 vlan 1000" })
+        assertTrue(commands.any { it == "commit" })
+        assertTrue(
+            commands.any {
+                it.startsWith("service-port vlan 1000 gpon 0/1/2 ont 77 gemport 1 ")
+            },
+        )
+    }
+
+    @Test
+    fun `ensureMgmtServicePort con internet VLAN 100 anade mapping 1000 al mismo gem`() {
+        var displays = 0
+        val creating = OltGatewayCommandService(
+            runCommand = { cmd ->
+                commands.add(cmd)
+                when {
+                    cmd.startsWith("display service-port") -> {
+                        displays += 1
+                        if (displays == 1) {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 20 gemport 1\n"
+                        } else {
+                            "service-port 18 vlan 100 gpon 0/1/6 ont 20 gemport 1\n" +
+                                "service-port 99 vlan 1000 gpon 0/1/6 ont 20 gemport 1\n"
+                        }
+                    }
+                    cmd.startsWith("display ont info") ->
+                        "  F/S/P                   : 0/1/6\n" +
+                            "  ONT-ID                  : 20\n" +
+                            "  SN                      : 56534F4C0086ACF9 (VSOL-0086ACF9)\n" +
+                            "  Line profile ID      : 6\n" +
+                            "  Line profile name    : Generic_1_V100\n"
+                    cmd.startsWith("display ont-lineprofile") ->
+                        "   <Gem Index 1>\n    1       100   -        -\n"
+                    else -> cliOk(cmd)
+                }
+            },
+            properties = properties,
+        )
+
+        val vlans = creating.ensureMgmtServicePort(
+            EnsureMgmtServicePortRequest(board = 1, port = 6, ontId = 20, vlan = 1000),
+        )
+
+        assertEquals(setOf(100, 1000), vlans)
+        assertTrue(commands.none { it.startsWith("ont modify") })
+        assertTrue(commands.any { it == "gem mapping 1 2 vlan 1000" })
+        assertTrue(commands.any { it.startsWith("service-port vlan 1000 gpon 0/1/6 ont 20 gemport 1 ") })
     }
 
     @Test
@@ -422,6 +515,15 @@ class OltGatewayCommandServiceTest {
                                 "service-port 99 vlan 1000 gpon 0/1/6 ont 10 gemport 2\n"
                         }
                     }
+                    cmd.startsWith("display ont info") ->
+                        "  F/S/P                   : 0/1/6\n" +
+                            "  ONT-ID                  : 10\n" +
+                            "  SN                      : 56534F4C0031C0B6 (VSOL-0031C0B6)\n" +
+                            "  Line profile ID      : 12\n" +
+                            "  Line profile name    : Generic_1_V100M1000MGM\n"
+                    cmd.startsWith("display ont-lineprofile") ->
+                        "   <Gem Index 1>\n    1       100   -        -\n" +
+                            "   <Gem Index 2>\n    1       1000  -        -\n"
                     cmd.startsWith("service-port vlan 1000") ->
                         "  Failure: The service virtual port already exists\nMA5608T#"
                     else -> cliOk(cmd)
@@ -434,6 +536,7 @@ class OltGatewayCommandServiceTest {
             EnsureMgmtServicePortRequest(board = 1, port = 6, ontId = 10),
         )
         assertEquals(setOf(100, 1000), vlans)
+        assertTrue(commands.none { it.startsWith("ont modify") })
     }
 
     private fun cliOk(cmd: String): String = when {

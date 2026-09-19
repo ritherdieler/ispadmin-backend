@@ -119,7 +119,7 @@ Orden: nunca cambiar la VLAN del CPE antes del service-port. GPV con `?connectio
 
 ## Pre-registro OLT en el runner de retag
 
-`scripts/genieacs/retag-tr069-vlan1000.sh` registra el service-port VLAN 1000 **antes** de encolar GenieACS. Login JWT al Core y `POST /onu/{sn}/service-port/ensure-mgmt` (el Core proxya al Gateway). El Gateway, si falta la VLAN: `ont modify … ont-lineprofile-id 12` + `service-port vlan 1000 … gemport 2`. Idempotente si el CLI dice `already exists` y el display ya lista 1000. Si el SP no queda, el runner aborta y **no** hace PUT/task NBI. No abre SSH a `10.11.104.2` ni llama `/api/olt-gateway/` desde el script.
+`scripts/genieacs/retag-tr069-vlan1000.sh` registra el service-port VLAN 1000 **antes** de encolar GenieACS. Login JWT al **Core prod** (`--prod` → `https://api.gigafiberperu.cloud/ispadmin`) y `POST /onu/{sn}/service-port/ensure-mgmt`. Staging no aísla: misma OLT, inventario incompleto, 2 VTY extra. El Gateway, si falta la VLAN: lee el lineprofile **actual**, añade `gem mapping` VLAN 1000 al GEM de internet si hace falta (`commit`), y abre el SP en ese GEM. **No** hace `ont modify` ni rebind a profile 12 (eso cortó internet VLAN 1 en `VSOL00872649`). Por cada ONU pinguea la WAN de internet (VPS/`wg-olt`) antes, tras el SP y tras el CPE; si estaba reachable y se pierde, aborta y **no** hace PUT/task NBI. Idempotente si el CLI dice `already exists` y el display ya lista 1000. No abre SSH a `10.11.104.2` ni llama `/api/olt-gateway/` desde el script. El provision GenieACS solo escribe la WAN TR-069 (pool `192.168.252.0/22`); la WAN de internet no se toca.
 
 La ONU ZTE `ZTEGDC47BFFD` (`0/1/6` ONT 117) sigue **offline** (`dying-gasp`). El stock nuevo sigue necesitando USB en almacén a VLAN 1000.
 

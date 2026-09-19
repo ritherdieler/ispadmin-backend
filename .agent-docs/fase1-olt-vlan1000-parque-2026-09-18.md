@@ -33,7 +33,7 @@ ZTE+VSOL en `olt_mgr_onu` (516): **48** ya tienen SP 1000, **468** no.
 
 No se commitea un profile para “cambiar internet”: solo se **añade** el mapeo 1000. El gem de VLAN 100 / 1 no se toca.
 
-No se revincula el parque al profile 12 (rompería perfiles VLAN 1 / SmartOLT).
+No se revincula el parque al profile 12 (rompería perfiles VLAN 1 / SmartOLT). `ensureMgmtServicePort` (2026-09-19) aplica el mapping aditivo en el GEM de internet y abre el SP; nunca `ont modify`. Detalle: [ensure-mgmt-vlan1000-sin-ont-modify-2026-09-19.md](./ensure-mgmt-vlan1000-sin-ont-modify-2026-09-19.md).
 
 ## Código
 

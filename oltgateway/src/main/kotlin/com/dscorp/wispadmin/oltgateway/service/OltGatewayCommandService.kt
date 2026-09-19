@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.exception.OltWritesDisabledException
+import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
+import com.dscorp.wispadmin.oltgateway.parser.OntLineProfileGemParser
 
 data class AuthorizeCliRequest(
     val board: Int,
@@ -46,8 +48,6 @@ data class EnsureMgmtServicePortRequest(
     val port: Int,
     val ontId: Int,
     val vlan: Int = 1000,
-    val gemport: Int = 2,
-    val lineProfileId: Int = 12,
 )
 
 data class RebootCliRequest(
@@ -61,6 +61,8 @@ class OltGatewayCommandService(
     private val properties: OltGatewayProperties,
     private val inWriteJob: (() -> Unit) -> Unit = { it() },
     private val inAuthorizeJob: (() -> Unit) -> Unit = inWriteJob,
+    private val onuInfoParser: OnuInfoBySnParser = OnuInfoBySnParser(),
+    private val gemParser: OntLineProfileGemParser = OntLineProfileGemParser(),
 ) {
 
     fun planAuthorize(request: AuthorizeCliRequest): List<String> {
@@ -176,18 +178,36 @@ class OltGatewayCommandService(
         ensureWritesEnabled()
         inWriteJob {
             runCommand("interface gpon 0/${request.board}")
-            val modify = "ont modify ${request.port} ${request.ontId} ont-lineprofile-id ${request.lineProfileId}"
-            val modifyOut = runCommand(modify)
-            if (looksLikeCliFailure(modifyOut) && !isAlreadyApplied(modifyOut)) {
-                throw IllegalStateException("OLT CLI failed for '$modify': ${modifyOut.takeLast(300)}")
-            }
+            val info = runCommand("display ont info ${request.port} ${request.ontId}")
             runCommand("quit")
+            val lineProfileId = onuInfoParser.parse(info)?.lineProfileId
+                ?: throw IllegalStateException(
+                    "OLT line profile missing for 0/${request.board}/${request.port} ont ${request.ontId}",
+                )
+            val profileOut = runCommand("display ont-lineprofile gpon profile-id $lineProfileId")
+            val mappings = gemParser.parse(profileOut)
+            val mapped = mappings.firstOrNull { it.vlan == request.vlan }
+            val gemport = if (mapped != null) {
+                mapped.gem
+            } else {
+                val hostGem = mappings.minByOrNull { it.gem }?.gem ?: 1
+                val nextIndex = mappings.filter { it.gem == hostGem }.maxOfOrNull { it.mapIndex }?.plus(1) ?: 1
+                runCommand("ont-lineprofile gpon profile-id $lineProfileId")
+                val add = "gem mapping $hostGem $nextIndex vlan ${request.vlan}"
+                val addOut = runCommand(add)
+                if (looksLikeCliFailure(addOut) && !isAlreadyApplied(addOut)) {
+                    throw IllegalStateException("OLT CLI failed for '$add': ${addOut.takeLast(300)}")
+                }
+                runCommand("commit")
+                runCommand("quit")
+                hostGem
+            }
             val sp = servicePortCommand(
                 vlan = request.vlan,
                 board = request.board,
                 port = request.port,
                 ontId = request.ontId,
-                gemport = request.gemport,
+                gemport = gemport,
             )
             val spOut = runCommand(sp)
             if (looksLikeCliFailure(spOut) && !isAlreadyApplied(spOut)) {

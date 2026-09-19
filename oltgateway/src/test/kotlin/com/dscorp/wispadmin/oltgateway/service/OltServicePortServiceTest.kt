@@ -46,7 +46,7 @@ class OltServicePortServiceTest {
     }
 
     @Test
-    fun `ensureMgmtVlan pide lineprofile 12 y SP 1000 gem 2`() {
+    fun `ensureMgmtVlan pide SP VLAN 1000 sin forzar lineprofile 12`() {
         every { inventory.findBySn("12345B4641531C0B6") } returns onu()
         every { commands.displayServicePorts(1, 6, 116) } returns "service-port 18 vlan 100\n"
         every { commands.parseServicePortVlans(any()) } returns setOf(100)
@@ -62,8 +62,6 @@ class OltServicePortServiceTest {
                     port = 6,
                     ontId = 116,
                     vlan = 1000,
-                    gemport = 2,
-                    lineProfileId = 12,
                 ),
             )
         }
