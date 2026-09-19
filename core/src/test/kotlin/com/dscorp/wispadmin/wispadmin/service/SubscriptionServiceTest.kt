@@ -57,6 +57,7 @@ class SubscriptionServiceTest {
         mikrotikService = mikrotikService,
         observabilityReporter = mockk<ObservabilityReporter>(relaxed = true)
     )
+    private val fiberOnuSnClaimService = mockk<FiberOnuSnClaimService>(relaxed = true)
 
     private val service = SubscriptionService(
         repository = repository,
@@ -82,6 +83,7 @@ class SubscriptionServiceTest {
         fiberInstallationStrategy = mockk(relaxed = true),
         applicationEventPublisher = mockk<ApplicationEventPublisher>(relaxed = true),
         cancelledOnuReuseService = mockk(relaxed = true),
+        fiberOnuSnClaimService = fiberOnuSnClaimService,
         subscriptionProvisionService = mockk(relaxed = true),
         ipAllocationService = ipAllocationService,
         pppoeProperties = PppoeProperties(),
@@ -294,6 +296,49 @@ class SubscriptionServiceTest {
 
         verify(exactly = 1) { pppoeAccessService.cut(subscription, host) }
         verify(exactly = 0) { mikrotikService.addIpToDebtorsListIfNotExists(any(), any(), any()) }
+    }
+
+    @Test
+    fun `registerSubscription claims ONU serial before saving fiber`() {
+        val pool = IpPool(id = 22, ipSegment = "192.168.30.0/24", isEligible = true)
+        every { repository.findByClientRequestId(any()) } returns Optional.empty()
+        every { ipPoolRepository.findAllEligiblePools() } returns listOf(pool)
+        every { installationStrategyFactory.getStrategy(any()) } returns installationStrategy
+        every { networkDeviceRepository.findById(1) } returns Optional.of(NetworkDevice(id = 1, name = "MK1"))
+        every { planRepository.findById(1) } returns Optional.of(
+            Plan(id = 1, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
+        )
+        every { placeRepository.findById(1) } returns Optional.of(Place(id = 1, name = "Huacho"))
+        every { repository.save(any()) } answers { firstArg<Subscription>().apply { id = 200 } }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(queueAdded = true, onuAuthorized = true)
+        every { fiberOnuSnClaimService.claim("VSOL0086D819", excludingSubscriptionId = null) } returns Unit
+
+        service.registerSubscription(
+            newSubscription = SubscriptionRequest(
+                firstName = "Martha",
+                lastName = "Fernandez",
+                dni = "15755617",
+                address = "Calle 1",
+                phone = "999888777",
+                subscriptionDate = System.currentTimeMillis(),
+                planId = 1,
+                additionalDeviceIds = emptyList(),
+                placeId = 1,
+                location = GeoLocation(-11.0, -77.0),
+                technicianId = 1,
+                hostDeviceId = 1,
+                installationType = InstallationType.FIBER,
+                napBoxId = 1,
+                vlan = "100",
+                clientRequestId = "claim-onu-1",
+                onu = com.dscorp.wispadmin.wispadmin.dto.OnuDto(sn = "VSOL0086D819"),
+            ),
+            onSuccess = { },
+        )
+
+        verify { fiberOnuSnClaimService.claim("VSOL0086D819", excludingSubscriptionId = null) }
     }
 
     @Test

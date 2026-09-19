@@ -36,6 +36,7 @@ class SubscriptionControllerAcsEndpointsTest {
     private val gatewayCpe = mockk<ObjectProvider<GatewayOnuActivationClient>>()
     private val acsRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.SubscriptionAcsRepository>()
     private val subscriptionProvisionService = mockk<com.dscorp.wispadmin.wispadmin.service.SubscriptionProvisionService>()
+    private val acsLinkService = mockk<com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService>()
     private val controller = SubscriptionController(
         repository = repository,
         subscriptionService = mockk(relaxed = true),
@@ -52,6 +53,7 @@ class SubscriptionControllerAcsEndpointsTest {
         subscriptionProvisionService = subscriptionProvisionService,
         gatewayCpe = gatewayCpe,
         subscriptionAcsRepository = acsRepository,
+        subscriptionAcsLinkService = acsLinkService,
     )
 
     init {
@@ -192,5 +194,41 @@ class SubscriptionControllerAcsEndpointsTest {
         val response = controller.retryTr069Provisioning(42)
 
         assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+    }
+
+    @Test
+    fun `POST acs link returns 200 LINKED`() {
+        every { acsLinkService.link("B46415-V2804AX15T-12345B4641586D819", false) } returns
+            com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsLinkResult(
+                status = com.dscorp.wispadmin.wispadmin.dto.AcsLinkStatus.LINKED,
+                deviceId = "B46415-V2804AX15T-12345B4641586D819",
+                subscriptionId = 2070,
+            )
+
+        val response = controller.linkSubscriptionAcs(
+            com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsLinkRequest(
+                deviceId = "B46415-V2804AX15T-12345B4641586D819",
+            )
+        )
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        val body = response.body as com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsLinkResult
+        assertEquals(com.dscorp.wispadmin.wispadmin.dto.AcsLinkStatus.LINKED, body.status)
+        assertEquals(2070, body.subscriptionId)
+    }
+
+    @Test
+    fun `POST acs link returns 409 SKIP_AMBIGUOUS`() {
+        every { acsLinkService.link("dev-1", false) } returns
+            com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsLinkResult(
+                status = com.dscorp.wispadmin.wispadmin.dto.AcsLinkStatus.SKIP_AMBIGUOUS,
+                deviceId = "dev-1",
+            )
+
+        val response = controller.linkSubscriptionAcs(
+            com.dscorp.wispadmin.wispadmin.dto.SubscriptionAcsLinkRequest(deviceId = "dev-1")
+        )
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
     }
 }

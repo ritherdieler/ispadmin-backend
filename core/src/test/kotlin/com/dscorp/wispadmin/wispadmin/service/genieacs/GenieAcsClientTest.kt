@@ -529,4 +529,49 @@ class GenieAcsClientTest {
         server.enqueue(MockResponse().setBody("""[{"_id":"d","_lastInform":"2026-08-30T11:00:00Z"}]"""))
         assertTrue(client.readDeviceCache(listOf("d"),projection).isEmpty())
     }
+
+    @Test
+    fun `findDeviceById uses query not path GET`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    [{
+                      "_id":"B46415-V2804AX15T-12345B4641586D819",
+                      "_lastInform":"2026-09-19T15:00:00.000Z",
+                      "_deviceId":{"_SerialNumber":"12345B4641586D819","_ProductClass":"V2804AX15T"},
+                      "InternetGatewayDevice":{
+                        "LANDevice":{"1":{"WLANConfiguration":{
+                          "1":{"SSID":{"_value":"GIGA-5"}},
+                          "5":{"SSID":{"_value":"GIGA-24"}}
+                        }}}
+                      }
+                    }]
+                    """.trimIndent()
+                )
+        )
+
+        val device = client.findDeviceById("B46415-V2804AX15T-12345B4641586D819")
+
+        assertEquals("B46415-V2804AX15T-12345B4641586D819", device!!.id)
+        assertEquals("GIGA-24", device.ssid24)
+        assertEquals("GIGA-5", device.ssid5)
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertTrue(request.path!!.startsWith("/devices/"))
+        assertTrue(request.path!!.contains("query="))
+        assertFalse(request.path!!.contains("/devices/B46415"))
+    }
+
+    @Test
+    fun `deleteDevice issues DELETE to devices id`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        assertTrue(client.deleteDevice("B46415-V2804AX15T-12345B4641531FAE6"))
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertTrue(request.path!!.contains("/devices/B46415-V2804AX15T-12345B4641531FAE6"))
+    }
 }

@@ -68,6 +68,7 @@ class SubscriptionService(
     private val fiberInstallationStrategy: FiberInstallationStrategy,
     private val applicationEventPublisher: ApplicationEventPublisher,
     private val cancelledOnuReuseService: CancelledOnuReuseService,
+    private val fiberOnuSnClaimService: FiberOnuSnClaimService,
     private val subscriptionProvisionService: SubscriptionProvisionService,
     private val ipAllocationService: IpAllocationService,
     private val pppoeProperties: PppoeProperties,
@@ -146,12 +147,16 @@ class SubscriptionService(
                 customerFullName = subscription.getFullName(),
                 vlan = vlan
             )
+            val sn = request.onu.sn.takeIf { it.isNotBlank() }
+            if (sn != null) {
+                fiberOnuSnClaimService.claim(sn, excludingSubscriptionId = subscription.id)
+            }
             subscription.apply {
                 this.plan = plan
                 isMigration = true
                 installationType = InstallationType.FIBER
                 this.vlan = vlan
-                fiberOnuSn = request.onu.sn.takeIf { it.isNotBlank() }
+                fiberOnuSn = sn
                 migrationDate = Date()
                 migrationNote = request.notes
                 migrationPrice = request.price
@@ -335,7 +340,11 @@ class SubscriptionService(
     }
 
     private fun processOnuForFiber(subscriptionToSave: Subscription, newSubscription: SubscriptionRequest) {
-        subscriptionToSave.fiberOnuSn = newSubscription.onu?.sn?.takeIf { it.isNotBlank() }
+        val sn = newSubscription.onu?.sn?.takeIf { it.isNotBlank() }
+        if (sn != null) {
+            fiberOnuSnClaimService.claim(sn, excludingSubscriptionId = subscriptionToSave.id)
+        }
+        subscriptionToSave.fiberOnuSn = sn
     }
 
     private fun handleRegistrationError(

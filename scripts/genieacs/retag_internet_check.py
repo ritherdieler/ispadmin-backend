@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 TR069_NETS = (("192.168.252.0", 22), ("10.20.0.0", 22))
 WAN_LEAF = re.compile(
@@ -81,11 +82,16 @@ def ping_received(output):
     return int(match.group(2))
 
 
+def ping_transport_failed(output):
+    text = str(output or "")
+    return "Permission denied" in text or "Connection refused" in text
+
+
 def internet_lost(before_up, after_up):
     return bool(before_up) and not bool(after_up)
 
 
-def ping_ip(ip):
+def _ping_once(ip):
     host = os.environ.get("VPS_HOST", "").strip()
     user = os.environ.get("VPS_USER", "root").strip() or "root"
     port = os.environ.get("VPS_PORT", "22").strip() or "22"
@@ -114,6 +120,18 @@ def ping_ip(ip):
         return False, str(exc)
     blob = (proc.stdout or "") + "\n" + (proc.stderr or "")
     return ping_received(blob) > 0, blob.strip()[-400:]
+
+
+def ping_ip(ip):
+    last = ""
+    for _ in range(4):
+        ok, blob = _ping_once(ip)
+        last = blob
+        if ping_transport_failed(blob):
+            time.sleep(2)
+            continue
+        return ok, blob
+    raise SystemExit("VPS ping SSH failed after retries: %s" % last[-200:])
 
 
 def snapshot_label(tag, classified, reachable, ping_out):
@@ -181,6 +199,8 @@ def _self_test():
     assert internet_lost(True, False) is True
     assert internet_lost(False, False) is False
     assert internet_lost(True, True) is False
+    assert ping_transport_failed("Permission denied, please try again.") is True
+    assert ping_transport_failed("3 packets transmitted, 3 received") is False
     print("retag_internet_check self-test ok")
 
 

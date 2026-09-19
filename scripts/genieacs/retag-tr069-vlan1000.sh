@@ -75,7 +75,7 @@ if [[ -n "${DEPLOY_SSH_PASSWORD:-}" ]]; then
 fi
 
 python3 <<'PY'
-import json, os, sys, urllib.error, urllib.parse, urllib.request
+import json, os, ssl, sys, time, urllib.error, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.join(os.environ["ROOT"], "scripts/genieacs"))
 from retag_internet_check import classify_wans, ping_ip, snapshot_label, check_not_lost
@@ -88,6 +88,15 @@ vlan = int(os.environ["VLAN"])
 script = open(os.environ["SCRIPT"], encoding="utf-8").read()
 user = os.environ["E2E_USER"]
 password = os.environ["E2E_PASSWORD"]
+
+def ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+SSL_CTX = ssl_context()
 
 def http(base, method, path, body=None, content_type=None, token=None, timeout=80):
     data = None
@@ -102,18 +111,24 @@ def http(base, method, path, body=None, content_type=None, token=None, timeout=8
             data = body if isinstance(body, bytes) else str(body).encode()
             headers["Content-Type"] = content_type or "text/plain; charset=utf-8"
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            parsed = json.loads(raw) if raw and resp.headers.get_content_type() == "application/json" else raw
-            return resp.status, parsed
-    except urllib.error.HTTPError as exc:
-        raw = exc.read()
-        raise SystemExit("HTTP %s %s%s %s" % (exc.code, base, path, raw[:400].decode("utf-8", "replace"))) from exc
+    last = None
+    for _ in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as resp:
+                raw = resp.read()
+                parsed = json.loads(raw) if raw and resp.headers.get_content_type() == "application/json" else raw
+                return resp.status, parsed
+        except urllib.error.HTTPError as exc:
+            raw = exc.read()
+            raise SystemExit("HTTP %s %s%s %s" % (exc.code, base, path, raw[:400].decode("utf-8", "replace"))) from exc
+        except urllib.error.URLError as exc:
+            last = exc
+            time.sleep(2)
+    raise SystemExit("HTTP URLError %s %s%s" % (last, base, path))
 
 def load_device():
-    enc = urllib.parse.quote(device, safe="")
-    st, body = http(nbi, "GET", "/devices/%s" % enc, timeout=30)
+    q = urllib.parse.quote(json.dumps({"_id": device}))
+    st, body = http(nbi, "GET", "/devices/?query=%s" % q, timeout=30)
     if isinstance(body, list):
         return body[0] if body else {}
     return body if isinstance(body, dict) else {}

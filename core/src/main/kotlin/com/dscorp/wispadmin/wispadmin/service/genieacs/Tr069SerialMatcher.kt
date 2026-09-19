@@ -11,6 +11,8 @@ data class GenieAcsDevice(
     val hardwareVersion: String? = null,
     val lastBoot: String? = null,
     val connectionRequestUrl: String? = null,
+    val ssid24: String? = null,
+    val ssid5: String? = null,
 )
 
 sealed class Tr069SerialMatch {

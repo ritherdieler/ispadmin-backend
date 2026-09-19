@@ -86,6 +86,7 @@ class SubscriptionServiceIdempotencyTest {
         fiberInstallationStrategy = mockk(relaxed = true),
         applicationEventPublisher = applicationEventPublisher,
         cancelledOnuReuseService = mockk(relaxed = true),
+        fiberOnuSnClaimService = mockk(relaxed = true),
         subscriptionProvisionService = subscriptionProvisionService,
         ipAllocationService = IpAllocationService(
             ipPoolRepository = ipPoolRepository,

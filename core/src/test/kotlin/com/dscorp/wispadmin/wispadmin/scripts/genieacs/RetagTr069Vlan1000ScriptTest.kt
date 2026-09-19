@@ -55,6 +55,8 @@ class RetagTr069Vlan1000ScriptTest {
         assertTrue(helperText.contains("192.168.252.0"), helperText)
         assertTrue(helperText.contains("10.20.0.0"), helperText)
         assertTrue(helperText.contains("classify_wans"), helperText)
+        assertTrue(text.contains("certifi"), text)
+        assertTrue(text.contains("/devices/?query="), text)
         val selfTest = ProcessBuilder("python3", helper.toAbsolutePath().toString(), "--self-test")
             .directory(root.toFile())
             .start()

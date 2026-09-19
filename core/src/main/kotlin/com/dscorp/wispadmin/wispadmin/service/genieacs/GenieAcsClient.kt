@@ -59,6 +59,42 @@ class GenieAcsClient(
         return root.mapNotNull { parseDevice(it) }
     }
 
+    fun findDeviceById(
+        deviceId: String,
+        projection: String = LINK_DEVICE_PROJECTION,
+    ): GenieAcsDevice? {
+        val uri = deviceUri(deviceId, projection)
+        val body = try {
+            restTemplate.getForObject(uri, String::class.java)
+        } catch (ex: Exception) {
+            log.warn("No se pudo cargar device {}: {}", deviceId, ex.message)
+            return null
+        } ?: return null
+        val root = objectMapper.readTree(body)
+        val node = when {
+            root.isArray && root.size() > 0 -> root[0]
+            root.isObject -> root
+            else -> return null
+        }
+        return parseDevice(node)
+    }
+
+    fun deleteDevice(deviceId: String): Boolean {
+        val encodedId = URLEncoder.encode(deviceId, StandardCharsets.UTF_8).replace("+", "%20")
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/devices/$encodedId")
+            .build(true)
+            .toUri()
+        return try {
+            restTemplate.exchange(uri, HttpMethod.DELETE, HttpEntity.EMPTY, String::class.java)
+            true
+        } catch (ex: Exception) {
+            log.warn("No se pudo borrar device {}: {}", deviceId, ex.message)
+            false
+        }
+    }
+
     /** Cache-only allowlist reads. Bound each URI to avoid HTTP header limits on large projections. */
     fun readDeviceCache(deviceIds: List<String>, projection: String): List<JsonNode> {
         require(deviceIds.size in 1..50)
@@ -543,7 +579,19 @@ class GenieAcsClient(
                 node,
                 "InternetGatewayDevice.ManagementServer.ConnectionRequestURL",
             ),
+            ssid24 = readWlanSsid(node, band24 = true),
+            ssid5 = readWlanSsid(node, band24 = false),
         )
+    }
+
+    private fun readWlanSsid(node: JsonNode, band24: Boolean): String? {
+        val wlan1 = readNestedValue(node, "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID")
+        val wlan5 = readNestedValue(node, "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID")
+        return if (band24) {
+            wlan5 ?: wlan1
+        } else {
+            if (wlan5 != null) wlan1 else null
+        }
     }
 
     private fun parseTaskId(body: String?): String? {
@@ -562,6 +610,10 @@ class GenieAcsClient(
         const val CR_CREDENTIALS_ERROR = "Incorrect connection request credentials"
         const val DEFAULT_DEVICE_PROJECTION =
             "_id,_lastInform,_lastBoot,_deviceId,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
+        const val LINK_DEVICE_PROJECTION =
+            "$DEFAULT_DEVICE_PROJECTION," +
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID," +
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID"
 
         fun formatTaskError(result: GenieAcsTaskResult): String {
             val detail = extractErrorDetail(result.body)

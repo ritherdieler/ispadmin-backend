@@ -60,6 +60,7 @@ class SubscriptionController(
     private val accessMigrationService: com.dscorp.wispadmin.wispadmin.service.subscription.AccessMigrationService? = null,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
     private val subscriptionAcsRepository: SubscriptionAcsRepository? = null,
+    private val subscriptionAcsLinkService: com.dscorp.wispadmin.wispadmin.service.genieacs.SubscriptionAcsLinkService? = null,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -261,6 +262,51 @@ class SubscriptionController(
             ResponseEntity.notFound().build()
         } catch (ex: IllegalStateException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        }
+    }
+
+    @PostMapping("/acs/link")
+    fun linkSubscriptionAcs(@RequestBody request: SubscriptionAcsLinkRequest): ResponseEntity<Any> {
+        val service = subscriptionAcsLinkService
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(mapOf("error" to "ACS link no disponible"))
+        val deviceId = request.deviceId.trim()
+        if (deviceId.isEmpty()) {
+            return ResponseEntity.badRequest().body(mapOf("error" to "deviceId requerido"))
+        }
+        val result = service.link(deviceId, request.dryRun)
+        val status = when (result.status) {
+            AcsLinkStatus.SKIP_AMBIGUOUS -> HttpStatus.CONFLICT
+            AcsLinkStatus.SKIP_DEVICE_NOT_FOUND -> HttpStatus.NOT_FOUND
+            else -> HttpStatus.OK
+        }
+        return ResponseEntity.status(status).body(result)
+    }
+
+    @GetMapping("/acs/ghosts")
+    fun listAcsGhosts(): ResponseEntity<Any> {
+        val service = subscriptionAcsLinkService
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(mapOf("error" to "ACS link no disponible"))
+        return ResponseEntity.ok(service.listGhosts())
+    }
+
+    @PostMapping("/acs/ghosts/delete")
+    fun deleteAcsGhost(@RequestBody request: SubscriptionAcsLinkRequest): ResponseEntity<Any> {
+        val service = subscriptionAcsLinkService
+            ?: return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(mapOf("error" to "ACS link no disponible"))
+        val deviceId = request.deviceId.trim()
+        if (deviceId.isEmpty()) {
+            return ResponseEntity.badRequest().body(mapOf("error" to "deviceId requerido"))
+        }
+        return try {
+            val deleted = service.deleteGhost(deviceId)
+            ResponseEntity.ok(mapOf("deleted" to deleted, "deviceId" to deviceId))
+        } catch (_: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to (ex.message ?: "")))
         }
     }
 
