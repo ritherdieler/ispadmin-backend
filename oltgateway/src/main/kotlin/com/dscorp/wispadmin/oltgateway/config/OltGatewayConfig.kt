@@ -338,6 +338,7 @@ class OltGatewayConfig {
         eventBus: EventBusPort,
         journal: com.dscorp.wispadmin.oltgateway.service.ActivationJournal,
         timing: ObjectProvider<RegistrationTiming>,
+        properties: OltGatewayProperties,
     ): com.dscorp.wispadmin.oltgateway.service.OnuActivationService {
         return com.dscorp.wispadmin.oltgateway.service.OnuActivationService(
             oltManagerFacade,
@@ -345,6 +346,7 @@ class OltGatewayConfig {
             eventBus,
             journal,
             timing = timing.ifAvailable ?: RegistrationTiming.NOOP,
+            defaultCallerEnv = properties.acs.defaultCaller,
         )
     }
 

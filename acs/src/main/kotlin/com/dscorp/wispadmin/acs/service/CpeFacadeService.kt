@@ -18,7 +18,6 @@ import com.dscorp.wispadmin.acs.genieacs.Tr069ProvisionRequest
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import com.dscorp.wispadmin.acs.repository.CpeRecordRepository
 import com.dscorp.wispadmin.transport.RegistrationTiming
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -30,7 +29,6 @@ class CpeFacadeService(
     private val namedProvisioner: NamedCpeProvisioner? = null,
     private val timing: RegistrationTiming = RegistrationTiming.NOOP,
 ) {
-    private val log = LoggerFactory.getLogger(CpeFacadeService::class.java)
     private companion object {
         const val WIFI_TELEMETRY_PROVISION = "gigafiber-wifi-telemetry"
     }
@@ -67,14 +65,6 @@ class CpeFacadeService(
         record.softwareVersion = outcome.acsSnapshot?.softwareVersion
         record.updatedAt = Instant.now()
         records.save(record)
-        log.info(
-            "FIBER_TRACE acs provision sn={} status={} deviceId={} productClass={} message={}",
-            command.sn,
-            outcome.status,
-            outcome.deviceId,
-            record.productClass,
-            record.message?.take(180),
-        )
         return CpeProvisionResult(command.sn, outcome.status, record.message, outcome.deviceId)
     }
 

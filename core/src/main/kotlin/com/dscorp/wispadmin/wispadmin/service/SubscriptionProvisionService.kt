@@ -243,15 +243,6 @@ class SubscriptionProvisionService(
         val beforeStatus = subscription.tr069ProvisionStatus
         val beforeDevice = subscription.tr069DeviceId
         pullTr069FromGateway(subscription)
-        logger.info(
-            "FIBER_TRACE core refresh id={} sn={} tr069={}->{} deviceId={} message={}",
-            subscription.id,
-            subscription.fiberOnuSn,
-            beforeStatus,
-            subscription.tr069ProvisionStatus,
-            subscription.tr069DeviceId,
-            subscription.tr069LastError?.take(180),
-        )
         if (subscription.tr069ProvisionStatus != beforeStatus ||
             subscription.tr069DeviceId != beforeDevice
         ) {
@@ -382,14 +373,6 @@ class SubscriptionProvisionService(
         )
         mapCpeStatus(subscription, outcome.status)
         outcome.message?.let { subscription.tr069LastError = it.take(500) }
-        logger.info(
-            "FIBER_TRACE core retry id={} sn={} status={} deviceId={} message={}",
-            subscription.id,
-            sn,
-            outcome.status,
-            outcome.deviceId,
-            outcome.message?.take(180),
-        )
         persistAcsLink(
             subscription,
             outcome.deviceId,

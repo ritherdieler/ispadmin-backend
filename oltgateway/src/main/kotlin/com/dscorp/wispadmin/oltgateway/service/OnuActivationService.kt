@@ -15,6 +15,7 @@ import com.dscorp.wispadmin.oltgateway.dto.OltActivationStatus
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateResponseDto
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivationStatusDto
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.exception.OltGatewayConflictException
 import com.dscorp.wispadmin.transport.RegistrationTiming
 import org.slf4j.LoggerFactory
@@ -33,13 +34,13 @@ class OnuActivationService(
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     private val autofindTimeoutMs: Long = DEFAULT_AUTOFIND_TIMEOUT_MS,
     private val autofindPollMs: Long = DEFAULT_AUTOFIND_POLL_MS,
+    private val defaultCallerEnv: String = "",
 ) {
     private val log = LoggerFactory.getLogger(OnuActivationService::class.java)
     fun activate(rawRequest: OnuActivateRequestDto): OnuActivateResponseDto {
         val request=rawRequest.copy(sn=rawRequest.sn.trim().uppercase())
         require(request.sn.isNotBlank()) { "ONU serial is required" }
         val (operation,acquired)=journal.acquire(request)
-        trace("activate", operation, "acquired=$acquired")
         if(!acquired) return response(operation.status)
         if(operation.stage=="OLT") {
             val authorized=timing.span("gateway.olt.authorize", mapOf("sn" to request.sn)) { authorizeOlt(request) }
@@ -55,7 +56,7 @@ class OnuActivationService(
             journal.save(operation)
         }
         if(operation.stage=="ACS_STATUS") {
-            val remote=runCatching { acsCpeClient.status(request.sn) }.getOrNull()
+            val remote=withAcsCaller { runCatching { acsCpeClient.status(request.sn) }.getOrNull() }
             if(remote!=null && remote.status!=CpeProvisionStatus.NA) {
                 if(remote.status==CpeProvisionStatus.PENDING) {
                     operation.status=operation.status.copy(
@@ -65,7 +66,6 @@ class OnuActivationService(
                     )
                     operation.leaseUntil=System.currentTimeMillis()+30_000
                     journal.save(operation)
-                    trace("acs-status-pending", operation, "remoteDevice=${remote.deviceId}")
                     return response(operation.status)
                 }
                 operation.status=operation.status.copy(cpeStatus=remote.status,message=remote.message,deviceId=remote.deviceId ?: operation.status.deviceId,updatedAtEpochMs=Instant.now().toEpochMilli())
@@ -74,17 +74,12 @@ class OnuActivationService(
                 publishPending()
                 return response(operation.status)
             }
-            if(operation.attempts>=MAX_PROVISION_ATTEMPTS) {
-                operation.leaseUntil=System.currentTimeMillis()+30_000
-                journal.save(operation)
-                trace("acs-attempts-exhausted", operation)
-                return response(operation.status)
-            }
-            operation.stage="ACS"
+            operation.leaseUntil=System.currentTimeMillis()+30_000
             journal.save(operation)
+            return response(operation.status)
         }
         val pending=response(operation.status)
-        acsExecutor.execute { runAcs(operation) }
+        dispatchAcs(operation)
         return pending
     }
 
@@ -92,17 +87,7 @@ class OnuActivationService(
         val normalized = sn.trim().uppercase()
         val operation = journal.bySn(normalized) ?: return null
         val stored = operation.status
-        if (!stored.deviceId.isNullOrBlank()) {
-            log.info(
-                "FIBER_TRACE gateway event=status-stored sn={} olt={} cpe={} deviceId={} message={}",
-                normalized,
-                stored.oltStatus,
-                stored.cpeStatus,
-                stored.deviceId,
-                stored.message?.take(180),
-            )
-            return stored
-        }
+        if (!stored.deviceId.isNullOrBlank()) return stored
         val remote = runCatching { acsCpeClient.status(normalized) }.getOrNull() ?: return stored
         val deviceId = remote.deviceId?.takeIf { it.isNotBlank() } ?: return stored
         val updated = stored.copy(deviceId = deviceId, updatedAtEpochMs = Instant.now().toEpochMilli())
@@ -124,20 +109,28 @@ class OnuActivationService(
         publishPending()
     }
 
-    private fun trace(event: String, operation: ActivationOperation, extra: String = "") {
-        val status = operation.status
-        log.info(
-            "FIBER_TRACE gateway event={} sn={} stage={} attempts={} olt={} cpe={} deviceId={} message={} {}",
-            event,
-            status.sn,
-            operation.stage,
-            operation.attempts,
-            status.oltStatus,
-            status.cpeStatus,
-            status.deviceId,
-            status.message?.take(180),
-            extra,
-        )
+    private fun dispatchAcs(operation: ActivationOperation) {
+        val env = GatewayCallContext.env()?.trim().orEmpty().ifBlank { defaultCallerEnv.trim() }
+        acsExecutor.execute {
+            try {
+                if (env.isNotEmpty()) GatewayCallContext.setEnv(env)
+                runAcs(operation)
+            } finally {
+                GatewayCallContext.clear()
+            }
+        }
+    }
+
+    private inline fun <T> withAcsCaller(block: () -> T): T {
+        if (!GatewayCallContext.env().isNullOrBlank()) return block()
+        val fallback = defaultCallerEnv.trim()
+        if (fallback.isEmpty()) return block()
+        GatewayCallContext.setEnv(fallback)
+        return try {
+            block()
+        } finally {
+            GatewayCallContext.clear()
+        }
     }
 
     private fun response(status: OnuActivationStatusDto)=OnuActivateResponseDto(status.uniqueExternalId,status.sn,status.oltStatus,status.cpeStatus,status.message,status.deviceId)
@@ -149,22 +142,7 @@ class OnuActivationService(
 
     fun provisionCpe(sn: String, request: AcsCpeProvisionRequest): AcsCpeProvisionResponse {
         val normalized = sn.trim().uppercase()
-        log.info(
-            "FIBER_TRACE gateway event=provision-cpe sn={} vlan={} pppoeUser={} ssid24={}",
-            normalized,
-            request.wanVlanId,
-            request.pppoeUsername,
-            request.wifiSsid24,
-        )
-        val outcome = acsCpeClient.provision(request.copy(sn = normalized))
-        log.info(
-            "FIBER_TRACE gateway event=provision-cpe-result sn={} status={} deviceId={} message={}",
-            normalized,
-            outcome.status,
-            outcome.deviceId,
-            outcome.message?.take(180),
-        )
-        return outcome
+        return withAcsCaller { acsCpeClient.provision(request.copy(sn = normalized)) }
     }
 
     fun setWifi(sn: String, request: AcsCpeWifiRequest): CpeCommandResponseDto {
@@ -233,7 +211,6 @@ class OnuActivationService(
         val externalId=operation.status.uniqueExternalId ?: return
         operation.attempts+=1
         journal.save(operation)
-        trace("acs-start", operation)
         try {
             val outcome=timing.span("gateway.acs.provision", mapOf("sn" to request.sn)) {
                 acsCpeClient.provision(AcsCpeProvisionRequest(
@@ -244,7 +221,6 @@ class OnuActivationService(
             }
             operation.status=operation.status.copy(cpeStatus=outcome.status,message=outcome.message,deviceId=outcome.deviceId ?: operation.status.deviceId,updatedAtEpochMs=Instant.now().toEpochMilli())
             operation.stage=if(outcome.status==CpeProvisionStatus.PENDING) "ACS_STATUS" else "DONE"
-            trace("acs-result", operation)
             operation.leaseUntil=System.currentTimeMillis()+30_000
             journal.save(operation)
             publishPending()
@@ -252,13 +228,7 @@ class OnuActivationService(
             operation.stage="ACS_STATUS"
             operation.leaseUntil=System.currentTimeMillis()+30_000
             journal.save(operation)
-            log.warn(
-                "FIBER_TRACE gateway event=acs-unconfirmed sn={} operation={} type={} error={}",
-                request.sn,
-                operation.operationId,
-                ex.javaClass.simpleName,
-                ex.message?.take(180),
-            )
+            log.warn("ACS outcome unconfirmed for {} operation {}: {}", request.sn, operation.operationId, ex.message)
         }
     }
 
@@ -287,7 +257,6 @@ class OnuActivationService(
     )
 
     companion object {
-        const val MAX_PROVISION_ATTEMPTS = 3
         const val DEFAULT_AUTOFIND_TIMEOUT_MS = 90_000L
         const val DEFAULT_AUTOFIND_POLL_MS = 5_000L
     }

@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.events.RecordingEventBus
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeClient
 import com.dscorp.wispadmin.oltgateway.client.AcsCpeProvisionResponse
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.OltActivationStatus
 import com.dscorp.wispadmin.oltgateway.dto.OnuActivateRequestDto
@@ -25,6 +26,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 class ActivationRecoveryTest {
@@ -51,7 +53,7 @@ class ActivationRecoveryTest {
     }
 
     @Test
-    fun `absent remote status retries provision until the attempt budget is spent`() {
+    fun `recover does not provision tr069 again when the remote status is absent`() {
         val facade = mockk<OltManagerFacade>()
         every { facade.externalIdBySn(any()) } returns null
         every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
@@ -65,8 +67,70 @@ class ActivationRecoveryTest {
             journal.bySn("SN1")!!.leaseUntil = 0
             service.recover()
         }
-        verify(exactly = 3) { acs.provision(any()) }
+        verify(exactly = 1) { acs.provision(any()) }
         assertEquals(CpeProvisionStatus.PENDING, service.statusBySn("SN1")!!.cpeStatus)
+    }
+
+    @Test
+    fun `acs worker keeps the caller env from the activating thread`() {
+        val seen = AtomicReference<String?>()
+        val facade = mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
+        val acs = mockk<AcsCpeClient>()
+        every { acs.provision(any()) } answers {
+            seen.set(GatewayCallContext.env())
+            AcsCpeProvisionResponse("SN1", CpeProvisionStatus.PENDING, deviceId = "dev-1")
+        }
+        val service = OnuActivationService(
+            facade,
+            acs,
+            RecordingEventBus(),
+            MemoryActivationJournal(),
+            acsExecutor = isolatedAcsExecutor(),
+            defaultCallerEnv = "prod",
+        )
+        GatewayCallContext.setEnv("stg")
+        try {
+            service.activate(request)
+        } finally {
+            GatewayCallContext.clear()
+        }
+        assertEquals("stg", seen.get())
+    }
+
+    @Test
+    fun `acs worker uses the default caller when the activating thread has none`() {
+        val seen = AtomicReference<String?>()
+        val facade = mockk<OltManagerFacade>()
+        every { facade.externalIdBySn(any()) } returns null
+        every { facade.authorizeOnu(any()) } returns SmartOltActionResponseDto(status = true, unique_external_id = "ext-1")
+        val acs = mockk<AcsCpeClient>()
+        every { acs.provision(any()) } answers {
+            seen.set(GatewayCallContext.env())
+            AcsCpeProvisionResponse("SN1", CpeProvisionStatus.PENDING, deviceId = "dev-1")
+        }
+        val service = OnuActivationService(
+            facade,
+            acs,
+            RecordingEventBus(),
+            MemoryActivationJournal(),
+            acsExecutor = isolatedAcsExecutor(),
+            defaultCallerEnv = "prod",
+        )
+        GatewayCallContext.clear()
+        service.activate(request)
+        assertEquals("prod", seen.get())
+    }
+
+    private fun isolatedAcsExecutor(): Executor = Executor { task ->
+        Thread {
+            GatewayCallContext.clear()
+            task.run()
+        }.apply {
+            start()
+            join(5_000)
+        }
     }
 
     @Test

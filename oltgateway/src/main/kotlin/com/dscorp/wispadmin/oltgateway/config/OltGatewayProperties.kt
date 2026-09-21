@@ -179,6 +179,7 @@ class OltGatewayProperties {
         var baseUrlProd: String = ""
         var baseUrlStaging: String = ""
         var requireCaller: Boolean = false
+        var defaultCaller: String = ""
         var apiKey: String = ""
     }
 

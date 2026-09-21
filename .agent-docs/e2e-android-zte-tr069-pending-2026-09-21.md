@@ -26,6 +26,36 @@ MikroTik y OLT terminan. La app no se entera cuando el ACS ya marcó la ONU.
 
 El ACS puede pasar a `COMPLETE` minutos después. La suscripción sigue en `PENDING` porque el poll no consulta `cpe_record`.
 
+## Reintento e2e (WAR `1.0.3+dcc919f`) — suscripción **2382**
+
+Misma ONU, WiFi `mimiwifi` / `MimiWifi24pass`. MK y OLT `COMPLETE`. App y Core: `WAITING_ACS` / `tr069=PENDING` sin `tr069_last_error`. Journal `ACS_STATUS` `attempt_count=3` `cpeStatus=PENDING` `deviceId` lleno. `prod_acs.cpe_record` `COMPLETE` (~16:37–16:39).
+
+### Causa del fallo ACS (confirmada en `FIBER_TRACE`)
+
+```text
+FIBER_TRACE gateway event=acs-start … attempts=3 …
+FIBER_TRACE gateway event=acs-unconfirmed …
+  type=ResponseStatusException
+  error=400 BAD_REQUEST "ACS caller is unresolved"
+```
+
+1. `olt.gateway.acs.require-caller=true` (`application-prod.properties`).
+2. `HttpAcsCpeClient` resuelve la URL ACS con `AcsCallerRouter.baseUrl(GatewayCallContext.env())`.
+3. `GatewayCallContext` es `ThreadLocal` y solo lo llena `OltGatewayApiKeyFilter` con `X-Gigafiber-Env` en el hilo HTTP.
+4. `OnuActivationService.runAcs` corre en `acsExecutor` (pool). Ese hilo **no** hereda el `ThreadLocal` → `env=null` → 400 `ACS caller is unresolved` **antes** de llamar a GenieACS.
+5. El `catch` deja `stage=ACS_STATUS` sin mensaje. Tras conocer `deviceId`, cada poll hace `status-stored` y no relee el ACS.
+
+También falla `OnuActivationController.telemetry` con el mismo 400 cuando el contexto de caller no está en el hilo.
+
+### Qué hay que corregir
+
+1. Propagar `X-Gigafiber-Env` / `GatewayCallContext` al `acsExecutor` (o fijar env `prod` en el WAR único / `require-caller=false` con URL local).
+2. En `statusBySn`, si el journal está `PENDING`, releer ACS y promover `COMPLETE`.
+
+### Qué se corrigió
+
+`runAcs` corre en `acsExecutor`. Ese hilo ahora recibe `GatewayCallContext` del hilo que activó (o `olt.gateway.acs.default-caller`: `prod` / `stg`) antes de llamar al ACS. El recuperador ya no vuelve a encolar `provision`: un solo intento en el alta; el siguiente es el reintento manual (`POST /subscription/{id}/acs/retry-tr069`).
+
 ## Logs `FIBER_TRACE`
 
 Prefijo único, sin contraseñas ni cuerpos PPPoE/WiFi.
@@ -40,13 +70,12 @@ Prefijo único, sin contraseñas ni cuerpos PPPoE/WiFi.
 | ACS `NamedCpeProvisioner` | HTTP del enqueue PPPoE, IP al completar, IP/SSID si vence la espera |
 | ACS `VparamProvisioner` | HTTP del SPV (sin el JSON de credenciales) |
 
-El e2e de esta nota corrió contra el WAR de producción **sin** esas líneas de backend: `deploy.sh` rechazó el despliegue porque el árbol no está commiteado (`ERROR: hay cambios sin commitear`). En el emulador sí se instaló el `prodDebug` con el log de la app. Para ver el tramo Gateway/ACS hace falta commit y `./scripts/deploy.sh --deploy --env prod`.
+Desplegado en prod como `1.0.3+dcc919f` (2026-09-21). El segundo e2e ya vio estos logs en `tomcat9027`.
 
 Filtros:
 
 ```bash
 adb logcat -s FIBER_TRACE:I
-# en tomcat9027, cuando el WAR nuevo esté desplegado
 docker logs tomcat9027 2>&1 | grep FIBER_TRACE
 ```
 

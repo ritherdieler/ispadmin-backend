@@ -216,15 +216,6 @@ class VparamProvisioner(
         if (result.connectionRequestFailed) {
             result = client.setParameterValues(deviceId, values, connectionRequest = false)
         }
-        log.info(
-            "FIBER_TRACE acs spv path={} deviceId={} http={} accepted={} crFailed={} taskId={}",
-            path,
-            deviceId,
-            result.statusCode,
-            result.accepted,
-            result.connectionRequestFailed,
-            result.taskId,
-        )
         if (!result.accepted || result.statusCode != 200) {
             val error = result.toErrorDetail()
             return Tr069ProvisionOutcome(
