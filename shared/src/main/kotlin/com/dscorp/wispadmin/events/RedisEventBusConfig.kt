@@ -27,6 +27,7 @@ class GigafiberRedisProperties {
     var port: Int = 6379
     var password: String = ""
     var stream: String = "gigafiber.events"
+    var opticalFanoutNamespaces: String = ""
     var streamMaxlen: Long = 20_000
     var consumerGroup: String = "snapshot-core"
     var cpeConsumerGroup: String = "cpe-provision-core"
@@ -102,12 +103,16 @@ class RedisStreamEventBus(
             val fields = PlatformEventCodec.toFields(event)
             val options = XAddOptions.maxlen(properties.streamMaxlen).approximateTrimming(true)
             val body = fields.entries.associate { it.key.toByteArray() to it.value.toByteArray() }
+            val keys = redisStreamKeys(event, properties)
             redis.execute<Any> { connection ->
-                connection.streamCommands().xAdd(
-                    StreamRecords.mapBacked<ByteArray, ByteArray, ByteArray>(body)
-                        .withStreamKey(properties.namespaced(properties.stream).toByteArray()),
-                    options,
-                )
+                val commands = connection.streamCommands()
+                for (key in keys) {
+                    commands.xAdd(
+                        StreamRecords.mapBacked<ByteArray, ByteArray, ByteArray>(body)
+                            .withStreamKey(key.toByteArray()),
+                        options,
+                    )
+                }
             }
             true
         } catch (ex: Exception) {
@@ -115,6 +120,18 @@ class RedisStreamEventBus(
             false
         }
     }
+}
+
+internal fun redisStreamKeys(event: PlatformEvent, properties: GigafiberRedisProperties): List<String> {
+    if (event.type == PlatformEventTypes.ONU_OPTICAL_BATCH) {
+        val fans = properties.opticalFanoutNamespaces.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        if (fans.isNotEmpty()) return fans.map { "$it:${properties.stream}" }
+    }
+    if (event.type == PlatformEventTypes.CPE_PROVISIONING || event.type == PlatformEventTypes.CPE_INFORM) {
+        val caller = EventRouteContext.namespace()
+        if (!caller.isNullOrBlank()) return listOf("$caller:${properties.stream}")
+    }
+    return listOf(properties.namespaced(properties.stream))
 }
 
 class RedisHealthSnapshotCache(

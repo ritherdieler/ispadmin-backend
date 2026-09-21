@@ -95,6 +95,23 @@ class ProdEnvironmentPropertiesTest {
             prod,
         )
         assertFalse(prod.contains("ispadmin-staging"), prod)
+        assertTrue(
+            Regex("""^olt\.gateway\.staging-api-key=\$\{OLT_GATEWAY_STAGING_API_KEY:\}\s*$""", RegexOption.MULTILINE)
+                .containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^olt\.gateway\.acs\.require-caller=true\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex(
+                """^olt\.gateway\.acs\.base-url-staging=\$\{OLT_GATEWAY_ACS_BASE_URL_STAGING:\}\s*$""",
+                RegexOption.MULTILINE,
+            ).containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(prod.contains("gigafiber.redis.optical-fanout-namespaces=prod,stg"), prod)
     }
 
     @Test

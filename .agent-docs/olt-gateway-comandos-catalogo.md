@@ -4,7 +4,14 @@ Fuente de verdad de CLI SSH y HTTP del gateway usados en diagnóstico o código.
 
 ## HTTP (OLT Gateway)
 
-Prefijo staging: `/ispadmin-staging-oltgateway/api/olt-gateway`. Header `X-Olt-Gateway-Key`.
+Prefijo del dueño SSH: `/ispadmin/api/olt-gateway` (stopgap, embebido en prod) o `/ispadmin-oltgateway/api/olt-gateway` (sibling, aún no desplegado). Header `X-Olt-Gateway-Key`. El Core envía `X-Gigafiber-Env` (`prod`, `stg` o `lpstg`).
+
+| Header / key | Quién | Efecto |
+|---|---|---|
+| `X-Olt-Gateway-Key` = `OLT_GATEWAY_API_KEY` | Core prod | Lectura y escrituras de flota |
+| `X-Olt-Gateway-Key` = `OLT_GATEWAY_STAGING_API_KEY` | Core staging / prestaging | Lectura. Escrituras solo si el SN termina en `olt.gateway.writes.lab-acs-sn-suffixes` (`0031C0B6`, `12345B4641531C0B6`, `ZTEGDC47BFFD`). Si no, **403** |
+| `X-Gigafiber-Env` distinto de la key | cualquiera | **400**. Sin env y `olt.gateway.acs.require-caller=true`, el day-2 ACS responde **400** (no cae en prod) |
+| `X-Acs-To-Gateway-Key` | ACS | Solo `POST /acs/cpe-inform` |
 
 | Comando | Descripción | Usado en | Notas |
 |---------|-------------|----------|-------|

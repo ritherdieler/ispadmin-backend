@@ -9,6 +9,8 @@ class OltGatewayProperties {
 
     var apiKey: String = ""
 
+    var stagingApiKey: String = ""
+
     var host: String = "10.11.104.2"
 
     var port: Int = 22
@@ -122,7 +124,7 @@ class OltGatewayProperties {
         var customProfileBindings: String = "Generic_1:1=3:2,Generic_1:100=6:13"
         var inboundTrafficTableIndex: Int = 8
         var outboundTrafficTableIndex: Int = 9
-        var labAcsSnSuffixes: String = "0031C0B6,12345B4641531C0B6"
+        var labAcsSnSuffixes: String = "0031C0B6,12345B4641531C0B6,ZTEGDC47BFFD"
         var labAcsLineProfileId: Int = 12
         var labAcsMgmtVlan: Int = 1000
         var labAcsMgmtGemport: Int = 2
@@ -174,20 +176,55 @@ class OltGatewayProperties {
     class AcsClientProperties {
         var enabled: Boolean = false
         var internalBaseUrl: String = ""
+        var baseUrlProd: String = ""
+        var baseUrlStaging: String = ""
+        var requireCaller: Boolean = false
         var apiKey: String = ""
     }
 
     var acsToGatewayApiKey: String = ""
 
-    fun isValidApiKey(key: String?): Boolean {
-        if (key.isNullOrBlank() || apiKey.isBlank()) return false
-        return apiKey == key
+    fun callerFor(key: String?): GatewayCaller? {
+        if (key.isNullOrBlank()) return null
+        if (apiKey.isNotBlank() && apiKey == key) return GatewayCaller.PROD
+        if (stagingApiKey.isNotBlank() && stagingApiKey == key) return GatewayCaller.STAGING
+        return null
     }
+
+    fun isLabSerial(sn: String?): Boolean {
+        if (sn.isNullOrBlank()) return false
+        val normalized = sn.filter { it.isLetterOrDigit() }.uppercase()
+        if (normalized.isEmpty()) return false
+        return writes.labAcsSnSuffixes
+            .split(',')
+            .map { token -> token.filter { it.isLetterOrDigit() }.uppercase() }
+            .any { suffix -> suffix.isNotEmpty() && normalized.endsWith(suffix) }
+    }
+
+    fun isValidApiKey(key: String?): Boolean = callerFor(key) != null
 
     fun isValidIngestApiKey(key: String?): Boolean {
         if (key.isNullOrBlank()) return false
-        if (apiKey.isNotBlank() && apiKey == key) return true
-        if (acsToGatewayApiKey.isNotBlank() && acsToGatewayApiKey == key) return true
-        return false
+        if (isValidApiKey(key)) return true
+        return acsToGatewayApiKey.isNotBlank() && acsToGatewayApiKey == key
+    }
+}
+
+enum class GatewayCaller {
+    PROD,
+    STAGING,
+    ;
+
+    fun redisNamespace(): String = when (this) {
+        PROD -> "prod"
+        STAGING -> "stg"
+    }
+
+    fun matchesEnv(raw: String): Boolean {
+        val env = raw.trim().lowercase()
+        return when (this) {
+            PROD -> env == "prod"
+            STAGING -> env == "stg" || env == "staging" || env == "lpstg"
+        }
     }
 }

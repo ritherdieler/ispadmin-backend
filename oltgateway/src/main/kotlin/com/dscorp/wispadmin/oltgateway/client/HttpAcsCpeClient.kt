@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.client
 
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.dto.CpeProvisionStatus
 import com.dscorp.wispadmin.oltgateway.dto.CpeTelemetryDto
@@ -14,6 +15,7 @@ class HttpAcsCpeClient(
     private val properties: OltGatewayProperties,
     private val restTemplate: RestTemplate,
     private val objectMapper: ObjectMapper,
+    private val router: AcsCallerRouter = AcsCallerRouter(properties),
 ) : AcsCpeClient {
 
     override fun provision(request: AcsCpeProvisionRequest): AcsCpeProvisionResponse {
@@ -112,7 +114,7 @@ class HttpAcsCpeClient(
         return headers
     }
 
-    private fun base(): String = properties.acs.internalBaseUrl.trim().trimEnd('/')
+    private fun base(): String = router.baseUrl(GatewayCallContext.env())
 
     private fun get(path: String): com.fasterxml.jackson.databind.JsonNode? = try {
         exchange(path, HttpMethod.GET, HttpEntity<Void>(headers()))

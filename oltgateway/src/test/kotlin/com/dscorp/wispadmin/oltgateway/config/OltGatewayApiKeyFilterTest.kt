@@ -12,7 +12,7 @@ import javax.servlet.http.HttpServletResponse
 
 class OltGatewayApiKeyFilterTest {
 
-    private val properties = mockk<OltGatewayProperties>()
+    private val properties = mockk<OltGatewayProperties>(relaxed = true)
     private val objectMapper = ObjectMapper()
     private val filter = OltGatewayApiKeyFilter(properties, objectMapper)
 

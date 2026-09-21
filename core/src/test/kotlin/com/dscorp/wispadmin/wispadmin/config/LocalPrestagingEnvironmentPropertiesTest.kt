@@ -44,7 +44,15 @@ class LocalPrestagingEnvironmentPropertiesTest {
             prestaging,
         )
         assertTrue(
-            prestaging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8082/ispadmin"),
+            prestaging.contains("olt.gateway.enabled=false"),
+            prestaging,
+        )
+        assertTrue(
+            prestaging.contains("olt.gateway.internal-base-url=\${OLT_GATEWAY_INTERNAL_BASE_URL:http://127.0.0.1:8092/ispadmin}"),
+            prestaging,
+        )
+        assertTrue(
+            prestaging.contains("olt.gateway.caller-env=lpstg"),
             prestaging,
         )
         assertTrue(

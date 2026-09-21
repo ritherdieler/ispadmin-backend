@@ -11,7 +11,7 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 | **WAR único** | Mac `:8082` `/ispadmin` (`./scripts/run-local-prestaging.sh start` o `./gradlew :core:bootRun`) | No desplegar staging “para probar”. No arrancar Gateway/ACS en otros puertos. |
 | **ACS** | In-process en el WAR local (HTTP loopback al mismo context-path) | **No** levantar un segundo `AcsApplication`. |
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
-| **OLT** | Real `10.11.104.2` (SSH desde Gateway in-process) | No saturar VTY con SSH extra. |
+| **OLT** | Real `10.11.104.2`. El SSH lo abre **un** Gateway (stopgap: el embebido de prod). Prestaging Mac tiene `olt.gateway.enabled=false` y habla por HTTP al túnel `:8092` | No abrir SSH desde la Mac. No segundo `OltCliBus`. |
 | **MikroTik** | **MK2** `network_device.id=8`, VLAN **100** | No MK1 ni `mikrotik_test`. |
 | **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`**. VSOL lab **`VSOL0031C0B6`** | Prohibido writes a ONUs de clientes. |
 
@@ -36,9 +36,21 @@ Pasada canónica **2026-09-06** (SSID `coreprueba123`): suscripción **2333**, I
 
 ---
 
+## Stopgap 2026-09-21
+
+Prestaging **no** abre SSH a `10.11.104.2`. `olt.gateway.enabled=false`. El alta local necesita un túnel HTTP al Gateway que ya tiene el VTY (prod embebido):
+
+```bash
+ssh -L 8092:127.0.0.1:8080 <vps>
+# Core local: olt.gateway.internal-base-url=http://127.0.0.1:8092/ispadmin
+# Header que manda el Core: X-Olt-Gateway-Key=$OLT_GATEWAY_STAGING_API_KEY y X-Gigafiber-Env: lpstg
+```
+
+`free-olt-ssh` en la Mac deja de ser prerrequisito del alta. Sigue siendo obligatorio en el host del Gateway antes de abrir un SSH manual a la OLT. Sin el túnel y sin `OLT_GATEWAY_STAGING_API_KEY` en el dueño, el POST local no autoriza.
+
 ## Runbook (seguir en este orden)
 
-No saltar al POST hasta health + tag `lab` + autofind + perfiles ACS. No deploy. No ACS local.
+No saltar al POST hasta health + tag `lab` + autofind + perfiles ACS. No deploy. No ACS local. No SSH a la OLT desde esta Mac.
 
 ### 1. Túneles Mac → VPS
 

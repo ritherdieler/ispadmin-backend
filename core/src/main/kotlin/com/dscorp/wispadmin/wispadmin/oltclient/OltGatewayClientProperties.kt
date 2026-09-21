@@ -13,4 +13,5 @@ class OltGatewayClientProperties {
     var apiKey: String = ""
     var internalBaseUrl: String = ""
     var clientEnabled: Boolean = false
+    var callerEnv: String = ""
 }

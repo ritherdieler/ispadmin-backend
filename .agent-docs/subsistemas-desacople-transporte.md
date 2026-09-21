@@ -63,12 +63,12 @@ Si un cliente necesita datos, streaming o acciones de un subsistema, el acceso d
 |---------|-------------|
 | **Core** | WAR principal IspAdmin (suscripciones, alta FIBER, 360, login). No llamarlo “CRM”. |
 | **CRM** | Feature/módulo WhatsApp omnicanal (y docs `crm-omnicanal-*`), no el WAR core. |
-| **OLT Gateway** | WAR/proceso autónomo de OLT/ONU (`oltgateway`). Fachada técnica única hacia OLT **y** ACS. |
+| **OLT Gateway** | Un solo proceso dueño de SSH/SNMP hacia `10.11.104.2`. Prod, staging y prestaging le hablan por HTTP. Stopgap 2026-09-21: el dueño sigue embebido en el Core prod; staging y prestaging tienen `olt.gateway.enabled=false`. |
 | **ACS WAR** | WAR TR-069 (`acs`). Solo Gateway lo llama. Posee deviceId/cache WiFi/WAN. Core no tiene dominio ACS. |
 
 ## Referencias
 
 - Construcción / excludes: [desacople-subsistemas-construccion-2026-08-31.md](./desacople-subsistemas-construccion-2026-08-31.md), [subsistemas-war-toggles.md](./subsistemas-war-toggles.md)
-- Gateway HTTP: [olt-gateway-3layer.md](./olt-gateway-3layer.md), [gateway-desacople-fases-2026-09-02.md](./gateway-desacople-fases-2026-09-02.md), [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md), [olt-gateway-rest-consumers-2026-09-02.md](./olt-gateway-rest-consumers-2026-09-02.md)
+- Gateway HTTP: [olt-gateway-compartido-fase0-2026-09-21.md](./olt-gateway-compartido-fase0-2026-09-21.md), [olt-gateway-3layer.md](./olt-gateway-3layer.md), [gateway-desacople-fases-2026-09-02.md](./gateway-desacople-fases-2026-09-02.md), [oltgateway-war-staging-2026-09-03.md](./oltgateway-war-staging-2026-09-03.md) (histórico), [olt-gateway-rest-consumers-2026-09-02.md](./olt-gateway-rest-consumers-2026-09-02.md)
 - WiFi-on-Inform (`cpe.inform`, ACS last-state, Gateway XADD, Core series): [wifi-on-inform-flujo-acs-gateway-core.md](./wifi-on-inform-flujo-acs-gateway-core.md)
 - Tests de frontera: `SubsystemDependencyRulesTest`, `WarSubsystemPackagingTest`

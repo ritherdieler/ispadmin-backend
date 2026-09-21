@@ -58,4 +58,26 @@ class OltGatewayHttpClientTest {
         assertEquals(true, body?.contains("\"unique_external_id\":\"ext-1\""))
         server.verify()
     }
+
+    @Test
+    fun `postForm envia el entorno del llamante`() {
+        val restTemplate = RestTemplate()
+        val server = MockRestServiceServer.createServer(restTemplate)
+        server.expect(requestTo("http://127.0.0.1:8080/ispadmin/api/olt-gateway/onu/authorize_onu"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header(OltGatewayHttpClient.ENV_HEADER, "stg"))
+            .andRespond(withSuccess("""{"status":true}""", MediaType.APPLICATION_JSON))
+
+        val client = OltGatewayHttpClient(
+            OltGatewayClientProperties().apply {
+                apiKey = "stg-key"
+                internalBaseUrl = "http://127.0.0.1:8080/ispadmin"
+                callerEnv = "stg"
+            },
+            restTemplate,
+        )
+
+        client.postForm("/api/olt-gateway/onu/authorize_onu", org.springframework.util.LinkedMultiValueMap())
+        server.verify()
+    }
 }

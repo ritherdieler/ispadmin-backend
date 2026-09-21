@@ -30,7 +30,11 @@ class LocalPrestagingConfigDataTest {
         assertEquals("10.11.104.2", properties.getProperty("olt.gateway.host"))
         assertEquals("1", properties.getProperty("olt.gateway.session.pool-size"))
         assertEquals("GATEWAY", properties.getProperty("olt.provider.authorize"))
-        assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("olt.gateway.internal-base-url"))
+        assertEquals("false", properties.getProperty("olt.gateway.enabled"))
+        assertEquals(
+            "\${OLT_GATEWAY_INTERNAL_BASE_URL:http://127.0.0.1:8092/ispadmin}",
+            properties.getProperty("olt.gateway.internal-base-url"),
+        )
         assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("olt.gateway.acs.internal-base-url"))
         assertEquals("http://127.0.0.1:8082/ispadmin", properties.getProperty("acs.internal-base-url"))
         assertTrue(properties.getProperty("acs.datasource.url").orEmpty().contains("prestaging_acs"))

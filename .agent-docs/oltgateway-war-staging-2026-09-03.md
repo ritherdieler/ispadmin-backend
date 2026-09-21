@@ -1,5 +1,7 @@
 # OLT Gateway WAR (staging) — 2026-09-03
 
+**Histórico.** `deploy.sh` ya no publica el sibling. El camino vigente es un solo dueño SSH: [olt-gateway-compartido-fase0-2026-09-21.md](./olt-gateway-compartido-fase0-2026-09-21.md).
+
 Split del paquete `oltgateway` a un WAR propio, copiando el patrón de traffic.
 
 ## Artefactos

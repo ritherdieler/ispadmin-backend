@@ -68,15 +68,5 @@ class SmartOltAuthorizeProfileResolver(
             .toMap()
     }
 
-    fun matchesLabAcs(sn: String): Boolean {
-        val normalized = sn.filter { it.isLetterOrDigit() }.uppercase()
-        if (normalized.isEmpty()) return false
-        return labAcsSuffixes().any { suffix -> suffix.isNotEmpty() && normalized.endsWith(suffix) }
-    }
-
-    private fun labAcsSuffixes(): List<String> =
-        properties.writes.labAcsSnSuffixes
-            .split(',')
-            .map { it.filter { ch -> ch.isLetterOrDigit() }.uppercase() }
-            .filter { it.isNotEmpty() }
+    fun matchesLabAcs(sn: String): Boolean = properties.isLabSerial(sn)
 }
