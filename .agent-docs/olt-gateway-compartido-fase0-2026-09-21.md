@@ -1,6 +1,6 @@
 # OLT Gateway compartido — fase 0 y stopgap VTY
 
-**Fecha:** 2026-09-21. Diseño: agent store `docs/olt-gateway-compartido.md`. Sin deploy y sin cutover DNS.
+**Fecha:** 2026-09-21. Diseño: agent store `docs/olt-gateway-compartido.md`. Desplegado en prod y staging (`1.0.3+743f306`). Sin cutover DNS.
 
 Un solo `OltCliBus` habla con la MA5608T `10.11.104.2`. Staging y prestaging dejan de abrir SSH. Siguen siendo clientes HTTP del Gateway que ya corre dentro del Core prod.
 
@@ -25,6 +25,8 @@ Un solo `OltCliBus` habla con la MA5608T `10.11.104.2`. Staging y prestaging dej
 
 `gigafiber.subsystems.oltgateway.enabled` sigue `true` en staging para no romper el preflight de la cadena FIBER ni el datasource satélite. El SSH no arranca: el bean está detrás de `olt.gateway.enabled`.
 
+El `.env` compartido lleva `OLT_GATEWAY_ENABLED=true` (el dueño es prod). Esa variable de entorno pisa `olt.gateway.enabled=false` del WAR de staging. `scripts/ensure-tomcat-staging-compose.py` fija `OLT_GATEWAY_ENABLED: "false"` solo en el servicio `tomcat-staging`.
+
 El Core manda `X-Gigafiber-Env` (`prod` por defecto, `stg` en staging, `lpstg` en prestaging).
 
 ## Antes de un deploy
@@ -33,7 +35,11 @@ El Core manda `X-Gigafiber-Env` (`prod` por defecto, `stg` en staging, `lpstg` e
 2. Desplegar **prod primero** (acepta la key y el fanout). Después staging (apaga su SSH).
 3. No publicar `/ispadmin-oltgateway`. No segundo SSH a la OLT. No prestaging al VPS.
 
-La prueba de un solo TCP a `10.11.104.2:22` queda para después de ese deploy. Este cambio no se desplegó.
+## Deploy 2026-09-21
+
+Orden: prod (`tomcat9027` recreado, HTTP 200, `oltReachable=true`) y después staging. En `/opt/gigafiber/.env` quedaron `OLT_GATEWAY_STAGING_API_KEY` (distinta de la de prod) y `OLT_GATEWAY_ACS_BASE_URL_STAGING=http://tomcat-staging:8080/ispadmin-staging`.
+
+El primer arranque de staging heredó `OLT_GATEWAY_ENABLED=true` y abrió su propio `OltCliBus` (dos sesiones). Se paró el contenedor, se fijó el pin en el compose y se restauró `ispadmin-staging.war`. Después: `OLT_GATEWAY_ENABLED=false` dentro de `tomcat-staging`, HTTP 200, sin `SSH session established` en el log, y `GET /api/olt-gateway/onu/unconfigured_onus` en staging responde 404. La misma lectura contra prod con la key de staging y `X-Gigafiber-Env: stg` responde 200. Un delete de SN que no es de laboratorio responde 403 `lab_sn_required`.
 
 ## Fuera de este corte
 
