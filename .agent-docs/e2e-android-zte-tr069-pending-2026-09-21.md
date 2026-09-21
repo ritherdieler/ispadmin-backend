@@ -56,6 +56,10 @@ También falla `OnuActivationController.telemetry` con el mismo 400 cuando el co
 
 `runAcs` corre en `acsExecutor`. Ese hilo ahora recibe `GatewayCallContext` del hilo que activó (o `olt.gateway.acs.default-caller`: `prod` / `stg`) antes de llamar al ACS. El recuperador ya no vuelve a encolar `provision`: un solo intento en el alta; el siguiente es el reintento manual (`POST /subscription/{id}/acs/retry-tr069`).
 
+## Verificación e2e post-fix (`1.0.3+7eaada5`)
+
+`FiberRegisterFirstOnuE2ETest` prod → **PASS** (`E2E_FIBER_PROD_ESPRESSO_OK`). Suscripción **2383**, PPPoE `gf2383`, TR-069 `COMPLETE` en el primer poll de `registration-progress`. WiFi: `mimiwifi` / `MimiWifi24pass` y `mimiwifi - 5G` / `MimiWifi24pass`. Cleanup post omitido (`--cleanup-mode skip`).
+
 ## Logs `FIBER_TRACE`
 
 Prefijo único, sin contraseñas ni cuerpos PPPoE/WiFi.
@@ -104,3 +108,29 @@ La suscripción 2381 quedó en prod (`--cleanup-mode skip`).
 El primer intento no llegó a Espresso: `tr069-e2e-hard-cleanup.sh` en prod borra la ONU por SmartOLT y esa API respondió `403 Invalid API key`. La ONU seguía autorizada (`gigafiber-ma5608t_1_6_117`) y `/onu/unconfigured_onus` venía vacío. Se borró por el Gateway (`POST /api/olt-gateway/onu/delete/gigafiber-ma5608t_1_6_117` → 200) y el segundo intento sí vio el autofind.
 
 El cleanup también se negó a borrar la suscripción 2380 (`SERGIO TEST`) sin `--force`. Esa fila se limpió con `--force` antes del segundo alta.
+
+## PASS HWTC `HWTC9F4C1480` (2026-09-21)
+
+Tras el fix de ACS caller + recover sin re-provision, Espresso prod con ONU lab `HWTC9F4C1480` (GenieACS tag `lab`, productClass `V2804AX15T`, layout VSOL).
+
+| Campo | Valor |
+|-------|-------|
+| Resultado | **PASS** `E2E_FIBER_PROD_ESPRESSO_OK` (~139 s) |
+| Suscripción | **2385** / PPPoE `gf2385` |
+| MK / OLT / TR-069 | `COMPLETE` / `COMPLETE` / `COMPLETE` |
+| Cleanup post | `skip` (queda en prod) |
+
+```bash
+./scripts/e2e_register_fiber_espresso.sh \
+  --onu-sn HWTC9F4C1480 \
+  --cleanup-mode skip \
+  --wifi-ssid mimiwifi \
+  --wifi-pass MimiWifi24pass \
+  --first-name EeeFiber \
+  --last-name Prueba
+```
+
+| Banda | SSID | Contraseña |
+|-------|------|------------|
+| 2.4 GHz | `mimiwifi` | `MimiWifi24pass` |
+| 5 GHz | `mimiwifi - 5G` | `MimiWifi24pass` |
