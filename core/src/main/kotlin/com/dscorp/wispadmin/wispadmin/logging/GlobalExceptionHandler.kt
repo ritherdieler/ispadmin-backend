@@ -80,20 +80,50 @@ class GlobalExceptionHandler @Autowired constructor(
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgument(ex: IllegalArgumentException): ResponseEntity<Map<String, String>> {
+        val detail = ex.message ?: "Solicitud invalida"
         return ResponseEntity.badRequest().body(
             mapOf(
                 "code" to "BAD_REQUEST",
-                "message" to (ex.message ?: "Solicitud invalida"),
+                "message" to detail,
+                "error" to detail,
+            ),
+        )
+    }
+
+    @ExceptionHandler(IllegalStateException::class)
+    fun handleIllegalState(
+        ex: IllegalStateException,
+        request: WebRequest,
+    ): ResponseEntity<Map<String, Any?>> {
+        val httpRequest = (request as ServletWebRequest).request
+        val detail = ex.message ?: "Conflicto con el estado actual"
+        loggingService.logError(
+            module = extractModuleFromRequest(httpRequest),
+            exception = ex,
+            data = "URL: ${httpRequest.requestURI}, Method: ${httpRequest.method}"
+        )
+        httpRequest.setAttribute(HttpFailureContext.ATTR_STACK_SUMMARY, StackTraceSummarizer.summarize(ex))
+        reportToObservability(httpRequest, ex, HttpStatus.CONFLICT.value())
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+            mapOf(
+                "timestamp" to Date(),
+                "status" to HttpStatus.CONFLICT.value(),
+                "code" to "CONFLICT",
+                "error" to detail,
+                "message" to detail,
+                "path" to httpRequest.requestURI,
             ),
         )
     }
 
     @ExceptionHandler(EntityNotFoundException::class)
     fun handleEntityNotFound(ex: EntityNotFoundException): ResponseEntity<Map<String, String>> {
+        val detail = ex.message ?: "Recurso no encontrado"
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
             mapOf(
                 "code" to "NOT_FOUND",
-                "message" to (ex.message ?: "Recurso no encontrado"),
+                "message" to detail,
+                "error" to detail,
             ),
         )
     }
@@ -197,10 +227,12 @@ class GlobalExceptionHandler @Autowired constructor(
         httpRequest.setAttribute(HttpFailureContext.ATTR_STACK_SUMMARY, StackTraceSummarizer.summarize(ex))
         reportToObservability(httpRequest, ex, HttpStatus.INTERNAL_SERVER_ERROR.value())
 
+        val detail = ex.message?.takeIf { it.isNotBlank() } ?: "Error interno del servidor"
         val errorResponse = mapOf(
             "timestamp" to Date(),
             "status" to HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            "error" to "Error interno del servidor",
+            "error" to detail,
+            "message" to detail,
             "path" to path
         )
         

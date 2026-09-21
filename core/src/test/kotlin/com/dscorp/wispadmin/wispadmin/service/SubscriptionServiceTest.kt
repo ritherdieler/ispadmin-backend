@@ -31,6 +31,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
@@ -50,6 +51,7 @@ class SubscriptionServiceTest {
     private val pppoeAccessService = mockk<PppoeAccessService>(relaxed = true)
     private val paymentRepository = mockk<PaymentRepository>(relaxed = true)
     private val subscriptionLogRepository = mockk<SubscriptionLogRepository>(relaxed = true)
+    private val errorLogRepository = mockk<com.dscorp.wispadmin.wispadmin.repository.ErrorLogRepository>(relaxed = true)
     private val borneManagementService = mockk<BorneManagementService>(relaxed = true)
     private val ipAllocationService = IpAllocationService(
         ipPoolRepository = ipPoolRepository,
@@ -70,7 +72,7 @@ class SubscriptionServiceTest {
         installationOrderRepository = mockk(relaxed = true),
         notificationService = mockk(relaxed = true),
         subscriptionLogRepository = subscriptionLogRepository,
-        errorLogRepository = mockk(relaxed = true),
+        errorLogRepository = errorLogRepository,
         borneManagementService = borneManagementService,
         mikrotikService = mikrotikService,
         queueManager = mockk(relaxed = true),
@@ -339,6 +341,59 @@ class SubscriptionServiceTest {
         )
 
         verify { fiberOnuSnClaimService.claim("VSOL0086D819", excludingSubscriptionId = null) }
+    }
+
+    @Test
+    fun `registerSubscription rethrows ONU conflict as IllegalStateException`() {
+        val pool = IpPool(id = 22, ipSegment = "192.168.30.0/24", isEligible = true)
+        every { repository.findByClientRequestId(any()) } returns Optional.empty()
+        every { ipPoolRepository.findAllEligiblePools() } returns listOf(pool)
+        every { installationStrategyFactory.getStrategy(any()) } returns installationStrategy
+        every { networkDeviceRepository.findById(1) } returns Optional.of(NetworkDevice(id = 1, name = "MK1"))
+        every { planRepository.findById(1) } returns Optional.of(
+            Plan(id = 1, name = "f50", downloadSpeed = 50, uploadSpeed = 50)
+        )
+        every { placeRepository.findById(1) } returns Optional.of(Place(id = 1, name = "Huacho"))
+        every { repository.save(any()) } answers { firstArg<Subscription>().apply { id = 201 } }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(queueAdded = false, onuAuthorized = false)
+        every {
+            fiberOnuSnClaimService.claim("HWTC15F610C6", excludingSubscriptionId = any())
+        } throws IllegalStateException(
+            "La ONU HWTC15F610C6 ya está asignada a la suscripción ACTIVE #1895. Cancele ese servicio antes de registrar otra."
+        )
+        every { errorLogRepository.save(any()) } answers { firstArg() }
+
+        val thrown = assertThrows(IllegalStateException::class.java) {
+            service.registerSubscription(
+                newSubscription = SubscriptionRequest(
+                    firstName = "Victoriana",
+                    lastName = "Inga",
+                    dni = "20977081",
+                    address = "Plaza",
+                    phone = "992499718",
+                    subscriptionDate = System.currentTimeMillis(),
+                    planId = 1,
+                    additionalDeviceIds = emptyList(),
+                    placeId = 1,
+                    location = GeoLocation(-11.0, -77.0),
+                    technicianId = 1,
+                    hostDeviceId = 1,
+                    installationType = InstallationType.FIBER,
+                    napBoxId = 1,
+                    vlan = "100",
+                    clientRequestId = "claim-onu-conflict",
+                    onu = com.dscorp.wispadmin.wispadmin.dto.OnuDto(sn = "HWTC15F610C6"),
+                ),
+                onSuccess = { },
+            )
+        }
+
+        assertEquals(
+            "La ONU HWTC15F610C6 ya está asignada a la suscripción ACTIVE #1895. Cancele ese servicio antes de registrar otra.",
+            thrown.message,
+        )
     }
 
     @Test

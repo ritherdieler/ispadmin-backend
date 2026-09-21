@@ -365,7 +365,10 @@ class SubscriptionService(
         }
 
         errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))
-        throw RuntimeException("Error al registrar la suscripción: ${ex.message}", ex)
+        when (ex) {
+            is IllegalArgumentException, is IllegalStateException -> throw ex
+            else -> throw RuntimeException("Error al registrar la suscripción: ${ex.message}", ex)
+        }
     }
 
     private fun cleanupMikroTikQueue(subscription: Subscription) {

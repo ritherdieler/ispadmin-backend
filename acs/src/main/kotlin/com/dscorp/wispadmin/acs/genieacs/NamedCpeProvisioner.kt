@@ -64,6 +64,16 @@ class NamedCpeProvisioner(
             }
             enqueued
         }
+        log.info(
+            "FIBER_TRACE acs enqueue-pppoe sn={} deviceId={} productClass={} http={} accepted={} crFailed={} taskId={}",
+            request.onuSerial,
+            device.id,
+            device.productClass,
+            result.statusCode,
+            result.accepted,
+            result.connectionRequestFailed,
+            result.taskId,
+        )
         if (!result.accepted) {
             val error = result.toErrorDetail()
             return Tr069ProvisionOutcome(
@@ -217,6 +227,12 @@ class NamedCpeProvisioner(
             val wanOk = wanSatisfied(lastIp)
             val wifiOk = !hasWifi || wifiSatisfied(request, lastSsid24, lastSsid5)
             if (wanOk && wifiOk) {
+                log.info(
+                    "FIBER_TRACE acs wait-complete sn={} deviceId={} status=COMPLETE ip={}",
+                    request.onuSerial,
+                    device.id,
+                    lastIp,
+                )
                 return Tr069ProvisionOutcome(
                     status = CpeStatus.COMPLETE,
                     deviceId = device.id,
@@ -229,6 +245,14 @@ class NamedCpeProvisioner(
                 client.getParameterValues(device.id, params, connectionRequest = true)
             }
         }
+        log.info(
+            "FIBER_TRACE acs wait-timeout sn={} deviceId={} ip={} ssid24={} ssid5={}",
+            request.onuSerial,
+            device.id,
+            lastIp,
+            lastSsid24,
+            lastSsid5,
+        )
         return Tr069ProvisionOutcome(
             status = CpeStatus.PENDING,
             deviceId = device.id,
