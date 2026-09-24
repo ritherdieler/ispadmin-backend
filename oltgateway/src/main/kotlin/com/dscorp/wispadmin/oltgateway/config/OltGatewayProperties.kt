@@ -125,9 +125,13 @@ class OltGatewayProperties {
         var inboundTrafficTableIndex: Int = 8
         var outboundTrafficTableIndex: Int = 9
         var labAcsSnSuffixes: String = "0031C0B6,12345B4641531C0B6,ZTEGDC47BFFD"
-        var labAcsLineProfileId: Int = 12
+        /** Profile 30 carries both client VLAN 100 and OMCI/TR-069 management VLAN 1000. */
+        var labAcsLineProfileId: Int = 30
         var labAcsMgmtVlan: Int = 1000
         var labAcsMgmtGemport: Int = 2
+        var labAcsTr069ProfileId: Int = 0
+        /** Bounded retries for v2 remote effects; independent of legacy global SSH retries. */
+        var v2WriteMaxRetryAttempts: Int = 2
     }
 
     class SyncProperties {

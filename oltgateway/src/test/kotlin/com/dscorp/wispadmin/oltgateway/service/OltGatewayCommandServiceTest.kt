@@ -237,6 +237,28 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
+    fun `authorize con perfil TR-069 emite ipconfig DHCP y tr069-server-config`() {
+        properties.writes.labAcsTr069ProfileId = 20
+        service.authorize(
+            AuthorizeCliRequest(
+                board = 1,
+                port = 6,
+                ontId = 116,
+                sn = "HWTC9F4BE990",
+                lineProfileId = 30,
+                serviceProfileId = 13,
+                description = "lab_hwtc",
+                vlan = 100,
+                mgmtVlan = 1000,
+                mgmtGemport = 2,
+            )
+        )
+
+        assertTrue(commands.any { it == "ont ipconfig 6 116 ip-index 0 dhcp vlan 1000 priority 2" })
+        assertTrue(commands.any { it == "ont tr069-server-config 6 116 profile-id 20" })
+    }
+
+    @Test
     fun `planAuthorize devuelve la misma secuencia que ejecutaria authorize`() {
         val request = AuthorizeCliRequest(
             board = 0,
