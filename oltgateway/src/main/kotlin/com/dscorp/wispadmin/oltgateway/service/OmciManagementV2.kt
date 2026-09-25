@@ -24,7 +24,7 @@ class OmciManagementV2(
             writeJob { command ->
                 checked(command, "interface gpon 0/${target.slot}")
                 try {
-                    val before = inspect(command, target)
+                    val before = inspectComplete(command, target)
                     if (!before.configured) {
                         checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
                         checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
@@ -82,15 +82,38 @@ class OmciManagementV2(
     }
 
     private fun readBack(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
-        var evidence = inspect(command, target)
+        var evidence = inspectComplete(command, target)
         var attempt = 1
         while (!evidence.configured && attempt < READBACK_ATTEMPTS) {
+            if (readyHostWithoutProfile(lastState)) {
+                checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
+            }
             pause(READBACK_PAUSE_MS)
-            evidence = inspect(command, target)
+            evidence = inspectComplete(command, target)
             attempt++
         }
         return evidence
     }
+
+    private fun inspectComplete(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
+        var attempt = 0
+        while (true) {
+            try {
+                return inspect(command, target)
+            } catch (ex: IllegalStateException) {
+                if (ex.message?.startsWith("OMCI_INCOMPLETE_READ") != true || ++attempt >= READBACK_ATTEMPTS) {
+                    throw ex
+                }
+                pause(READBACK_PAUSE_MS)
+            }
+        }
+    }
+
+    private fun readyHostWithoutProfile(state: OmciManagementState?) =
+        state?.configType == "DHCP" &&
+            state.manageVlan == MANAGEMENT_VLAN &&
+            state.managePriority == MANAGEMENT_PRIORITY &&
+            state.serverProfileId == null
 
     private fun observed(state: OmciManagementState?) =
         "configType=${state?.configType ?: "none"} vlan=${state?.manageVlan ?: "none"} priority=${state?.managePriority ?: "none"} profile=${state?.serverProfileId ?: "none"} address=${if (state?.address == null) "absent" else "present"}"
@@ -107,6 +130,9 @@ class OmciManagementV2(
 
     private fun inspectState(command: (String) -> String, target: OmciManagementTarget): OmciManagementState {
         val info = checked(command, "display ont info ${target.port} ${target.ontId}")
+        if (field(info, "TR069 server profile ID") == null) {
+            error("OMCI_INCOMPLETE_READ")
+        }
         val parsed = OnuInfoBySnParser().parse(info)
         check(parsed != null && parsed.sn == target.serial && parsed.slot == target.slot &&
             parsed.frame == 0 && parsed.port == target.port && parsed.ontId == target.ontId) { "OMCI_IDENTITY_MISMATCH" }
@@ -126,7 +152,7 @@ class OmciManagementV2(
             )
         }
         checkedOutput(ip, "display ont ipconfig ${target.port} ${target.ontId}")
-        val host = hostBlock(ip, "0") ?: error("OMCI_UNEXPECTED_IP_HOSTS")
+        val host = hostBlock(ip, "0") ?: error("OMCI_INCOMPLETE_READ")
         val address = field(host, "ONT IP")?.takeIf { validAddress(it) }
         return OmciManagementState(
             serverProfileId = server,

@@ -127,6 +127,50 @@ class OmciManagementV2Test {
         assertTrue(error.message!!.contains("address=absent"))
     }
 
+    @Test fun `truncated ont info is reread and then accepted`() {
+        var infoReads = 0
+        val service = OmciManagementV2(pause = {}) { run -> run { command -> when {
+            command.startsWith("display ont info") -> {
+                infoReads++
+                if (infoReads == 1) info().substringBefore("TR069 server profile ID") else info()
+            }
+            command.startsWith("display ont ipconfig") -> ip
+            else -> ""
+        } } }
+        assertEquals(OmciManagementEvidence(true, "10.20.1.166"), service.ensure(target))
+        assertEquals(2, infoReads)
+    }
+
+    @Test fun `resends the profile when dhcp is visible and the profile is still empty`() {
+        var infoReads = 0
+        val writes = mutableListOf<String>()
+        val service = OmciManagementV2(pause = {}) { run -> run { command -> when {
+            command.startsWith("display ont info") -> {
+                infoReads++
+                info().replace("profile ID : 2", "profile ID : ${if (infoReads >= 3) "2" else "-"}")
+            }
+            command.startsWith("display ont ipconfig") -> ip
+            command.startsWith("ont ") -> { writes += command; "" }
+            else -> ""
+        } } }
+        assertTrue(service.ensure(target).configured)
+        assertEquals(2, writes.count { it.startsWith("ont tr069-server-config") })
+    }
+
+    @Test fun `truncated ipconfig is reread instead of failing at once`() {
+        var ipReads = 0
+        val service = OmciManagementV2(pause = {}) { run -> run { command -> when {
+            command.startsWith("display ont info") -> info()
+            command.startsWith("display ont ipconfig") -> {
+                ipReads++
+                if (ipReads == 1) "  --------------------------------------------------------------------------" else ip
+            }
+            else -> ""
+        } } }
+        assertEquals(OmciManagementEvidence(true, "10.20.1.166"), service.ensure(target))
+        assertEquals(2, ipReads)
+    }
+
     @Test fun `CLI failure stops the sequence and is not mistaken for success`() {
         val service = OmciManagementV2 { run -> run { command -> when {
             command.startsWith("display ont info") -> info()

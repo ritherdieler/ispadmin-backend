@@ -7,6 +7,30 @@ import org.junit.jupiter.api.Test
 class HuaweiCliPromptDetectorTest {
 
     @Test
+    fun `una linea de gem index no cierra el comando`() {
+        val buffer = """
+            MA5608T(config-if-gpon-0/1)#display ont info 6 118
+            Run state : online
+               <Gem Index 1>
+        """.trimIndent()
+
+        assertFalse(HuaweiCliPromptDetector.isComplete(buffer))
+    }
+
+    @Test
+    fun `completo cuando el prompt llega despues del gem index`() {
+        val buffer = """
+            MA5608T(config-if-gpon-0/1)#display ont info 6 118
+               <Gem Index 1>
+               <Gem Index 2>
+            TR069 server profile ID : 20
+            MA5608T(config-if-gpon-0/1)#
+        """.trimIndent()
+
+        assertTrue(HuaweiCliPromptDetector.isComplete(buffer))
+    }
+
+    @Test
     fun `completo con prompt de modo config`() {
         assertTrue(HuaweiCliPromptDetector.isComplete("MA5608T(config)#\n"))
         assertTrue(HuaweiCliPromptDetector.isComplete("MA5608T(config-if-gpon-0/1)#\n"))
