@@ -13,6 +13,7 @@ data class OmciManagementEvidence(val configured: Boolean, val address: String?)
 
 /** Called only after the operation has durably captured ownership and its compensation plan. */
 class OmciManagementV2(
+    private val pause: (Long) -> Unit = { Thread.sleep(it) },
     private val writeJob: (((String) -> String) -> Unit) -> Unit,
 ) {
     fun ensure(target: OmciManagementTarget): OmciManagementEvidence {
@@ -27,7 +28,7 @@ class OmciManagementV2(
                         checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
                         checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
                     }
-                    evidence = if (before.configured) before else inspect(command, target)
+                    evidence = if (before.configured) before else readBack(command, target)
                     check(evidence.configured) { "OMCI_READBACK_MISMATCH" }
                 } finally {
                     checked(command, "quit")
@@ -77,6 +78,17 @@ class OmciManagementV2(
             logger.warn("OMCI remove failed serial={} reason={}", target.serial, ex.message?.replace(Regex("\\s+"), " ")?.take(400))
             throw ex
         }
+    }
+
+    private fun readBack(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
+        var evidence = inspect(command, target)
+        var attempt = 1
+        while (!evidence.configured && attempt < READBACK_ATTEMPTS) {
+            pause(READBACK_PAUSE_MS)
+            evidence = inspect(command, target)
+            attempt++
+        }
+        return evidence
     }
 
     private fun inspect(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
@@ -161,5 +173,7 @@ class OmciManagementV2(
         val logger = LoggerFactory.getLogger(OmciManagementV2::class.java)
         const val MANAGEMENT_VLAN = 1000
         const val MANAGEMENT_PRIORITY = 2
+        const val READBACK_ATTEMPTS = 3
+        const val READBACK_PAUSE_MS = 2_000L
     }
 }

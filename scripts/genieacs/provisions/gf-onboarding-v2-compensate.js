@@ -1,6 +1,11 @@
 // args[0]: JSON identity, operationId, optional owned pppPath, previousWifi snapshot, mode=wifi|internet|all.
 // The caller retains management access until this task is verified complete.
-const RESTORE_LAYOUTS = { F6600R: { wcd: 1, bands: [1, 5] }, VSOLVA74: { wcd: 2, bands: [5, 1] } };
+const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
+const RESTORE_LAYOUTS = {
+  F6600R: { wcd: 1, bands: [1, 5], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
+  VSOLVA74: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
+  V2804AX15T: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
+};
 function restoreValue(path) {
   const item = declare(path, { value: Date.now() });
   return item.value && item.value[0];
@@ -50,10 +55,32 @@ function restoreWifi(layout, snapshot) {
     commit();
   });
 }
+function ownedInternetPaths(layout, operationId) {
+  const name = 'GFv2-' + operationId;
+  const paths = [];
+  for (const segment of ['WANPPPConnection', 'WANIPConnection']) {
+    const prefix = WAN_ROOT + layout.wcd + '.' + segment + '.';
+    for (const instance of declare(prefix + '*', { path: Date.now() })) {
+      if (!instance.path || instance.path === layout.provisioning) continue;
+      if (restoreValue(instance.path + '.Name') === name) paths.push(instance.path);
+    }
+  }
+  return paths;
+}
 function removeOwnedInternet(request) {
-  if (!request.pppPath || !declare(request.pppPath, { path: Date.now() }).path) return;
-  declare(request.pppPath, null, { path: 0 });
-  commit();
+  const layout = RESTORE_LAYOUTS[request.expectedModel];
+  const targets = [];
+  if (request.pppPath) targets.push(request.pppPath);
+  for (const found of ownedInternetPaths(layout, request.operationId)) {
+    if (!targets.includes(found)) targets.push(found);
+  }
+  for (const target of targets) {
+    if (target === layout.provisioning) throw new Error('V2_OWNERSHIP_MISMATCH');
+    if (!declare(target, { path: Date.now() }).path) continue;
+    if (restoreValue(target + '.Name') !== 'GFv2-' + request.operationId) throw new Error('V2_OWNERSHIP_MISMATCH');
+    declare(target, null, { path: 0 });
+    commit();
+  }
 }
 function compensate() {
   const request = validateCompensation();

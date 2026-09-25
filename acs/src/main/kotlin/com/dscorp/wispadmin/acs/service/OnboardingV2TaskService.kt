@@ -12,6 +12,12 @@ import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.server.ResponseStatusException
 
+internal fun onboardingFaultReason(body: String?): String? {
+    if (body.isNullOrBlank()) return null
+    val message = runCatching { ObjectMapper().readTree(body).path("message").asText("") }.getOrDefault("").trim()
+    return message.takeIf { it.isNotEmpty() }?.take(180)
+}
+
 private data class OnboardingV2TaskRow(
     val operationId: String,
     val action: String,
@@ -48,6 +54,11 @@ class OnboardingV2TaskService(
             "username" to request.username,
             "password" to request.password,
             "vlan" to request.vlan,
+            "mode" to request.mode,
+            "ip" to request.ip,
+            "subnetMask" to request.subnetMask,
+            "gateway" to request.gateway,
+            "dns" to request.dns,
         ))
         var queued = client.enqueueProvisions(row.deviceId, INTERNET_PROVISION, listOf(args), connectionRequest = true)
         if (queued.connectionRequestFailed) {
@@ -96,16 +107,24 @@ class OnboardingV2TaskService(
             conflict("Onboarding v2 task identity changed")
         }
         val taskId = row.taskId ?: return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("WAITING", "")
-        if (client.findFaultBodyForTask(row.deviceId, taskId) != null) {
-            return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId)
+        val fault = client.findFaultBodyForTask(row.deviceId, taskId)
+        if (fault != null) {
+            return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId, onboardingFaultReason(fault))
         }
-        val wcd = when (row.model.trim().uppercase()) { "F6600R" -> 1; "VSOLVA74" -> 2; else -> conflict("Unsupported v2 model") }
-        val owned = client.findWanPppConnections(row.deviceId, wcd, "GFv2-${row.operationId}")
-        if (owned.size > 1) conflict("Multiple owned v2 WANs were found")
+        val wcd = when (row.model.trim().uppercase()) {
+            "F6600R" -> 1
+            "VSOLVA74", "V2804AX15T" -> 2
+            else -> conflict("Unsupported v2 model")
+        }
+        val ownedName = "GFv2-${row.operationId}"
+        val ppp = client.findWanPppConnections(row.deviceId, wcd, ownedName)
+        val ip = client.findWanIpConnections(row.deviceId, wcd, ownedName)
+        if (ppp.size + ip.size > 1) conflict("Multiple owned v2 WANs were found")
+        val owned = ppp.singleOrNull() ?: ip.singleOrNull()
         val state = if (compensation) {
-            if (owned.isEmpty()) "COMPLETE" else "WAITING"
+            if (owned == null) "COMPLETE" else "WAITING"
         } else {
-            if (owned.singleOrNull()?.connectionStatus.equals("Connected", ignoreCase = true)) "COMPLETE" else "WAITING"
+            if (owned?.connectionStatus.equals("Connected", ignoreCase = true)) "COMPLETE" else "WAITING"
         }
         return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse(state, taskId)
     }
@@ -223,7 +242,9 @@ class OnboardingV2TaskService(
         require(request.operationId.matches(Regex("[a-zA-Z0-9-]{8,64}"))) { "INVALID_OPERATION_ID" }
         require(request.sn.trim().uppercase().matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
         require(request.deviceId.isNotBlank() && NamedCpeLayouts.supported(request.model)) { "UNSUPPORTED_ONU_MODEL" }
-        require(request.firmware.isNotBlank() && request.username.isNotBlank() && request.password.isNotBlank()) { "INTERNET_INPUT_REQUIRED" }
+        require(request.firmware.isNotBlank()) { "INTERNET_INPUT_REQUIRED" }
+        if (request.mode == "static") require(!request.ip.isNullOrBlank()) { "INTERNET_INPUT_REQUIRED" }
+        else require(request.mode == "pppoe" && request.username.isNotBlank() && request.password.isNotBlank()) { "INTERNET_INPUT_REQUIRED" }
         require(request.vlan in 1..4094 && request.vlan != MANAGEMENT_VLAN) { "INVALID_INTERNET_VLAN" }
     }
 

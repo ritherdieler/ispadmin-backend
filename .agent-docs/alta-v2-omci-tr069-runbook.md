@@ -43,7 +43,7 @@ Implementado y probado localmente:
 - Migración aditiva `V56__provisioning_v2_journal.sql`, sin aplicar en staging/prod.
 - `ProvisioningV2Controller`: contratos GET de progreso y POST retry/cancel, condicionales a la existencia del servicio v2. No se registró un runtime incompleto ni se activó selección v2 en el alta.
 - `OmciManagementV2`: componente CLI con validación de identidad/ubicación, perfil compatible, contexto GPON, aplicación idempotente y lectura posterior. Solo pruebas simuladas; no conectado aún al endpoint Gateway ni al worker.
-- Nuevos scripts `gf-onboarding-v2-pppoe`, `gf-onboarding-v2-wifi`, `gf-onboarding-v2-compensate`: identidad/modelo/firmware, propiedad por nombre de operación, guardas de WAN ajena y restauración WiFi con snapshot. No publicados en GenieACS.
+- Nuevos scripts `gf-onboarding-v2-pppoe`, `gf-onboarding-v2-wifi`, `gf-onboarding-v2-compensate`: identidad/modelo/firmware y propiedad por nombre de operación. En cada ONU la primera WAN queda como aprovisionamiento; cualquier otra se borra y se crea la de Internet en PPPoE o IP estática. El fallo del script llega al cliente con su código. Restauración WiFi con snapshot.
 
 Pendientes obligatorios para terminar (no confundir las pruebas unitarias con el alta implementada):
 
@@ -178,7 +178,7 @@ Crear `gf-onboarding-v2-pppoe`, `gf-onboarding-v2-wifi` y `gf-onboarding-v2-comp
 
 - Layout por modelo; no copiar supuestos de índices sin prueba desde factory reset + OMCI.
 - Proteger WAN de gestión contra borrados y cambios de VLAN/servicio.
-- Asegurar exactamente una WAN de Internet PPPoE y una de gestión funcionales. Objetos extra incompatibles desconocidos producen error explícito; no borrarlos por heurística.
+- La primera WAN es la de aprovisionamiento y no se borra. Cualquier otra WAN se elimina y se crea una sola de Internet, PPPoE o IP estática.
 - PPPoE configura VLAN, credenciales y parámetros necesarios según modelo. WiFi queda separado para reintentar sin reconstruir WAN.
 - Tareas registradas por operación/revisión; consultar o reintentar el task ID existente. No purgar todas las tareas del dispositivo.
 - Fallo del Connection Request no implica que la tarea no se haya encolado.

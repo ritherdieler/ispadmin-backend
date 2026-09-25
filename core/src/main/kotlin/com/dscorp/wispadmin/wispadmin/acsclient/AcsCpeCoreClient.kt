@@ -80,7 +80,7 @@ data class CoreOnboardingV2InternetStatusRequest(
     val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,
 )
 
-data class CoreOnboardingV2InternetStatusResponse(val state: String, val taskId: String)
+data class CoreOnboardingV2InternetStatusResponse(val state: String, val taskId: String, val reason: String? = null)
 
 data class CoreOnboardingV2WifiRequest(
     val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,

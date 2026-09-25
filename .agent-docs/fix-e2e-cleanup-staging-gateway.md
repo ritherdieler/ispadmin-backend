@@ -21,3 +21,7 @@ También:
 ## Prueba
 
 `DeployEnvScriptTest.tr069_e2e_hard_cleanup_staging_deletes_onu_via_local_olt_gateway`
+
+## Reserva de la ONU (2026-09-25)
+
+Si el borrado en la OLT no respondía 200, el script salía antes de borrar `olt_provisioning_v2_onu_operation` en `stg_oltgateway` y el proceso se cortaba. La siguiente alta recibía la ONU ya reservada. Ahora la reserva se borra aunque ese borrado falle, y el cleanup sigue con el resto.

@@ -392,13 +392,24 @@ class GenieAcsClient(
     }
 
     /** Reads the cache only; used by v2 to prove ownership through the operation name. */
-    fun findWanPppConnections(deviceId: String, wanConnectionDevice: Int, name: String): List<GenieAcsWanPppConnection> {
+    fun findWanPppConnections(deviceId: String, wanConnectionDevice: Int, name: String): List<GenieAcsWanPppConnection> =
+        findNamedWanConnections(deviceId, wanConnectionDevice, "WANPPPConnection", name)
+
+    fun findWanIpConnections(deviceId: String, wanConnectionDevice: Int, name: String): List<GenieAcsWanPppConnection> =
+        findNamedWanConnections(deviceId, wanConnectionDevice, "WANIPConnection", name)
+
+    private fun findNamedWanConnections(
+        deviceId: String,
+        wanConnectionDevice: Int,
+        segment: String,
+        name: String,
+    ): List<GenieAcsWanPppConnection> {
         val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
-        val ppp = wanConn.path(wanConnectionDevice.toString()).path("WANPPPConnection")
-        if (!ppp.isObject) return emptyList()
-        return ppp.fieldNames().asSequence().mapNotNull { index ->
+        val connections = wanConn.path(wanConnectionDevice.toString()).path(segment)
+        if (!connections.isObject) return emptyList()
+        return connections.fieldNames().asSequence().mapNotNull { index ->
             if (index.toIntOrNull() == null) return@mapNotNull null
-            val path = "$DEFAULT_WCD_PARENT.$wanConnectionDevice.WANPPPConnection.$index"
+            val path = "$DEFAULT_WCD_PARENT.$wanConnectionDevice.$segment.$index"
             val actualName = getDeviceParameterValue(deviceId, "$path.Name") ?: return@mapNotNull null
             if (actualName != name) return@mapNotNull null
             GenieAcsWanPppConnection(

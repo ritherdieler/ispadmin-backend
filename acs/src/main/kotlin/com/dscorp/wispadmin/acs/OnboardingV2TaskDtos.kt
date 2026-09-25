@@ -9,6 +9,11 @@ data class OnboardingV2InternetRequest(
     val username: String,
     val password: String,
     val vlan: Int,
+    val mode: String = "pppoe",
+    val ip: String? = null,
+    val subnetMask: String? = null,
+    val gateway: String? = null,
+    val dns: String? = null,
 )
 
 data class OnboardingV2TaskResponse(
@@ -37,6 +42,7 @@ data class OnboardingV2InternetStatusRequest(
 data class OnboardingV2InternetStatusResponse(
     val state: String,
     val taskId: String,
+    val reason: String? = null,
 )
 
 data class OnboardingV2WifiRequest(

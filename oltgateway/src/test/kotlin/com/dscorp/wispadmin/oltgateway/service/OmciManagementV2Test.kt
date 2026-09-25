@@ -82,6 +82,38 @@ class OmciManagementV2Test {
         assertEquals("quit", commands.last())
     }
 
+    @Test fun `second readback sees management without writing again`() {
+        var ipReads = 0
+        var pauses = 0L
+        val writes = mutableListOf<String>()
+        val service = OmciManagementV2(pause = { pauses += it }) { run ->
+            run { command ->
+                when {
+                    command.startsWith("display ont info") ->
+                        info().replace("profile ID : 2", "profile ID : ${if (ipReads >= 2) "2" else "-"}")
+                    command.startsWith("display ont ipconfig") -> {
+                        ipReads++
+                        if (ipReads < 3) "Failure: The ONT does not configure IP information" else ip
+                    }
+                    command.startsWith("ont ") -> {
+                        writes += command
+                        ""
+                    }
+                    else -> ""
+                }
+            }
+        }
+        assertEquals(OmciManagementEvidence(true, "10.20.1.166"), service.ensure(target))
+        assertEquals(2_000L, pauses)
+        assertEquals(
+            listOf(
+                "ont ipconfig 6 39 ip-index 0 dhcp vlan 1000 priority 2",
+                "ont tr069-server-config 6 39 profile-id 2",
+            ),
+            writes,
+        )
+    }
+
     @Test fun `CLI failure stops the sequence and is not mistaken for success`() {
         val service = OmciManagementV2 { run -> run { command -> when {
             command.startsWith("display ont info") -> info()

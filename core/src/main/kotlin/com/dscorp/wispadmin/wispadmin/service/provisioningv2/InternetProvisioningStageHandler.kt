@@ -85,13 +85,27 @@ class InternetProvisioningStageHandler(
         return when (response.state) {
             "COMPLETE" -> StageObservation.SATISFIED
             "WAITING" -> StageObservation.WAITING
-            "FAILED" -> failure(if (compensation) "ACS_INTERNET_COMPENSATION_FAILED" else "ACS_INTERNET_TASK_FAILED", false)
+            "FAILED" -> {
+                val reason = response.reason?.trim()?.takeIf { it.isNotEmpty() }
+                val fallback = if (compensation) "ACS_INTERNET_COMPENSATION_FAILED" else "ACS_INTERNET_TASK_FAILED"
+                val code = reason?.takeIf { FAILURE_CODE.matches(it) } ?: fallback
+                failure(code, false, reason)
+            }
             else -> failure("ACS_INTERNET_STATUS_INVALID")
         }
     }
     private inline fun <reified T> decode(value: String, code: String): T = try { json.readValue(value, T::class.java) } catch (_: Exception) { failure(code, false) }
-    private fun failure(code: String, retryable: Boolean = true): Nothing = throw ProvisioningStepException(
-        ProvisioningFailure(code, "No se pudo confirmar la tarea PPPoE. Consulte el historial de la operación.", retryable))
+    private fun failure(code: String, retryable: Boolean = true, reason: String? = null): Nothing = throw ProvisioningStepException(
+        ProvisioningFailure(
+            code,
+            reason?.takeIf { it.isNotBlank() }?.let { "No se pudo aplicar la WAN de Internet: $it" }
+                ?: "No se pudo confirmar la tarea de Internet. Consulte el historial de la operación.",
+            retryable,
+        ))
     private data class ExpectedInternet(val registration: ProvisioningV2RegistrationSnapshot, val contact: AcsContactProvisioningResource, val username: String, val password: String)
-    private companion object { const val RESOURCE_KEY = "internet"; const val CONTACT_RESOURCE_KEY = "acs-contact" }
+    private companion object {
+        const val RESOURCE_KEY = "internet"
+        const val CONTACT_RESOURCE_KEY = "acs-contact"
+        val FAILURE_CODE = Regex("^[A-Z][A-Z0-9_]{2,80}$")
+    }
 }

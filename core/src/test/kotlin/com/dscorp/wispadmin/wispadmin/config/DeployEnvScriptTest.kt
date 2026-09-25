@@ -199,6 +199,19 @@ class DeployEnvScriptTest {
             stagingSection.contains("gigafiberperu.smartolt.com"),
             "staging branch must not call SmartOLT cloud"
         )
+        val postDelete = script.indexOf("/api/olt-gateway/onu/delete/")
+        val deleteFailed = script.indexOf("Gateway delete returned", postDelete)
+        assertTrue(postDelete >= 0 && deleteFailed > postDelete)
+        assertTrue(
+            script.substring(postDelete, deleteFailed).contains(
+                "DELETE FROM olt_provisioning_v2_onu_operation"
+            ),
+            "a failed OLT delete must still release the staging ONU reservation"
+        )
+        assertTrue(
+            script.contains("tee \"\$CAUSE_LOG\" || GW_EC=1"),
+            "a failed Gateway delete must not abort the rest of the cleanup"
+        )
     }
 
     @Test

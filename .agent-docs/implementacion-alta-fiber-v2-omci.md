@@ -170,7 +170,7 @@ La tabla existe como V58 en el schema Core usado por el despliegue integrado y c
 | `OLT` | Reserva el serial, reconcilia/autoriza la ONU y asegura el service-port de gestión VLAN 1000. Conserva la VLAN Internet solicitada para el transporte de cliente. | `externalId`, board, port, ONT-ID válidos y `managementVlanReady=true`. | Borra únicamente la ONU reservada por esa operación y confirma que ya no existe antes de liberar la reserva. |
 | `OMCI` | Usa la posición confirmada por OLT; asegura IP host 0 DHCP VLAN 1000 prioridad 2 y perfil TR-069. | Readback exacto de WAN de gestión y perfil; captura `omci`. | Ejecuta `undo` solo si WAN/perfil siguen siendo compatibles y pertenecen al target reservado. |
 | `ACS_CONTACT` | Busca un único device por serial completo; no encola tareas. Valida modelo y firmware soportados. | Captura inmutable de `deviceId`, modelo y firmware. | Sin efecto remoto. |
-| `INTERNET` | Encola `gf-onboarding-v2-pppoe` con identidad fijada, VLAN Internet y credenciales PPPoE. | Task sin fault y estado remoto `COMPLETE`. | Encola `gf-onboarding-v2-compensate` para el objeto PPP propiedad de la operación y espera confirmación. |
+| `INTERNET` | Encola `gf-onboarding-v2-pppoe`. Conserva la WAN de aprovisionamiento, borra las demás y crea Internet PPPoE o estática. | Task sin fault y la WAN propia en `Connected`. El fault del script se muestra con su código. | Encola `gf-onboarding-v2-compensate` para la WAN de Internet de esa operación, PPPoE o estática, y espera confirmación. |
 | `WIFI` | ACS lee y cifra primero el baseline; luego encola `gf-onboarding-v2-wifi`. | Estado remoto coincide con SSID, clave y enabled esperados para ambas bandas. | Descifra el baseline dentro de ACS y encola `gf-onboarding-v2-compensate` en modo Wi-Fi. |
 | `VERIFY` | Comprueba que existen evidencias `olt`, `omci`, `acs-contact`, `internet` y `wifi`. | Todas las etapas previas ya pasaron su propio readback. | Sin efecto remoto. |
 
@@ -261,7 +261,7 @@ Provisions nuevos, separados del legado:
 
 | ID | Función |
 | --- | --- |
-| `gf-onboarding-v2-pppoe` | Crea/reconcilia la WAN PPPoE de Internet propiedad de la operación. |
+| `gf-onboarding-v2-pppoe` | Conserva la WAN de aprovisionamiento, borra las demás y crea la WAN de Internet PPPoE o estática de la operación. |
 | `gf-onboarding-v2-wifi` | Configura las bandas 2.4 y 5 GHz después de capturar baseline. |
 | `gf-onboarding-v2-compensate` | Retira PPPoE propio o restaura el baseline Wi-Fi. |
 

@@ -591,16 +591,14 @@ fi
 echo "external_id=\$EXT"
 e2e_http POST "\$GW/api/olt-gateway/onu/delete/\$EXT" "\${hdr[@]}" || true
 code="\${E2E_HTTP_CODE:-000}"
-docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
+docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('\$SN'); DELETE FROM olt_activation_operation WHERE UPPER(sn)=UPPER('\$SN');" || true
 if [[ "\$code" != "200" ]]; then
   echo "Gateway delete returned HTTP \$code" >&2
   exit 1
 fi
-docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('\$SN'); DELETE FROM olt_activation_operation WHERE UPPER(sn)=UPPER('\$SN');" || true
 echo "ONU was deleted"
 EOF
-    } | ssh_vps "bash -s" 2>&1 | tee "$CAUSE_LOG"
-    [[ "${PIPESTATUS[0]}" -eq 0 ]] || GW_EC=1
+    } | ssh_vps "bash -s" 2>&1 | tee "$CAUSE_LOG" || GW_EC=1
     line="$(take_cause)"
     [[ -n "$line" ]] && GW_CAUSE="$line"
   else
