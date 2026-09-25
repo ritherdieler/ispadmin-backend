@@ -343,7 +343,7 @@ class OltManagerFacadeTest {
         assertEquals(olt, savedOnu.captured.olt)
         assertEquals(2L, savedOnu.captured.zone?.id)
         assertEquals(3L, savedOnu.captured.onuType?.id)
-        assertEquals(12, cli.captured.lineProfileId)
+        assertEquals(30, cli.captured.lineProfileId)
         assertEquals(13, cli.captured.serviceProfileId)
         assertTrue(cli.captured.description.contains("nuevo_zone_ZonaA_authd_"))
         verify { commandService.authorize(any()) }

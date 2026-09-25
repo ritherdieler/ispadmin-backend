@@ -18,7 +18,7 @@ data class LabOnuAddRequest(val sn: String = "")
 
 @RestController
 @RequestMapping("/api/olt-gateway/onu/lab")
-@ConditionalOnProperty(prefix = "gigafiber.subsystems.oltgateway", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @ConditionalOnExpression("'\${oltgateway.datasource.url:}'.trim().length() > 0")
 class LabOnuController(
     private val registry: LabOnuRegistry,

@@ -11,7 +11,7 @@ import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
 
 @Component
-@ConditionalOnProperty(prefix = "gigafiber.subsystems.oltgateway", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @ConditionalOnExpression("'\${oltgateway.datasource.url:}'.trim().length() > 0")
 class JpaLabOnuRegistry(
     private val repository: OltLabOnuRepository,

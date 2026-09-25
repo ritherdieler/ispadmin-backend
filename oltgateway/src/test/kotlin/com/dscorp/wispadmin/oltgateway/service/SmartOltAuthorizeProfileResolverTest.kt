@@ -22,7 +22,7 @@ class SmartOltAuthorizeProfileResolverTest {
     }
 
     @Test
-    fun `Generic_1 vlan 100 resuelve line 12 srv 13 y VLAN 1000 de gestion`() {
+    fun `Generic_1 vlan 100 resuelve line 30 srv 13 y VLAN 1000 de gestion`() {
         val resolved = resolver().resolve(
             customProfile = "Generic_1",
             vlan = 100,
@@ -32,7 +32,7 @@ class SmartOltAuthorizeProfileResolverTest {
             at = LocalDate.of(2026, 9, 2).atStartOfDay().toInstant(ZoneOffset.UTC),
         )
 
-        assertEquals(12, resolved.lineProfileId)
+        assertEquals(30, resolved.lineProfileId)
         assertEquals(13, resolved.serviceProfileId)
         assertEquals(1000, resolved.mgmtVlan)
         assertEquals(2, resolved.mgmtGemport)
@@ -55,7 +55,7 @@ class SmartOltAuthorizeProfileResolverTest {
     }
 
     @Test
-    fun `sin binding en vlan 100 igual fuerza line 12 y VLAN 1000`() {
+    fun `sin binding en vlan 100 igual fuerza line 30 y VLAN 1000`() {
         val resolved = resolver(bindings = "").resolve(
             customProfile = "Unknown",
             vlan = 100,
@@ -65,14 +65,14 @@ class SmartOltAuthorizeProfileResolverTest {
             at = LocalDate.of(2026, 9, 2).atStartOfDay().toInstant(ZoneOffset.UTC),
         )
 
-        assertEquals(12, resolved.lineProfileId)
+        assertEquals(30, resolved.lineProfileId)
         assertEquals(10, resolved.serviceProfileId)
         assertEquals(1000, resolved.mgmtVlan)
         assertEquals("solo-nombre_zone_Zone 1_authd_20260902", resolved.description)
     }
 
     @Test
-    fun `VSOL lab 0031C0B6 usa lineprofile 12 y VLAN 1000 de gestion ACS`() {
+    fun `VSOL lab 0031C0B6 usa lineprofile 30 y VLAN 1000 de gestion ACS`() {
         val resolved = resolver().resolve(
             customProfile = "Generic_1",
             vlan = 100,
@@ -82,7 +82,7 @@ class SmartOltAuthorizeProfileResolverTest {
             at = LocalDate.of(2026, 9, 11).atStartOfDay().toInstant(ZoneOffset.UTC),
         )
 
-        assertEquals(12, resolved.lineProfileId)
+        assertEquals(30, resolved.lineProfileId)
         assertEquals(13, resolved.serviceProfileId)
         assertEquals(1000, resolved.mgmtVlan)
         assertEquals(2, resolved.mgmtGemport)
@@ -98,12 +98,12 @@ class SmartOltAuthorizeProfileResolverTest {
             sn = "12345B4641531C0B6",
         )
 
-        assertEquals(12, resolved.lineProfileId)
+        assertEquals(30, resolved.lineProfileId)
         assertEquals(1000, resolved.mgmtVlan)
     }
 
     @Test
-    fun `VSOL de cliente en vlan 100 tambien lleva line 12 y VLAN 1000`() {
+    fun `VSOL de cliente en vlan 100 tambien lleva line 30 y VLAN 1000`() {
         val resolved = resolver().resolve(
             customProfile = "Generic_1",
             vlan = 100,
@@ -112,7 +112,7 @@ class SmartOltAuthorizeProfileResolverTest {
             sn = "VSOL003217B6",
         )
 
-        assertEquals(12, resolved.lineProfileId)
+        assertEquals(30, resolved.lineProfileId)
         assertEquals(1000, resolved.mgmtVlan)
         assertEquals(2, resolved.mgmtGemport)
     }
