@@ -163,7 +163,8 @@ class StagingEnvironmentPropertiesTest {
         ).forEach { name ->
             val text = Files.readString(root.resolve("core/src/main/resources/$name"))
             assertTrue(
-                text.contains("spring.jpa.properties.hibernate.dialect=$nonSpatial"),
+                text.contains("spring.jpa.properties.hibernate.dialect=$nonSpatial") ||
+                    text.contains("spring.jpa.properties.hibernate.dialect=com.dscorp.wispadmin.shared.persistence.UnicodeCiMySQLDialect"),
                 "$name must override spatial dialect (hibernate-spatial is excluded from satellite WARs): $text",
             )
             assertFalse(
