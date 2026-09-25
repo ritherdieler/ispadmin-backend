@@ -49,6 +49,7 @@ class TrafficPersistenceConfig {
             persistenceUnit = "traffic",
             ddlAuto = environment.getProperty("traffic.jpa.hibernate.ddl-auto", "update"),
             jpaProperties = jpaProperties,
+            dialect = SatelliteJpa.UNICODE_CI_DIALECT,
         )
 
     @Bean(name = ["trafficTransactionManager"])

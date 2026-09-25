@@ -53,7 +53,7 @@ ACS y Traffic (`acs-war`, `acs-staging-war`, `traffic-war`, `traffic-staging-war
 
 Gateway (`oltgateway-war`, `oltgateway-staging-war`): `${lib.excludes.satellite}` **sin** sshd / snmp4j / swagger-ui.
 
-Los perfiles satélite (`application-traffic|acs|oltgateway.properties`) fijan `hibernate.dialect=org.hibernate.dialect.MySQL57Dialect`. Sin eso heredan el dialecto spatial de `application.properties` y fallan al arrancar (CNFE `MySQL56InnoDBSpatialDialect`) porque el jar ya no va en el WAR.
+Los perfiles satélite (`application-traffic|acs|oltgateway.properties`) fijan `hibernate.dialect=com.dscorp.wispadmin.shared.persistence.UnicodeCiMySQLDialect` (MySQL 5.7 sin spatial; el `CAST` a texto lleva `COLLATE utf8mb4_unicode_ci`). Sin eso heredan el dialecto spatial de `application.properties` y fallan al arrancar (CNFE `MySQL56InnoDBSpatialDialect`) porque el jar ya no va en el WAR.
 
 `${lib.excludes.satellite}` (tras el primer package): firebase/gRPC/GCP (incl. `google-api-services-*`, `gapic-google-*`), POI/xmlbeans/commons-math3, Meili, JTS, hibernate-spatial, `postgresql-*` (solo lo usaba spatial), `spring-webflux`, `reactor-netty`, `kotlinx-coroutines-reactor`. Se **conserva** `reactor-core` (Lettuce/Redis).
 

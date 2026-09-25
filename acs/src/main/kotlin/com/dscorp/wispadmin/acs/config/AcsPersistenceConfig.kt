@@ -50,6 +50,7 @@ class AcsPersistenceConfig {
             persistenceUnit = "acs",
             ddlAuto = environment.getProperty("acs.jpa.hibernate.ddl-auto", "update"),
             jpaProperties = jpaProperties,
+            dialect = SatelliteJpa.UNICODE_CI_DIALECT,
         )
 
     @Bean(name = ["acsTransactionManager"])
