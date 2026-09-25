@@ -50,7 +50,7 @@ class OmciManagementV2(
         writeJob { command ->
             checked(command, "interface gpon 0/${target.slot}")
             try {
-                val state = inspectState(command, target)
+                val state = inspectStateComplete(command, target)
                 if (state.serverProfileId != null && state.serverProfileId != target.tr069ProfileId) {
                     error("OMCI_EXISTING_SERVER_CONFLICT")
                 }
@@ -68,7 +68,7 @@ class OmciManagementV2(
                 if (state.configType == "DHCP") {
                     checked(command, "undo ont ipconfig ${target.port} ${target.ontId}")
                 }
-                val after = inspectState(command, target)
+                val after = inspectStateComplete(command, target)
                 check(after.serverProfileId == null && after.configType == "Invalid") { "OMCI_REMOVE_UNCONFIRMED" }
             } finally {
                 checked(command, "quit")
@@ -93,6 +93,20 @@ class OmciManagementV2(
             attempt++
         }
         return evidence
+    }
+
+    private fun inspectStateComplete(command: (String) -> String, target: OmciManagementTarget): OmciManagementState {
+        var attempt = 0
+        while (true) {
+            try {
+                return inspectState(command, target)
+            } catch (ex: IllegalStateException) {
+                if (ex.message?.startsWith("OMCI_INCOMPLETE_READ") != true || ++attempt >= READBACK_ATTEMPTS) {
+                    throw ex
+                }
+                pause(READBACK_PAUSE_MS)
+            }
+        }
     }
 
     private fun inspectComplete(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
