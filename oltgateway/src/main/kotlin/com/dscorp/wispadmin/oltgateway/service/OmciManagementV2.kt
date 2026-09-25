@@ -16,6 +16,7 @@ class OmciManagementV2(
     private val pause: (Long) -> Unit = { Thread.sleep(it) },
     private val writeJob: (((String) -> String) -> Unit) -> Unit,
 ) {
+    private var lastState: OmciManagementState? = null
     fun ensure(target: OmciManagementTarget): OmciManagementEvidence {
         logger.info("OMCI ensure start serial={} slot={} port={} ont={} profile={}", target.serial, target.slot, target.port, target.ontId, target.tr069ProfileId)
         var evidence = OmciManagementEvidence(false, null)
@@ -29,7 +30,7 @@ class OmciManagementV2(
                         checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
                     }
                     evidence = if (before.configured) before else readBack(command, target)
-                    check(evidence.configured) { "OMCI_READBACK_MISMATCH" }
+                    check(evidence.configured) { "OMCI_READBACK_MISMATCH ${observed(lastState)}" }
                 } finally {
                     checked(command, "quit")
                 }
@@ -91,8 +92,12 @@ class OmciManagementV2(
         return evidence
     }
 
+    private fun observed(state: OmciManagementState?) =
+        "configType=${state?.configType ?: "none"} vlan=${state?.manageVlan ?: "none"} priority=${state?.managePriority ?: "none"} profile=${state?.serverProfileId ?: "none"} address=${if (state?.address == null) "absent" else "present"}"
+
     private fun inspect(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
         val state = inspectState(command, target)
+        lastState = state
         check(state.serverProfileId == null || state.serverProfileId == target.tr069ProfileId) { "OMCI_EXISTING_SERVER_CONFLICT" }
         check(state.configType == "DHCP" || state.configType == "Invalid") { "OMCI_EXISTING_WAN_CONFLICT" }
         val configured = state.configType == "DHCP" && state.manageVlan == MANAGEMENT_VLAN &&

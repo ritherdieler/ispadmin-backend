@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.server.ResponseStatusException
 
 @RestControllerAdvice(basePackages = ["com.dscorp.wispadmin.oltgateway"])
 class OltGatewayExceptionHandler {
@@ -49,5 +50,29 @@ class OltGatewayExceptionHandler {
     fun handleCliBusBusy(ex: CliBusBusyException): ResponseEntity<ErrorResponseDto> {
         return ResponseEntity.status(HttpStatus.CONFLICT)
             .body(ErrorResponseDto(error = "cli_bus_busy", message = ex.reason))
+    }
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleStatus(ex: ResponseStatusException): ResponseEntity<ErrorResponseDto> =
+        ResponseEntity.status(ex.status)
+            .body(ErrorResponseDto(error = ex.status.toString(), message = detail(ex.reason ?: ex.message)))
+
+    @ExceptionHandler(IllegalArgumentException::class)
+    fun handleArgument(ex: IllegalArgumentException): ResponseEntity<ErrorResponseDto> =
+        ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponseDto(error = "invalid_request", message = detail(ex.message)))
+
+    @ExceptionHandler(IllegalStateException::class)
+    fun handleState(ex: IllegalStateException): ResponseEntity<ErrorResponseDto> =
+        ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(ErrorResponseDto(error = "operation_rejected", message = detail(ex.message)))
+
+    private fun detail(value: String?): String {
+        val text = value?.takeIf { it.isNotBlank() } ?: "Error interno del servidor"
+        return text.replace(SECRET, "$1=<redacted>").replace(Regex("\\s+"), " ").take(500)
+    }
+
+    private companion object {
+        val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
     }
 }

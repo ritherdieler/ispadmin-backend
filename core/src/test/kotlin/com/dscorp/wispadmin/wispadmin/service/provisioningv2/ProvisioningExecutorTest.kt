@@ -6,7 +6,11 @@ import org.junit.jupiter.api.Test
 import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
+import org.springframework.web.client.HttpServerErrorException
+import java.nio.charset.StandardCharsets
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -20,6 +24,7 @@ class ProvisioningExecutorTest {
     private val writes = mutableListOf<ProvisioningStage>()
     private val undos = mutableListOf<ProvisioningStage>()
     private var fail: ProvisioningStage? = null
+    private var blow: Exception? = null
     private var uncertain = false
     private var cancelDuringApply = false
     init {
@@ -32,6 +37,7 @@ class ProvisioningExecutorTest {
         override fun apply(context: ProvisioningStageContext): StageObservation {
             context.assertLease()
             writes += stage
+            blow?.let { throw it }
             if (fail == stage) {
                 if (uncertain) applied += stage
                 throw ProvisioningStepException(ProvisioningFailure("REMOTE_TIMEOUT", "Respuesta no confirmada", true))
@@ -49,6 +55,24 @@ class ProvisioningExecutorTest {
     } }
     private fun advance() = ProvisioningExecutor(journal, handlers, clock = clock).advance("staging", "op")
     private fun current() = requireNotNull(journal.get("staging", "op"))
+
+    @Test fun `remote failure keeps the service reason instead of the status envelope`() {
+        val body = """{"timestamp":"2026-09-25T08:54:36.892-05:00","status":500,"error":"Internal Server Error","message":"OMCI_READBACK_MISMATCH configType=Invalid vlan=none priority=none profile=none address=absent","path":"/ispadmin/api/olt-gateway/onus/ZTEGDC47BFFD/omci/management"}"""
+        blow = HttpServerErrorException.create(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "",
+            HttpHeaders(),
+            body.toByteArray(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8,
+        )
+        advance()
+        val failure = current().checkpoints.first { it.stage == ProvisioningStage.VALIDATE }.failure
+        assertEquals("OMCI_READBACK_MISMATCH", failure?.code)
+        assertEquals(
+            "OMCI_READBACK_MISMATCH configType=Invalid vlan=none priority=none profile=none address=absent",
+            failure?.message,
+        )
+    }
 
     @Test fun `retry after uncertain write reconciles without duplicating effects`() {
         fail = ProvisioningStage.VALIDATE

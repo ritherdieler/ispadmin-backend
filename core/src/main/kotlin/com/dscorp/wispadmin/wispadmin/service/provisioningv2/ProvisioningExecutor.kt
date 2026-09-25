@@ -119,12 +119,33 @@ class ProvisioningExecutor(
 
     private fun publicDetail(ex: Throwable): String {
         val http = generateSequence(ex) { it.cause }.filterIsInstance<HttpStatusCodeException>().firstOrNull()
-        val fromBody = http?.responseBodyAsString?.let { body ->
-            Regex("\"message\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1)
-        }?.takeIf { it.isNotBlank() }
-        val text = fromBody ?: ex.message ?: "No se pudo confirmar el paso."
+        val fromBody = http?.responseBodyAsString?.let { remoteReason(it) }
+        val fromCause = generateSequence(ex) { it.cause }
+            .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() && !isStatusEnvelope(message) } }
+            .firstOrNull()
+        val text = fromBody ?: fromCause ?: "No se pudo confirmar el paso."
         return text.replace(SECRET, "$1=<redacted>").replace(Regex("\\s+"), " ").take(300)
     }
+
+    private fun remoteReason(body: String): String? {
+        val message = jsonField(body, "message")
+        if (!message.isNullOrBlank() && !genericStatus(message)) return message
+        val error = jsonField(body, "error")
+        if (!error.isNullOrBlank() && !genericStatus(error)) return error
+        return null
+    }
+
+    private fun jsonField(body: String, name: String) =
+        Regex("\"$name\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"").find(body)?.groupValues?.get(1)
+            ?.replace("\\\"", "\"")
+            ?.replace("\\\\", "\\")
+
+    private fun genericStatus(value: String) =
+        value.equals("Internal Server Error", ignoreCase = true) ||
+            value.equals("Error interno del servidor", ignoreCase = true)
+
+    private fun isStatusEnvelope(message: String) =
+        message.contains("\"timestamp\"") && message.contains("\"status\"")
 
     private fun detail(ex: Throwable): String = generateSequence(ex) { it.cause }.take(6).joinToString(" | ") { throwable ->
         val http = throwable as? HttpStatusCodeException
@@ -138,10 +159,9 @@ class ProvisioningExecutor(
 
     private fun explainedFailure(ex: Exception): ProvisioningFailure? {
         val http = generateSequence<Throwable>(ex) { it.cause }.filterIsInstance<HttpStatusCodeException>().firstOrNull()
-            ?: return null
-        val detail = http.responseBodyAsString.ifBlank { http.statusText }
-        if (detail.contains("already reserved", ignoreCase = true) ||
-            detail.contains("already exists outside", ignoreCase = true)
+        val raw = http?.responseBodyAsString?.ifBlank { http.statusText }.orEmpty()
+        if (raw.contains("already reserved", ignoreCase = true) ||
+            raw.contains("already exists outside", ignoreCase = true)
         ) {
             return ProvisioningFailure(
                 "ONU_ALREADY_RESERVED",
@@ -149,11 +169,19 @@ class ProvisioningExecutor(
                 false,
             )
         }
-        return null
+        val detail = publicDetail(ex)
+        val code = Regex("^[A-Z][A-Z0-9_]{2,}").find(detail)?.value ?: return null
+        return ProvisioningFailure(code, detail, code !in NON_RETRYABLE)
     }
 
     private companion object {
         val logger = LoggerFactory.getLogger(ProvisioningExecutor::class.java)
         val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
+        val NON_RETRYABLE = setOf(
+            "ONU_ALREADY_RESERVED",
+            "OMCI_EXISTING_SERVER_CONFLICT",
+            "OMCI_EXISTING_WAN_CONFLICT",
+            "OMCI_IDENTITY_MISMATCH",
+        )
     }
 }

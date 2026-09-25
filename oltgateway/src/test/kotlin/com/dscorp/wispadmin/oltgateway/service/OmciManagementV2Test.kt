@@ -114,6 +114,19 @@ class OmciManagementV2Test {
         )
     }
 
+    @Test fun `exhausted readback reports the management the OLT still shows`() {
+        val service = OmciManagementV2(pause = {}) { run -> run { command -> when {
+            command.startsWith("display ont info") -> info().replace("profile ID : 2", "profile ID : -")
+            command.startsWith("display ont ipconfig") -> "Failure: The ONT does not configure IP information"
+            else -> ""
+        } } }
+        val error = assertThrows(IllegalStateException::class.java) { service.ensure(target) }
+        assertTrue(error.message!!.startsWith("OMCI_READBACK_MISMATCH"))
+        assertTrue(error.message!!.contains("configType=Invalid"))
+        assertTrue(error.message!!.contains("profile=none"))
+        assertTrue(error.message!!.contains("address=absent"))
+    }
+
     @Test fun `CLI failure stops the sequence and is not mistaken for success`() {
         val service = OmciManagementV2 { run -> run { command -> when {
             command.startsWith("display ont info") -> info()
