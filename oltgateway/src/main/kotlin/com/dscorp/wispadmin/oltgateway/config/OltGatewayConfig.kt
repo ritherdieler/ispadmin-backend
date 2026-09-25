@@ -24,6 +24,7 @@ import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheService
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheWriter
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindRefreshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayCommandService
+import com.dscorp.wispadmin.oltgateway.service.OmciManagementV2
 import com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryService
@@ -33,6 +34,7 @@ import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltFusedInventoryCache
 import com.dscorp.wispadmin.oltgateway.service.OltInventorySyncService
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
+import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnershipService
 import com.dscorp.wispadmin.oltgateway.service.OnuWriteRouter
 import com.dscorp.wispadmin.oltgateway.service.OnuExternalIdBackfillService
 import com.dscorp.wispadmin.oltgateway.service.OltSignalPollScheduler
@@ -72,7 +74,6 @@ import java.util.concurrent.Executors
 
 @Configuration
 @EnableConfigurationProperties(OltGatewayProperties::class, GigafiberRedisProperties::class)
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltGatewayConfig {
 
     @Bean
@@ -187,6 +188,11 @@ class OltGatewayConfig {
             properties = properties
         )
     }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
+    fun omciManagementV2(oltCommandExecutor: OltCommandExecutor, properties: OltGatewayProperties): OmciManagementV2 =
+        OmciManagementV2 { run -> oltCommandExecutor.writeBounded(properties.writes.v2WriteMaxRetryAttempts) { session -> run(session::execute) } }
 
     @Bean
     fun onuExternalIdBackfillService(
@@ -404,7 +410,8 @@ class OltGatewayConfig {
         transactionManager: PlatformTransactionManager,
         eventPublisher: org.springframework.context.ApplicationEventPublisher,
         pollLock: OltSnmpPollLocker,
-        fusedInventoryCache: OltFusedInventoryCache
+        fusedInventoryCache: OltFusedInventoryCache,
+        onuOwnership: ProvisioningV2OnuOwnershipService
     ): OltInventorySyncService {
         return OltInventorySyncService(
             queryFacade = queryFacade,
@@ -422,7 +429,8 @@ class OltGatewayConfig {
             onuTypeRepository = onuTypeRepository,
             eventPublisher = eventPublisher,
             pollLock = pollLock,
-            fusedInventoryCache = fusedInventoryCache
+            fusedInventoryCache = fusedInventoryCache,
+            onuOwnership = onuOwnership
         )
     }
 
@@ -475,6 +483,7 @@ class OltGatewayConfig {
         snmpClient: ObjectProvider<OltSnmpClient>,
         eventPublisher: org.springframework.context.ApplicationEventPublisher,
         eventBus: EventBusPort,
+        redis: GigafiberRedisProperties,
         pollLock: OltSnmpPollLocker,
         fusedInventoryCache: OltFusedInventoryCache,
     ): OltSignalPollService {
@@ -489,6 +498,7 @@ class OltGatewayConfig {
             snmpClient = snmpClient.ifAvailable,
             eventPublisher = eventPublisher,
             eventBus = eventBus,
+            redis = redis,
             pollLock = pollLock,
             fusedInventoryCache = fusedInventoryCache,
         )

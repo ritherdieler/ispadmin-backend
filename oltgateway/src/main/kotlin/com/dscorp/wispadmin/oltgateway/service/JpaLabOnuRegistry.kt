@@ -4,14 +4,12 @@ import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltLabOnu
 import com.dscorp.wispadmin.oltgateway.domain.repository.OltLabOnuRepository
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.Instant
 import javax.annotation.PostConstruct
 import javax.annotation.PreDestroy
 
 @Component
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @ConditionalOnExpression("'\${oltgateway.datasource.url:}'.trim().length() > 0")
 class JpaLabOnuRegistry(
     private val repository: OltLabOnuRepository,

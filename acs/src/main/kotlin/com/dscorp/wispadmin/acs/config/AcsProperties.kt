@@ -7,6 +7,8 @@ class AcsProperties {
     var apiKey: String = ""
     var genieacsToAcsApiKey: String = ""
     var enabled: Boolean = true
+    /** Shared only by the ACS process; guards reversible Wi-Fi baselines at rest. */
+    var provisioningBaselineKey: String = ""
     val gateway: GatewayClientProperties = GatewayClientProperties()
 
     fun isValidApiKey(key: String?): Boolean {
@@ -25,5 +27,6 @@ class AcsProperties {
     class GatewayClientProperties {
         var internalBaseUrl: String = ""
         var apiKey: String = ""
+        var env: String = ""
     }
 }

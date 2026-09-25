@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.service
 
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
@@ -21,7 +22,6 @@ import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -773,9 +773,9 @@ class OltInventorySyncServiceTest {
 
         service.listConfigured(page = 0, size = 50)
 
-        val order = pageableSlot.captured.sort.getOrderFor("authorizationDate")
-        assertNotNull(order)
-        assertEquals(Sort.Direction.DESC, order!!.direction)
+        assertEquals(0, pageableSlot.captured.pageNumber)
+        assertEquals(10_000, pageableSlot.captured.pageSize)
+        assertTrue(pageableSlot.captured.sort.isUnsorted)
     }
 
     @Test
@@ -1332,6 +1332,90 @@ class OltInventorySyncServiceTest {
         assertEquals("line-1", savedOnu.lineProfileName)
         assertEquals("svc-1", savedOnu.serviceProfileName)
     }
+
+    @Test
+    fun `listConfigured con caller staging oculta el serial de cliente y conserva el de lab`() {
+        val customer = configuredOnu(id = 1L, sn = "HWTC12345678", externalId = "ext-customer")
+        val lab = configuredOnu(id = 2L, sn = "ZTEGDC47BFFD", externalId = "ext-lab")
+        every {
+            onuRepository.findConfiguredFiltered(
+                q = null, board = null, port = null, oltId = null, zoneId = null, vlan = null,
+                onuTypeId = null, onuTypeName = null, customProfile = null, ponType = null, mode = null,
+                runState = null, signalCategory = null, splitterId = null, configurationMethod = null,
+                wanMode = null, mgmtIpMode = null, importedSynced = null, lastResyncFailed = null,
+                lineProfileMaptype = null, administrativeStatus = null, lastDownCause = null, pageable = any()
+            )
+        } returns org.springframework.data.domain.PageImpl(listOf(customer, lab))
+
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            val staged = service.listConfigured(page = 0, size = 50)
+            assertEquals(listOf("ZTEGDC47BFFD"), staged.items.map { it.sn })
+            assertEquals(1, staged.totalElements)
+        } finally {
+            GatewayCallContext.clear()
+        }
+
+        val prod = service.listConfigured(page = 0, size = 50)
+        assertEquals(listOf("HWTC12345678", "ZTEGDC47BFFD"), prod.items.map { it.sn }.sorted())
+        assertEquals(2, prod.totalElements)
+    }
+
+    @Test
+    fun `getConfiguredByExternalId con caller staging no devuelve un serial de cliente`() {
+        val customer = configuredOnu(id = 3L, sn = "HWTC12345678", externalId = "ext-customer")
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("ext-customer") } returns Optional.of(customer)
+
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            assertNull(service.getConfiguredByExternalId("ext-customer"))
+        } finally {
+            GatewayCallContext.clear()
+        }
+
+        assertEquals("HWTC12345678", service.getConfiguredByExternalId("ext-customer")!!.sn)
+    }
+
+    @Test
+    fun `getLiveStatusByExternalId con caller staging no abre lectura de una ONU de cliente`() {
+        val customer = configuredOnu(id = 4L, sn = "HWTC12345678", externalId = "ext-customer")
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("ext-customer") } returns Optional.of(customer)
+
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            assertNull(service.getLiveStatusByExternalId("ext-customer"))
+        } finally {
+            GatewayCallContext.clear()
+        }
+
+        verify(exactly = 0) { queryFacade.onuDetail(any(), any(), any()) }
+    }
+
+    @Test
+    fun `getHistoryByExternalId con caller staging no devuelve el historial de un cliente`() {
+        val customer = configuredOnu(id = 5L, sn = "HWTC12345678", externalId = "ext-customer")
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("ext-customer") } returns Optional.of(customer)
+
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            assertNull(service.getHistoryByExternalId("ext-customer"))
+        } finally {
+            GatewayCallContext.clear()
+        }
+
+        verify(exactly = 0) { auditLogRepository.findByOnu_IdOrderByCreatedAtDesc(any(), any()) }
+    }
+
+    private fun configuredOnu(id: Long, sn: String, externalId: String) = OltMgrOnu(
+        id = id,
+        sn = sn,
+        externalId = externalId,
+        olt = olt,
+        board = 1,
+        port = 1,
+        onuIndex = 1,
+        importedFromOlt = true
+    )
 
     private fun summary(
         sn: String,

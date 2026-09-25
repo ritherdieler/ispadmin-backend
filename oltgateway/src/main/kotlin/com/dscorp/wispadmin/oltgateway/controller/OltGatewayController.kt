@@ -64,7 +64,6 @@ import javax.validation.constraints.Pattern
 @RestController
 @RequestMapping("/api/olt-gateway")
 @Validated
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @Tag(name = "OLT Gateway", description = "Lectura Huawei MA5608T vía SSH CLI (reemplazo gradual SmartOLT)")
 class OltGatewayController(
     private val queryFacade: OltGatewayQueryFacade,
@@ -226,7 +225,8 @@ class OltGatewayController(
         @RequestParam(required = false) mgmtIpMode: String?,
         @RequestParam(required = false) importedSynced: Boolean?,
         @RequestParam(required = false) lastResyncFailed: Boolean?,
-        @RequestParam(required = false) lineProfileMaptype: String?
+        @RequestParam(required = false) lineProfileMaptype: String?,
+        @RequestParam(required = false) reservationStage: String?
     ): ConfiguredOnuPageDto = inventorySyncService.listConfigured(
         page = page,
         size = size,
@@ -251,7 +251,8 @@ class OltGatewayController(
             mgmtIpMode = mgmtIpMode,
             importedSynced = importedSynced,
             lastResyncFailed = lastResyncFailed,
-            lineProfileMaptype = lineProfileMaptype
+            lineProfileMaptype = lineProfileMaptype,
+            reservationStage = reservationStage
         )
     )
 

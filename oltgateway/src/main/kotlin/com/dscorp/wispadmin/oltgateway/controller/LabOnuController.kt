@@ -4,7 +4,6 @@ import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.service.LabOnuRecord
 import com.dscorp.wispadmin.oltgateway.service.LabOnuRegistry
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -18,7 +17,6 @@ data class LabOnuAddRequest(val sn: String = "")
 
 @RestController
 @RequestMapping("/api/olt-gateway/onu/lab")
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @ConditionalOnExpression("'\${oltgateway.datasource.url:}'.trim().length() > 0")
 class LabOnuController(
     private val registry: LabOnuRegistry,

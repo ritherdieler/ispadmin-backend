@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.config
 
+import com.dscorp.wispadmin.events.EventRouteContext
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -69,13 +70,50 @@ class StagingLabWriteGuardTest {
         assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.status)
     }
 
-
     @Test
     fun `staging key marca inventario solo lab y lo limpia al salir`() {
         val during = labInventoryFlagDuring("stg-key", "/api/olt-gateway/onus/configured")
 
         assertTrue(during)
         assertFalse(GatewayCallContext.labInventoryOnly())
+    }
+
+    @Test
+    fun `la misma key con env lpstg sigue limitada a lab`() {
+        val shared = OltGatewayProperties().apply {
+            apiKey = "shared-key"
+            stagingApiKey = "shared-key"
+            writes.labAcsSnSuffixes = "ZTEGDC47BFFD"
+        }
+        val sharedFilter = OltGatewayApiKeyFilter(shared, ObjectMapper())
+        val request = gatewayRequest("POST", "/api/olt-gateway/acs/cpe-inform")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "shared-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "lpstg")
+        request.contentType = "application/json"
+        request.setContent("""{"sn":"HWTC12345678","deviceId":"dev"}""".toByteArray())
+        val response = MockHttpServletResponse()
+
+        sharedFilter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.status)
+    }
+
+    @Test
+    fun `env lpstg publica en el stream lpstg`() {
+        val request = gatewayRequest("GET", "/api/olt-gateway/onus/configured")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "lpstg")
+        var namespace: String? = null
+        val chain = object : FilterChain {
+            override fun doFilter(request: ServletRequest, response: ServletResponse) {
+                namespace = EventRouteContext.namespace()
+            }
+        }
+
+        filter.doFilter(request, MockHttpServletResponse(), chain)
+
+        assertEquals("lpstg", namespace)
+        assertEquals(null, EventRouteContext.namespace())
     }
 
     @Test
@@ -100,6 +138,41 @@ class StagingLabWriteGuardTest {
         assertEquals(HttpServletResponse.SC_OK, response.status)
     }
 
+    @Test
+    fun `staging key rechaza un inform que no es lab`() {
+        val response = postInform("stg-key", "HWTC12345678")
+
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.status)
+    }
+
+    @Test
+    fun `staging key deja pasar un inform lab`() {
+        val response = postInform("stg-key", "ZTEGDC47BFFD")
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+    }
+
+    @Test
+    fun `prod key deja pasar un inform que no es lab`() {
+        val response = postInform("prod-key", "HWTC12345678")
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+    }
+
+    @Test
+    fun `staging key autoriza por el sn del cuerpo en provisioning authorize`() {
+        val request = gatewayRequest("POST", "/api/olt-gateway/onus/provisioning/authorize")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "stg")
+        request.contentType = "application/json"
+        request.setContent("""{"sn":"ZTEGDC47BFFD","operationId":"op-1"}""".toByteArray())
+        val response = MockHttpServletResponse()
+
+        filter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+    }
+
     private fun postAuthorize(key: String, sn: String): MockHttpServletResponse {
         val request = gatewayRequest("POST", "/api/olt-gateway/onu/authorize_onu")
         request.addHeader(OltGatewayApiKeyFilter.HEADER, key)
@@ -110,6 +183,16 @@ class StagingLabWriteGuardTest {
         return response
     }
 
+    private fun postInform(key: String, sn: String): MockHttpServletResponse {
+        val request = gatewayRequest("POST", "/api/olt-gateway/acs/cpe-inform")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, key)
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, if (key == "stg-key") "stg" else "prod")
+        request.contentType = "application/json"
+        request.setContent("""{"sn":"$sn","deviceId":"dev"}""".toByteArray())
+        val response = MockHttpServletResponse()
+        filter.doFilter(request, response, MockFilterChain())
+        return response
+    }
 
     private fun labInventoryFlagDuring(key: String, path: String): Boolean {
         val request = gatewayRequest("GET", path)

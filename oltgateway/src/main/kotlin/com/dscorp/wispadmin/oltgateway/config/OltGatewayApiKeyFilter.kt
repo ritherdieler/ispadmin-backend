@@ -31,6 +31,7 @@ class OltGatewayApiKeyFilter(
         private const val MAX_SN_BODY = 65_536
         private val pathSerial = Regex("""/(?:onu/(?:move|delete|reboot)|onus)/([^/]+)""")
         private val jsonSerial = Regex(""""sn"\s*:\s*"([^"]+)"""")
+        private val reservedPathToken = setOf("provisioning", "v2")
 
         internal fun gatewayPath(request: HttpServletRequest): String {
             val servletPath = request.servletPath?.takeIf { it.isNotBlank() }
@@ -73,7 +74,7 @@ class OltGatewayApiKeyFilter(
             reject(response, HttpStatus.UNAUTHORIZED, "unauthorized", "Missing or invalid $HEADER (or $SMARTOLT_TOKEN_HEADER) header")
             return
         }
-        val caller = properties.callerFor(key)
+        val caller = resolveCaller(key, request.getHeader(ENV_HEADER))
         val env = request.getHeader(ENV_HEADER)
         if (caller != null && !env.isNullOrBlank() && !caller.matchesEnv(env)) {
             reject(response, HttpStatus.BAD_REQUEST, "caller_mismatch", "X-Gigafiber-Env does not match the API key")
@@ -86,7 +87,7 @@ class OltGatewayApiKeyFilter(
             request
         }
         try {
-            caller?.let { EventRouteContext.setNamespace(it.redisNamespace()) }
+            caller?.let { EventRouteContext.setNamespace(streamNamespace(it, env)) }
             GatewayCallContext.setEnv(env)
             GatewayCallContext.setLabInventoryOnly(caller == GatewayCaller.STAGING)
             filterChain.doFilter(next, response)
@@ -94,6 +95,25 @@ class OltGatewayApiKeyFilter(
             EventRouteContext.clear()
             GatewayCallContext.clear()
         }
+    }
+
+    private fun resolveCaller(key: String?, env: String?): GatewayCaller? {
+        val prod = properties.apiKey.isNotBlank() && properties.apiKey == key
+        val staging = properties.stagingApiKey.isNotBlank() && properties.stagingApiKey == key
+        if (prod && staging) {
+            val normalized = env?.trim()?.lowercase().orEmpty()
+            return if (normalized == "stg" || normalized == "staging" || normalized == "lpstg") {
+                GatewayCaller.STAGING
+            } else {
+                GatewayCaller.PROD
+            }
+        }
+        return properties.callerFor(key)
+    }
+
+    private fun streamNamespace(caller: GatewayCaller, env: String?): String {
+        if (caller == GatewayCaller.STAGING && env?.trim()?.equals("lpstg", ignoreCase = true) == true) return "lpstg"
+        return caller.redisNamespace()
     }
 
     private fun guardLabWrite(request: HttpServletRequest, response: HttpServletResponse): HttpServletRequest? {
@@ -109,12 +129,13 @@ class OltGatewayApiKeyFilter(
         val method = request.method.orEmpty()
         if (method.equals("GET", true) || method.equals("HEAD", true)) return false
         val path = gatewayPath(request)
-        if (path.endsWith("/api/olt-gateway/acs/cpe-inform")) return false
         return !path.contains("/onu/lab")
     }
 
     private fun serialAndRequest(request: HttpServletRequest): Pair<String?, HttpServletRequest> {
-        pathSerial.find(gatewayPath(request))?.groupValues?.getOrNull(1)?.let { return it to request }
+        pathSerial.find(gatewayPath(request))?.groupValues?.getOrNull(1)
+            ?.takeUnless { reservedPathToken.contains(it.lowercase()) }
+            ?.let { return it to request }
         if (isJson(request)) {
             val bytes = request.inputStream.readNBytes(MAX_SN_BODY)
             return jsonSerial.find(bytes.toString(Charsets.UTF_8))?.groupValues?.getOrNull(1) to ReplayRequest(request, bytes)

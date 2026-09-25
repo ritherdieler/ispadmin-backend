@@ -11,7 +11,6 @@ import org.springframework.test.context.TestPropertySource
 @SpringBootTest(classes = [OltGatewayPropertiesTest.Config::class])
 @TestPropertySource(
     properties = [
-        "olt.gateway.enabled=true",
         "olt.gateway.sync.skip-when-write-running=true",
         "olt.gateway.sync.inventory-enabled=false",
         "olt.gateway.sync.signal-enabled=false"

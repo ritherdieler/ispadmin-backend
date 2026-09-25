@@ -6,8 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "olt.gateway")
 class OltGatewayProperties {
 
-    var enabled: Boolean = false
-
     var apiKey: String = ""
 
     var stagingApiKey: String = ""

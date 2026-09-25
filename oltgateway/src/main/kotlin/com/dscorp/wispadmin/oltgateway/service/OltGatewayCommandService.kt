@@ -48,6 +48,7 @@ data class EnsureMgmtServicePortRequest(
     val port: Int,
     val ontId: Int,
     val vlan: Int = 1000,
+    val includeTrafficTables: Boolean = true,
 )
 
 data class RebootCliRequest(
@@ -134,12 +135,23 @@ class OltGatewayCommandService(
         }
     }
 
-    private fun servicePortCommand(vlan: Int, board: Int, port: Int, ontId: Int, gemport: Int = 1): String {
+    private fun servicePortCommand(
+        vlan: Int,
+        board: Int,
+        port: Int,
+        ontId: Int,
+        gemport: Int = 1,
+        includeTrafficTables: Boolean = true,
+    ): String {
         val inbound = properties.writes.inboundTrafficTableIndex
         val outbound = properties.writes.outboundTrafficTableIndex
-        return "service-port vlan $vlan gpon 0/$board/$port ont $ontId " +
-            "gemport $gemport multi-service user-vlan $vlan tag-transform translate " +
-            "inbound traffic-table index $inbound outbound traffic-table index $outbound"
+        val base = "service-port vlan $vlan gpon 0/$board/$port ont $ontId " +
+            "gemport $gemport multi-service user-vlan $vlan tag-transform translate"
+        return if (includeTrafficTables) {
+            "$base inbound traffic-table index $inbound outbound traffic-table index $outbound"
+        } else {
+            base
+        }
     }
 
     fun delete(request: DeleteCliRequest) {
@@ -217,6 +229,7 @@ class OltGatewayCommandService(
                 port = request.port,
                 ontId = request.ontId,
                 gemport = gemport,
+                includeTrafficTables = request.includeTrafficTables,
             )
             val spOut = runCommand(sp)
             if (looksLikeCliFailure(spOut) && !isAlreadyApplied(spOut)) {

@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.service
 
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
@@ -37,7 +38,6 @@ import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
@@ -60,7 +60,8 @@ open class OltInventorySyncService(
     onuTypeRepository: OltMgrOnuTypeRepository? = null,
     eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
     pollLock: OltSnmpPollLocker = NoOpOltSnmpPollLock(),
-    fusedInventoryCache: OltFusedInventoryCache? = null
+    fusedInventoryCache: OltFusedInventoryCache? = null,
+    onuOwnership: ProvisioningV2OnuOwnershipService? = null
 ) {
 
     companion object {
@@ -90,6 +91,7 @@ open class OltInventorySyncService(
         private val onuTypeRepositoryRef = AtomicReference<OltMgrOnuTypeRepository?>(null)
         private val pollLockRef = AtomicReference<OltSnmpPollLocker>(NoOpOltSnmpPollLock())
         private val fusedInventoryCacheRef = AtomicReference<OltFusedInventoryCache?>(null)
+        private val onuOwnershipRef = AtomicReference<ProvisioningV2OnuOwnershipService?>(null)
     }
 
     init {
@@ -109,7 +111,11 @@ open class OltInventorySyncService(
         snmpClientRef.set(snmpClient)
         pollLockRef.set(pollLock)
         fusedInventoryCacheRef.set(fusedInventoryCache)
+        onuOwnershipRef.set(onuOwnership)
     }
+
+    private fun hiddenFromLabCaller(sn: String?): Boolean =
+        GatewayCallContext.labInventoryOnly() && !props().isLabSerial(sn)
 
     private fun props(): OltGatewayProperties {
         return propertiesRef.get()
@@ -169,12 +175,8 @@ open class OltInventorySyncService(
         size: Int,
         filter: ConfiguredOnuFilter = ConfiguredOnuFilter()
     ): ConfiguredOnuPageDto {
-        val pageable = PageRequest.of(
-            page.coerceAtLeast(0),
-            size.coerceIn(1, 200),
-            Sort.by(Sort.Order.desc("authorizationDate").nullsLast())
-        )
         val resolved = resolveFilter(filter)
+        val labOnly = GatewayCallContext.labInventoryOnly()
         val result = onuRepository().findConfiguredFiltered(
             q = resolved.q,
             board = resolved.board,
@@ -198,15 +200,18 @@ open class OltInventorySyncService(
             lineProfileMaptype = resolved.lineProfileMaptype,
             administrativeStatus = resolved.administrativeStatus,
             lastDownCause = resolved.lastDownCause,
-            pageable = pageable
+            pageable = PageRequest.of(0, 10_000)
         )
-        val items = result.content.map { onu -> toConfiguredItem(onu) }
-        return ConfiguredOnuPageDto(
-            items = items,
-            page = result.number,
-            size = result.size,
-            totalElements = result.totalElements,
-            totalPages = result.totalPages
+        val inventory = result.content.map { onu -> toConfiguredItem(onu) }
+            .filter { item -> !labOnly || props().isLabSerial(item.sn) }
+        val reservations = onuOwnershipRef.get()?.listAll().orEmpty()
+            .filter { row -> !labOnly || props().isLabSerial(row.serial) }
+        return ConfiguredOnuReservationMerge.apply(
+            inventory = inventory,
+            reservations = reservations,
+            filter = resolved,
+            page = page,
+            size = size,
         )
     }
 
@@ -215,6 +220,7 @@ open class OltInventorySyncService(
         val key = externalId.trim()
         if (key.isEmpty()) return null
         val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        if (hiddenFromLabCaller(onu.sn)) return null
         return toConfiguredDetail(onu)
     }
 
@@ -223,6 +229,7 @@ open class OltInventorySyncService(
         val key = externalId.trim()
         if (key.isEmpty()) return null
         val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        if (hiddenFromLabCaller(onu.sn)) return null
         val detail = queryFacade().onuDetail(onu.board, onu.port, onu.onuIndex)
         val optical = queryFacade().optical(onu.board, onu.port, onu.onuIndex)
         val matchState = optical.matchState ?: onu.status?.matchState
@@ -312,6 +319,7 @@ open class OltInventorySyncService(
         val key = externalId.trim()
         if (key.isEmpty()) return null
         val onu = onuRepository().findByExternalIdAndDeletedAtIsNull(key).orElse(null) ?: return null
+        if (hiddenFromLabCaller(onu.sn)) return null
         val size = limit.coerceIn(1, 200)
         val logs = auditLogRepository().findByOnu_IdOrderByCreatedAtDesc(
             onu.id!!,
@@ -399,7 +407,8 @@ open class OltInventorySyncService(
             mgmtIpMode = filter.mgmtIpMode?.trim()?.takeIf { it.isNotEmpty() },
             lineProfileMaptype = filter.lineProfileMaptype?.trim()?.takeIf { it.isNotEmpty() },
             administrativeStatus = administrativeStatus,
-            lastDownCause = lastDownCause
+            lastDownCause = lastDownCause,
+            reservationStage = filter.reservationStage?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
         )
     }
 

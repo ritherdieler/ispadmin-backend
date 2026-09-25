@@ -12,6 +12,7 @@ data class PlatformEvent(
     val eventId: String = java.util.UUID.randomUUID().toString(),
     val producer: String = "platform",
     val operationId: String? = null,
+    val streamNamespace: String? = null,
 )
 
 object PlatformEventTypes {

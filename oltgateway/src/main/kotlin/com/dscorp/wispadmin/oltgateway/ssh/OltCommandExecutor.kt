@@ -24,6 +24,12 @@ class OltCommandExecutor(
 
     fun <T> write(block: (HuaweiCliSession) -> T): T = executeWithRetry(CliJobType.WRITE, block)
 
+    /** v2 remote effects must surface a retriable failure instead of monopolizing the SSH lane. */
+    fun <T> writeBounded(maxRetryAttempts: Int, block: (HuaweiCliSession) -> T): T {
+        require(maxRetryAttempts >= 0)
+        return executeWithRetry(CliJobType.WRITE, block, maxRetryAttempts)
+    }
+
     fun <T> authorize(block: (HuaweiCliSession) -> T): T = executeWithRetry(CliJobType.AUTHORIZE, block)
 
     fun <T> unconfigured(block: (HuaweiCliSession) -> T): T = executeWithRetry(CliJobType.UNCONFIGURED, block)
@@ -37,9 +43,13 @@ class OltCommandExecutor(
         }
     }
 
-    private fun <T> executeWithRetry(type: CliJobType, block: (HuaweiCliSession) -> T): T {
+    private fun <T> executeWithRetry(
+        type: CliJobType,
+        block: (HuaweiCliSession) -> T,
+        retryAttempts: Int = maxRetryAttempts,
+    ): T {
         var attempt = 0
-        val isUnlimited = maxRetryAttempts == 0
+        val isUnlimited = retryAttempts == 0
 
         while (true) {
             try {
@@ -49,12 +59,12 @@ class OltCommandExecutor(
                     throw ex
                 }
 
-                if (!isUnlimited && attempt >= maxRetryAttempts) {
+                if (!isUnlimited && attempt >= retryAttempts) {
                     throw ex
                 }
 
                 attempt++
-                val attemptDisplay = if (isUnlimited) "$attempt" else "$attempt/${maxRetryAttempts + 1}"
+                val attemptDisplay = if (isUnlimited) "$attempt" else "$attempt/${retryAttempts + 1}"
                 logger.warn("OLT SSH connection failed (attempt $attemptDisplay): ${ex.message}")
 
                 try {

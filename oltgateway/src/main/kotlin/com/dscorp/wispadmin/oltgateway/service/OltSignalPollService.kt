@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.events.EventBusPort
+import com.dscorp.wispadmin.events.GigafiberRedisProperties
 import com.dscorp.wispadmin.events.NoOpEventBus
 import com.dscorp.wispadmin.events.OnuOpticalBatchItem
 import com.dscorp.wispadmin.events.OnuOpticalBatchPayload
@@ -47,6 +48,7 @@ open class OltSignalPollService(
     snmpClient: OltSnmpClient? = null,
     eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
     private val eventBus: EventBusPort = NoOpEventBus(),
+    private val redis: GigafiberRedisProperties = GigafiberRedisProperties(),
     private val objectMapper: ObjectMapper = ObjectMapper()
         .registerModule(JavaTimeModule())
         .findAndRegisterModules()
@@ -473,12 +475,24 @@ open class OltSignalPollService(
             polledAt = polledAt,
             onus = items,
         )
+        val namespaces = redis.opticalFanoutNamespaces.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        if (namespaces.isEmpty()) {
+            publishBatch(payload, polledAt, namespace = null)
+            return
+        }
+        for ((namespace, scoped) in opticalPayloadsByNamespace(payload, namespaces) { props().isLabSerial(it) }) {
+            publishBatch(scoped, polledAt, namespace)
+        }
+    }
+
+    private fun publishBatch(payload: OnuOpticalBatchPayload, polledAt: Instant, namespace: String?) {
         eventBus.publish(
             PlatformEvent(
                 type = PlatformEventTypes.ONU_OPTICAL_BATCH,
                 occurredAt = polledAt,
                 payloadJson = objectMapper.writeValueAsString(payload),
                 producer = "oltgateway",
+                streamNamespace = namespace,
             )
         )
     }

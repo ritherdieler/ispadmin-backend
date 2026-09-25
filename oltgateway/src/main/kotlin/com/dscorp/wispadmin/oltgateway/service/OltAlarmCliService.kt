@@ -14,7 +14,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 
 @Service
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltAlarmCliService(
     private val cliBusProvider: ObjectProvider<OltCliBus>,
     private val parser: HuaweiOltAlarmParser,

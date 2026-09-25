@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component
 import java.time.Instant
 
 @Component
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltMgrSeedRunner(
     private val oltRepository: OltMgrOltRepository,
     private val oltModelRepository: OltMgrOltModelRepository,

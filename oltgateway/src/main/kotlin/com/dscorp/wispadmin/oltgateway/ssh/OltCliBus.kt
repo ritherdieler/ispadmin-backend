@@ -393,7 +393,6 @@ class OltCliBus(
 
     private fun cloneSessionPropsWithoutKeepalive(): OltGatewayProperties {
         val copy = OltGatewayProperties()
-        copy.enabled = properties.enabled
         copy.apiKey = properties.apiKey
         copy.host = properties.host
         copy.port = properties.port

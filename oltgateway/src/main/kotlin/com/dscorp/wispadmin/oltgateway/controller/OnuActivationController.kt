@@ -24,7 +24,6 @@ import org.springframework.web.server.ResponseStatusException
 
 @RestController
 @RequestMapping("/api/olt-gateway")
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 @Tag(name = "OLT Gateway ONU activation", description = "OLT authorize + CPE via ACS WAR")
 @SecurityRequirement(name = OltGatewayOpenApi.SECURITY_SCHEME)
 class OnuActivationController(

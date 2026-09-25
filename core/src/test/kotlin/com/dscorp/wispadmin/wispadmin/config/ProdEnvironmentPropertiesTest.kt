@@ -135,8 +135,12 @@ class ProdEnvironmentPropertiesTest {
         )
         assertFalse(prod.contains("ispadmin-oltgateway"), prod)
         assertTrue(
-            Regex("""^acs\.gateway\.api-key=\$\{ACS_TO_GATEWAY_API_KEY:\}\s*$""", RegexOption.MULTILINE)
+            Regex("""^acs\.gateway\.api-key=\$\{OLT_GATEWAY_API_KEY:\}\s*$""", RegexOption.MULTILINE)
                 .containsMatchIn(prod),
+            prod,
+        )
+        assertTrue(
+            Regex("""^acs\.gateway\.env=prod\s*$""", RegexOption.MULTILINE).containsMatchIn(prod),
             prod,
         )
         assertTrue(

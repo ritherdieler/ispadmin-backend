@@ -18,7 +18,6 @@ class OltMgrSeedRunnerTest {
     private val oltRepository = mockk<OltMgrOltRepository>()
     private val modelRepository = mockk<OltMgrOltModelRepository>()
     private val properties = OltGatewayProperties().apply {
-        enabled = true
         oltId = "gigafiber-ma5608t"
         modelCode = "MA5608T"
         host = "10.11.104.2"

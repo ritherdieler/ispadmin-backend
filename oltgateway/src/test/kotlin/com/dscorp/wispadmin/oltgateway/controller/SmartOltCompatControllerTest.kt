@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.oltgateway.exception.OltGatewayExceptionHandler
 import com.dscorp.wispadmin.oltgateway.exception.OnuNotFoundException
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OnuActivationService
+import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnershipService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -24,9 +25,10 @@ class SmartOltCompatControllerTest {
 
     private val facade = mockk<OltManagerFacade>()
     private val activation = mockk<OnuActivationService>(relaxed = true)
+    private val ownership = mockk<ProvisioningV2OnuOwnershipService>(relaxed = true)
 
     private val mockMvc: MockMvc = MockMvcBuilders
-        .standaloneSetup(SmartOltCompatController(facade, activation))
+        .standaloneSetup(SmartOltCompatController(facade, activation, ownership))
         .setControllerAdvice(OltGatewayExceptionHandler())
         .build()
 
@@ -96,6 +98,7 @@ class SmartOltCompatControllerTest {
             .andExpect(status().isOk)
 
         verify { activation.clearJournal("ZTEGDC47BFFD") }
+        verify { ownership.releaseSerial("ZTEGDC47BFFD") }
 
         mockMvc.perform(post("/api/olt-gateway/onu/reboot/gigafiber-ma5608t_1_0_5"))
             .andExpect(status().isOk)

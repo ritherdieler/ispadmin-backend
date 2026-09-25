@@ -8,7 +8,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 
 @Service
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltNetDiagInventoryQueryService(
     private val oltRepository: OltMgrOltRepository,
     private val onuRepository: OltMgrOnuRepository

@@ -132,6 +132,16 @@ class OltCommandExecutorRetryTest {
         verify(exactly = 2) { cliBus.execute(CliJobType.WRITE, any<(HuaweiCliSession) -> String>()) }
     }
 
+    @Test fun `bounded write does not inherit unlimited SSH retries`() {
+        val unlimited = OltCommandExecutor(cliBus, maxRetryAttempts = 0, retryDelayMs = 1)
+        every { cliBus.execute(CliJobType.WRITE, any<(HuaweiCliSession) -> String>()) }
+            .throws(OltUnreachableException("SSH session down"))
+
+        assertThrows<OltUnreachableException> { unlimited.writeBounded(maxRetryAttempts = 2) { it.execute("ont ipconfig") } }
+
+        verify(exactly = 3) { cliBus.execute(CliJobType.WRITE, any<(HuaweiCliSession) -> String>()) }
+    }
+
     @Test
     fun `authorize method retries connection failures`() {
         every { cliBus.execute(CliJobType.AUTHORIZE, any<(HuaweiCliSession) -> String>()) }

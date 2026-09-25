@@ -123,6 +123,8 @@ class RedisStreamEventBus(
 }
 
 internal fun redisStreamKeys(event: PlatformEvent, properties: GigafiberRedisProperties): List<String> {
+    val forced = event.streamNamespace?.trim()?.takeIf { it.isNotEmpty() }
+    if (forced != null) return listOf("$forced:${properties.stream}")
     if (event.type == PlatformEventTypes.ONU_OPTICAL_BATCH) {
         val fans = properties.opticalFanoutNamespaces.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         if (fans.isNotEmpty()) return fans.map { "$it:${properties.stream}" }

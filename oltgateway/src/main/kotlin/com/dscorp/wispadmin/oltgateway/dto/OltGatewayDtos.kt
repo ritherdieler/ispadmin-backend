@@ -173,7 +173,8 @@ data class ConfiguredOnuFilter(
     val lastResyncFailed: Boolean? = null,
     val lineProfileMaptype: String? = null,
     val administrativeStatus: String? = null,
-    val lastDownCause: String? = null
+    val lastDownCause: String? = null,
+    val reservationStage: String? = null
 )
 
 data class ConfiguredOnuItemDto(
@@ -213,7 +214,8 @@ data class ConfiguredOnuItemDto(
     val mgmtIpMode: String? = null,
     val ipAddress: String? = null,
     val address: String? = null,
-    val contact: String? = null
+    val contact: String? = null,
+    val reservationStage: String = "NONE"
 )
 
 data class ConfiguredOnuServicePortDto(

@@ -16,7 +16,6 @@ data class OnuServicePortsDto(
 )
 
 @Service
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class OltServicePortService(
     private val inventory: OltInventoryPort,
     private val commandService: OltGatewayCommandService,
@@ -47,7 +46,11 @@ class OltServicePortService(
         )
     }
 
-    fun ensureMgmtVlan(sn: String, vlan: Int? = null): OnuServicePortsDto {
+    fun ensureMgmtVlan(
+        sn: String,
+        vlan: Int? = null,
+        includeTrafficTables: Boolean = true,
+    ): OnuServicePortsDto {
         val onu = inventory.findBySn(sn) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "ONU not found for SN=$sn")
         val target = if (vlan != null && vlan > 0) vlan else properties.writes.labAcsMgmtVlan
         val current = listBySn(sn)
@@ -58,6 +61,7 @@ class OltServicePortService(
                 port = onu.port,
                 ontId = onu.onuIndex,
                 vlan = target,
+                includeTrafficTables = includeTrafficTables,
             ),
         )
         return OnuServicePortsDto(

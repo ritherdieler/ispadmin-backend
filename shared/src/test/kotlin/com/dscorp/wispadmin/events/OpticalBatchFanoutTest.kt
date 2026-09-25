@@ -26,6 +26,23 @@ class OpticalBatchFanoutTest {
     }
 
     @Test
+    fun `un batch con namespace escribe solo ese stream`() {
+        val properties = GigafiberRedisProperties().apply {
+            namespace = "gw"
+            stream = "gigafiber.events"
+            opticalFanoutNamespaces = "prod,stg"
+        }
+        val event = PlatformEvent(
+            type = PlatformEventTypes.ONU_OPTICAL_BATCH,
+            occurredAt = Instant.parse("2026-09-21T00:00:00Z"),
+            producer = "oltgateway",
+            streamNamespace = "stg",
+        )
+
+        assertEquals(listOf("stg:gigafiber.events"), redisStreamKeys(event, properties))
+    }
+
+    @Test
     fun `cpe provisioning sigue el namespace del llamante`() {
         val properties = GigafiberRedisProperties().apply {
             namespace = "prod"

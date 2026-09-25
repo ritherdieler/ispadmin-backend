@@ -24,7 +24,6 @@ data class LabOpticalPollResult(
 )
 
 @Service
-@ConditionalOnProperty(prefix = "olt.gateway", name = ["enabled"], havingValue = "true")
 class LabOpticalSshPollService(
     private val onuQuery: OltHealthOnuQueryService,
     private val cliBusProvider: ObjectProvider<OltCliBus>,
