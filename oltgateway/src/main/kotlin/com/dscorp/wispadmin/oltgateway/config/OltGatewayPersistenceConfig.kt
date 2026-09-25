@@ -50,6 +50,7 @@ class OltGatewayPersistenceConfig {
             persistenceUnit = "oltgateway",
             ddlAuto = environment.getProperty("oltgateway.jpa.hibernate.ddl-auto", "update"),
             jpaProperties = jpaProperties,
+            dialect = SatelliteJpa.UNICODE_CI_DIALECT,
         )
 
     @Bean(name = ["oltGatewayTransactionManager"])

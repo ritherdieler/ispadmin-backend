@@ -27,6 +27,8 @@ object SatelliteJpa {
             .password(settings.password)
             .build()
 
+    const val UNICODE_CI_DIALECT = "com.dscorp.wispadmin.shared.persistence.UnicodeCiMySQLDialect"
+
     fun entityManagerFactory(
         builder: EntityManagerFactoryBuilder,
         dataSource: DataSource,
@@ -34,8 +36,9 @@ object SatelliteJpa {
         persistenceUnit: String,
         ddlAuto: String,
         jpaProperties: JpaProperties,
+        dialect: String? = null,
     ): LocalContainerEntityManagerFactoryBean =
-        entityManagerFactory(builder, dataSource, arrayOf(packages), persistenceUnit, ddlAuto, jpaProperties)
+        entityManagerFactory(builder, dataSource, arrayOf(packages), persistenceUnit, ddlAuto, jpaProperties, dialect)
 
     fun entityManagerFactory(
         builder: EntityManagerFactoryBuilder,
@@ -44,9 +47,13 @@ object SatelliteJpa {
         persistenceUnit: String,
         ddlAuto: String,
         jpaProperties: JpaProperties,
+        dialect: String? = null,
     ): LocalContainerEntityManagerFactoryBean {
         val properties = jpaProperties.properties.toMutableMap()
         properties["hibernate.hbm2ddl.auto"] = ddlAuto
+        if (!dialect.isNullOrBlank()) {
+            properties["hibernate.dialect"] = dialect
+        }
         properties.putIfAbsent(
             "hibernate.physical_naming_strategy",
             "org.springframework.boot.orm.jpa.hibernate.SpringPhysicalNamingStrategy",
