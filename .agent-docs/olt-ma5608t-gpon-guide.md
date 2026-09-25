@@ -41,7 +41,11 @@ Documentación de referencia para reemplazar SmartOLT con **olt-gateway** propio
 | **Configuration Manual** | Manual completo FTTH/FTTB/voz (~1979 págs) | https://www.manualslib.com/products/Huawei-Smartax-Ma5608t-6924610.html |
 | **Commissioning and Configuration Guide** | Flujo GPON: perfiles, ONT, service-port (serie V800R011+) | PDF en portal Huawei / mirrors por versión |
 
-Firmware instalado: **V800R015C00**. Usar documentación de la serie **MA5600T&MA5603T&MA5608T V800R015–R019** (misma familia CLI; cambios menores entre patches).
+Firmware instalado: **MA5600V800R015C00** (patch SPH106 HP1013), confirmado con `display version` el 2026-09-21.
+
+Documento de esa versión: *SmartAX MA5600T/MA5603T/MA5608T V800R015C00 Commissioning and Configuration Guide*, Issue 01 (2014-04-30). En el escenario gateway ONT (sección 9.7.3) el acceso a Internet se configura **en la web de la ONT o en U2000** (9.7.3.4). Esa guía no trae un procedimiento CLI para cambiar el SSID.
+
+El portal Huawei publica Command Reference de **V800R018C00** y **V800R019C10**. Esos manuales no describen el CLI de esta OLT: en R015 `ont wifi-config` responde `Unknown command`. `ont home-gateway-config` solo liga `profile-id` o `profile-name`.
 
 ### Guía práctica (referencia principal operativa)
 

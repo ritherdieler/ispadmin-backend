@@ -23,6 +23,8 @@ class GenieAcsProperties {
     var clientWanNamePattern: String = "2_INTERNET_R_VID_{vlan}"
     /** Emite cada POST NBI como curl + response HTTP en logs (INFO). Desactivar en prod normal. */
     var logCurl: Boolean = false
+    /** Explicit one-way publication step; disabled to prevent staging from overwriting prod scripts. */
+    var v2PublishEnabled: Boolean = false
     var vparams: Vparams = Vparams()
 
     class Vparams {

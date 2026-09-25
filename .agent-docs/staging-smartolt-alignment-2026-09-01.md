@@ -2,7 +2,7 @@
 
 ## Problema
 
-Incluir `oltgateway` en el WAR no basta con hornear `olt.gateway.enabled=false`. El Tomcat compartido define `OLT_GATEWAY_ENABLED=true` (prod lab/gateway), y esa env gana a `application-staging.properties`. Entonces `OltManagerFacade` sí se crea.
+`olt.gateway.enabled` y `OLT_GATEWAY_ENABLED` se eliminaron. Incluir el paquete `oltgateway` en el WAR crea `OltManagerFacade`. Staging apaga sync y SNMP; no apaga el módulo.
 
 `OnuService` prefería el facade: authorize iba a CLI SSH. Con `olt.gateway.writes.enabled=false` eso lanza `OltWritesDisabledException`, marca la transacción rollback-only y el E2E recibe HTTP 500 en `POST /subscription/with-facade-photo`.
 

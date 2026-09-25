@@ -8,10 +8,29 @@ import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.match.MockRestRequestMatchers.method
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
+import org.springframework.test.web.client.match.MockRestRequestMatchers.content
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 import org.springframework.web.client.RestTemplate
 
 class OltGatewayHttpClientTest {
+
+    @Test fun `OMCI management sends exact target through authenticated gateway contract`() {
+        val restTemplate = RestTemplate()
+        val server = MockRestServiceServer.createServer(restTemplate)
+        server.expect(requestTo("http://gateway/api/olt-gateway/onus/HWTC9F4BF950/omci/management"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header(OltGatewayHttpClient.HEADER, "key"))
+            .andExpect(content().json("""{"sn":"HWTC9F4BF950","slot":1,"port":6,"ontId":116,"tr069ProfileId":7}"""))
+            .andRespond(withSuccess("""{"configured":true,"address":"10.0.0.5"}""", MediaType.APPLICATION_JSON))
+        val client = GatewayOnuActivationClient(OltGatewayHttpClient(OltGatewayClientProperties().apply {
+            internalBaseUrl = "http://gateway"; apiKey = "key"
+        }, restTemplate), com.fasterxml.jackson.module.kotlin.jacksonObjectMapper())
+
+        val result = client.ensureOmciManagement(GatewayOmciManagementRequest("HWTC9F4BF950", 1, 6, 116, 7))
+
+        assertEquals(GatewayOmciManagementEvidence(true, "10.0.0.5"), result)
+        server.verify()
+    }
 
     @Test
     fun `getJson llama gateway WAR con X-Olt-Gateway-Key`() {

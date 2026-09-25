@@ -285,8 +285,7 @@ definir), así que no se puede conmutar de golpe.
 `OnuService` deja de llamar a `OltService` y delega todo en el router, con lo que el contrato
 `/onu/*` que consumen Android y el back office no cambia. Volver atrás es cambiar una propiedad.
 
-Si una operación se enruta al gateway pero `olt.gateway.enabled=false`, el router lo registra y la
-aplica por SmartOLT en vez de fallar. El orden de encendido previsto es **reboot → delete → move →
+El router ya no consulta `olt.gateway.enabled`: ese flag se eliminó. El proveedor lo deciden `olt.provider.{authorize,delete,reboot,move}`. El orden de encendido previsto es **reboot → delete → move →
 authorize**, de menor a mayor riesgo.
 
 Al enrutar por SmartOLT una operación que llega con identificador propio, el router lo traduce:

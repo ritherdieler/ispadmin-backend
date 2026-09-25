@@ -70,7 +70,7 @@ class OltGatewayHttpClient(
 
     private fun headers(contentType: MediaType? = null): HttpHeaders {
         val headers = HttpHeaders()
-        headers.set(HEADER, properties.apiKey)
+        headers.set(HEADER, properties.clientApiKey.ifBlank { properties.apiKey })
         headers.set(ENV_HEADER, properties.callerEnv.trim().ifBlank { "prod" })
         headers.accept = listOf(MediaType.APPLICATION_JSON)
         if (contentType != null) headers.contentType = contentType

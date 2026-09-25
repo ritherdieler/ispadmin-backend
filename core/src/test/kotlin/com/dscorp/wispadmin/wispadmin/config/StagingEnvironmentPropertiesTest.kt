@@ -46,13 +46,15 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("service.health.evaluation-interval-ms=300000"), staging)
         assertTrue(staging.contains("service.health.evaluation-initial-delay-ms=90000"), staging)
         assertFalse(staging.contains("shared-incident-notifications"), staging)
-        assertTrue(staging.contains("acs.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"), staging)
+        assertTrue(staging.contains("acs.gateway.internal-base-url=http://tomcat9027:8080/ispadmin"), staging)
+        assertTrue(staging.contains("acs.gateway.api-key=\${OLT_GATEWAY_STAGING_API_KEY:}"), staging)
+        assertTrue(staging.contains("acs.gateway.env=stg"), staging)
         assertTrue(staging.contains("acs.genieacs-to-acs-api-key=\${GENIEACS_TO_ACS_API_KEY:}"), staging)
         assertTrue(
             staging.contains("olt.gateway.acs-to-gateway-api-key=\${ACS_TO_GATEWAY_API_KEY:}"),
             staging,
         )
-        assertTrue(staging.contains("olt.gateway.enabled=false"), staging)
+        assertFalse(staging.contains("olt.gateway.enabled="), staging)
         assertTrue(staging.contains("olt.gateway.writes.enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.sync.signal-enabled=false"), staging)
         assertTrue(staging.contains("olt.gateway.sync.inventory-enabled=false"), staging)
@@ -92,6 +94,12 @@ class StagingEnvironmentPropertiesTest {
         )
         assertTrue(
             staging.contains("olt.gateway.acs.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"),
+            staging,
+        )
+        assertTrue(
+            staging.contains(
+                "olt.gateway.acs.base-url-staging=\${OLT_GATEWAY_ACS_BASE_URL_STAGING:http://tomcat-staging:8080/ispadmin-staging}"
+            ),
             staging,
         )
         assertTrue(staging.contains("olt.gateway.acs.api-key=\${ACS_API_KEY:dev-acs-key}"), staging)
@@ -155,7 +163,7 @@ class StagingEnvironmentPropertiesTest {
     @Test
     fun satellite_profiles_override_spatial_dialect() {
         val root = Path.of(System.getProperty("user.dir"))
-        val nonSpatial = "org.hibernate.dialect.MySQL57Dialect"
+        val nonSpatial = "com.dscorp.wispadmin.shared.persistence.UnicodeCiMySQLDialect"
         listOf(
             "application-traffic.properties",
             "application-acs.properties",
@@ -192,7 +200,7 @@ class StagingEnvironmentPropertiesTest {
         assertFalse(gateway.contains("spring.profiles.active="), gateway)
         assertTrue(gateway.contains("stg_oltgateway") || gateway.contains("prod_oltgateway"), gateway)
         assertTrue(gateway.contains("createDatabaseIfNotExist=true"), gateway)
-        assertTrue(gateway.contains("olt.gateway.enabled=true"), gateway)
+        assertFalse(gateway.contains("olt.gateway.enabled="), gateway)
         assertTrue(gateway.contains("olt.gateway.client-enabled=false"), gateway)
         assertFalse(gateway.contains("spring.datasource.username="), gateway)
         assertFalse(gateway.contains("spring.datasource.password="), gateway)

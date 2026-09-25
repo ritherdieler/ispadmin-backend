@@ -5,14 +5,15 @@ import org.springframework.stereotype.Component
 
 @Component
 class InstallationStrategyFactory(
-    private val fiberStrategy: FiberInstallationStrategy,
     private val wirelessStrategy: WirelessInstallationStrategy,
     private val onlyTvStrategy: OnlyTvFiberInstallationStrategy
 ) {
     
     fun getStrategy(installationType: InstallationType): IInstallationStrategy {
         return when (installationType) {
-            InstallationType.FIBER -> fiberStrategy
+            InstallationType.FIBER -> throw IllegalStateException(
+                "FIBER registration uses the provisioning pipeline"
+            )
             InstallationType.WIRELESS -> wirelessStrategy
             InstallationType.ONLY_TV_FIBER -> onlyTvStrategy
         }

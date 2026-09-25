@@ -14,7 +14,7 @@ Antes de **deploy staging/prod** o de un e2e largo, elige el camino **más corto
 
 ### Orden por defecto
 
-1. **Unit / TDD** del servicio o parser tocado.
+1. **Unit / TDD** del servicio o parser tocado, solo si el usuario eligió **con TDD** (`gigafiber/AGENTS.md`). Sin TDD, no bloquea el camino corto una prueba nueva.
 2. **Smoke local** si la dependencia es alcanzable desde la Mac (p. ej. OLT `10.11.104.2` por SSH/VPN): live test `@Tag("live")`, script o el mismo stack CLI/HTTP en local.
 3. **Staging / e2e** solo cuando el bug o la feature **depende** del WAR desplegado, overlay, Redis en VPS, Tomcat, o del flujo Android↔Core completo.
 
@@ -33,6 +33,14 @@ Detalle y ejemplos: `.agent-docs/pruebas-camino-mas-corto.md`.
 Prohibido subir WAR, properties, secretos, schema MySQL, nginx o un Tomcat de prestaging. `deploy.sh` rechaza cualquier env que no sea `prod|staging` y un WAR que contenga `application-local-prestaging`. No empaquetar esos archivos (`core/build.gradle.kts` los excluye).
 
 Regla Cursor: `gigafiber/.cursor/rules/prestaging-solo-local.mdc`.
+
+## Deploy solo a KVM4 (obligatorio)
+
+Prod y staging se despliegan **solo** en KVM4 `2.24.66.53` (`srv1992868`). `scripts/deploy.config.local` tiene `VPS_HOST=2.24.66.53`.
+
+Prohibido `deploy.sh`, `rsync` o restart de Tomcat en `212.85.13.47`. No pongas `DEPLOY_VPS_HOST` con esa IP. Que el DNS público siga resolviendo ahí no es permiso para desplegar.
+
+Regla Cursor: `gigafiber/.cursor/rules/deploy-solo-kvm4.mdc`. Detalle: `.agent-docs/deploy-flow.md`.
 
 ## Backoffice staging no va al VPS (obligatorio)
 

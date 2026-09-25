@@ -6,6 +6,24 @@ class GatewayOnuActivationClient(
     private val http: OltGatewayHttpClient,
     private val objectMapper: ObjectMapper,
 ) {
+    fun authorizeV2(request: GatewayOnuV2AuthorizeRequest): GatewayOnuV2AuthorizeResponse {
+        val serial = request.sn.trim().uppercase()
+        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
+        val response = http.postJsonBody("/api/olt-gateway/onus/provisioning/authorize",
+            objectMapper.writeValueAsString(request.copy(sn = serial)))
+        val body = response.body ?: throw IllegalStateException("Empty v2 authorize response")
+        return objectMapper.readValue(body, GatewayOnuV2AuthorizeResponse::class.java)
+    }
+
+    fun compensateV2(request: GatewayOnuV2CompensateRequest): GatewayOnuV2CompensateResponse {
+        val serial = request.sn.trim().uppercase()
+        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
+        val response = http.postJsonBody("/api/olt-gateway/onus/provisioning/compensate",
+            objectMapper.writeValueAsString(request.copy(sn = serial)))
+        val body = response.body ?: throw IllegalStateException("Empty v2 compensation response")
+        return objectMapper.readValue(body, GatewayOnuV2CompensateResponse::class.java)
+    }
+
     fun activate(request: GatewayOnuActivateRequest): GatewayOnuActivateResponse {
         val response = http.postJsonBody("/api/olt-gateway/onu/activate", objectMapper.writeValueAsString(request))
         val body = response.body ?: throw IllegalStateException("Empty activate response")
@@ -78,5 +96,21 @@ class GatewayOnuActivationClient(
         )
         val body = response.body ?: throw IllegalStateException("Empty remove service-port response")
         return objectMapper.readValue(body, GatewayServicePortsDto::class.java)
+    }
+
+    fun ensureOmciManagement(request: GatewayOmciManagementRequest): GatewayOmciManagementEvidence {
+        val serial = request.sn.trim().uppercase()
+        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
+        val response = http.postJsonBody("/api/olt-gateway/onus/$serial/omci/management",
+            objectMapper.writeValueAsString(request.copy(sn = serial)))
+        val body = response.body ?: throw IllegalStateException("Empty OMCI management response")
+        return objectMapper.readValue(body, GatewayOmciManagementEvidence::class.java)
+    }
+
+    fun compensateOmciManagement(request: GatewayOmciManagementCompensateRequest) {
+        val serial = request.sn.trim().uppercase()
+        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
+        http.postJsonBody("/api/olt-gateway/onus/$serial/omci/management/compensate",
+            objectMapper.writeValueAsString(request.copy(sn = serial)))
     }
 }

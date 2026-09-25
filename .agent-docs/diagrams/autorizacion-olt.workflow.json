@@ -1,0 +1,113 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Autorización en la OLT",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "decision", "label": "Decisión" },
+    { "id": "cli", "label": "CLI Huawei" },
+    { "id": "omci", "label": "Gestión OMCI", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "entrada", "label": "Entrada", "fromCol": 0, "toCol": 1 },
+    { "id": "alta", "label": "Alta y transporte", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "gestion", "label": "TR-069", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["solicitud", "perfiles", "ontAdd", "spCliente", "spGestion", "omci"],
+  "nodes": [
+    {
+      "id": "solicitud",
+      "lane": "decision",
+      "col": 0,
+      "type": "backend",
+      "label": "Solicitud VLAN 100",
+      "sublabel": "alta FIBER",
+      "width": 160
+    },
+    {
+      "id": "perfiles",
+      "lane": "decision",
+      "col": 1,
+      "type": "backend",
+      "label": "Perfil de línea 30",
+      "sublabel": "VLAN gestión 1000",
+      "width": 160
+    },
+    {
+      "id": "ontAdd",
+      "lane": "cli",
+      "col": 2,
+      "type": "cloud",
+      "label": "ont add",
+      "sublabel": "sn-auth OMCI",
+      "width": 160
+    },
+    {
+      "id": "spCliente",
+      "lane": "cli",
+      "col": 3,
+      "type": "cloud",
+      "label": "Service-port cliente",
+      "sublabel": "GEM 1",
+      "width": 168
+    },
+    {
+      "id": "spGestion",
+      "lane": "cli",
+      "col": 4,
+      "type": "cloud",
+      "label": "Service-port gestión",
+      "sublabel": "VLAN 1000 GEM 2",
+      "width": 168
+    },
+    {
+      "id": "omci",
+      "lane": "omci",
+      "col": 5,
+      "type": "security",
+      "label": "IP y perfil TR-069",
+      "sublabel": "ipconfig y perfil",
+      "tag": "perfil > 0",
+      "width": 160
+    },
+    {
+      "id": "omitir",
+      "lane": "omci",
+      "col": 4,
+      "type": "external",
+      "label": "Sin perfil TR-069",
+      "sublabel": "perfil id 0",
+      "width": 160
+    }
+  ],
+  "edges": [
+    { "id": "elige-perfil", "from": "solicitud", "to": "perfiles", "label": "VLAN 100", "role": "main" },
+    { "id": "entra-gpon", "from": "perfiles", "to": "ontAdd", "label": "interface gpon", "role": "main" },
+    { "id": "alta-transporte", "from": "ontAdd", "to": "spCliente", "role": "main" },
+    { "id": "abre-gestion", "from": "spCliente", "to": "spGestion", "role": "main" },
+    { "id": "empuja-omci", "from": "spGestion", "to": "omci", "label": "perfil > 0", "variant": "emphasis", "role": "main" },
+    { "id": "sin-omci", "from": "spGestion", "to": "omitir", "label": "perfil 0", "variant": "dashed", "role": "branch" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Comandos de alta",
+      "items": [
+        "interface gpon 0/{board}",
+        "ont add {port} {ontId} sn-auth {sn} omci",
+        "service-port VLAN cliente, GEM 1"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Gestión cuando el perfil es mayor que 0",
+      "items": [
+        "service-port VLAN 1000, GEM 2",
+        "ont ipconfig DHCP priority 2",
+        "ont tr069-server-config profile-id"
+      ]
+    }
+  ]
+}

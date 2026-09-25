@@ -35,6 +35,7 @@ import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.service.subscription.RegistrationProgressMapper
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.web.client.RestClientException
 import org.springframework.web.multipart.MultipartFile
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -262,6 +263,10 @@ class SubscriptionController(
             ResponseEntity.notFound().build()
         } catch (ex: IllegalStateException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (ex.message ?: "")))
+        } catch (_: RestClientException) {
+            ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                mapOf("error" to "No se pudo completar el reintento TR-069 con el Gateway")
+            )
         }
     }
 

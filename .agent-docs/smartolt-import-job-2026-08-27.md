@@ -36,7 +36,7 @@ Usa credenciales existentes:
 
 ## Medio plazo (alta FIBER)
 
-- `OnuService.authorizeOnuInSmartOltWidthPostMethod` enruta al **OLT Gateway** (`OltManagerFacade.authorizeOnu`) cuando `olt.gateway.enabled=true`.
+- `OnuService.authorizeOnuInSmartOltWidthPostMethod` enruta al **OLT Gateway** (`OltManagerFacade.authorizeOnu`). El flag `olt.gateway.enabled` se eliminó.
 - Alta FIBER vía `CancelledOnuReuseService` persiste zone/type/VLAN/profile en `olt_mgr_onu`.
 - Authorize API: `importedFromOlt=false`, `syncedAfterImport=true`.
 

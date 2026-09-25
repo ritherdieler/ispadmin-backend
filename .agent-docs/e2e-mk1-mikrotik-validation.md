@@ -37,7 +37,7 @@ Snapshots JSON en `$SNAPSHOT_DIR` (default `/tmp/mk1-e2e-*`).
 | `PUT /subscription/restore-internet-connection` | **PASS** | Solo BD (sin MK) |
 | JUnit `RouterOs7RestAdapterTest`, `MikrotikPollAdapterLiveTest` | **PASS** | `-Plive-mk1` |
 | Android `RegisterPaymentViewModelTest` | **PASS** | MockK, flujo `registerPayment` → API |
-| Android UI journey (`scripts/e2e_mk1_payment_lab.sh`) | **PASS** | 2026-08-01: fixture `900001`, IP `192.168.250.1` sale de `deudores` tras `PUT /payment` desde app |
+| Android UI journey (`e2e_mk1_payment_lab.sh`, eliminado) | **PASS** | 2026-08-01: fixture `900001`, IP `192.168.250.1` sale de `deudores` tras `PUT /payment` desde app |
 
 ## Pendiente / bajo demanda
 

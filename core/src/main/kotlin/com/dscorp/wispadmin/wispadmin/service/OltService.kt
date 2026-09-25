@@ -19,5 +19,7 @@ interface OltService {
     
     fun deleteOnu(onuExternalId: String)
 
+    fun deleteOnuBySn(onuSn: String)
+
     fun rebootOnu(uniqueExternalId: String)
 }

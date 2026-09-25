@@ -360,10 +360,15 @@ class SubscriptionProvisionService(
         val gateway = gatewayActivation.ifAvailable
             ?: throw IllegalStateException("Gateway ONU no disponible")
         val vlan = subscription.vlan?.trim()?.toIntOrNull() ?: 1
+        val uniqueExternalId = runCatching {
+            gateway.activationBySn(sn).uniqueExternalId?.trim()?.takeIf { it.isNotEmpty() }
+        }.onFailure { ex ->
+            logger.warn("No se pudo resolver uniqueExternalId de ONU {} antes del reintento TR-069: {}", sn, ex.message)
+        }.getOrNull()
         val outcome = gateway.provision(
             com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionRequest(
                 sn = sn,
-                uniqueExternalId = subscription.id?.toString(),
+                uniqueExternalId = uniqueExternalId,
                 wanVlanId = vlan,
                 ip = subscription.ip,
                 ipSegment = subscription.ipPool?.ipSegment,

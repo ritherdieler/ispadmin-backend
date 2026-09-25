@@ -139,6 +139,12 @@ require_url_context() {
     issues+=("$key (ausente) → $why")
     return
   fi
+  if [[ "$key" == "acs.gateway.internal-base-url" && "$DEPLOY_ENV" == "staging" ]]; then
+    if [[ "$val" != *"/ispadmin"* || "$val" == *"/ispadmin-staging"* ]]; then
+      issues+=("$key=$val (esperado el gateway compartido /ispadmin) → $why")
+    fi
+    return
+  fi
   if [[ "$DEPLOY_ENV" == "staging" ]]; then
     if [[ "$val" != *"/ispadmin-staging"* ]]; then
       issues+=("$key=$val (esperado *$CONTEXT*) → $why")
@@ -158,7 +164,7 @@ require_url_context "olt.gateway.acs.internal-base-url" "Gateway no alcanza /api
 require_present "olt.gateway.acs.api-key" "Gateway→ACS 401 Missing or invalid X-Acs-Key; TR-069 queda PENDING"
 require_present "acs.gateway.api-key" "ACS→Gateway Inform 401; no cierra telemetría 360"
 require_present "olt.gateway.acs-to-gateway-api-key" "Gateway rechaza Inform ACS (X-Acs-To-Gateway-Key)"
-require_url_context "acs.gateway.internal-base-url" "ACS Inform no apunta al WAR único"
+require_url_context "acs.gateway.internal-base-url" "ACS Inform de staging debe ir al gateway compartido /ispadmin"
 require_true "acs.client-enabled" "Core no llama al ACS"
 require_url_context "acs.internal-base-url" "cliente Core→ACS apunta a otro context-path"
 require_true "genieacs.enabled" "CpeFacadeService devuelve NA (ACS disabled); no hay NBI GenieACS"

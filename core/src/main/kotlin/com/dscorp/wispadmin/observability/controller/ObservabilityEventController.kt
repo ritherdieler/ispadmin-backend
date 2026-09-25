@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.observability.dto.EventIngestRequest
 import com.dscorp.wispadmin.observability.dto.EventIngestResponse
 import com.dscorp.wispadmin.wispadmin.observability.ReportedEvent
 import com.dscorp.wispadmin.observability.service.ObsIngestionService
+import com.dscorp.wispadmin.observability.service.ObsDurableIngestionService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -19,7 +20,8 @@ import javax.servlet.http.HttpServletRequest
 @RequestMapping("/observability")
 class ObservabilityEventController(
     private val ingestionService: ObsIngestionService,
-    private val properties: ObservabilityProperties
+    private val properties: ObservabilityProperties,
+    private val durableIngestion: ObsDurableIngestionService,
 ) {
 
     @PostMapping("/events")
@@ -32,6 +34,10 @@ class ObservabilityEventController(
         }
 
         val platformFromKey = request.getAttribute(ObservabilityApiKeyFilter.PLATFORM_ATTRIBUTE) as? String
+        val deliveryId = request.getHeader("X-Obs-Delivery-Id")
+        if (deliveryId != null && (batch.events.size != 1 || !deliveryId.matches(Regex("[a-zA-Z0-9:._-]{1,128}")))) {
+            return ResponseEntity.badRequest().build()
+        }
         val rateKey = platformFromKey ?: request.remoteAddr ?: "unknown"
         if (!ingestionService.allowRequest(rateKey)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build()
@@ -45,7 +51,8 @@ class ObservabilityEventController(
         for (raw in events) {
             try {
                 val reported = toReportedEvent(raw, platformFromKey)
-                val issueId = ingestionService.persistEvent(reported)
+                val issueId = if (deliveryId == null) ingestionService.persistEvent(reported)
+                    else durableIngestion.persist(deliveryId, reported.copy(platform = platformFromKey ?: reported.platform))
                 if (issueId != null) issueIds.add(issueId)
                 accepted++
             } catch (e: Exception) {
@@ -54,8 +61,9 @@ class ObservabilityEventController(
         }
 
         val rejectedByLimit = batch.events.size - events.size
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(EventIngestResponse(accepted, rejected + rejectedByLimit, issueIds.distinct()))
+        val response = ResponseEntity.status(HttpStatus.ACCEPTED)
+        if (deliveryId != null && accepted == 1 && rejected == 0) response.header("X-Obs-Delivery-Id", deliveryId)
+        return response.body(EventIngestResponse(accepted, rejected + rejectedByLimit, issueIds.distinct()))
     }
 
     private fun toReportedEvent(raw: EventIngestRequest, platformFromKey: String?): ReportedEvent {

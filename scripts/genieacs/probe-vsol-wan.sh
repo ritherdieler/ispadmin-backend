@@ -43,7 +43,7 @@ if [[ -f "$CONFIG_LOCAL" ]]; then
   source "$CONFIG_LOCAL"
 fi
 
-VPS_HOST="${VPS_HOST:-212.85.13.47}"
+VPS_HOST="${VPS_HOST:-2.24.66.53}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 SSH_TARGET="${VPS_USER}@${VPS_HOST}"

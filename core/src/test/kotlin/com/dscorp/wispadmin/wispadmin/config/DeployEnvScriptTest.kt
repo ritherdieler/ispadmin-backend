@@ -155,6 +155,8 @@ class DeployEnvScriptTest {
                     it.contains("\"\$OLT_GATEWAY_MYSQL_SCHEMA\"") ||
                     it.contains("\$TRAFFIC_MYSQL_SCHEMA") ||
                     it.contains("\"\$TRAFFIC_MYSQL_SCHEMA\"") ||
+                    it.contains("\$ACS_MYSQL_SCHEMA") ||
+                    it.contains("\"\$ACS_MYSQL_SCHEMA\"") ||
                     it.contains("\$schema")
             },
             "every mysql invocation must use a schema variable, found $mysqlCalls"
@@ -220,6 +222,46 @@ class DeployEnvScriptTest {
         assertTrue(script.contains("olt_mgr_onu_optical_sample"))
         assertTrue(script.contains("/rest/ppp/secret"))
         assertTrue(script.contains("errors='replace'"), script)
+    }
+
+    @Test
+    fun tr069_e2e_hard_cleanup_clears_registration_journal_acs_and_tags() {
+        val script = Files.readString(root().resolve("scripts/tr069-e2e-hard-cleanup.sh"))
+        assertTrue(script.contains("ACS_MYSQL_SCHEMA=\"stg_acs\""), script)
+        assertTrue(script.contains("ACS_MYSQL_SCHEMA=\"prod_acs\""), script)
+        assertTrue(script.contains("acs_mysql_q"), script)
+
+        val coreDelete = script.substringAfter("== MySQL delete").substringBefore("== Gateway inventory")
+        assertTrue(coreDelete.contains("DELETE FROM provisioning_v2_operation"), coreDelete)
+        assertTrue(coreDelete.contains("DELETE FROM provisioning_v2_event"), coreDelete)
+        assertTrue(coreDelete.contains("DELETE FROM provisioning_v2_resource"), coreDelete)
+        assertFalse(coreDelete.contains("DELETE FROM cpe_record"), coreDelete)
+        assertFalse(coreDelete.contains("DELETE FROM acs_onboarding_v2_task"), coreDelete)
+
+        val acsDelete = script.substringAfter("acs_mysql_q").substringBefore("== verify")
+        assertTrue(acsDelete.contains("DELETE FROM acs_onboarding_v2_task"), acsDelete)
+        assertTrue(acsDelete.contains("DELETE FROM cpe_record"), acsDelete)
+        assertFalse(script.contains("DELETE FROM tr069_model_profile"), script)
+
+        assertTrue(
+            script.contains("cpe_record.device_id") || script.contains("device_id") && script.contains("cpe_record"),
+            "device id must fall back to ACS cpe_record when subscription_acs is empty",
+        )
+        val acsDeviceLookup = script.substringAfter("subscription_acs").substringBefore("== MikroTik")
+        assertTrue(acsDeviceLookup.contains("cpe_record"), acsDeviceLookup)
+
+        val acsSchemaAt = script.indexOf("== ACS schema delete")
+        val acsPurgeAt = script.indexOf("== ACS purge")
+        val oltDeleteAt = script.indexOf("== OLT Gateway delete")
+        assertTrue(acsSchemaAt in 0 until oltDeleteAt, "ACS schema clear must run before Gateway deletes the ONU from the OLT")
+        assertTrue(acsPurgeAt in 0 until oltDeleteAt, "GenieACS purge must run before Gateway deletes the ONU from the OLT")
+
+        val tagPurge = script.substringAfter("ACS purge").substringBefore("== verify")
+        assertTrue(tagPurge.contains("sub-") || tagPurge.contains("startswith(\"sub-\")") || tagPurge.contains("startswith('sub-')"), tagPurge)
+        assertTrue(tagPurge.contains("t:") || tagPurge.contains("startswith(\"t:\")") || tagPurge.contains("startswith('t:')"), tagPurge)
+        assertTrue(tagPurge.contains("c:") || tagPurge.contains("startswith(\"c:\")") || tagPurge.contains("startswith('c:')"), tagPurge)
+        assertTrue(tagPurge.contains("lab"), tagPurge)
+        assertFalse(tagPurge.contains("DELETE") && tagPurge.contains("/devices/") && tagPurge.contains("method='DELETE'") && tagPurge.contains("lab") && !tagPurge.contains("!= 'lab'") && !tagPurge.contains("!= \"lab\""), tagPurge)
     }
 
     @Test

@@ -14,7 +14,7 @@ Health y NetDiag no importan `oltgateway`: cada uno tiene cliente HTTP propio co
 
 ## Código
 
-- Segundo PU: `OltGatewayJpaConfig` (`oltGatewayDataSource` / `oltGatewayEntityManagerFactory` / `oltGatewayTransactionManager`) si `olt.gateway.enabled=true`.
+- Segundo PU: `OltGatewayPersistenceConfig` (`oltGatewayDataSource` / `oltGatewayEntityManagerFactory` / `oltGatewayTransactionManager`) si hay `oltgateway.datasource.url` y `gigafiber.subsystems.oltgateway.enabled=true`. `olt.gateway.enabled` se eliminó.
 - EntityScan y `@EnableJpaRepositories` del core ya no incluyen `oltgateway`.
 - Servicios Gateway usan `@Transactional("oltGatewayTransactionManager")`.
 - JDBC: `olt.gateway.datasource.url=${OLT_GATEWAY_DATASOURCE_URL:…}`. User/pass reutilizan `spring.datasource.*`.

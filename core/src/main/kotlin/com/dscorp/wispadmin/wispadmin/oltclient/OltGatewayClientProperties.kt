@@ -11,6 +11,7 @@ class OltGatewayClientPropertiesConfig
 @ConfigurationProperties(prefix = "olt.gateway")
 class OltGatewayClientProperties {
     var apiKey: String = ""
+    var clientApiKey: String = ""
     var internalBaseUrl: String = ""
     var clientEnabled: Boolean = false
     var callerEnv: String = ""

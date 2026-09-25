@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
 import java.util.*
 import java.time.LocalDateTime
 
@@ -33,8 +34,9 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     )
     fun findServiceHealthContextById(@Param("id") id: Int): ServiceHealthSubscriptionView?
 
+    @Transactional
     @org.springframework.data.jpa.repository.Lock(javax.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @Query("select s from Subscription s where s.id = :id")
+    @Query("select s from Subscription s left join fetch s.plan left join fetch s.hostDevice where s.id = :id")
     fun lockIdentityOwner(@Param("id") id: Int): Subscription?
 
     fun findByTr069DeviceId(deviceId: String): List<Subscription>

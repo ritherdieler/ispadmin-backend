@@ -18,6 +18,10 @@ API del gateway, solo con caller staging: `GET|POST /api/olt-gateway/onu/lab`, `
 
 El Core las reexpone en `/onu/lab` solo si `gigafiber.environment.tag=stg` y el cliente del gateway está activo. Prod no publica esas rutas. El cliente HTTP sigue mandando la clave de staging y `X-Gigafiber-Env`.
 
+## Deploy
+
+2026-09-24: staging (`tomcat-staging` `/ispadmin-staging`) y prod (`tomcat9027` `/ispadmin`, release `1.0.3+81719d8`) en KVM4. El registro arranca en cualquier proceso que tenga `oltgateway.datasource.url`. El filtro que ve el backoffice de staging sigue en el gateway de prod, que es a quien llama el Core de staging. No existe `olt.gateway.enabled`.
+
 ## Backoffice
 
 En Vite `--mode staging`, menú **ONUs de lab** (`/onus/lab`): alta por SN y quitar el tag. En configuradas, no configuradas y detalle aparece el badge `lab` si el serial está en el registro.

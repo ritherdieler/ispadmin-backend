@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
+import org.springframework.web.client.RestClientException
 import java.util.Optional
 
 class SubscriptionControllerAcsEndpointsTest {
@@ -194,6 +195,22 @@ class SubscriptionControllerAcsEndpointsTest {
         val response = controller.retryTr069Provisioning(42)
 
         assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+    }
+
+    @Test
+    fun `POST retry-tr069 returns sanitized 502 when gateway rejects provisioning`() {
+        every {
+            subscriptionProvisionService.retryTr069(42)
+        } throws RestClientException("400 Bad Request: backend details")
+
+        val response = controller.retryTr069Provisioning(42)
+
+        assertEquals(HttpStatus.BAD_GATEWAY, response.statusCode)
+        assertEquals(
+            "No se pudo completar el reintento TR-069 con el Gateway",
+            (response.body as Map<*, *>)["error"],
+        )
+        assertTrue(response.body.toString().contains("backend details").not())
     }
 
     @Test

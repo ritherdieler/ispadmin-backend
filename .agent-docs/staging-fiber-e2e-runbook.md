@@ -123,9 +123,9 @@ cd ispadmin-backend
 
 ### SmartOLT (igual que prod)
 
-`OnuService` **no** usa `OltManagerFacade`. Authorize / unconfigured / delete van a `OltService` → API SmartOLT. El env Tomcat `OLT_GATEWAY_ENABLED=true` puede crear el facade SSH, pero no intercepta `/onu/*`. Si se usa el facade con writes off → `OltWritesDisabledException` → HTTP 500 en `POST /subscription/with-facade-photo`.
+`OnuService` **no** usa `OltManagerFacade`. Authorize / unconfigured / delete van a `OltService` → API SmartOLT. `OLT_GATEWAY_ENABLED` se eliminó. Si se usa el facade con writes off → `OltWritesDisabledException` → HTTP 500 en `POST /subscription/with-facade-photo`.
 
-`application-staging.properties`: `olt.gateway.enabled=false`, `olt.gateway.writes.enabled=false`. `scripts/subsystems.sh` hornea lo mismo.
+`application-staging.properties` apaga inventario, señal, alarmas y SNMP. Las escrituras del gateway en staging están en `olt.gateway.writes.enabled=true`.
 
 Doc: `staging-smartolt-alignment-2026-09-01.md`. Deploy histórico: `staging-e2e-deploy-2026-09-01.md`.
 

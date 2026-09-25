@@ -18,11 +18,11 @@ remaining_sub_sn=0
 CLEANUP_DONE
 ```
 
-Los endpoints Gateway de borrado devolvieron `404` porque `tomcat-staging` estaba arrancado con `OLT_GATEWAY_ENABLED=false`. Se comprobó directamente en la OLT, mediante el comando ya catalogado `display ont info by-sn ZTEGDC47BFFD`, que la ONT no existía. Después apareció en autofind y el Core la devolvió en `GET /onu/unconfigured_onus`.
+Los endpoints Gateway de borrado devolvieron `404` porque `tomcat-staging` estaba arrancado con `OLT_GATEWAY_ENABLED=false`. Esa variable se eliminó después: ya no apaga el módulo. Se comprobó directamente en la OLT, mediante el comando ya catalogado `display ont info by-sn ZTEGDC47BFFD`, que la ONT no existía. Después apareció en autofind y el Core la devolvió en `GET /onu/unconfigured_onus`.
 
 ## Corrección operativa de KVM4
 
-El servicio `tomcat-staging` tenía `OLT_GATEWAY_WRITES_ENABLED=true`, pero el componente Gateway estaba deshabilitado. Se cambió únicamente el bloque `tomcat-staging` de `/opt/gigafiber/docker-compose.yml` a:
+El servicio `tomcat-staging` tenía `OLT_GATEWAY_WRITES_ENABLED=true`, pero el componente Gateway estaba deshabilitado con una variable que ya no existe. En ese momento se cambió únicamente el bloque `tomcat-staging` de `/opt/gigafiber/docker-compose.yml` a:
 
 ```yaml
 OLT_GATEWAY_ENABLED: "true"

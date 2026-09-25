@@ -184,6 +184,7 @@ class SubsystemDependencyRulesTest {
             "core/src/main/kotlin/com/dscorp/wispadmin/netdiag/service/WhatsAppOpsNotifier.kt",
             "core/src/main/kotlin/com/dscorp/wispadmin/observability/config/TraceContextFilter.kt",
             "core/src/main/kotlin/com/dscorp/wispadmin/observability/controller/ObservabilityEventController.kt",
+            "core/src/main/kotlin/com/dscorp/wispadmin/observability/service/ObsDurableIngestionService.kt",
             "core/src/main/kotlin/com/dscorp/wispadmin/observability/service/InProcessObservabilityReporter.kt",
             "core/src/main/kotlin/com/dscorp/wispadmin/observability/service/ObsIngestionService.kt",
             "core/src/main/kotlin/com/dscorp/wispadmin/observability/tracing/ObsTracer.kt",

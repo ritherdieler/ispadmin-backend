@@ -31,7 +31,7 @@ Deploying only `oltgateway` (or `oltgateway,servicehealth`) fails Tomcat startup
 
 ### OLT: SmartOLT (igual que prod)
 
-`OnuService` (`/onu/*`, registro FIBER) siempre delega a la API SmartOLT (`RealOltService`). El env compartido `OLT_GATEWAY_ENABLED=true` puede crear el facade SSH, pero ya no intercepta authorize/unconfigured/delete.
+`OnuService` (`/onu/*`, registro FIBER) siempre delega a la API SmartOLT (`RealOltService`). `OLT_GATEWAY_ENABLED` se eliminó y no crea ni apaga el facade SSH.
 
 See `staging-smartolt-alignment-2026-09-01.md`.
 

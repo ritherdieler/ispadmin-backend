@@ -18,7 +18,7 @@ Split del paquete `oltgateway` a un WAR propio, copiando el patrón de traffic.
 
 Clientes externos → core (`/onu`, JWT). Core / Health / NetDiag → gateway con `X-Olt-Gateway-Key`.
 
-`--with oltgateway` hornea `olt.gateway.client-enabled=true` y `olt.gateway.enabled=false` en el **core**. El SSH/SNMP corre solo en el WAR gateway (`application-oltgateway.properties`: `olt.gateway.enabled=true`).
+`--with oltgateway` hornea `olt.gateway.client-enabled=true` en el **core**. No existe `olt.gateway.enabled`. El SSH real depende de `olt.gateway.mock.enabled=false`; SNMP y los sync tienen sus propios flags.
 
 URL interna horneada: `http://127.0.0.1:8080/ispadmin-staging-oltgateway`. No añadir `OLT_GATEWAY_INTERNAL_BASE_URL` a `/opt/gigafiber/.env`.
 

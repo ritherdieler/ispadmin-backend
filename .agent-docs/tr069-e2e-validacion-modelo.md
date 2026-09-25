@@ -307,7 +307,7 @@ Fallos típicos (anotar y limpiar igual): CR `Device is offline`, `Incorrect con
 
 ## 4. Limpieza dura (sin rastro)
 
-Orden: MikroTik → OLT → MySQL (incl. foto fachada en Firebase) → cola GenieACS.
+Orden: MikroTik → estado ACS de ese serial y tasks, faults y etiquetas de registro en GenieACS → OLT → Firebase → suscripción y diario de alta en el Core → inventario Gateway → muestras Traffic. El clear del ACS va **antes** de borrar la ONU en la OLT: si el Gateway la quita primero, el ACS deja de alcanzarla. El dispositivo GenieACS y el tag `lab` se quedan. El catálogo de perfiles TR-069 no se borra.
 
 ### 4.1 MikroTik (`hostDevice` del alta)
 
@@ -345,8 +345,23 @@ DELETE FROM subscription_acs WHERE subscription_id = {id};
 DELETE FROM payment WHERE subscription_id = {id};
 UPDATE subscription SET fiber_onu_sn = NULL WHERE id = {id};  -- Hibernate: fiberOnu → fiber_onu_sn
 DELETE FROM subscription WHERE id = {id};
-DELETE FROM onu WHERE sn = '{sn}';
 
+-- Diario del alta en el Core (por subscription_id o por serial)
+DELETE FROM provisioning_v2_event WHERE operation_id IN (
+  SELECT operation_id FROM (
+    SELECT operation_id FROM provisioning_v2_operation
+    WHERE subscription_id = {id} OR serial = '{sn}'
+  ) t
+);
+DELETE FROM provisioning_v2_resource WHERE operation_id IN (
+  SELECT operation_id FROM (
+    SELECT operation_id FROM provisioning_v2_operation
+    WHERE subscription_id = {id} OR serial = '{sn}'
+  ) t
+);
+DELETE FROM provisioning_v2_operation WHERE subscription_id = {id} OR serial = '{sn}';
+
+-- Inventario ONU: schema del Gateway (stg_oltgateway / prod_oltgateway), no el Core
 -- OLT manager (external_id del gateway)
 SET @onu_id := (SELECT id FROM olt_mgr_onu WHERE sn = '{sn}' OR external_id = '{external_id}' LIMIT 1);
 DELETE FROM olt_mgr_onu_status_current WHERE onu_id = @onu_id;
@@ -388,9 +403,20 @@ El alta desde la app Android envía `facadePhoto` en el multipart. El backend la
 
 Si el alta fue **offline** en Android y aún no sincronizó, la foto puede estar solo en el dispositivo (`FacadePhotoStorage`); en ese caso no hay objeto en Firebase. Tras limpiar BD, borrar también la suscripción pendiente local en la app si aplica.
 
+### 4.3.2 ACS (`stg_acs` / `prod_acs`)
+
+El alta deja el estado del CPE y las tareas de onboarding v2 en el schema del ACS. Si `subscription_acs` no tiene `genieacs_device_id`, el cleanup lee `cpe_record.device_id` de ese serial **antes** de borrar la fila.
+
+```sql
+DELETE FROM acs_onboarding_v2_task WHERE sn = '{sn}';
+DELETE FROM cpe_record WHERE sn = '{sn}';
+```
+
+No borrar `tr069_model_profile`.
+
 ### 4.4 GenieACS
 
-Purgar **tasks y faults** del `deviceId` (GenieACS las rejuega en cada CR). **No** borrar el dispositivo del ACS: es el HGU de lab.
+Purgar **tasks y faults** del `deviceId` (GenieACS las rejuega en cada CR). Borrar también las etiquetas de registro `sub-*`, `t:*` y `c:*`. Esto ocurre **antes** de `POST /api/olt-gateway/onu/delete`: con la ONU fuera de la OLT el ACS ya no la alcanza. **No** borrar el tag `lab` ni el dispositivo: es el HGU de lab.
 
 ```bash
 # Listar y DELETE cada _id en /tasks/ y /faults/ con query {"device":"{deviceId}"}
@@ -405,12 +431,14 @@ Equivalente: `GenieAcsClient.purgeDeviceQueue`.
 ## Checklist final
 
 - [ ] SN ausente en `subscription` (cualquier `serviceStatus`, incluido `CANCELLED`)
+- [ ] Sin filas de `provisioning_v2_operation` / `provisioning_v2_event` / `provisioning_v2_resource` de esa suscripción o ese serial
+- [ ] SN ausente en `cpe_record` y en `acs_onboarding_v2_task` del schema ACS
 - [ ] SN ausente en `onu` y en `olt_mgr_onu`
 - [ ] `subscription_log` / `subscription_acs` / `payment` / `olt_mgr_audit_log` / `olt_mgr_task` sin esa id
 - [ ] Objeto **`facades/{timestamp}_*`** eliminado en Firebase Storage (sin `facade_photo_url` huérfana)
 - [ ] Sin `/queue/simple` con `target={ip}/32` ni IP en `deudores`
 - [ ] ONT no autorizada; SN en unconfigured o desconectada de servicio
-- [ ] GenieACS: 0 tasks / 0 faults de ese deviceId
+- [ ] GenieACS: 0 tasks / 0 faults de ese deviceId, y sin etiquetas `sub-*`, `t:*` ni `c:*` (el tag `lab` sigue)
 - [ ] CPE sigue pudiendo Informar por `192.168.255.x` (WCD.1)
 - [ ] E2e **solo** cerrado si `tr069ProvisionStatus=COMPLETE` y GPV ACS coincide con SSIDs (nombre de red) y WiFi
 - [ ] Al usuario se le entregaron SSID **y contraseñas** 2.4/5 GHz del alta (no omitir las claves)

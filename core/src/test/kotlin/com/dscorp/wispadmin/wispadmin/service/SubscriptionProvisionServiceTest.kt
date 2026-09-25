@@ -556,6 +556,12 @@ class SubscriptionProvisionServiceTest {
         every { repository.save(subscription) } returns subscription
         every { gatewayActivation.ifAvailable } returns gatewayClient
         every { pppoeAccessService.decryptedPassword(subscription) } returns "secreto123"
+        every { gatewayClient.activationBySn("ALCL123") } returns GatewayOnuActivateResponse(
+            uniqueExternalId = "gigafiber-ma5608t_1_6_46",
+            sn = "ALCL123",
+            oltStatus = "COMPLETE",
+            cpeStatus = "MANUAL_REQUIRED",
+        )
         every { gatewayClient.provision(any()) } returns com.dscorp.wispadmin.wispadmin.oltclient.GatewayCpeProvisionResponse(
             sn = "ALCL123",
             status = "COMPLETE",
@@ -568,13 +574,14 @@ class SubscriptionProvisionServiceTest {
             gatewayClient.provision(
                 match {
                     it.sn == "ALCL123" &&
+                        it.uniqueExternalId == "gigafiber-ma5608t_1_6_46" &&
                         it.pppoeUsername == "gf42" &&
                         it.pppoePassword == "secreto123" &&
                         it.wanVlanId == 100
                 }
             )
         }
-        verify(exactly = 0) { gatewayClient.activationBySn(any()) }
+        verify(exactly = 1) { gatewayClient.activationBySn("ALCL123") }
     }
 
     @Test

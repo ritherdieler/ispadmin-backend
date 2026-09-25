@@ -63,7 +63,7 @@ Si un cliente necesita datos, streaming o acciones de un subsistema, el acceso d
 |---------|-------------|
 | **Core** | WAR principal IspAdmin (suscripciones, alta FIBER, 360, login). No llamarlo “CRM”. |
 | **CRM** | Feature/módulo WhatsApp omnicanal (y docs `crm-omnicanal-*`), no el WAR core. |
-| **OLT Gateway** | Un solo proceso dueño de SSH/SNMP hacia `10.11.104.2`. Prod, staging y prestaging le hablan por HTTP. Stopgap 2026-09-21: el dueño sigue embebido en el Core prod; staging y prestaging tienen `olt.gateway.enabled=false`. |
+| **OLT Gateway** | Un solo proceso dueño de SSH/SNMP hacia `10.11.104.2`. Prod, staging y prestaging le hablan por HTTP. Stopgap 2026-09-21: el dueño sigue embebido en el Core prod. Staging y prestaging apagan sync y SNMP. No hay `olt.gateway.enabled`. |
 | **ACS WAR** | WAR TR-069 (`acs`). Solo Gateway lo llama. Posee deviceId/cache WiFi/WAN. Core no tiene dominio ACS. |
 
 ## Referencias

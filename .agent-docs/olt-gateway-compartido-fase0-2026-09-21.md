@@ -11,21 +11,21 @@ Un solo `OltCliBus` habla con la MA5608T `10.11.104.2`. Staging y prestaging dej
 | `OLT_GATEWAY_API_KEY` escribe flota. `OLT_GATEWAY_STAGING_API_KEY` escribe solo SN lab (`0031C0B6`, `12345B4641531C0B6`, `ZTEGDC47BFFD`). Si no, 403 | `OltGatewayApiKeyFilter` |
 | `X-Gigafiber-Env` que no coincide con la key → 400 | mismo filtro |
 | Day-2 ACS: `stg` / `lpstg` → `olt.gateway.acs.base-url-staging`. `prod` → base prod. Sin env y `require-caller=true` → 400 | `AcsCallerRouter` |
-| `onu.optical-batch` con `gigafiber.redis.optical-fanout-namespaces=prod,stg` hace XADD a los dos streams | `redisStreamKeys` |
-| `cpe.provisioning` y `cpe.inform` salen al namespace del llamante (`prod` o `stg`) | `EventRouteContext` |
-| `olt.gateway.enabled=false` no crea `OltCliBus` | `OltGatewayConfig` |
+| `onu.optical-batch` con `gigafiber.redis.optical-fanout-namespaces=prod,stg` escribe dos cuerpos: `prod` lleva la flota y `stg` solo seriales de `olt_lab_onu` | `opticalPayloadsByNamespace` + `streamNamespace` |
+| `cpe.provisioning` y `cpe.inform` salen al namespace del llamante (`prod` o `stg`). `cpe.inform` con key de staging y serial fuera de `olt_lab_onu` responde 403 y no publica | `EventRouteContext`, `OltGatewayApiKeyFilter` |
+| El módulo no tiene interruptor de apagado | `OltCliBus` arranca si `olt.gateway.mock.enabled=false` |
 
 ## Stopgap (fase 1, sin extraer proceso)
 
-| Proceso | `olt.gateway.enabled` | URL cliente |
+| Proceso | Módulo | URL cliente |
 |---|---|---|
-| Core prod | `${OLT_GATEWAY_ENABLED:false}` (el VPS lo deja en true: es el dueño) | loopback `/ispadmin` |
-| Core staging | `false`. Signal y SNMP off | `http://tomcat9027:8080/ispadmin` |
-| Prestaging Mac | `false` | `${OLT_GATEWAY_INTERNAL_BASE_URL:http://127.0.0.1:8092/ispadmin}` |
+| Core prod | dueño del SSH | loopback `/ispadmin` |
+| Core staging | sync y SNMP apagados; cliente HTTP | `http://tomcat9027:8080/ispadmin` |
+| Prestaging Mac | sync y SNMP apagados; cliente HTTP | `${OLT_GATEWAY_INTERNAL_BASE_URL:http://127.0.0.1:8092/ispadmin}` |
 
-`gigafiber.subsystems.oltgateway.enabled` sigue `true` en staging para no romper el preflight de la cadena FIBER ni el datasource satélite. El SSH no arranca: el bean está detrás de `olt.gateway.enabled`.
+`gigafiber.subsystems.oltgateway.enabled` sigue `true` en staging para no romper el preflight de la cadena FIBER ni el datasource satélite. Staging apaga inventario, señal, alarmas y SNMP (`olt.gateway.sync.*-enabled=false`, `olt.gateway.snmp.enabled=false`).
 
-El `.env` compartido lleva `OLT_GATEWAY_ENABLED=true` (el dueño es prod). Esa variable de entorno pisa `olt.gateway.enabled=false` del WAR de staging. `scripts/ensure-tomcat-staging-compose.py` fija `OLT_GATEWAY_ENABLED: "false"` solo en el servicio `tomcat-staging`.
+2026-09-24: se eliminó `olt.gateway.enabled` y `OLT_GATEWAY_ENABLED`. No apagaban el módulo. El compose de staging ya no toca esa variable.
 
 El Core manda `X-Gigafiber-Env` (`prod` por defecto, `stg` en staging, `lpstg` en prestaging).
 
@@ -39,7 +39,7 @@ El Core manda `X-Gigafiber-Env` (`prod` por defecto, `stg` en staging, `lpstg` e
 
 Orden: prod (`tomcat9027` recreado, HTTP 200, `oltReachable=true`) y después staging. En `/opt/gigafiber/.env` quedaron `OLT_GATEWAY_STAGING_API_KEY` (distinta de la de prod) y `OLT_GATEWAY_ACS_BASE_URL_STAGING=http://tomcat-staging:8080/ispadmin-staging`.
 
-El primer arranque de staging heredó `OLT_GATEWAY_ENABLED=true` y abrió su propio `OltCliBus` (dos sesiones). Se paró el contenedor, se fijó el pin en el compose y se restauró `ispadmin-staging.war`. Después: `OLT_GATEWAY_ENABLED=false` dentro de `tomcat-staging`, HTTP 200, sin `SSH session established` en el log, y `GET /api/olt-gateway/onu/unconfigured_onus` en staging responde 404. La misma lectura contra prod con la key de staging y `X-Gigafiber-Env: stg` responde 200. Un delete de SN que no es de laboratorio responde 403 `lab_sn_required`.
+Ese corte usó `OLT_GATEWAY_ENABLED`, variable que ya no existe. El primer arranque de staging heredó `OLT_GATEWAY_ENABLED=true` y abrió su propio `OltCliBus` (dos sesiones). Se paró el contenedor, se fijó el pin en el compose y se restauró `ispadmin-staging.war`. Después: `OLT_GATEWAY_ENABLED=false` dentro de `tomcat-staging`, HTTP 200, sin `SSH session established` en el log, y `GET /api/olt-gateway/onu/unconfigured_onus` en staging responde 404. La misma lectura contra prod con la key de staging y `X-Gigafiber-Env: stg` responde 200. Un delete de SN que no es de laboratorio responde 403 `lab_sn_required`. La misma key, en lectura, deja el listado del backoffice de staging en esas ONUs de lab: configuradas, detalle, estado, historial y autofind. Un serial de cliente no aparece y su detalle responde 404, sin abrir SSH. La key de prod sigue devolviendo el parque completo.
 
 ## Fuera de este corte
 

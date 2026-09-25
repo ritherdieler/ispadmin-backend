@@ -75,8 +75,8 @@ Clientes externos (backoffice, app) hablan **solo con Core**. Core no llama a Ge
 | 1 | ONU | Envía CWMP Inform (PERIODIC, CONNECTION REQUEST u otro evento). |
 | 2 | GenieACS | Provision `gigafiber-wifi-telemetry`: refresca TotalAssociations / AssociatedDevice / Hosts con wildcards contra el reloj de la sesión y **después** llama `ext("wifi-inform-notify", serial, deviceId, payload)` con las hojas crudas. |
 | 3 | Ext `wifi-inform-notify.js` | `POST /api/acs/v1/cpe/inform-notify` al ACS prod (`GENIEACS_TO_ACS_NOTIFY_URL`). ONU lab (`ZTEGDC47BFFD`, `12345B4641531C0B6`) también POST a staging (`GENIEACS_TO_ACS_STAGING_NOTIFY_URL`). Timeout 2500 ms, paralelo, por debajo del `EXT_TIMEOUT` de GenieACS (3000 ms). |
-| 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway. Sin payload, cae al `readDeviceCache`. |
-| 5 | Gateway `CpeInformIngestService` | Publica `PlatformEventTypes.CPE_INFORM` (`cpe.inform`) en Redis Streams. No persiste series. |
+| 4 | ACS `WifiInformNotifyService` | `WifiNbiTelemetry.expandInformLeaves(payload)` → `parsePayload`; upsert **last-state** en `cpe_record`; POST al Gateway con `X-Acs-To-Gateway-Key` y `X-Gigafiber-Env`. Sin payload, cae al `readDeviceCache`. El ACS no publica Redis. |
+| 5 | Gateway `CpeInformIngestService` | Publica `cpe.inform` en el stream del llamante. Key de staging + `stg`/`lpstg`: solo si el serial está en `olt_lab_onu`; si no, 403 `lab_sn_required` y no hay XADD. Key de prod: la flota va a `prod:gigafiber.events`. |
 | 6 | Core `CpeInformEventConsumer` → `CpeInformPersistService` | Persistencia si hay SN mapeado; idempotente por `informAt`; escribe `acs_wifi_*`. **Sin** `reevaluate` (el ACK de Redis no espera el 360). |
 | 7 | Backoffice 360 | `GET …/service-health/series` → `WifiCharts` / estaciones. |
 
@@ -121,7 +121,7 @@ Apply/rollback: `python3 scripts/genieacs/apply-wifi-telemetry.py --all-models -
 |------|------|---------|
 | GenieACS provision + ext | Declarar WiFi fresco y serializar las hojas al `ext` | Decidir qué es válido o fresco; persistir series; XADD Redis |
 | ACS WAR | Parsear el payload (rangos, MAC, quality, `complete`); **last-state** en `cpe_record`; forward HTTP al Gateway | XADD Redis; escribir `acs_wifi_*` del Core; leer el NBI salvo fallback |
-| Gateway | Ingest HTTP → **solo** XADD `cpe.inform` | Parse WiFi profundo; tablas de series |
+| Gateway | Ingest HTTP → XADD `cpe.inform` en el namespace del llamante. Staging solo seriales de `olt_lab_onu` | Parse WiFi profundo; tablas de series; publicar un Inform que no es lab en `stg` |
 | Core service-health | Consumer Redis; persistir series + `status_current` | Hablar GenieACS/ACS WAR en este camino |
 | Backoffice | Leer series vía Core | Llamar ACS/Gateway/GenieACS |
 
@@ -134,8 +134,10 @@ Apply/rollback: `python3 scripts/genieacs/apply-wifi-telemetry.py --all-models -
 | `GENIEACS_TO_ACS_API_KEY` | Ext → ACS (`X-Acs-Key`; endpoint también acepta `ACS_API_KEY`) | `/opt/gigafiber/genieacs/.env` + runtime Tomcat ACS |
 | `GENIEACS_TO_ACS_NOTIFY_URL` | Base URL ACS **prod** vista desde GenieACS | `/opt/gigafiber/genieacs/.env` |
 | `GENIEACS_TO_ACS_STAGING_NOTIFY_URL` | Base URL ACS staging; solo lab | `/opt/gigafiber/genieacs/.env` |
-| `ACS_TO_GATEWAY_API_KEY` | ACS → Gateway (`X-Acs-To-Gateway-Key`) | Pareja ACS ↔ Gateway |
-| `ACS_GATEWAY_BASE_URL` | Base URL Gateway desde ACS → `acs.gateway.internal-base-url` | **Hornear por WAR**; no `.env` compartido |
+| `OLT_GATEWAY_API_KEY` | Inform prod → Gateway (`X-Acs-To-Gateway-Key`, `acs.gateway.api-key`) con `acs.gateway.env=prod` | Horneado en el WAR prod |
+| `OLT_GATEWAY_STAGING_API_KEY` | Inform staging/prestaging → Gateway, misma header, con `acs.gateway.env=stg` o `lpstg` | Horneado en esos WAR |
+| `ACS_TO_GATEWAY_API_KEY` | Sigue en `olt.gateway.acs-to-gateway-api-key` (ingest genérico). El Inform ya no la usa como key de llamante | Pareja Gateway |
+| `ACS_GATEWAY_BASE_URL` | Base URL Gateway desde el ACS prod → `acs.gateway.internal-base-url` | **Hornear por WAR**; no `.env` compartido. Staging hornea `http://tomcat9027:8080/ispadmin` |
 
 Catálogo: [vps-secrets-management.md](./vps-secrets-management.md). No documentar ni commitear valores.
 
@@ -177,7 +179,7 @@ Reentregas Redis del mismo Inform no duplican samples. SN desconocido o payload 
 | Apply | `scripts/genieacs/apply-wifi-telemetry.py` (`--device-id` para el escalón, `--all-models` para la flota) |
 | Cobertura / faults | `scripts/genieacs/inform-channel-coverage.py` |
 | ACS notify | `WifiInformNotifyService`, `POST /api/acs/v1/cpe/inform-notify` |
-| ACS → bus | `AcsToGatewayInformClient`: XADD `cpe.inform` si el EventBus no es no-op; si no, `POST /api/olt-gateway/acs/cpe-inform` |
+| ACS → gateway | `AcsToGatewayInformClient`: siempre `POST /api/olt-gateway/acs/cpe-inform` con la key del llamante y `X-Gigafiber-Env`. No hace XADD |
 | Gateway ingest | `CpeInformIngestService` (fallback HTTP) |
 | Core persist Wi‑Fi | `CpeInformEventConsumer` (grupo `wifi-inform-core`) → `CpeInformPersistService` |
 | Core óptica/tráfico | `HealthSnapshotConsumer` (grupo `snapshot-core`) → `HealthSnapshotIngestService` (sin `reevaluate`) |

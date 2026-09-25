@@ -62,7 +62,11 @@ Pool dinámico `10.64.0.0/18` sobre `vlan100-olt`. Perfiles `GF-{down}-{up}` der
 | `/ip firewall address-list add list=CloudOLT address=amz.smartolt.com` | Allowlist SmartOLT cloud | SmartOLT CloudOLT | Resuelve IPs dinámicas |
 | `/ip firewall nat add chain=dstnat … dst-address=38.224.231.4 dst-port=2333 to-addresses=10.11.104.2 to-ports=23 …` | DNAT Telnet OLT | SmartOLT CloudOLT | Igual puertos 2322→22, 2161→161 |
 | `/ip firewall filter add chain=forward action=accept connection-nat-state=dstnat comment="CloudOLT forward to OLT"` | Forward DNAT | SmartOLT CloudOLT | |
-| `/import file-name=mk2-wg-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-wg.rsc` + claves) | WireGuard VPS ↔ MK2 + SNAT hacia LAN OLT | OLT Gateway / NetDiag | UDP 51830; OLT ve `10.11.104.89`; prod 2026-08-01 |
+| `/import file-name=mk2-wg-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-wg.rsc` + claves) | WireGuard VPS ↔ MK2 + SNAT hacia LAN OLT | OLT Gateway / NetDiag | UDP 51830; OLT ve `10.11.104.89`; prod 2026-08-01. **Destructivo**: borra todos los peers. No usar en dual-run KVM4 |
+| `/interface wireguard peers add … comment="ispAdmin VPS KVM4"` + SNAT `10.255.254.0/30` | Segundo peer WG hacia KVM4 `2.24.66.53:51820` | Dual-run migración VPS | Túnel `10.255.254.2/30` (prod sigue `10.255.255.0/30`). Plantilla `scripts/mikrotik-mk2-olt-vps-wg-kvm4-add-peer.rsc`. Aplicado 2026-09-20; ping OLT OK desde ambos VPS |
+| `/interface wireguard peers set [find comment="ispAdmin VPS KVM4"] allowed-address=10.255.254.2/32,10.20.0.0/22` | Anuncia la red de gestión de las ONU por el peer KVM4 | TR-069 por VPN | KVM4 ya tiene la ruta inversa `10.20.0.0/22 dev wg-olt`; aplicado 2026-09-24 |
+| `/ip firewall nat add chain=dstnat src-address=10.20.0.0/22 dst-address=2.24.66.53 protocol=tcp dst-port=80 action=dst-nat to-addresses=10.255.254.2 to-ports=80 comment="TR069 mgmt 1000 to KVM4 WG"` | Envía el ACS público de TR-069 al endpoint privado del KVM4 | TR-069 por VPN | Solo VLAN 1000 y TCP/80; aplicado 2026-09-24 |
+| `/ip firewall nat add chain=srcnat src-address=10.20.0.0/22 dst-address=10.255.254.2 protocol=tcp dst-port=80 action=accept comment="TR069 KVM4 WG preserve ONU source"` | Evita el masquerade general de gestión para conservar la IP real de la ONU | TR-069 por VPN | Debe quedar antes de `NAT mgmt 1000 /22`; aplicado 2026-09-24 |
 | `/import file-name=mk2-gre-vps.rsc` (contenido `scripts/mikrotik-mk2-olt-vps-gre.rsc`) | GRE VPS ↔ MK2 + SNAT (rollback) | OLT Gateway legacy | Peer VPS `212.85.13.47` |
 | `/interface print stats where name~"sfp-sfpplus2\|vlan100"` | RX/TX uplink vs subinterfaz | Diagnóstico | `vlan100-olt` RX=0 → native untagged |
 | `/ip arp print where address=192.168.30.202` | ARP abonado piloto | Diagnóstico | Esperado: `reachable` en `sfp-sfpplus2` |
@@ -79,11 +83,11 @@ Pool dinámico `10.64.0.0/18` sobre `vlan100-olt`. Perfiles `GF-{down}-{up}` der
 | `/ip firewall filter … dst-port=7547 dst-address=192.168.255.0/24` | CR GenieACS staging | `mk2-provisioning-network-255.rsc` | Desde `10.255.255.2` |
 | `/ip firewall nat … src-address=192.168.255.0/24 masquerade` | NAT Inform ACS | `mk2-provisioning-network-255.rsc` | |
 | `/ip firewall address-list add list=api_whitelist address=212.85.13.47` | Allowlist VPS ispAdmin | Protección API MK2 | + `192.168.0.0/16` red interna |
-| `/ip service set api address=212.85.13.47/32,192.168.0.0/16` | API solo VPS + LAN | Protección API MK2 | Aplicado 2026-07-21 |
+| `/ip service set api address=212.85.13.47/32,192.168.0.0/16,2.24.66.53/32` | API VPS prod + KVM4 + LAN | Protección API MK2 | Prod 2026-07-21; KVM4 añadido 2026-09-20 |
 | `/ip service disable api-ssl` | Apaga api-ssl sin certificado | Protección API MK2 | |
 | `/ip firewall filter add chain=input action=accept protocol=tcp dst-port=8728 src-address-list=api_whitelist comment="API allowlist"` | Permite API allowlist | Protección API MK2 | |
 | `/ip firewall filter add chain=input action=drop protocol=tcp dst-port=8728 comment="API drop rest"` | Bloquea API desde internet | Protección API MK2 | Tras allowlist |
-| `/ip service set ssh address=212.85.13.47/32,192.168.0.0/16` | SSH solo VPS + LAN | Protección gestión MK2 | |
+| `/ip service set ssh address=212.85.13.47/32,192.168.0.0/16,2.24.66.53/32` | SSH VPS prod + KVM4 + LAN | Protección gestión MK2 | KVM4 añadido 2026-09-20 |
 | `/ip service set winbox address=212.85.13.47/32,192.168.0.0/16` | Winbox solo VPS + LAN | Protección gestión MK2 | |
 | `/ip firewall filter add … dst-port=22 … comment="SSH allowlist\|SSH drop rest"` | Allowlist/drop SSH | Protección gestión MK2 | Misma lista `api_whitelist` |
 | `/ip firewall filter add … dst-port=8291 … comment="Winbox allowlist\|Winbox drop rest"` | Allowlist/drop Winbox | Protección gestión MK2 | |
@@ -96,6 +100,7 @@ Pool dinámico `10.64.0.0/18` sobre `vlan100-olt`. Perfiles `GF-{down}-{up}` der
 | `/ip firewall mangle add … new-routing-mark=toTarazona in-interface=LAN_MK1` | Mark-routing clientes problemáticos VLAN1 | `scripts/mikrotik-mk2-problematic-routing.rsc` | + regla espejo `sfp-sfpplus2` VLAN100 |
 | `/ip route add … gateway=38.224.231.1 routing-table=toTarazona` | Default marcada → Tarazona | `scripts/mikrotik-mk2-problematic-routing.rsc` | Mismo GW que main; SNAT cambia IP origen |
 | `/ip firewall nat add chain=srcnat action=src-nat routing-mark=toTarazona to-addresses=8.243.126.161` | SNAT problemáticos | `scripts/mikrotik-mk2-problematic-routing.rsc` | Antes del masquerade WAN; 2026-08-19 |
+| `/ip firewall nat add chain=srcnat action=masquerade src-address=10.255.255.2 dst-address=10.20.0.0/22 out-interface=vlan1000-olt comment="GenieACS CR srcnat mgmt 1000"` | El VPS origina como `10.255.255.2`; la ONU 10.20 no le responde. El masquerade lo muestra como `10.20.0.1` | `scripts/genieacs/mk2-mgmt-vlan-1000.rsc` | Ping/summon GenieACS a CR `10.20.0.0/22`. Aplicado 2026-09-19. Dual-run: espejo `src-address=10.255.254.2` comment `… KVM4` (2026-09-20) |
 | `/ping 8.8.8.8 src-address=8.243.126.161 count=3` | Valida salida por IP secundaria | Diagnóstico post-migración | 0% loss verificado 2026-08-19 |
 | `/ip route print where dst-address=0.0.0.0/0` | Rutas por defecto **con su `routing-table`** | Higiene L3 2026-09-10 | Hay dos: `main` y `toTarazona`, mismo GW `38.224.231.1`. **No es duplicado**: la segunda la usan 2 mangle `mark-routing`. Borrarla rompe el policy routing |
 | `/routing rule print` · `/routing table print` | Reglas y tablas de policy routing | Higiene L3 2026-09-10 | `rule` vacío; tablas `main` y `toTarazona`. En ROS 7 el marcado vive en mangle, no en `routing rule` |
@@ -117,6 +122,7 @@ Pool dinámico `10.64.0.0/18` sobre `vlan100-olt`. Perfiles `GF-{down}-{up}` der
 | `scripts/mikrotik-mk1-problematic-disable.rsc` | Deshabilitar policy/IPs en MK1 tras cutover |
 | `scripts/genieacs/mk2-provisioning-network-255.rsc` | Staging TR-069 `192.168.255.0/24` en `sfp-sfpplus2` (VLAN 100) + limpieza `LAN_MK1` |
 | `scripts/genieacs/mk2-staging-pool-250.rsc` | Gateway + NAT pool staging e2e `192.168.250.0/24` en `sfp-sfpplus2` |
+| `scripts/mikrotik-mk2-olt-vps-wg-kvm4-add-peer.rsc` | ADD-only segundo peer WG KVM4 (`10.255.254.0/30`). No reemplaza el peer de prod |
 
 ## Cutover VLAN 100 a tagged (2026-09-10)
 

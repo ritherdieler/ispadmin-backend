@@ -41,11 +41,17 @@ Todos los modos que despliegan un WAR (`--deploy`, `--full`) ejecutan primero `.
 
 ---
 
-## Infraestructura de producción
+## Host de deploy (obligatorio)
+
+El único destino es **KVM4** `2.24.66.53` (`srv1992868`). `scripts/deploy.config.local` usa ese `VPS_HOST`. No pasar `DEPLOY_VPS_HOST` hacia otro servidor.
+
+Prohibido desplegar en el VPS anterior `212.85.13.47` (`srv1043610`): ni WAR, ni nginx, ni `rsync` de SPA. Un DNS que todavía apunte ahí no autoriza el deploy. Regla: `gigafiber/.cursor/rules/deploy-solo-kvm4.mdc`.
+
+## Infraestructura
 
 | Item | Valor |
 |------|-------|
-| Host | `212.85.13.47` (Ubuntu `srv1043610`) |
+| Host | `2.24.66.53` (Ubuntu `srv1992868`, KVM4) |
 | Docker Compose | `/opt/gigafiber/docker-compose.yml` |
 | Contenedor Tomcat prod | `tomcat9027` (host **8080**) |
 | Contenedor Tomcat staging | `tomcat-staging` (host **8081** → 8080 interno) |
@@ -54,7 +60,7 @@ Todos los modos que despliegan un WAR (`--deploy`, `--full`) ejecutan primero `.
 | JARs DJL (host) | `/opt/gigafiber/tomcat/lib/*.jar` |
 | WAR prod | `tomcat9027` `/usr/local/tomcat/webapps/ispadmin.war` → `/ispadmin` → MySQL `ispadmin` |
 | WAR staging | `tomcat-staging` `ispadmin-staging.war` → `/ispadmin-staging` → `ispadmin_staging` / `stg_*` |
-| Tomcat Manager prod | `http://212.85.13.47:8080/manager` |
+| Tomcat Manager prod | `http://2.24.66.53:8080/manager` |
 
 Los JARs de PyTorch/DJL **no van dentro del WAR**. Se embeben en la imagen Docker vía `COPY lib/*.jar` en el Dockerfile.
 
@@ -86,7 +92,7 @@ cp scripts/deploy.config.example scripts/deploy.config.local
 Edita `scripts/deploy.config.local` con el host y, si aplica, la ruta de tu clave SSH:
 
 ```bash
-VPS_HOST=212.85.13.47
+VPS_HOST=2.24.66.53
 SSH_IDENTITY_FILE=~/.ssh/id_rsa
 ```
 
@@ -97,7 +103,7 @@ Secretos en el servidor (`.env`, Docker Compose, frontends): [vps-secrets-manage
 Acceso recomendado por clave SSH:
 
 ```bash
-ssh-copy-id root@212.85.13.47
+ssh-copy-id root@2.24.66.53
 ```
 
 Si aún no hay clave, el script **pide la contraseña una sola vez** al inicio (sesión SSH compartida). También puedes exportarla antes:
@@ -106,6 +112,8 @@ Si aún no hay clave, el script **pide la contraseña una sola vez** al inicio (
 export DEPLOY_SSH_PASSWORD='...'
 ./scripts/deploy.sh
 ```
+
+No uses `DEPLOY_VPS_HOST` para volver al VPS anterior. El default de `deploy.config.local` ya es KVM4.
 
 ---
 

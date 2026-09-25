@@ -42,6 +42,7 @@ build/
 /logs/
 /catalina.base_IS_UNDEFINED/
 /scripts/deploy.config.local
+/scripts/kvm4-olt-gateway.env
 /scripts/genieacs/.env
 **/node_modules/
 **/__pycache__/

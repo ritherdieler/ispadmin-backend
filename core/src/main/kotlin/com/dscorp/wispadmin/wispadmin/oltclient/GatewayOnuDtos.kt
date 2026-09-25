@@ -62,6 +62,61 @@ data class GatewayRemoveServicePortRequest(
     val vlan: Int,
 )
 
+data class GatewayOmciManagementRequest(
+    val sn: String,
+    val slot: Int,
+    val port: Int,
+    val ontId: Int,
+    val tr069ProfileId: Int,
+)
+
+data class GatewayOmciManagementEvidence(
+    val configured: Boolean = false,
+    val address: String? = null,
+)
+
+data class GatewayOmciManagementCompensateRequest(
+    val operationId: String,
+    val sn: String,
+    val slot: Int,
+    val port: Int,
+    val ontId: Int,
+    val tr069ProfileId: Int,
+)
+
+data class GatewayOnuV2AuthorizeRequest(
+    val operationId: String,
+    val sn: String,
+    val oltId: String,
+    val ponType: String,
+    val board: String,
+    val port: String,
+    val vlan: String,
+    val onuType: String,
+    val subscriberName: String,
+    val zone: String = "Zone 1",
+    val onuMode: String = "Routing",
+    val customProfile: String = "Generic_1",
+)
+
+data class GatewayOnuV2AuthorizeResponse(
+    val externalId: String = "",
+    val board: Int = 0,
+    val port: Int = 0,
+    val ontId: Int = 0,
+    val managementVlanReady: Boolean = false,
+)
+
+data class GatewayOnuV2CompensateRequest(
+    val operationId: String,
+    val sn: String,
+)
+
+data class GatewayOnuV2CompensateResponse(
+    val externalId: String? = null,
+    val deleted: Boolean = false,
+)
+
 data class GatewayCpeProvisionRequest(
     val sn: String,
     val uniqueExternalId: String? = null,

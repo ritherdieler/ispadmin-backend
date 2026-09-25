@@ -10,7 +10,7 @@
 
 | Módulo | Flags adicionales |
 |--------|-------------------|
-| `oltgateway` | `service.health.optical-enabled=true`, `olt.gateway.enabled=true`, inventory on, **signal SNMP off**, `optical-pull-mode=live-sns` (con servicehealth), **trap SNMP off** |
+| `oltgateway` | `service.health.optical-enabled=true`, inventory on, **signal SNMP off**, `optical-pull-mode=live-sns` (con servicehealth), **trap SNMP off**. No hay `olt.gateway.enabled`. |
 | `netdiag` | `net.diag.enabled=true`, UDP trap/syslog **off** (evita choque de puertos con prod) |
 
 ## Fixture #2329

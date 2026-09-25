@@ -113,6 +113,16 @@ class RemoteActionPersistenceTest {
         assertEquals(409,assertThrows(ResponseStatusException::class.java) { remote.reserve(1,actor,"request-1","REBOOT_ONU","other",false) }.rawStatusCode)
     }
 
+    @Test fun `definitive failure allows an immediate retry with a new request key`() {
+        val failed = remote.reserve(1, actor, "request-1", "CONFIG", "digest-1", true).first
+        remote.finish(failed.id!!, "FAILED", error = "Gateway rejected provisioning")
+
+        val retried = remote.reserve(1, actor, "request-2", "CONFIG", "digest-2", true)
+
+        assertTrue(retried.second)
+        assertEquals(2, actions.count())
+    }
+
     @Test fun `manual wifi refresh can be reserved immediately after a previous wifi refresh`() {
         assertTrue(remote.reserve(1, actor, "wifi-1", "WIFI_REFRESH", "d1", true).second)
         val second = remote.reserve(1, actor, "wifi-2", "WIFI_REFRESH", "d2", true)

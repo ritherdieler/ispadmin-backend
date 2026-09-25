@@ -84,6 +84,12 @@ class RealOltService(
         smartOltHttpClient.post("onu/delete/${onuExternalId}", null, Any::class.java)
     }
 
+    override fun deleteOnuBySn(onuSn: String) {
+        val client = gatewayClient()
+            ?: throw IllegalStateException("El borrado por SN requiere el gateway OLT")
+        client.deleteJson("/api/olt-gateway/onus/by-sn/${encode(onuSn.trim().uppercase())}")
+    }
+
     override fun rebootOnu(uniqueExternalId: String) {
         val client = gatewayClient()
         if (client != null) {

@@ -95,6 +95,12 @@
   /ip firewall nat add chain=srcnat action=masquerade src-address=$mgmtNet \
     comment="NAT mgmt 1000 /22"
 }
+# VPS (10.255.255.2) → CPE 10.20: la ONU no tiene ruta de vuelta al /30 de wg.
+:if ([:len [/ip firewall nat find where comment~"GenieACS CR srcnat mgmt 1000"]] = 0) do={
+  /ip firewall nat add chain=srcnat action=masquerade src-address=10.255.255.2 \
+    dst-address=$mgmtNet out-interface=$mgmtIf \
+    comment="GenieACS CR srcnat mgmt 1000"
+}
 :if ([:len [/ip firewall nat find where comment~"NAT mgmt 1000 staging"]] = 0) do={
   /ip firewall nat add chain=srcnat action=masquerade src-address=$stagingNet \
     comment="NAT mgmt 1000 staging /24"

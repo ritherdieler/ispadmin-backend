@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-13.
 
-Wrappers: `e2e_register_fiber_staging_espresso.sh`, `e2e_register_fiber_espresso.sh`, `e2e_register_fiber_local_espresso.sh`.
+Wrappers Android: `e2e_register_fiber_staging_espresso.sh` y `e2e_register_fiber_espresso.sh`.
 
 Tras imprimir WiFi (si Espresso OK), el **post-cleanup** lo decide este flag (no el TTY).
 

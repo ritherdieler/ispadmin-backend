@@ -29,13 +29,13 @@ import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeAltaPolicy
 import com.dscorp.wispadmin.wispadmin.service.subscription.PppoeCredentialFactory
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionVlanRules
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
-import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.FiberInstallationStrategy
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage.FcmMessageType
 import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionRegisteredEvent
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningV2RegistrationService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -65,7 +65,6 @@ class SubscriptionService(
     private val subscriptionValidator: ISubscriptionValidator,
     private val paymentRepository: PaymentRepository,
     private val installationStrategyFactory: InstallationStrategyFactory,
-    private val fiberInstallationStrategy: FiberInstallationStrategy,
     private val applicationEventPublisher: ApplicationEventPublisher,
     private val cancelledOnuReuseService: CancelledOnuReuseService,
     private val fiberOnuSnClaimService: FiberOnuSnClaimService,
@@ -73,7 +72,8 @@ class SubscriptionService(
     private val ipAllocationService: IpAllocationService,
     private val pppoeProperties: PppoeProperties,
     private val pppoeSecretCipher: CrmSecretCipher,
-    private val pppoeAccessService: PppoeAccessService
+    private val pppoeAccessService: PppoeAccessService,
+    private val provisioningV2RegistrationService: ProvisioningV2RegistrationService? = null,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -187,6 +187,9 @@ class SubscriptionService(
 
         return try {
             findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
+                if (newSubscription.installationType == InstallationType.FIBER) {
+                    return existing.toDto().copy(alreadyRegistered = true)
+                }
                 subscriptionProvisionService.reconcile(existing, newSubscription)
                 return existing.toDto().copy(alreadyRegistered = true)
             }
@@ -244,6 +247,13 @@ class SubscriptionService(
             subscription.place = place
 
             assignPppoeCredentials(subscription)
+
+            val registration = provisioningV2RegistrationService
+            if (newSubscription.installationType == InstallationType.FIBER && registration != null) {
+                val operation = registration.start(subscription, newSubscription)
+                logger.info("Registro FIBER creado subscriptionId={} operationId={}", subscription.id, operation.id)
+                return subscription.toDto()
+            }
 
             val strategy = installationStrategyFactory.getStrategy(newSubscription.installationType)
             val installationResult = try {
@@ -678,4 +688,3 @@ class SubscriptionService(
         return addressListManager.generateAddressListForCancelledSubscriptions()
     }
 }
-

@@ -264,19 +264,18 @@ class MockOltService : OltService {
 
     override fun deleteOnu(onuExternalId: String) {
         logger.info("MOCK OLT: Eliminando ONU con ID externo: $onuExternalId")
-        
-        // Simular delay de red
-        Thread.sleep(300)
 
-        // El id externo mock es "mock-<sn>"; aceptar tambien el SN crudo
         val sn = onuExternalId.removePrefix("mock-")
-
-        // Remover de estado mock
         authorizedOnus.remove(sn)
         authorizedOnus.entries.removeIf { it.value.sn == sn }
         onuDetails.remove(sn)
-        
+
         logger.info("MOCK OLT: ONU eliminada exitosamente")
+    }
+
+    override fun deleteOnuBySn(onuSn: String) {
+        logger.info("MOCK OLT: Eliminando ONU por SN: $onuSn")
+        deleteOnu(onuSn)
     }
 
     // Métodos auxiliares para debugging en desarrollo

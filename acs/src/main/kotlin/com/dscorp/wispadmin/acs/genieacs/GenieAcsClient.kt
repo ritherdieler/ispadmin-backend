@@ -36,6 +36,13 @@ data class GenieAcsQueuePurgeResult(
     val faultsDeleted: Int,
 )
 
+data class GenieAcsWanPppConnection(
+    val path: String,
+    val name: String,
+    val connectionStatus: String?,
+    val externalIp: String?,
+)
+
 @Component
 class GenieAcsClient(
     private val properties: GenieAcsProperties,
@@ -367,6 +374,25 @@ class GenieAcsClient(
         return hasWanInstanceOnNode(wanConn, wanIndex, connectionSegment, instanceIndex)
     }
 
+    /** Reads the cache only; used by v2 to prove ownership through the operation name. */
+    fun findWanPppConnections(deviceId: String, wanConnectionDevice: Int, name: String): List<GenieAcsWanPppConnection> {
+        val wanConn = readWanConnectionDeviceNode(deviceId) ?: return emptyList()
+        val ppp = wanConn.path(wanConnectionDevice.toString()).path("WANPPPConnection")
+        if (!ppp.isObject) return emptyList()
+        return ppp.fieldNames().asSequence().mapNotNull { index ->
+            if (index.toIntOrNull() == null) return@mapNotNull null
+            val path = "$DEFAULT_WCD_PARENT.$wanConnectionDevice.WANPPPConnection.$index"
+            val actualName = getDeviceParameterValue(deviceId, "$path.Name") ?: return@mapNotNull null
+            if (actualName != name) return@mapNotNull null
+            GenieAcsWanPppConnection(
+                path = path,
+                name = actualName,
+                connectionStatus = getDeviceParameterValue(deviceId, "$path.ConnectionStatus"),
+                externalIp = getDeviceParameterValue(deviceId, "$path.ExternalIPAddress"),
+            )
+        }.toList()
+    }
+
     private fun hasWanInstanceOnNode(
         wanConn: JsonNode,
         wanIndex: Int,
@@ -605,7 +631,7 @@ class GenieAcsClient(
         const val WAN_IP_SEGMENT = "WANIPConnection"
         const val CR_CREDENTIALS_ERROR = "Incorrect connection request credentials"
         const val DEFAULT_DEVICE_PROJECTION =
-            "_id,_lastInform,_lastBoot,_deviceId,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
+            "_id,_lastInform,_lastBoot,_deviceId,_SoftwareVersion,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
 
         fun formatTaskError(result: GenieAcsTaskResult): String {
             val detail = extractErrorDetail(result.body)

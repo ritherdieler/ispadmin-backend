@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hard cleanup TR-069 e2e lab (§4 runbook: MikroTik → OLT → Firebase → MySQL → ACS).
+# Hard cleanup TR-069 e2e lab (§4: MikroTik → ACS schema → Gateway/OLT → GenieACS NBI device delete → Firebase → Core subscription and provisioning journal → Gateway inventory → Traffic).
 # Staging deletes ONU via local OLT Gateway WAR; prod still uses SmartOLT cloud.
 # Usage:
 #   ./scripts/tr069-e2e-hard-cleanup.sh --dni 91234567
@@ -73,11 +73,13 @@ case "$E2E_ENV" in
     MYSQL_SCHEMA="ispadmin"
     OLT_GATEWAY_MYSQL_SCHEMA="prod_oltgateway"
     TRAFFIC_MYSQL_SCHEMA="prod_traffic"
+    ACS_MYSQL_SCHEMA="prod_acs"
     ;;
   staging)
     MYSQL_SCHEMA="ispadmin_staging"
     OLT_GATEWAY_MYSQL_SCHEMA="stg_oltgateway"
     TRAFFIC_MYSQL_SCHEMA="stg_traffic"
+    ACS_MYSQL_SCHEMA="stg_acs"
     ;;
   *) echo "Invalid --env $E2E_ENV (prod|staging)" >&2; exit 2 ;;
 esac
@@ -90,6 +92,9 @@ fi
 if [[ -f "$CONFIG_LOCAL" ]]; then
   # shellcheck disable=SC1090
   set -a; source "$CONFIG_LOCAL"; set +a
+fi
+if [[ -n "${E2E_VPS_HOST:-}" ]]; then
+  VPS_HOST="$E2E_VPS_HOST"
 fi
 
 FIREBASE_BUCKET="${FIREBASE_BUCKET:-ispadmin-687ca.appspot.com}"
@@ -107,7 +112,22 @@ VPS_PORT="${VPS_PORT:-22}"
 DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:?DEPLOY_SSH_PASSWORD required}"
 
 export SSHPASS="$DEPLOY_SSH_PASSWORD"
+ssh_ok() {
+  ssh -n -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=8 -p "$VPS_PORT" "$@" \
+    "${VPS_USER}@${VPS_HOST}" true >/dev/null 2>&1
+}
+
 ssh_vps() {
+  if ssh_ok -o PreferredAuthentications=publickey; then
+    ssh -o StrictHostKeyChecking=no -o BatchMode=yes -p "$VPS_PORT" \
+      "${VPS_USER}@${VPS_HOST}" "$@"
+    return
+  fi
+  if [[ -n "${SSH_IDENTITY_FILE:-}" && -f "$SSH_IDENTITY_FILE" ]] && ssh_ok -i "$SSH_IDENTITY_FILE" -o IdentitiesOnly=yes; then
+    ssh -i "$SSH_IDENTITY_FILE" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o BatchMode=yes -p "$VPS_PORT" \
+      "${VPS_USER}@${VPS_HOST}" "$@"
+    return
+  fi
   sshpass -e ssh -o StrictHostKeyChecking=no -p "$VPS_PORT" \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     "${VPS_USER}@${VPS_HOST}" "$@"
@@ -129,6 +149,10 @@ gateway_mysql_q() {
 
 traffic_mysql_q() {
   mysql_schema_q "$TRAFFIC_MYSQL_SCHEMA" "$1"
+}
+
+acs_mysql_q() {
+  mysql_schema_q "$ACS_MYSQL_SCHEMA" "$1"
 }
 
 e2e_step "hard cleanup env=$E2E_ENV schema=$MYSQL_SCHEMA"
@@ -182,6 +206,10 @@ fi
 
 ACS_DEVICE="$(mysql_q "SELECT IFNULL(genieacs_device_id,'') FROM subscription_acs WHERE subscription_id=${SUB_ID:-0} LIMIT 1;" 2>/dev/null || true)"
 ACS_DEVICE="$(echo "$ACS_DEVICE" | tr -d '\r')"
+if [[ -z "$ACS_DEVICE" && -n "$SUB_SN" ]]; then
+  ACS_DEVICE="$(acs_mysql_q "SELECT IFNULL(device_id,'') FROM cpe_record WHERE sn='${SUB_SN}' LIMIT 1;" 2>/dev/null || true)"
+  ACS_DEVICE="$(echo "$ACS_DEVICE" | tr -d '\r')"
+fi
 
 if [[ -n "$SUB_IP" ]]; then
   echo "== MikroTik queue target ${SUB_IP}/32 =="
@@ -331,6 +359,45 @@ PY"
 fi
 
 if [[ -n "$SUB_SN" ]]; then
+  echo "== ACS schema delete $SUB_SN =="
+  acs_mysql_q "DELETE FROM acs_onboarding_v2_task WHERE sn='${SUB_SN}';" || true
+  acs_mysql_q "DELETE FROM cpe_record WHERE sn='${SUB_SN}';" || true
+fi
+
+if [[ -n "$SUB_SN" || -n "$ACS_DEVICE" ]]; then
+  echo "== ACS purge $SUB_SN =="
+  e2e_doing "GenieACS drop subscription tags sn=$SUB_SN device=$ACS_DEVICE"
+  ssh_vps "python3 - <<'PY'
+import json, urllib.request, urllib.parse
+dev='''$ACS_DEVICE'''
+sn='''$SUB_SN'''
+base='http://127.0.0.1:7557'
+if not dev and sn:
+  q=urllib.parse.quote(json.dumps({'_id': {'$regex': sn}}))
+  items=json.load(urllib.request.urlopen(base+'/devices/?query='+q+'&projection=_id,_tags'))
+  if items:
+    dev=items[0]['_id']
+if not dev:
+  print('no_device')
+  raise SystemExit
+encoded=urllib.parse.quote(dev, safe='')
+raw=urllib.request.urlopen(base+'/devices/'+encoded+'?projection=_tags').read()
+doc=json.loads(raw)
+if isinstance(doc, list):
+  doc=doc[0] if doc else {}
+for tag in doc.get('_tags') or []:
+  if tag == 'lab' or not (tag.startswith('sub-') or tag.startswith('t:') or tag.startswith('c:')):
+    continue
+  if tag != 'lab':
+    enc=urllib.parse.quote(tag, safe='')
+    req=urllib.request.Request(base+'/devices/'+encoded+'/tags/'+enc, method='DELETE')
+    urllib.request.urlopen(req).read()
+    print('tag_deleted', tag)
+print('lab_kept')
+PY"
+fi
+
+if [[ -n "$SUB_SN" ]]; then
   if [[ "$E2E_ENV" == "staging" ]]; then
     echo "== clear Gateway activation journal $SUB_SN =="
     e2e_doing "DELETE olt_activation_operation sn=$SUB_SN schema=$OLT_GATEWAY_MYSQL_SCHEMA"
@@ -416,6 +483,33 @@ EOF
   fi
 fi
 
+if [[ -n "$ACS_DEVICE" ]]; then
+  echo "== GenieACS delete $ACS_DEVICE =="
+  e2e_doing "GenieACS NBI delete device=$ACS_DEVICE"
+  ssh_vps "python3 - <<'PY'
+import json, urllib.request, urllib.error, urllib.parse
+dev='''$ACS_DEVICE'''
+encoded_id=urllib.parse.quote(dev, safe='')
+for kind in ('tasks','faults'):
+  q=urllib.parse.quote(json.dumps({'device':dev}))
+  items=json.load(urllib.request.urlopen('http://127.0.0.1:7557/%s/?query=%s'%(kind,q)))
+  print(kind, len(items))
+  for it in items:
+    req=urllib.request.Request('http://127.0.0.1:7557/%s/%s'%(kind,it['_id']), method='DELETE')
+    urllib.request.urlopen(req).read()
+req=urllib.request.Request('http://127.0.0.1:7557/devices/%s'%encoded_id, method='DELETE')
+try:
+  urllib.request.urlopen(req).read()
+  print('device_deleted', dev)
+except urllib.error.HTTPError as err:
+  if err.code == 404:
+    print('device_absent', dev)
+  else:
+    raise
+print('ACS_OK')
+PY"
+fi
+
 FIREBASE_EXIT=0
 FIREBASE_PY="$SCRIPT_DIR/tr069_e2e_firebase_delete.py"
 if [[ -n "$FACADE_URL" && "$FACADE_URL" != "NULL" ]]; then
@@ -450,8 +544,9 @@ PY
   fi
 fi
 
-if [[ -n "$SUB_ID" ]]; then
+if [[ -n "$SUB_ID" || -n "$SUB_SN" ]]; then
   echo "== MySQL delete id=$SUB_ID =="
+  if [[ -n "$SUB_ID" ]]; then
   for table in \
     acs_wifi_station_sample acs_wifi_count_sample acs_wifi_station_hourly acs_wifi_status_current \
     olt_mgr_onu_optical_sample olt_mgr_onu_optical_daily service_onu_state_event identity_link \
@@ -477,12 +572,22 @@ DELETE FROM subscription WHERE id = ${SUB_ID};
   if [[ -n "$SUB_PPPOE" ]]; then
     traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = 'pppoe:${SUB_PPPOE}';" || true
   fi
+  fi
+  JOURNAL_WHERE="1=0"
+  [[ -n "$SUB_ID" ]] && JOURNAL_WHERE="$JOURNAL_WHERE OR subscription_id=${SUB_ID}"
+  [[ -n "$SUB_SN" ]] && JOURNAL_WHERE="$JOURNAL_WHERE OR serial='${SUB_SN}'"
+  mysql_q "DELETE FROM provisioning_v2_event WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || true
+  mysql_q "DELETE FROM provisioning_v2_resource WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || true
+  mysql_q "DELETE FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE};" || true
 fi
 
 if [[ -n "$SUB_SN" ]]; then
   echo "== Gateway inventory delete $SUB_SN =="
+  mysql_q "DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';" || true
   gateway_mysql_q "
+DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';
 DELETE FROM olt_activation_operation WHERE sn = '${SUB_SN}';
+DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';
 UPDATE olt_mgr_task SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 UPDATE olt_mgr_audit_log SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 DELETE FROM olt_mgr_onu_status_current WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
@@ -490,23 +595,6 @@ DELETE FROM olt_mgr_onu_service_port WHERE onu_id IN (SELECT id FROM (SELECT id 
 DELETE FROM olt_mgr_onu_extra_vlan WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 DELETE FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%';
 " || true
-fi
-
-if [[ -n "$ACS_DEVICE" ]]; then
-  echo "== ACS purge $ACS_DEVICE =="
-  e2e_doing "GenieACS NBI purge device=$ACS_DEVICE"
-  ssh_vps "python3 - <<'PY'
-import json,urllib.request,urllib.parse
-dev='''$ACS_DEVICE'''
-for kind in ('tasks','faults'):
-  q=urllib.parse.quote(json.dumps({'device':dev}))
-  items=json.load(urllib.request.urlopen('http://127.0.0.1:7557/%s/?query=%s'%(kind,q)))
-  print(kind, len(items))
-  for it in items:
-    req=urllib.request.Request('http://127.0.0.1:7557/%s/%s'%(kind,it['_id']), method='DELETE')
-    urllib.request.urlopen(req).read()
-print('ACS_OK')
-PY"
 fi
 
 echo "== verify =="

@@ -11,7 +11,7 @@ Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`. `AGENTS.md` (
 | **WAR único** | Mac `:8082` `/ispadmin` (`./scripts/run-local-prestaging.sh start` o `./gradlew :core:bootRun`) | No desplegar staging “para probar”. No arrancar Gateway/ACS en otros puertos. |
 | **ACS** | In-process en el WAR local (HTTP loopback al mismo context-path) | **No** levantar un segundo `AcsApplication`. |
 | **GenieACS NBI** | VPS por túnel `:7557` | No GenieACS local. |
-| **OLT** | Real `10.11.104.2`. El SSH lo abre **un** Gateway (stopgap: el embebido de prod). Prestaging Mac tiene `olt.gateway.enabled=false` y habla por HTTP al túnel `:8092` | No abrir SSH desde la Mac. No segundo `OltCliBus`. |
+| **OLT** | Real `10.11.104.2`. El SSH lo abre **un** Gateway (stopgap: el embebido de prod). El Core de la Mac habla por HTTP al túnel `:8092` | No abrir SSH desde la Mac. No segundo `OltCliBus`. |
 | **MikroTik** | **MK2** `network_device.id=8`, VLAN **100** | No MK1 ni `mikrotik_test`. |
 | **ONU** | Solo tag GenieACS **`lab`**. Canónica **`ZTEGDC47BFFD`**. VSOL lab **`VSOL0031C0B6`** | Prohibido writes a ONUs de clientes. |
 
@@ -38,7 +38,7 @@ Pasada canónica **2026-09-06** (SSID `coreprueba123`): suscripción **2333**, I
 
 ## Stopgap 2026-09-21
 
-Prestaging **no** abre SSH a `10.11.104.2`. `olt.gateway.enabled=false`. El alta local necesita un túnel HTTP al Gateway que ya tiene el VTY (prod embebido):
+Prestaging **no** abre SSH a `10.11.104.2`. El alta local necesita un túnel HTTP al Gateway que ya tiene el VTY (prod embebido):
 
 ```bash
 ssh -L 8092:127.0.0.1:8080 <vps>
@@ -107,6 +107,8 @@ curl -s -H "X-Olt-Gateway-Key: $GKEY" \
 
 Si `oltReachable=false` con ping OK: `./scripts/run-local-prestaging.sh free-olt-ssh`, esperar **~8 s** (VTY Huawei), relanzar. **Antes de cualquier SSH nuevo** a `10.11.104.2:22`, matar conexiones TCP previas desde esta Mac (`free-olt-ssh`). No abrir SSH extra “de diagnóstico” en paralelo al Gateway (lockout `Reenter times have reached the upper limit`).
 
+Prueba por CLI sin usar la sesión del Gateway: usuario **`root`**, clave **`admin`**. No usar `oltadmin` para ese ingreso; es el usuario del Gateway y un segundo login con él llena el VTY.
+
 ### 4. Arrancar Core WAR local → Gateway local
 
 Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gateway, no corre OLT SSH ni ACS.
@@ -114,7 +116,6 @@ Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gate
 ```text
 --server.port=8082
 --gigafiber.subsystems.oltgateway.enabled=false
---olt.gateway.enabled=false
 --olt.gateway.client-enabled=true
 --olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin
 --olt.gateway.api-key=$GKEY
@@ -202,15 +203,7 @@ No usar NAP `NO-001` / lugar `9 de octubre` (puerto GPON distinto). Lab local:
 | ONU | `ZTEGDC47BFFD` (única con tag `lab`; el script de prod toma la primera ONU) |
 | Paquete | `com.dscorp.ispadmin.dev` (BASE_URL local; no prodDebug) |
 
-Desde el repo Android (consola visible; `AwaitShell` hasta el final):
-
-```bash
-./scripts/e2e_register_fiber_local_espresso.sh --cleanup-mode ask
-```
-
-`--cleanup-mode auto` (default) limpia al terminar. `ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]`. `skip` / `--no-cleanup` no limpia. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
-
-No usar `e2e_register_fiber_espresso.sh` (prodDebug) ni el script staging contra este Core.
+En Android solo quedan dos e2e de alta FIBER: producción (`e2e_register_fiber_espresso.sh`) y staging (`e2e_register_fiber_staging_espresso.sh`). Ninguno apunta a este Core local. El alta de laboratorio en la Mac es el script del backend, más abajo.
 
 ---
 
@@ -262,7 +255,7 @@ Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y**
 - Re-probar activate sin borrar `olt_activation_operation` (no-op).
 - Usar ONUs sin tag `lab`, MK1 o `mikrotik_test`.
 - Prestaging con `mikrotik.connection.mock.enabled=true` (el perfil `dev` lo enciende; hay que apagarlo en `application-local-prestaging.properties`).
-- SSH directo a la OLT en paralelo al Gateway (llena VTY / lockout de `oltadmin`).
+- SSH directo a la OLT con `oltadmin` en paralelo al Gateway (llena VTY / lockout). La prueba por CLI usa `root` / `admin`.
 
 ---
 
@@ -367,7 +360,7 @@ WARs ya arriba (`./scripts/run-local-prestaging.sh core|gateway|acs`) y túnel N
   --cleanup-mode ask
 ```
 
-`--cleanup-mode skip` es el default (no borra la suscripción). `auto` limpia solo la ONU lab. Poll `GET /subscription/{id}/registration-progress` hasta `tr069ProvisionStatus=COMPLETE`. Si COMPLETE, imprime SSID **y** password 2.4 y 5 GHz (`{ssid} - 5G`), marca `subscription_acs.lab=1` y dispara `POST /api/acs/v1/cpe/inform-notify` (series 360 vía Redis `lpstg`). Wrapper fino Android (opcional): `IpsAdmin-android app/scripts/e2e_register_fiber_local_prestaging.sh` (delega al backend; no cambia espresso local/staging).
+`--cleanup-mode skip` es el default (no borra la suscripción). `auto` limpia solo la ONU lab. Poll `GET /subscription/{id}/registration-progress` hasta `tr069ProvisionStatus=COMPLETE`. Si COMPLETE, imprime SSID **y** password 2.4 y 5 GHz (`{ssid} - 5G`), marca `subscription_acs.lab=1` y dispara `POST /api/acs/v1/cpe/inform-notify` (series 360 vía Redis `lpstg`). No hay wrapper Android: el e2e de la app es solo producción o staging.
 
 ### 360 Wi‑Fi con Redis (prestaging)
 

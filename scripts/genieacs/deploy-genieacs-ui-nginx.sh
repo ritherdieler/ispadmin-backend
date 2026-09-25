@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_LOCAL="$BACKEND_DIR/scripts/deploy.config.local"
 
-VPS_HOST="${VPS_HOST:-212.85.13.47}"
+VPS_HOST="${VPS_HOST:-2.24.66.53}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 OPEN_UFW="${OPEN_UFW:-1}"
@@ -15,7 +15,7 @@ if [[ -f "$CONFIG_LOCAL" ]]; then
   source "$CONFIG_LOCAL"
 fi
 
-VPS_HOST="${VPS_HOST:-212.85.13.47}"
+VPS_HOST="${VPS_HOST:-2.24.66.53}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-}"

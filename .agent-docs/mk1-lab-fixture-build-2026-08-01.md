@@ -13,7 +13,9 @@ export MYSQL_PASSWORD='…' ADMIN_PASS='nohacker'
 ./scripts/mk1-lab-reset.sh   # → LAB_RESET_OK
 ```
 
-## Android (`scripts/e2e_mk1_payment_lab.sh`)
+## Android
+
+El script `scripts/e2e_mk1_payment_lab.sh` fue eliminado.
 
 - Sin `hide_keyboard` (KEYCODE_BACK cerraba login/buscador).
 - Código de suscripción vía `type_digits` (keyevents) para Compose.
@@ -33,6 +35,6 @@ Pruebas: `./mvnw test -Dtest=GeoLocationConverterTest`; Android `./gradlew :pres
 | `./mvnw -Plive-mk1 test` RouterOs7 + MikrotikPoll live | BUILD SUCCESS |
 | `./mvnw test` GeoLocationConverter + RouterOsEntryId | PASS |
 | Android `compileDevDebugSources` + RegisterPaymentViewModelTest | BUILD SUCCESS |
-| `./scripts/e2e_mk1_payment_lab.sh` | E2E_MK1_PAYMENT_LAB_OK |
+| `e2e_mk1_payment_lab.sh` (eliminado) | E2E_MK1_PAYMENT_LAB_OK el 2026-08-01 |
 
 Ver también `mk1-lab-all-flows-build-2026-08-01.md` (cancel/reactivate/plan/ip-pool + masivos MK1).

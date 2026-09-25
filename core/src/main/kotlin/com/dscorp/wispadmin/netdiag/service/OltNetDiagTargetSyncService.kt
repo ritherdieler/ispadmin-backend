@@ -8,10 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
-import org.springframework.boot.ApplicationArguments
-import org.springframework.boot.ApplicationRunner
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.core.annotation.Order
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -23,18 +21,26 @@ data class OltNetDiagTargetSyncResult(
 )
 
 @Service
-@Order(50)
 @ConditionalOnProperty(prefix = "net.diag", name = ["enabled"], havingValue = "true")
 class OltNetDiagTargetSyncService(
     private val targetRepository: NetDiagTargetRepository,
     private val inventoryProvider: ObjectProvider<NetDiagOltInventoryPort>,
     private val descriptorProvider: ObjectProvider<NetDiagOltDescriptorPort>,
     private val objectMapper: ObjectMapper
-) : ApplicationRunner {
+) {
 
     private val logger = LoggerFactory.getLogger(OltNetDiagTargetSyncService::class.java)
 
-    override fun run(args: ApplicationArguments?) {
+    /**
+     * Runs after the embedded HTTP server is available. The Gateway can share this
+     * Tomcat, so invoking it from ApplicationRunner would call the application while
+     * its startup is still blocked by that runner.
+     */
+    @Scheduled(
+        fixedDelayString = "\${olt.gateway.sync.target-interval-ms:600000}",
+        initialDelayString = "\${olt.gateway.sync.target-initial-delay-ms:60000}",
+    )
+    fun syncScheduled() {
         val result = sync()
         if (result.upserted > 0) {
             logger.info(

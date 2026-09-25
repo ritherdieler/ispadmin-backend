@@ -43,10 +43,7 @@ class LocalPrestagingEnvironmentPropertiesTest {
             prestaging.contains("olt.gateway.acs.internal-base-url=http://127.0.0.1:8082/ispadmin"),
             prestaging,
         )
-        assertTrue(
-            prestaging.contains("olt.gateway.enabled=false"),
-            prestaging,
-        )
+        assertFalse(prestaging.contains("olt.gateway.enabled="), prestaging)
         assertTrue(
             prestaging.contains("olt.gateway.internal-base-url=\${OLT_GATEWAY_INTERNAL_BASE_URL:http://127.0.0.1:8092/ispadmin}"),
             prestaging,

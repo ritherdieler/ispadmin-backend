@@ -77,7 +77,7 @@ Existía un profile 11 `Generic_1_V100M101TR069MGM` con 0 bindings que ya ensaya
 
 ### MK2 (`38.224.231.4`)
 
-[`scripts/genieacs/mk2-mgmt-vlan-1000.rsc`](../scripts/genieacs/mk2-mgmt-vlan-1000.rsc), idempotente. Crea `vlan1000-olt`, los dos gateways, pool + dhcp-server + network, la interface list `OLT-VLAN1000`, NAT masquerade de ambos prefijos, el accept de Connection Request `:7547` desde `10.255.255.2` y el drop de aislamiento hacia `192.168.22.0/24`.
+[`scripts/genieacs/mk2-mgmt-vlan-1000.rsc`](../scripts/genieacs/mk2-mgmt-vlan-1000.rsc), idempotente. Crea `vlan1000-olt`, los dos gateways, pool + dhcp-server + network, la interface list `OLT-VLAN1000`, NAT masquerade de ambos prefijos (ONU→ACS), **srcnat** `10.255.255.2` → `10.20.0.0/22` por `vlan1000-olt` (ACS→ONU: ping/summon; sin eso la ONU no responde al `/30` de wg), el accept de Connection Request `:7547` desde `10.255.255.2` y el drop de aislamiento hacia `192.168.22.0/24`.
 
 Solo la subinterfaz entra en `OLT-VLAN1000`; el puerto físico no, porque lo comparte con la VLAN 100 y una regla por lista lo capturaría dos veces.
 

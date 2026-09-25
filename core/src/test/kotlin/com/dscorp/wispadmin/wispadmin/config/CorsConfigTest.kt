@@ -57,4 +57,19 @@ class CorsConfigTest {
             response.getHeader("Access-Control-Allow-Origin"),
         )
     }
+
+    @Test
+    fun `staging backoffice origin is allowed`() {
+        val config = CorsConfig()
+        val corsFilter = config.corsFilter(config.corsConfigurationSource()).filter
+        val request = MockHttpServletRequest("OPTIONS", "/ispadmin-staging/users/login")
+        request.addHeader("Origin", "https://backoffice-staging.gigafiberperu.cloud")
+        request.addHeader("Access-Control-Request-Method", "POST")
+        val response = MockHttpServletResponse()
+        corsFilter.doFilter(request, response, MockFilterChain())
+        assertEquals(
+            "https://backoffice-staging.gigafiberperu.cloud",
+            response.getHeader("Access-Control-Allow-Origin"),
+        )
+    }
 }

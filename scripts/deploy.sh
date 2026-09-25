@@ -34,6 +34,7 @@ Any failing test aborts --deploy/--full.
 
 Environment:
   DEPLOY_SSH_PASSWORD   Optional; if omitted and no SSH key works, password is prompted once
+  DEPLOY_VPS_HOST       Optional explicit host override; useful for a controlled KVM deployment
 
 Config:
   scripts/deploy.config.local (copy from deploy.config.example)
@@ -69,11 +70,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -f "$CONFIG_LOCAL" ]]; then
+  _ENV_DEPLOY_VPS_HOST="${DEPLOY_VPS_HOST:-}"
   _ENV_DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-}"
   # shellcheck source=/dev/null
   source "$CONFIG_LOCAL"
   if [[ -z "${DEPLOY_SSH_PASSWORD:-}" && -n "$_ENV_DEPLOY_SSH_PASSWORD" ]]; then
     DEPLOY_SSH_PASSWORD="$_ENV_DEPLOY_SSH_PASSWORD"
+  fi
+  if [[ -n "$_ENV_DEPLOY_VPS_HOST" ]]; then
+    VPS_HOST="$_ENV_DEPLOY_VPS_HOST"
   fi
 elif [[ -f "$CONFIG_EXAMPLE" ]]; then
   # shellcheck source=/dev/null

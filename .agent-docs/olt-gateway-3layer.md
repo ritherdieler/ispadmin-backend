@@ -211,7 +211,7 @@ Hoy el JAR puede ser el mismo Spring Boot por conveniencia de deploy; la depende
 
 | Variable | Uso |
 |----------|-----|
-| `OLT_GATEWAY_ENABLED` | Activa módulo gateway |
+| `gigafiber.subsystems.oltgateway.enabled` | Incluye el paquete del gateway en el WAR. `OLT_GATEWAY_ENABLED` se eliminó. |
 | `OLT_GATEWAY_MOCK_ENABLED` / `OLT_GATEWAY_MOCK` | Sin SSH (fixtures) |
 | `OLT_GATEWAY_WRITES_ENABLED` | Permite authorize/move/delete/reboot CLI |
 | `OLT_GATEWAY_SYNC_INVENTORY_ENABLED` | Scheduler inventory+status |

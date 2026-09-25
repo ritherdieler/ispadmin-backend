@@ -45,8 +45,7 @@ Requisitos: emulador/dispositivo, backend en `127.0.0.1:8080`, `./gradlew :prese
 ```bash
 cd "../IpsAdmin-android app"
 export MYSQL_PASSWORD='…' ADMIN_PASS='nohacker' SPRING_DATASOURCE_PASSWORD='…'
-chmod +x scripts/e2e_mk1_payment_lab.sh
-./scripts/e2e_mk1_payment_lab.sh
+El script Android `e2e_mk1_payment_lab.sh` fue eliminado. El e2e de la app quedó solo en el alta FIBER de producción y de staging.
 ```
 
 Journey (referencia): `scripts/journeys/mk1-payment-lab.journey.xml`.

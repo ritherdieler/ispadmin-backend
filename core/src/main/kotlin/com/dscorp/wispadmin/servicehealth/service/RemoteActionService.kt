@@ -72,7 +72,7 @@ class RemoteActionService(
                 else if(action=="OPTICAL_REFRESH") listOf("OPTICAL_REFRESH")
                 else listOf("CONFIG","REBOOT_ONU","REBOOT_ACS","WIFI_REFRESH"))
             val manualRefresh = action == "WIFI_REFRESH" || action == "OPTICAL_REFRESH"
-            if(!manualRefresh && previous!=null && previous.createdAt>now.minusSeconds(properties.actionCooldownSeconds))
+            if(!manualRefresh && previous!=null && previous.status!="FAILED" && previous.createdAt>now.minusSeconds(properties.actionCooldownSeconds))
                 throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Espere diez minutos entre acciones sobre el equipo")
             if(needsCr && actions.findByStatus("RUNNING").count { it.action in setOf("WIFI_REFRESH","CONFIG","REBOOT_ACS") }>=properties.crConcurrency.coerceIn(1,3))
                 throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Límite de conexiones ACS concurrentes")

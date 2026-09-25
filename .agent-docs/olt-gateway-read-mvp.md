@@ -89,8 +89,7 @@ La paginación CLI (`---- More ----`) se evita con `mmi-mode enable` al preparar
 | `OLT_GATEWAY_USER` | Usuario CLI (default `oltadmin`) |
 | `OLT_GATEWAY_PASSWORD` | Password SSH (`GigaOlt2026` para `oltadmin`; no hardcodear en prod) |
 | `OLT_GATEWAY_OLT_ID` | ID lógico para SmartOLT compat |
-| `OLT_GATEWAY_ENABLED` | Activa módulo en prod |
-| `OLT_GATEWAY_MOCK_ENABLED` | `true` = sin SSH (fixtures); `false` = OLT real |
+| `OLT_GATEWAY_MOCK_ENABLED` | `true` = sin SSH (fixtures); `false` = OLT real. `OLT_GATEWAY_ENABLED` se eliminó. |
 
 Secretos solo vía env; nunca hardcodear password/api-key en commits.
 
@@ -101,13 +100,12 @@ Usuario OLT documentado: [olt-ma5608t-gpon-guide.md](./olt-ma5608t-gpon-guide.md
 **Dev** (`application-dev.properties`):
 
 ```properties
-olt.gateway.enabled=true
 olt.gateway.mock.enabled=${OLT_GATEWAY_MOCK_ENABLED:false}
 olt.gateway.username=${OLT_GATEWAY_USER:oltadmin}
 olt.gateway.api-key=${OLT_GATEWAY_API_KEY:dev-olt-gateway-key}
 ```
 
-**Prod**: desactivado por defecto (`OLT_GATEWAY_ENABLED=false`). Activar solo con ruta LAN/VPN a la OLT.
+**Prod**: el módulo arranca con el WAR. El SSH real exige ruta LAN/VPN a la OLT y `olt.gateway.mock.enabled=false`.
 
 ## Cómo probar con Postman
 
@@ -249,8 +247,7 @@ curl -X POST -H "X-Olt-Gateway-Key: dev-olt-gateway-key" \
 
 - Dependencia: `org.apache.sshd:sshd-core:2.12.1` (Java 8).
 - Swagger: `org.springdoc:springdoc-openapi-ui:1.8.0` — ver [swagger-openapi.md](./swagger-openapi.md).
-- Condicional: `@ConditionalOnProperty(olt.gateway.enabled=true)`.
-- Mock vs real: `olt.gateway.mock.enabled`.
+- Mock vs real: `olt.gateway.mock.enabled`. No hay `@ConditionalOnProperty(olt.gateway.enabled)`.
 - Component scan: `com.dscorp.wispadmin.oltgateway` debe estar en `WispAdminApplication.scanBasePackages`.
 - `PlatformAuthFilter` excluye `/api/olt-gateway/**` (auth propia vía `X-Olt-Gateway-Key`) y rutas Swagger (`/swagger-ui/**`, `/v3/api-docs/**`).
 

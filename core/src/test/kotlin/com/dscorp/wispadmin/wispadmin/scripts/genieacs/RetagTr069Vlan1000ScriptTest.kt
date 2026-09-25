@@ -62,4 +62,40 @@ class RetagTr069Vlan1000ScriptTest {
             .start()
         assertTrue(selfTest.waitFor() == 0, String(selfTest.inputStream.readBytes() + selfTest.errorStream.readBytes()))
     }
+
+    @Test
+    fun runner_requires_cr_10_20_and_matching_olt_vendor() {
+        val script = root.resolve("scripts/genieacs/retag-tr069-vlan1000.sh")
+        val text = Files.readString(script)
+        assertTrue(text.contains("--force"), text)
+        assertTrue(text.contains("SN_VENDOR_MISMATCH"), text)
+        assertTrue(text.contains("CR_OK"), text)
+        assertTrue(text.contains("CR_STILL_OLD"), text)
+        assertTrue(text.contains("CR_ALREADY_TARGET"), text)
+        assertTrue(text.contains("SKIP_LAB"), text)
+        assertTrue(text.contains("SKIP_STALE_INFORM"), text)
+        assertTrue(text.contains("vendors_match"), text)
+        assertTrue(text.contains("cr_is_target"), text)
+        assertTrue(text.contains("ENQUEUE_RETRY"), text)
+        assertTrue(text.indexOf("skip_reason") < text.indexOf("service-port/ensure-mgmt"), text)
+        assertTrue(text.indexOf("CR_OK") > text.indexOf("INTERNET_AFTER_CPE"), text)
+    }
+
+    @Test
+    fun runner_bind_mgmt_uses_tp_link_provision_and_acs_host_route() {
+        val script = root.resolve("scripts/genieacs/retag-tr069-vlan1000.sh")
+        val provision = root.resolve("scripts/genieacs/provisions/gf-tr069-bind-mgmt.js")
+        assertTrue(Files.exists(script), "missing $script")
+        assertTrue(Files.exists(provision), "missing $provision")
+        val text = Files.readString(script)
+        val provisionText = Files.readString(provision)
+        assertTrue(text.contains("--bind-mgmt"), text)
+        assertTrue(text.contains("gf-tr069-bind-mgmt"), text)
+        assertTrue(text.contains("gethostbyname"), text)
+        assertTrue(text.contains("BIND_MGMT"), text)
+        assertTrue(provisionText.contains("X_TP_ServiceType"), provisionText)
+        assertTrue(provisionText.contains("Layer3Forwarding"), provisionText)
+        assertTrue(provisionText.contains("10.20.0.0"), provisionText)
+        assertFalse(provisionText.contains("X_CT-COM_VLANIDMark"), provisionText)
+    }
 }

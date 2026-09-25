@@ -24,7 +24,7 @@ WiFi enviada en el POST:
 
 ## Condiciones
 
-- Backend local: `olt.gateway.enabled=true`, `olt.gateway.writes.enabled=true`, `smartolt-olt-id=2`
+- Backend local: `olt.gateway.writes.enabled=true`, `smartolt-olt-id=2`. No hace falta `olt.gateway.enabled`.
 - GenieACS NBI: túnel SSH `localhost:7557` → VPS
 - App: `connectedDevDebugAndroidTest` → `FiberRegisterFirstOnuE2ETest`
 - Staging cloud seguía en 404 (WAR incompleto); la prueba usó Gateway local

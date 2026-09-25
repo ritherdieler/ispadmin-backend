@@ -18,6 +18,8 @@ LAB_SN="VSOL0031C0B6"
 DEVICE_ID=""
 ONU_SN=""
 VLAN=1000
+FORCE=0
+BIND_MGMT=0
 NBI_URL="${GENIEACS_NBI_URL:-http://127.0.0.1:7557}"
 CORE_BASE="${CORE_BASE:-http://127.0.0.1:8082/ispadmin}"
 E2E_USER="${E2E_USER:-${CORE_USER:-dscorp}}"
@@ -26,8 +28,10 @@ CONFIG_LOCAL="${DEPLOY_CONFIG_LOCAL:-$ROOT/scripts/deploy.config.local}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --lab) DEVICE_ID="$LAB_ID"; ONU_SN="$LAB_SN"; shift ;;
+    --lab) DEVICE_ID="$LAB_ID"; ONU_SN="$LAB_SN"; export RETAG_ALLOW_LAB=1; shift ;;
     --prod) CORE_BASE="https://api.gigafiberperu.cloud/ispadmin"; shift ;;
+    --force) FORCE=1; shift ;;
+    --bind-mgmt) BIND_MGMT=1; shift ;;
     --device-id) DEVICE_ID="${2:-}"; shift 2 ;;
     --sn) ONU_SN="${2:-}"; shift 2 ;;
     --vlan) VLAN="${2:-}"; shift 2 ;;
@@ -48,6 +52,9 @@ fi
 if [[ -z "$ONU_SN" ]]; then
   ONU_SN="${DEVICE_ID##*-}"
 fi
+if [[ "$BIND_MGMT" == 1 ]]; then
+  SCRIPT="$ROOT/scripts/genieacs/provisions/gf-tr069-bind-mgmt.js"
+fi
 if [[ ! -f "$SCRIPT" ]]; then
   echo "Falta $SCRIPT" >&2
   exit 1
@@ -67,6 +74,9 @@ fi
 NBI_URL="${NBI_URL%/}"
 CORE_BASE="${CORE_BASE%/}"
 export ROOT SCRIPT HELPER DEVICE_ID ONU_SN VLAN NBI_URL CORE_BASE E2E_USER E2E_PASSWORD
+export RETAG_FORCE="$FORCE"
+export RETAG_ALLOW_LAB="${RETAG_ALLOW_LAB:-0}"
+export BIND_MGMT
 export VPS_HOST="${VPS_HOST:-}"
 export VPS_USER="${VPS_USER:-root}"
 export VPS_PORT="${VPS_PORT:-22}"
@@ -75,17 +85,30 @@ if [[ -n "${DEPLOY_SSH_PASSWORD:-}" ]]; then
 fi
 
 python3 <<'PY'
-import json, os, ssl, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, socket, ssl, sys, time, urllib.error, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.join(os.environ["ROOT"], "scripts/genieacs"))
-from retag_internet_check import classify_wans, ping_ip, snapshot_label, check_not_lost
+from retag_internet_check import (
+    check_not_lost,
+    classify_wans,
+    cr_host,
+    cr_is_target,
+    ping_ip,
+    skip_reason,
+    snapshot_label,
+    vendors_match,
+)
 
 nbi = os.environ["NBI_URL"]
 core = os.environ["CORE_BASE"]
 device = os.environ["DEVICE_ID"]
 sn = os.environ["ONU_SN"]
 vlan = int(os.environ["VLAN"])
+force = os.environ.get("RETAG_FORCE", "0") == "1"
+allow_lab = os.environ.get("RETAG_ALLOW_LAB", "0") == "1"
+bind_mgmt = os.environ.get("BIND_MGMT", "0") == "1"
 script = open(os.environ["SCRIPT"], encoding="utf-8").read()
+provision_id = "gf-tr069-bind-mgmt" if bind_mgmt else "gf-tr069-vlan1000"
 user = os.environ["E2E_USER"]
 password = os.environ["E2E_PASSWORD"]
 
@@ -143,6 +166,37 @@ def internet_snapshot(tag):
     print(snapshot_label(tag, classified, reachable, ping_out))
     return reachable
 
+def acs_host_ip():
+    return socket.gethostbyname("acs.gigafiberperu.cloud")
+
+def enqueue_provision():
+    enc = urllib.parse.quote(device, safe="")
+    arg = acs_host_ip() if bind_mgmt else str(vlan)
+    return http(
+        nbi,
+        "POST",
+        "/devices/%s/tasks?timeout=45000&connection_request" % enc,
+        {"name": "provisions", "provisions": [[provision_id, arg]]},
+    )
+
+def wait_cr_target(attempts=8, delay_s=5):
+    last = ""
+    for i in range(attempts):
+        ip = cr_host(load_device())
+        last = ip
+        print("CR_POLL", i + 1, ip or "-")
+        if cr_is_target(ip):
+            return ip
+        time.sleep(delay_s)
+    return last
+
+cpe = load_device()
+reason = skip_reason(cpe, force=force, allow_lab=allow_lab)
+if reason == "lab":
+    raise SystemExit("SKIP_LAB device has lab tag; use --lab or --force")
+if reason == "stale-inform":
+    raise SystemExit("SKIP_STALE_INFORM lastInform=%s; use --force" % (cpe.get("_lastInform") or "-"))
+
 st, login = http(core, "POST", "/users/login", {"username": user, "password": password}, timeout=20)
 token = ""
 if isinstance(login, dict):
@@ -152,6 +206,7 @@ if not token:
 print("CORE login HTTP", st, "base", core)
 
 before_up = internet_snapshot("INTERNET_BEFORE")
+before_cr = cr_host(cpe)
 
 enc_sn = urllib.parse.quote(sn, safe="")
 st, ports = http(
@@ -164,6 +219,9 @@ st, ports = http(
 )
 print("OLT ensure-mgmt HTTP", st)
 print(json.dumps(ports, default=str)[:400] if not isinstance(ports, bytes) else ports[:200])
+returned_sn = ports.get("sn") if isinstance(ports, dict) else ""
+if not vendors_match(sn, returned_sn):
+    raise SystemExit("SN_VENDOR_MISMATCH requested=%s olt=%s; aborting CPE retag" % (sn, returned_sn))
 vlans = []
 if isinstance(ports, dict):
     raw_vlans = ports.get("vlans") or []
@@ -171,7 +229,7 @@ if isinstance(ports, dict):
 if vlan not in vlans:
     raise SystemExit("OLT VLAN %s missing after ensure-mgmt vlans=%s; aborting CPE retag" % (vlan, vlans))
 print("OLT VLAN", vlan, "ok sn=%s f/s/p=%s/%s/%s" % (
-    ports.get("sn") if isinstance(ports, dict) else sn,
+    returned_sn or sn,
     ports.get("board") if isinstance(ports, dict) else "?",
     ports.get("port") if isinstance(ports, dict) else "?",
     ports.get("ontId") if isinstance(ports, dict) else "?",
@@ -180,18 +238,21 @@ print("OLT VLAN", vlan, "ok sn=%s f/s/p=%s/%s/%s" % (
 after_olt_up = internet_snapshot("INTERNET_AFTER_OLT")
 check_not_lost(before_up, after_olt_up, "ensure-mgmt")
 
-st, _ = http(nbi, "PUT", "/provisions/gf-tr069-vlan1000", script)
+if cr_is_target(before_cr):
+    print("CR_ALREADY_TARGET", before_cr)
+    sys.exit(0)
+
+st, _ = http(nbi, "PUT", "/provisions/gf-tr069-vlan1000" if not bind_mgmt else "/provisions/gf-tr069-bind-mgmt", script)
 print("PUT provision HTTP", st)
 
-enc = urllib.parse.quote(device, safe="")
-st, body = http(
-    nbi,
-    "POST",
-    "/devices/%s/tasks?timeout=45000&connection_request" % enc,
-    {"name": "provisions", "provisions": [["gf-tr069-vlan1000", str(vlan)]]},
-)
+st, body = enqueue_provision()
 print("ENQUEUE HTTP", st)
 print(json.dumps(body, default=str)[:400] if not isinstance(body, bytes) else body[:200])
+if st != 200:
+    time.sleep(2)
+    st, body = enqueue_provision()
+    print("ENQUEUE_RETRY HTTP", st)
+    print(json.dumps(body, default=str)[:400] if not isinstance(body, bytes) else body[:200])
 
 after_cpe_up = internet_snapshot("INTERNET_AFTER_CPE")
 check_not_lost(before_up, after_cpe_up, "CPE retag")
@@ -199,4 +260,10 @@ if before_up:
     print("INTERNET_OK still reachable")
 else:
     print("INTERNET_WAS_DOWN_BEFORE skip-success-claim")
+
+final_cr = wait_cr_target(attempts=24, delay_s=8) if bind_mgmt else wait_cr_target()
+if cr_is_target(final_cr):
+    print("CR_OK", final_cr)
+else:
+    raise SystemExit("CR_STILL_OLD cr=%s enqueue=%s; aborting" % (final_cr or "-", st))
 PY
