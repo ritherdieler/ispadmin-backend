@@ -2,6 +2,9 @@ package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
+import com.dscorp.wispadmin.oltgateway.service.InMemoryLabOnuRegistry
+import com.dscorp.wispadmin.oltgateway.service.LabOnuRegistryHolder
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.config.OnuWriteProvider
 import com.dscorp.wispadmin.oltgateway.config.OnuWriteProviderProperties
@@ -125,6 +128,83 @@ class OltManagerFacadeTest {
 
         assertEquals(1, response.response.size)
         assertEquals("HWTCC6FBA6AA", response.response[0].sn)
+    }
+
+    @Test
+    fun `unconfiguredOnus con caller staging solo incluye seriales lab`() {
+        every { queryFacade.autofindParsed() } returns listOf(
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "HWTC12345678"),
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "ZTEGDC47BFFD")
+        )
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(any()) } returns Optional.empty()
+
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            val staged = facade.unconfiguredOnus()
+            assertEquals(listOf("ZTEGDC47BFFD"), staged.response.map { it.sn })
+        } finally {
+            GatewayCallContext.clear()
+        }
+
+        val prod = facade.unconfiguredOnus()
+        assertEquals(listOf("HWTC12345678", "ZTEGDC47BFFD"), prod.response.map { it.sn })
+    }
+
+    @Test
+    fun `unconfiguredOnus con registro lab usa el serial guardado y no el sufijo fijo`() {
+        val registry = InMemoryLabOnuRegistry()
+        registry.add("HWTCNEWLAB01")
+        LabOnuRegistryHolder.install(registry)
+        every { queryFacade.autofindParsed() } returns listOf(
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "HWTCNEWLAB01"),
+            ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "ZTEGDC47BFFD")
+        )
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(any()) } returns Optional.empty()
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            val staged = facade.unconfiguredOnus()
+            assertEquals(listOf("HWTCNEWLAB01"), staged.response.map { it.sn })
+        } finally {
+            GatewayCallContext.clear()
+            LabOnuRegistryHolder.install(null)
+        }
+    }
+
+    @Test
+    fun `deleteOnu no quita el serial del registro lab`() {
+        val registry = InMemoryLabOnuRegistry()
+        registry.add("4857544311E70E9A")
+        LabOnuRegistryHolder.install(registry)
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "4857544311E70E9A",
+            externalId = "gigafiber-ma5608t_1_0_5",
+            olt = olt,
+            board = 1,
+            port = 0,
+            onuIndex = 5
+        )
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_0_5") } returns Optional.of(onu)
+        every { commandService.delete(any()) } returns Unit
+        every { onuRepository.save(any()) } answers { firstArg() }
+        try {
+            facade.deleteOnu("gigafiber-ma5608t_1_0_5")
+            assertTrue(registry.isLab("4857544311E70E9A"))
+        } finally {
+            LabOnuRegistryHolder.install(null)
+        }
+    }
+
+    @Test
+    fun `getOnusDetailsBySn con caller staging oculta un serial que no es lab`() {
+        GatewayCallContext.setLabInventoryOnly(true)
+        try {
+            assertThrows<OnuNotFoundException> {
+                facade.getOnusDetailsBySn("HWTC12345678")
+            }
+        } finally {
+            GatewayCallContext.clear()
+        }
     }
 
     @Test

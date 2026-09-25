@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.oltgateway.config
 
+import com.dscorp.wispadmin.oltgateway.service.LabOnuRegistryHolder
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "olt.gateway")
@@ -197,6 +198,12 @@ class OltGatewayProperties {
     }
 
     fun isLabSerial(sn: String?): Boolean {
+        val registry = LabOnuRegistryHolder.current()
+        if (registry != null) return registry.isLab(sn)
+        return matchesConfiguredSuffix(sn)
+    }
+
+    private fun matchesConfiguredSuffix(sn: String?): Boolean {
         if (sn.isNullOrBlank()) return false
         val normalized = sn.filter { it.isLetterOrDigit() }.uppercase()
         if (normalized.isEmpty()) return false

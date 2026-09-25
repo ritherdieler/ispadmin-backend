@@ -88,6 +88,7 @@ class OltGatewayApiKeyFilter(
         try {
             caller?.let { EventRouteContext.setNamespace(it.redisNamespace()) }
             GatewayCallContext.setEnv(env)
+            GatewayCallContext.setLabInventoryOnly(caller == GatewayCaller.STAGING)
             filterChain.doFilter(next, response)
         } finally {
             EventRouteContext.clear()
@@ -107,7 +108,9 @@ class OltGatewayApiKeyFilter(
     private fun isOltWrite(request: HttpServletRequest): Boolean {
         val method = request.method.orEmpty()
         if (method.equals("GET", true) || method.equals("HEAD", true)) return false
-        return !gatewayPath(request).endsWith("/api/olt-gateway/acs/cpe-inform")
+        val path = gatewayPath(request)
+        if (path.endsWith("/api/olt-gateway/acs/cpe-inform")) return false
+        return !path.contains("/onu/lab")
     }
 
     private fun serialAndRequest(request: HttpServletRequest): Pair<String?, HttpServletRequest> {

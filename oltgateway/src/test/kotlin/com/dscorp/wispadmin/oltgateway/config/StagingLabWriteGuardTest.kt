@@ -2,10 +2,15 @@ package com.dscorp.wispadmin.oltgateway.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockFilterChain
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import javax.servlet.FilterChain
+import javax.servlet.ServletRequest
+import javax.servlet.ServletResponse
 import javax.servlet.http.HttpServletResponse
 
 class StagingLabWriteGuardTest {
@@ -64,6 +69,37 @@ class StagingLabWriteGuardTest {
         assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.status)
     }
 
+
+    @Test
+    fun `staging key marca inventario solo lab y lo limpia al salir`() {
+        val during = labInventoryFlagDuring("stg-key", "/api/olt-gateway/onus/configured")
+
+        assertTrue(during)
+        assertFalse(GatewayCallContext.labInventoryOnly())
+    }
+
+    @Test
+    fun `prod key no marca inventario solo lab`() {
+        val during = labInventoryFlagDuring("prod-key", "/api/olt-gateway/onus/configured")
+
+        assertFalse(during)
+        assertFalse(GatewayCallContext.labInventoryOnly())
+    }
+
+    @Test
+    fun `staging key puede registrar un serial nuevo sin el write guard`() {
+        val request = gatewayRequest("POST", "/api/olt-gateway/onu/lab")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "stg")
+        request.contentType = "application/json"
+        request.setContent("""{"sn":"HWTCNEWLAB01"}""".toByteArray())
+        val response = MockHttpServletResponse()
+
+        filter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+    }
+
     private fun postAuthorize(key: String, sn: String): MockHttpServletResponse {
         val request = gatewayRequest("POST", "/api/olt-gateway/onu/authorize_onu")
         request.addHeader(OltGatewayApiKeyFilter.HEADER, key)
@@ -72,6 +108,20 @@ class StagingLabWriteGuardTest {
         val response = MockHttpServletResponse()
         filter.doFilter(request, response, MockFilterChain())
         return response
+    }
+
+
+    private fun labInventoryFlagDuring(key: String, path: String): Boolean {
+        val request = gatewayRequest("GET", path)
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, key)
+        var during = false
+        val chain = object : FilterChain {
+            override fun doFilter(request: ServletRequest, response: ServletResponse) {
+                during = GatewayCallContext.labInventoryOnly()
+            }
+        }
+        filter.doFilter(request, MockHttpServletResponse(), chain)
+        return during
     }
 
     private fun gatewayRequest(method: String, path: String): MockHttpServletRequest {

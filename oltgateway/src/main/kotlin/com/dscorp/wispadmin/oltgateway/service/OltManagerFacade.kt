@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.oltgateway.api.MoveOnuFormDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltActionResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltOnuBySnResponseDto
 import com.dscorp.wispadmin.oltgateway.api.SmartOltUnconfiguredOnusResponseDto
+import com.dscorp.wispadmin.oltgateway.config.GatewayCallContext
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrAuditLog
 import com.dscorp.wispadmin.oltgateway.domain.entity.OltMgrOlt
@@ -66,7 +67,8 @@ open class OltManagerFacade(
     open fun unconfiguredOnus(): SmartOltUnconfiguredOnusResponseDto {
         val pending = queryFacade.autofindParsed().filter { parsed ->
             val sn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
-            sn.isNotBlank() && onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isEmpty
+            val visible = !GatewayCallContext.labInventoryOnly() || properties.isLabSerial(sn)
+            visible && sn.isNotBlank() && onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isEmpty
         }
         return mapper.toUnconfirmedOnuResponse(
             pending,
@@ -76,6 +78,9 @@ open class OltManagerFacade(
 
     @Transactional("oltGatewayTransactionManager")
     open fun getOnusDetailsBySn(sn: String): SmartOltOnuBySnResponseDto {
+        if (GatewayCallContext.labInventoryOnly() && !properties.isLabSerial(sn)) {
+            throw OnuNotFoundException("ONU not found for SN=$sn")
+        }
         findExistingBySn(sn)?.let { return responseFromDb(it) }
 
         val parsed = queryFacade.bySnParsed(sn)
