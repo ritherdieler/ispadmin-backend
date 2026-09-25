@@ -232,6 +232,23 @@ class GenieAcsClient(
         )
     }
 
+    fun forgetDevice(deviceId: String) {
+        val id = deviceId.trim()
+        if (id.isEmpty()) return
+        purgeDeviceQueue(id)
+        val encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8).replace("+", "%20")
+        val uri = UriComponentsBuilder
+            .fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/devices/$encodedId")
+            .build(true)
+            .toUri()
+        try {
+            restTemplate.exchange(uri, HttpMethod.DELETE, HttpEntity.EMPTY, String::class.java)
+        } catch (ex: HttpStatusCodeException) {
+            if (ex.statusCode.value() != 404) throw ex
+        }
+    }
+
     fun addTag(deviceId: String, tag: String): Boolean {
         return exchangeDeviceTag(deviceId, tag, HttpMethod.POST)
     }
@@ -604,8 +621,9 @@ class GenieAcsClient(
                 ?: deviceId.path("Manufacturer").asText(null),
             oui = deviceId.path("_OUI").asText(null)
                 ?: deviceId.path("OUI").asText(null),
-            softwareVersion = deviceId.path("_SoftwareVersion").asText(null)
-                ?: deviceId.path("SoftwareVersion").asText(null),
+            softwareVersion = deviceId.path("_SoftwareVersion").asText(null)?.takeIf { it.isNotBlank() }
+                ?: deviceId.path("SoftwareVersion").asText(null)?.takeIf { it.isNotBlank() }
+                ?: readNestedValue(node, "InternetGatewayDevice.DeviceInfo.SoftwareVersion"),
             hardwareVersion = deviceId.path("_HardwareVersion").asText(null)
                 ?: deviceId.path("HardwareVersion").asText(null),
             lastBoot = node.path("_lastBoot").asText(null),
@@ -631,7 +649,7 @@ class GenieAcsClient(
         const val WAN_IP_SEGMENT = "WANIPConnection"
         const val CR_CREDENTIALS_ERROR = "Incorrect connection request credentials"
         const val DEFAULT_DEVICE_PROJECTION =
-            "_id,_lastInform,_lastBoot,_deviceId,_SoftwareVersion,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
+            "_id,_lastInform,_lastBoot,_deviceId,_SoftwareVersion,InternetGatewayDevice.DeviceInfo.SoftwareVersion,InternetGatewayDevice.ManagementServer.ConnectionRequestURL"
 
         fun formatTaskError(result: GenieAcsTaskResult): String {
             val detail = extractErrorDetail(result.body)

@@ -11,7 +11,8 @@ import com.dscorp.wispadmin.acs.OnboardingV2WifiCompensateRequest
 import com.dscorp.wispadmin.acs.OnboardingV2TaskResponse
 import com.dscorp.wispadmin.acs.service.OnboardingV2AcsContactService
 import com.dscorp.wispadmin.acs.service.OnboardingV2TaskService
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -28,7 +29,8 @@ class OnboardingV2AcsController(
 
 @RestController
 @RequestMapping("/api/acs/v1/onboarding-v2")
-@ConditionalOnBean(OnboardingV2TaskService::class)
+@ConditionalOnProperty(prefix = "gigafiber.subsystems.acs", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnExpression("'\${acs.datasource.url:}'.trim().length() > 0")
 class OnboardingV2TaskController(
     private val tasks: OnboardingV2TaskService,
 ) {

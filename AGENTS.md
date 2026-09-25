@@ -52,6 +52,7 @@ Regla Cursor: `gigafiber/.cursor/rules/backoffice-staging-solo-local.mdc`.
 
 Antes de **cualquier** `deploy.sh` (staging o prod, incluido `--war-only`):
 
+0. `./gradlew test` en verde **antes** de conectar al VPS. Después, `./scripts/deploy.sh --deploy --env <staging|prod>` (`FORCE_WAR_REBUILD=1` si el cambio aún no está empaquetado). `--war-only` sube el WAR de `target/` y no corre pruebas: solo si ese archivo salió de la suite en verde de este mismo cambio. Reiniciar Tomcat con un WAR viejo no es un deploy.
 1. Correr `scripts/deploy-disabled-modules-preflight.sh --env <staging|prod>` (el propio `deploy.sh` lo invoca).
 2. Si avisa de un flag `*.enabled=false` o ausente **que rompe la cadena del deploy** (p. ej. `olt.gateway.acs.enabled` → TR-069 `NA`), **parar**. Listar el impacto al usuario.
 3. **No** desplegar hasta que el usuario confirme explícitamente. Prohibido pasar `--yes` / `DEPLOY_CONFIRM_DISABLED_MODULES=yes` por iniciativa del agente.

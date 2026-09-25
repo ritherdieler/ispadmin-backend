@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import java.time.Clock
+import org.slf4j.LoggerFactory
 import org.springframework.web.client.HttpStatusCodeException
 
 enum class StageObservation { SATISFIED, NEEDS_APPLY, WAITING }
@@ -53,6 +54,7 @@ class ProvisioningExecutor(
             journal.checkpoint(lease, running, clock.instant(), true)
             return
         }
+        logger.info("provision stage start operation={} serial={} stage={}", running.id, running.serial, stage)
         try {
             val context = context(lease, running, rejectCancellation = true)
             val observed = handler.reconcile(context)
@@ -61,6 +63,7 @@ class ProvisioningExecutor(
                 else transitions.waiting(running, stage)
             if (next.state == ProvisioningState.WAITING) journal.defer(lease, clock.instant().plusSeconds(5))
             journal.checkpoint(lease, next, clock.instant(), true)
+            logger.info("provision stage done operation={} serial={} stage={} result={}", running.id, running.serial, stage, result)
         } catch (ex: Exception) {
             recordFailure(lease, running, stage, ex)
         }
@@ -73,12 +76,14 @@ class ProvisioningExecutor(
             journal.checkpoint(lease, operation.copy(state = ProvisioningState.CANCELLED), clock.instant(), true)
             return
         }
+        logger.info("provision compensate start operation={} serial={} stage={}", operation.id, operation.serial, stage)
         try {
             val result = handlers.getValue(stage).compensate(context(lease, operation, rejectCancellation = false))
             val next = if (result == StageObservation.SATISFIED) transitions.compensated(operation, stage)
                 else operation.copy(state = ProvisioningState.CANCELLING)
             if (result != StageObservation.SATISFIED) journal.defer(lease, clock.instant().plusSeconds(5))
             journal.checkpoint(lease, next, clock.instant(), true)
+            logger.info("provision compensate done operation={} serial={} stage={} result={}", operation.id, operation.serial, stage, result)
         } catch (ex: Exception) {
             recordFailure(lease, operation, stage, ex)
         }
@@ -104,8 +109,31 @@ class ProvisioningExecutor(
         assertLease(lease)
         val failure = (ex as? ProvisioningStepException)?.failure
             ?: explainedFailure(ex)
-            ?: ProvisioningFailure("STAGE_EXECUTION_FAILED", "No se pudo confirmar el paso. Consulte el historial de la operación.", true)
+            ?: ProvisioningFailure("STAGE_EXECUTION_FAILED", publicDetail(ex), true)
+        logger.warn(
+            "provision stage failed operation={} serial={} stage={} code={} detail={}",
+            operation.id, operation.serial, stage, failure.code, detail(ex),
+        )
         journal.checkpoint(lease, transitions.failed(operation, stage, failure), clock.instant(), true)
+    }
+
+    private fun publicDetail(ex: Throwable): String {
+        val http = generateSequence(ex) { it.cause }.filterIsInstance<HttpStatusCodeException>().firstOrNull()
+        val fromBody = http?.responseBodyAsString?.let { body ->
+            Regex("\"message\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1)
+        }?.takeIf { it.isNotBlank() }
+        val text = fromBody ?: ex.message ?: "No se pudo confirmar el paso."
+        return text.replace(SECRET, "$1=<redacted>").replace(Regex("\\s+"), " ").take(300)
+    }
+
+    private fun detail(ex: Throwable): String = generateSequence(ex) { it.cause }.take(6).joinToString(" | ") { throwable ->
+        val http = throwable as? HttpStatusCodeException
+        if (http != null) {
+            val body = http.responseBodyAsString.replace(SECRET, "$1=<redacted>").replace(Regex("\\s+"), " ").take(400)
+            "${throwable.javaClass.simpleName} ${http.statusCode.value()} $body"
+        } else {
+            "${throwable.javaClass.simpleName}: ${(throwable.message ?: "").replace(SECRET, "$1=<redacted>").take(300)}"
+        }
     }
 
     private fun explainedFailure(ex: Exception): ProvisioningFailure? {
@@ -122,5 +150,10 @@ class ProvisioningExecutor(
             )
         }
         return null
+    }
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(ProvisioningExecutor::class.java)
+        val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
     }
 }

@@ -116,11 +116,14 @@ def delete_object(sa_path: str, bucket: str, object_path: str) -> str:
     req.add_header("Authorization", f"Bearer {token}")
     try:
         with urlopen(req, timeout=60) as resp:
-            print("firebase_deleted", resp.status)
+            if resp.status not in (200, 204):
+                print("no se pudo borrar la fachada (HTTP %s)" % resp.status, file=sys.stderr)
+                raise SystemExit(1)
+            print("fachada eliminada", file=sys.stderr)
             return "deleted"
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            print("firebase_already_gone")
+            print("fachada ya no estaba", file=sys.stderr)
             return "gone"
         raise
 

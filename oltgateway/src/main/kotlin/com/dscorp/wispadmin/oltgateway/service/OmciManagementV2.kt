@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
+import org.slf4j.LoggerFactory
 
 data class OmciManagementTarget(val serial: String, val slot: Int, val port: Int, val ontId: Int, val tr069ProfileId: Int) {
     init {
@@ -15,26 +16,35 @@ class OmciManagementV2(
     private val writeJob: (((String) -> String) -> Unit) -> Unit,
 ) {
     fun ensure(target: OmciManagementTarget): OmciManagementEvidence {
+        logger.info("OMCI ensure start serial={} slot={} port={} ont={} profile={}", target.serial, target.slot, target.port, target.ontId, target.tr069ProfileId)
         var evidence = OmciManagementEvidence(false, null)
-        writeJob { command ->
-            checked(command, "interface gpon 0/${target.slot}")
-            try {
-                val before = inspect(command, target)
-                if (!before.configured) {
-                    checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
-                    checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
+        try {
+            writeJob { command ->
+                checked(command, "interface gpon 0/${target.slot}")
+                try {
+                    val before = inspect(command, target)
+                    if (!before.configured) {
+                        checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
+                        checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
+                    }
+                    evidence = if (before.configured) before else inspect(command, target)
+                    check(evidence.configured) { "OMCI_READBACK_MISMATCH" }
+                } finally {
+                    checked(command, "quit")
                 }
-                evidence = if (before.configured) before else inspect(command, target)
-                check(evidence.configured) { "OMCI_READBACK_MISMATCH" }
-            } finally {
-                checked(command, "quit")
             }
+            logger.info("OMCI ensure done serial={} configured={} addressPresent={}", target.serial, evidence.configured, evidence.address != null)
+            return evidence
+        } catch (ex: Exception) {
+            logger.warn("OMCI ensure failed serial={} reason={}", target.serial, ex.message?.replace(Regex("\\s+"), " ")?.take(400))
+            throw ex
         }
-        return evidence
     }
 
     /** Reverts only the compatible DHCP/VLAN-1000 management channel and bound profile. */
     fun remove(target: OmciManagementTarget) {
+        logger.info("OMCI remove start serial={} slot={} port={} ont={}", target.serial, target.slot, target.port, target.ontId)
+        try {
         writeJob { command ->
             checked(command, "interface gpon 0/${target.slot}")
             try {
@@ -61,6 +71,11 @@ class OmciManagementV2(
             } finally {
                 checked(command, "quit")
             }
+        }
+        logger.info("OMCI remove done serial={}", target.serial)
+        } catch (ex: Exception) {
+            logger.warn("OMCI remove failed serial={} reason={}", target.serial, ex.message?.replace(Regex("\\s+"), " ")?.take(400))
+            throw ex
         }
     }
 
@@ -143,6 +158,7 @@ class OmciManagementV2(
     )
 
     private companion object {
+        val logger = LoggerFactory.getLogger(OmciManagementV2::class.java)
         const val MANAGEMENT_VLAN = 1000
         const val MANAGEMENT_PRIORITY = 2
     }

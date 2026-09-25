@@ -256,12 +256,10 @@ class DeployEnvScriptTest {
         assertTrue(acsSchemaAt in 0 until oltDeleteAt, "ACS schema clear must run before Gateway deletes the ONU from the OLT")
         assertTrue(acsPurgeAt in 0 until oltDeleteAt, "GenieACS purge must run before Gateway deletes the ONU from the OLT")
 
-        val tagPurge = script.substringAfter("ACS purge").substringBefore("== verify")
-        assertTrue(tagPurge.contains("sub-") || tagPurge.contains("startswith(\"sub-\")") || tagPurge.contains("startswith('sub-')"), tagPurge)
-        assertTrue(tagPurge.contains("t:") || tagPurge.contains("startswith(\"t:\")") || tagPurge.contains("startswith('t:')"), tagPurge)
-        assertTrue(tagPurge.contains("c:") || tagPurge.contains("startswith(\"c:\")") || tagPurge.contains("startswith('c:')"), tagPurge)
-        assertTrue(tagPurge.contains("lab"), tagPurge)
-        assertFalse(tagPurge.contains("DELETE") && tagPurge.contains("/devices/") && tagPurge.contains("method='DELETE'") && tagPurge.contains("lab") && !tagPurge.contains("!= 'lab'") && !tagPurge.contains("!= \"lab\""), tagPurge)
+        val devicePurge = script.substringAfter("ACS purge").substringBefore("== verify")
+        assertTrue(devicePurge.contains("/devices/"), devicePurge)
+        assertTrue(devicePurge.contains("method='DELETE'"), devicePurge)
+        assertFalse(devicePurge.contains("method='PUT'"), devicePurge)
     }
 
     @Test

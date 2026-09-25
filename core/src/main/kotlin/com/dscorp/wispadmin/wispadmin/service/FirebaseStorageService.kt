@@ -70,6 +70,18 @@ class FirebaseStorageService @Autowired constructor(
         return "$imageUrl${java.net.URLEncoder.encode(fileName, "UTF-8")}?alt=media"
     }
 
+    fun deleteByPublicUrl(url: String?) {
+        val raw = url?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        val marker = "/o/"
+        val start = raw.indexOf(marker)
+        if (start < 0) throw IllegalArgumentException("FIREBASE_URL")
+        val objectPath = java.net.URLDecoder.decode(raw.substring(start + marker.length).substringBefore("?"), "UTF-8")
+        val storage = getStorageInstance()
+        val blob = storage.get(bucketName, objectPath) ?: return
+        blob.delete()
+    }
+
     private fun getStorageInstance(): Storage {
         val resourceAsStream: InputStream = firebaseProperties.serviceAccount?.inputStream
             ?: throw RuntimeException("Firebase service account not configured")

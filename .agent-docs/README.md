@@ -2,6 +2,7 @@
 
 | Tema | Archivo |
 |------|---------|
+| **Limpieza de suscripción admin (2026-09-25)** | [subscription-hard-cleanup-2026-09-25.md](./subscription-hard-cleanup-2026-09-25.md) |
 | **Cutover prod 2026-09-17 OK (`1.0.3+978f987`)** | [cutover-prod-resultado-2026-09-17.md](./cutover-prod-resultado-2026-09-17.md) |
 | **Fix coreFlyway + validate clon PASS (2026-09-17)** | [fix-core-flyway-2026-09-17.md](./fix-core-flyway-2026-09-17.md) |
 | **Ensayo Flyway scratch (V39–V54 PASS, 2026-09-17)** | [cutover-prod-develop-2026-09-16.md](./cutover-prod-develop-2026-09-16.md#resultado-del-clon-flyway) |

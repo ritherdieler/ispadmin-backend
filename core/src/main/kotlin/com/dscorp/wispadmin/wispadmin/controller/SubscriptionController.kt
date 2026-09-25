@@ -37,6 +37,12 @@ import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.web.client.RestClientException
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.server.ResponseStatusException
+import javax.servlet.http.HttpServletRequest
+import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
+import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
+import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupStepException
+import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
 
 const val DATE_FORMAT = "dd/MM/yyyy"
 
@@ -62,6 +68,7 @@ class SubscriptionController(
     private val accessMigrationService: com.dscorp.wispadmin.wispadmin.service.subscription.AccessMigrationService? = null,
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
     private val subscriptionAcsRepository: SubscriptionAcsRepository? = null,
+    private val hardCleanup: SubscriptionHardCleanupService? = null,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -491,6 +498,23 @@ class SubscriptionController(
     @PutMapping("/cortarDeudores")
     fun cutInternet(): ResponseEntity<CutServiceSummaryDto> =
         ResponseEntity.ok(subscriptionService.cutInternetService())
+
+    @PostMapping("/{id}/hard-cleanup")
+    fun hardCleanup(@PathVariable id: Int, request: HttpServletRequest): CleanupReport {
+        val type = request.getAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE)?.toString()
+        if (type != "ADMIN") {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Solo ADMIN puede limpiar una suscripción")
+        }
+        val service = hardCleanup ?: throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Limpieza no disponible")
+        return try {
+            service.cleanup(id)
+        } catch (ex: CleanupStepException) {
+            if (ex.failure.code == "SUBSCRIPTION_NOT_FOUND") {
+                throw ResponseStatusException(HttpStatus.NOT_FOUND, ex.failure.message)
+            }
+            throw ex
+        }
+    }
 
     @PutMapping("/cancel-subscription")
     fun cancelSubscription(@RequestParam("subscriptionId") subscriptionId: Int, @RequestParam("responsibleId") responsibleId: Int): ResponseEntity<Any> {

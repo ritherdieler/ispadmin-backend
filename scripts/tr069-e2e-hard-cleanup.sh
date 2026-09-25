@@ -20,6 +20,66 @@ ALLOW_EMPTY=0
 FORCE=0
 E2E_ENV="prod"
 PRINT_FIREBASE_SA=0
+GW_STATE="skip"
+GW_NOTE="sin serial"
+ACS_STATE="skip"
+ACS_NOTE="sin serial ni device"
+MK_STATE="skip"
+MK_NOTE="sin IP ni PPPoE"
+CORE_STATE="skip"
+CORE_NOTE="sin suscripción"
+MK_QUEUE_EC=0
+MK_PPPOE_EC=0
+ACS_EC=0
+GW_EC=0
+GW_INV_EC=0
+CORE_EC=0
+
+print_cleanup_summary() {
+  echo
+  printf '%s\n' "$(e2e_paint '\033[1m' 'Limpieza')" >&2
+  _cleanup_row() {
+    local name="$1" state="$2" note="$3" tag color
+    case "$state" in
+      ok) tag="LIMPIO"; color='\033[32m' ;;
+      fail) tag="FALLO"; color='\033[31m' ;;
+      *) tag="N/A"; color='\033[37m' ;;
+    esac
+    if [[ "$state" == "fail" ]]; then
+      printf '  %-12s  %s\n' "$name" "$(e2e_paint "$color" "$(printf '%-6s' "$tag")")" >&2
+      printf '               %s\n' "$note" >&2
+    else
+      printf '  %-12s  %s  %s\n' "$name" "$(e2e_paint "$color" "$(printf '%-6s' "$tag")")" "$note" >&2
+    fi
+  }
+  _cleanup_row "gateway-olt" "$GW_STATE" "$GW_NOTE"
+  _cleanup_row "acs" "$ACS_STATE" "$ACS_NOTE"
+  _cleanup_row "mikrotik" "$MK_STATE" "$MK_NOTE"
+  _cleanup_row "core" "$CORE_STATE" "$CORE_NOTE"
+  printf '\n' >&2
+}
+
+section() {
+  printf '\n== %s ==\n' "$*" >&2
+}
+
+ACS_CAUSE=""
+GW_CAUSE=""
+CAUSE_LOG=""
+
+begin_cause_log() {
+  CAUSE_LOG="$(mktemp)"
+}
+
+take_cause() {
+  local line=""
+  if [[ -n "${CAUSE_LOG:-}" && -f "$CAUSE_LOG" ]]; then
+    line="$(grep -E 'ACS HTTP|Gateway rechazó|Gateway delete returned|Falta OLT_GATEWAY|Missing SmartOLT|HTTP Error' "$CAUSE_LOG" | tail -1 | sed 's/^[[:space:]]*//' || true)"
+    rm -f "$CAUSE_LOG"
+    CAUSE_LOG=""
+  fi
+  printf '%s' "$line"
+}
 
 resolve_firebase_sa() {
   local env_path="${FIREBASE_SERVICE_ACCOUNT_JSON:-}"
@@ -157,7 +217,7 @@ acs_mysql_q() {
 
 e2e_step "hard cleanup env=$E2E_ENV schema=$MYSQL_SCHEMA"
 e2e_doing "resolve subscription id=$ID sn=$SN dni=$DNI allow-empty=$ALLOW_EMPTY"
-echo "== resolve subscription env=$E2E_ENV schema=$MYSQL_SCHEMA =="
+section "resolve subscription env=$E2E_ENV schema=$MYSQL_SCHEMA"
 WHERE="1=0"
 [[ -n "$ID" ]] && WHERE="$WHERE OR id=$ID"
 [[ -n "$SN" ]] && WHERE="$WHERE OR fiber_onu_sn='${SN}'"
@@ -212,7 +272,8 @@ if [[ -z "$ACS_DEVICE" && -n "$SUB_SN" ]]; then
 fi
 
 if [[ -n "$SUB_IP" ]]; then
-  echo "== MikroTik queue target ${SUB_IP}/32 =="
+  section "MikroTik queue target ${SUB_IP}/32"
+  set +e
   ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
 mapfile -t ROW < <(docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $MYSQL_SCHEMA -N -e \"SELECT ip_address, username, password FROM network_device WHERE id=${HOST_DEVICE_ID};\")
 MKIP=\$(echo \"\${ROW[0]}\" | awk '{print \$1}')
@@ -235,6 +296,7 @@ mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; i
 ctx=ssl._create_unverified_context()
 cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
 def log_http(method, path, status, payload):
+  print('', file=sys.stderr)
   color = not os.environ.get('NO_COLOR')
   def paint(code, text):
     n=str(code)
@@ -292,12 +354,15 @@ for a in deudores:
   st, raw = call('DELETE', dst)
   log_http('DELETE', dst, st, raw)
   print('deudores_removed')
-print('MK_DONE')
+print('MK_DONE', file=sys.stderr)
 PY"
+  MK_QUEUE_EC=$?
+  set -e
 fi
 
 if [[ -n "$SUB_PPPOE" ]]; then
-  echo "== MikroTik PPPoE secret ${SUB_PPPOE} =="
+  section "MikroTik PPPoE secret ${SUB_PPPOE}"
+  set +e
   ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
 mapfile -t ROW < <(docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $MYSQL_SCHEMA -N -e \"SELECT ip_address, username, password FROM network_device WHERE id=${HOST_DEVICE_ID};\")
 MKIP=\$(echo \"\${ROW[0]}\" | awk '{print \$1}')
@@ -310,6 +375,7 @@ mkip=os.environ['MKIP']; user=os.environ['USER']; password=os.environ['PASS']; n
 ctx=ssl._create_unverified_context()
 cred=base64.b64encode(f'{user}:{password}'.encode()).decode()
 def log_http(method, path, status, payload):
+  print('', file=sys.stderr)
   color = not os.environ.get('NO_COLOR')
   def paint(code, text):
     n=str(code)
@@ -354,55 +420,112 @@ for path in ('/rest/ppp/active', '/rest/ppp/secret'):
     dst=f\"{path}/{item['.id']}\"
     st, raw = call('DELETE', dst)
     log_http('DELETE', dst, st, raw)
-print('PPPOE_DONE')
+print('PPPOE_DONE', file=sys.stderr)
 PY"
+  MK_PPPOE_EC=$?
+  set -e
+fi
+
+if [[ -n "$SUB_IP" || -n "$SUB_PPPOE" ]]; then
+  MK_NOTE=""
+  [[ -n "$SUB_IP" ]] && MK_NOTE="cola ${SUB_IP}/32"
+  if [[ -n "$SUB_PPPOE" ]]; then
+    if [[ -n "$MK_NOTE" ]]; then
+      MK_NOTE="$MK_NOTE, PPPoE ${SUB_PPPOE}"
+    else
+      MK_NOTE="PPPoE ${SUB_PPPOE}"
+    fi
+  fi
+  if [[ "$MK_QUEUE_EC" -eq 0 && "$MK_PPPOE_EC" -eq 0 ]]; then
+    MK_STATE="ok"
+  else
+    MK_STATE="fail"
+    MK_NOTE="$MK_NOTE —"
+    [[ "$MK_QUEUE_EC" -ne 0 ]] && MK_NOTE="$MK_NOTE no se pudo borrar la cola"
+    [[ "$MK_PPPOE_EC" -ne 0 ]] && MK_NOTE="$MK_NOTE no se pudo borrar el secreto PPPoE"
+  fi
 fi
 
 if [[ -n "$SUB_SN" ]]; then
-  echo "== ACS schema delete $SUB_SN =="
-  acs_mysql_q "DELETE FROM acs_onboarding_v2_task WHERE sn='${SUB_SN}';" || true
-  acs_mysql_q "DELETE FROM cpe_record WHERE sn='${SUB_SN}';" || true
+  printf '\n== ACS schema delete %s ==\n' "$SUB_SN" >&2
+  acs_mysql_q "DELETE FROM acs_onboarding_v2_task WHERE sn='${SUB_SN}';" || { ACS_EC=1; ACS_CAUSE="no se pudo borrar tareas de onboarding"; }
+  acs_mysql_q "DELETE FROM cpe_record WHERE sn='${SUB_SN}';" || { ACS_EC=1; ACS_CAUSE="no se pudo borrar el registro CPE"; }
 fi
 
 if [[ -n "$SUB_SN" || -n "$ACS_DEVICE" ]]; then
-  echo "== ACS purge $SUB_SN =="
+  printf '\n== ACS purge %s ==\n' "$SUB_SN" >&2
   e2e_doing "GenieACS drop subscription tags sn=$SUB_SN device=$ACS_DEVICE"
+  set +e
+  begin_cause_log
   ssh_vps "python3 - <<'PY'
-import json, urllib.request, urllib.parse
+import json, sys, urllib.request, urllib.error, urllib.parse
 dev='''$ACS_DEVICE'''
 sn='''$SUB_SN'''
 base='http://127.0.0.1:7557'
-if not dev and sn:
-  q=urllib.parse.quote(json.dumps({'_id': {'$regex': sn}}))
-  items=json.load(urllib.request.urlopen(base+'/devices/?query='+q+'&projection=_id,_tags'))
-  if items:
-    dev=items[0]['_id']
-if not dev:
-  print('no_device')
-  raise SystemExit
-encoded=urllib.parse.quote(dev, safe='')
-raw=urllib.request.urlopen(base+'/devices/'+encoded+'?projection=_tags').read()
-doc=json.loads(raw)
-if isinstance(doc, list):
-  doc=doc[0] if doc else {}
-for tag in doc.get('_tags') or []:
-  if tag == 'lab' or not (tag.startswith('sub-') or tag.startswith('t:') or tag.startswith('c:')):
-    continue
-  if tag != 'lab':
-    enc=urllib.parse.quote(tag, safe='')
-    req=urllib.request.Request(base+'/devices/'+encoded+'/tags/'+enc, method='DELETE')
-    urllib.request.urlopen(req).read()
-    print('tag_deleted', tag)
-print('lab_kept')
-PY"
+
+def get(url):
+  try:
+    with urllib.request.urlopen(url, timeout=30) as r:
+      return r.status, r.read()
+  except urllib.error.HTTPError as err:
+    print('ACS HTTP %s %s' % (err.code, url.split('?', 1)[0]), file=sys.stderr)
+    return err.code, b''
+
+ids=[]
+if dev:
+  ids.append(dev)
+if sn:
+  q=urllib.parse.quote(json.dumps({'_id': {'\$regex': sn}}))
+  code, raw = get(base+'/devices/?query='+q+'&projection=_id')
+  if code >= 400:
+    raise SystemExit(1)
+  for item in json.loads(raw or b'[]'):
+    found=item.get('_id')
+    if found and found not in ids:
+      ids.append(found)
+if not ids:
+  print('sin device en GenieACS', file=sys.stderr)
+  raise SystemExit(0)
+
+def delete(url):
+  req=urllib.request.Request(url, method='DELETE')
+  try:
+    urllib.request.urlopen(req, timeout=30).read()
+    return 200
+  except urllib.error.HTTPError as err:
+    if err.code == 404:
+      return 404
+    print('ACS HTTP %s %s' % (err.code, url.split('?', 1)[0]), file=sys.stderr)
+    return err.code
+
+for dev in ids:
+  encoded=urllib.parse.quote(dev, safe='')
+  for kind in ('tasks', 'faults'):
+    q=urllib.parse.quote(json.dumps({'device': dev}))
+    code, raw = get(base+'/%s/?query=%s' % (kind, q))
+    if code >= 400:
+      raise SystemExit(1)
+    for item in json.loads(raw or b'[]'):
+      if delete(base+'/%s/%s' % (kind, urllib.parse.quote(item['_id'], safe=''))) >= 400:
+        raise SystemExit(1)
+  status=delete(base+'/devices/'+encoded)
+  if status >= 400:
+    raise SystemExit(1)
+  print('device borrado %s' % dev, file=sys.stderr)
+PY" 2>&1 | tee "$CAUSE_LOG"
+  if [[ "${PIPESTATUS[0]}" -ne 0 ]]; then ACS_EC=1; fi
+  line="$(take_cause)"
+  [[ -n "$line" ]] && ACS_CAUSE="$line"
+  set -e
 fi
 
 if [[ -n "$SUB_SN" ]]; then
   if [[ "$E2E_ENV" == "staging" ]]; then
-    echo "== clear Gateway activation journal $SUB_SN =="
+    begin_cause_log
+    section "clear Gateway activation journal $SUB_SN"
     e2e_doing "DELETE olt_activation_operation sn=$SUB_SN schema=$OLT_GATEWAY_MYSQL_SCHEMA"
-    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || true
-    echo "== OLT Gateway delete $SUB_SN (ispadmin-staging) =="
+    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\"" || GW_EC=1
+    printf '\n== OLT Gateway delete %s (ispadmin-staging) ==\n' "$SUB_SN" >&2
     e2e_doing "Gateway lookup+delete SN=$SUB_SN via VPS 127.0.0.1:8081/ispadmin-staging"
     {
       cat "$SCRIPT_DIR/e2e_console.sh"
@@ -416,7 +539,15 @@ set -a
 # shellcheck disable=SC1091
 source /opt/gigafiber/.env
 set +a
-KEY="\${OLT_GATEWAY_API_KEY:?OLT_GATEWAY_API_KEY missing on VPS}"
+KEY="\${OLT_GATEWAY_STAGING_API_KEY:-}"
+if [[ -z "\$KEY" ]]; then
+  KEY="\$(docker exec tomcat-staging printenv OLT_GATEWAY_STAGING_API_KEY 2>/dev/null || true)"
+  KEY="\${KEY//\$'\r'/}"
+fi
+if [[ -z "\$KEY" ]]; then
+  echo "Falta OLT_GATEWAY_STAGING_API_KEY en el VPS" >&2
+  exit 1
+fi
 GW="http://127.0.0.1:8081/ispadmin-staging"
 SN=$(printf '%q' "$SUB_SN")
 hdr=(-H "X-Olt-Gateway-Key: \$KEY" -H "Content-Type: application/json")
@@ -437,6 +568,11 @@ if isinstance(onus,list) and onus:
 elif isinstance(d,dict):
   print(d.get("unique_external_id") or d.get("uniqueExternalId") or "")
 ' <<<"\$body" 2>/dev/null || true)
+  code="\${E2E_HTTP_CODE:-000}"
+  if [[ "\$code" == "401" || "\$code" == "403" ]]; then
+    echo "Gateway rechazó la clave (HTTP \$code)" >&2
+    exit 1
+  fi
   if [[ -n "\$EXT" ]]; then
     break
   fi
@@ -444,6 +580,11 @@ done
 ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD)
 docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_activation_operation WHERE sn='\$SN';" || true
 if [[ -z "\$EXT" ]]; then
+  EXT="\$(docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -N -e "SELECT IFNULL(external_id,'') FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('\$SN') AND external_id IS NOT NULL AND external_id<>'' LIMIT 1;" 2>/dev/null || true)"
+  EXT="\${EXT//\$'\r'/}"
+fi
+if [[ -z "\$EXT" ]]; then
+  docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('\$SN'); DELETE FROM olt_activation_operation WHERE UPPER(sn)=UPPER('\$SN');" || true
   echo "ONU not authorized in OLT Gateway (ok)"
   exit 0
 fi
@@ -455,19 +596,27 @@ if [[ "\$code" != "200" ]]; then
   echo "Gateway delete returned HTTP \$code" >&2
   exit 1
 fi
+docker exec -e MYSQL_PWD="\$ROOTPW" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e "DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('\$SN'); DELETE FROM olt_activation_operation WHERE UPPER(sn)=UPPER('\$SN');" || true
 echo "ONU was deleted"
 EOF
-    } | ssh_vps "bash -s"
+    } | ssh_vps "bash -s" 2>&1 | tee "$CAUSE_LOG"
+    [[ "${PIPESTATUS[0]}" -eq 0 ]] || GW_EC=1
+    line="$(take_cause)"
+    [[ -n "$line" ]] && GW_CAUSE="$line"
   else
-    echo "== clear Gateway activation journal $SUB_SN (prod) =="
-    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\" 2>/dev/null" || true
-    echo "== SmartOLT delete $SUB_SN =="
+    section "clear Gateway activation journal $SUB_SN (prod)"
+    ssh_vps "ROOTPW=\$(docker exec mysql8033 printenv MYSQL_ROOT_PASSWORD); docker exec -e MYSQL_PWD=\"\$ROOTPW\" mysql8033 mysql -uroot $OLT_GATEWAY_MYSQL_SCHEMA -e \"DELETE FROM olt_activation_operation WHERE sn='${SUB_SN}';\" 2>/dev/null" || GW_EC=1
+    section "SmartOLT delete $SUB_SN"
     e2e_doing "SmartOLT lookup+delete SN=$SUB_SN"
     SMARTOLT_KEY="${SMARTOLT_API_KEY:-}"
     if [[ -z "$SMARTOLT_KEY" ]]; then
       SMARTOLT_KEY="$(ssh_vps 'docker exec tomcat9027 bash -lc "grep -h olt.service.api-key /usr/local/tomcat/webapps/ispadmin/WEB-INF/classes/application-prod.properties | head -1 | cut -d= -f2-"' | tr -d '\r')"
     fi
-    [[ -n "$SMARTOLT_KEY" ]] || { echo "Missing SmartOLT API key" >&2; exit 1; }
+    if [[ -z "$SMARTOLT_KEY" ]]; then
+      echo "Missing SmartOLT API key" >&2
+      GW_EC=1
+      GW_CAUSE="falta la clave de SmartOLT"
+    else
     E2E_PHASE=alta
     E2E_ONU_SN="$SUB_SN"
     EXT="$(e2e_http GET "https://gigafiberperu.smartolt.com/api/onu/get_onus_details_by_sn/$SUB_SN" \
@@ -475,19 +624,37 @@ EOF
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("onus") or [{}])[0].get("unique_external_id") or ""))' || true)"
     if [[ -n "$EXT" ]]; then
       e2e_http POST "https://gigafiberperu.smartolt.com/api/onu/delete/$EXT" \
-        -H "X-Token: $SMARTOLT_KEY" || true
+        -H "X-Token: $SMARTOLT_KEY" || GW_EC=1
+      if [[ "${E2E_HTTP_CODE:-000}" != "200" ]]; then
+        GW_EC=1
+        GW_CAUSE="SmartOLT respondió HTTP ${E2E_HTTP_CODE:-000}"
+      fi
     else
       echo "ONU not authorized in SmartOLT (ok)"
     fi
+    fi
     unset E2E_PHASE E2E_ONU_SN
+  fi
+  if [[ "$E2E_ENV" == "staging" ]]; then
+    GW_NOTE="OLT sn=$SUB_SN"
+  else
+    GW_NOTE="SmartOLT sn=$SUB_SN"
+  fi
+  if [[ "$GW_EC" -eq 0 ]]; then
+    GW_STATE="ok"
+  else
+    GW_STATE="fail"
+    GW_NOTE="$GW_NOTE — ${GW_CAUSE:-borrado de la ONU falló}"
   fi
 fi
 
 if [[ -n "$ACS_DEVICE" ]]; then
-  echo "== GenieACS delete $ACS_DEVICE =="
+  section "GenieACS delete $ACS_DEVICE"
   e2e_doing "GenieACS NBI delete device=$ACS_DEVICE"
+  set +e
+  begin_cause_log
   ssh_vps "python3 - <<'PY'
-import json, urllib.request, urllib.error, urllib.parse
+import json, sys, urllib.request, urllib.error, urllib.parse
 dev='''$ACS_DEVICE'''
 encoded_id=urllib.parse.quote(dev, safe='')
 for kind in ('tasks','faults'):
@@ -505,15 +672,38 @@ except urllib.error.HTTPError as err:
   if err.code == 404:
     print('device_absent', dev)
   else:
-    raise
+    print('ACS HTTP %s al borrar device' % err.code, file=sys.stderr)
+    raise SystemExit(1)
 print('ACS_OK')
-PY"
+PY" 2>&1 | tee "$CAUSE_LOG"
+  if [[ "${PIPESTATUS[0]}" -ne 0 ]]; then ACS_EC=1; fi
+  line="$(take_cause)"
+  [[ -n "$line" ]] && ACS_CAUSE="$line"
+  set -e
+fi
+
+if [[ -n "$SUB_SN" || -n "$ACS_DEVICE" ]]; then
+  ACS_NOTE=""
+  [[ -n "$SUB_SN" ]] && ACS_NOTE="esquema sn=$SUB_SN"
+  if [[ -n "$ACS_DEVICE" ]]; then
+    if [[ -n "$ACS_NOTE" ]]; then
+      ACS_NOTE="$ACS_NOTE, device"
+    else
+      ACS_NOTE="device"
+    fi
+  fi
+  if [[ "$ACS_EC" -eq 0 ]]; then
+    ACS_STATE="ok"
+  else
+    ACS_STATE="fail"
+    ACS_NOTE="$ACS_NOTE — ${ACS_CAUSE:-falló la limpieza ACS}"
+  fi
 fi
 
 FIREBASE_EXIT=0
 FIREBASE_PY="$SCRIPT_DIR/tr069_e2e_firebase_delete.py"
 if [[ -n "$FACADE_URL" && "$FACADE_URL" != "NULL" ]]; then
-  echo "== Firebase Storage delete =="
+  section "Firebase Storage delete"
   if [[ ! -f "$FIREBASE_SA" ]]; then
     echo "FIREBASE_SERVICE_ACCOUNT_JSON not found: $FIREBASE_SA" >&2
     FIREBASE_EXIT=1
@@ -545,7 +735,7 @@ PY
 fi
 
 if [[ -n "$SUB_ID" || -n "$SUB_SN" ]]; then
-  echo "== MySQL delete id=$SUB_ID =="
+  printf '\n== MySQL delete id=%s ==\n' "$SUB_ID" >&2
   if [[ -n "$SUB_ID" ]]; then
   for table in \
     acs_wifi_station_sample acs_wifi_count_sample acs_wifi_station_hourly acs_wifi_status_current \
@@ -554,61 +744,102 @@ if [[ -n "$SUB_ID" || -n "$SUB_SN" ]]; then
     service_traffic_evidence subscription_access_migration subscription_reconnection \
     collection_visit_log assistance_ticket subscription_log subscription_acs payment
   do
-    mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || true
+    mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || CORE_EC=1
   done
   mysql_q "
 UPDATE subscription SET fiber_onu_sn = NULL WHERE id = ${SUB_ID};
 DELETE FROM subscription WHERE id = ${SUB_ID};
-"
+" || CORE_EC=1
   for table in \
     subscription_traffic_sample subscription_traffic_hourly subscription_traffic_daily \
     subscription_traffic_monthly subscription_traffic_five_minute subscription_traffic_counter_state
   do
-    traffic_mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || true
+    traffic_mysql_q "DELETE FROM ${table} WHERE subscription_id = ${SUB_ID};" || CORE_EC=1
   done
   if [[ -n "$SUB_IP" ]]; then
-    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = '${SUB_IP}';" || true
+    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = '${SUB_IP}';" || CORE_EC=1
   fi
   if [[ -n "$SUB_PPPOE" ]]; then
-    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = 'pppoe:${SUB_PPPOE}';" || true
+    traffic_mysql_q "DELETE FROM subscription_traffic_sample WHERE client_ip = 'pppoe:${SUB_PPPOE}';" || CORE_EC=1
   fi
   fi
   JOURNAL_WHERE="1=0"
   [[ -n "$SUB_ID" ]] && JOURNAL_WHERE="$JOURNAL_WHERE OR subscription_id=${SUB_ID}"
-  [[ -n "$SUB_SN" ]] && JOURNAL_WHERE="$JOURNAL_WHERE OR serial='${SUB_SN}'"
-  mysql_q "DELETE FROM provisioning_v2_event WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || true
-  mysql_q "DELETE FROM provisioning_v2_resource WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || true
-  mysql_q "DELETE FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE};" || true
+  [[ -n "$SUB_SN" ]] && JOURNAL_WHERE="$JOURNAL_WHERE OR UPPER(serial)=UPPER('${SUB_SN}')"
+  if [[ -n "$SUB_SN" ]]; then
+    mysql_q "UPDATE subscription SET fiber_onu_sn = NULL WHERE UPPER(fiber_onu_sn)=UPPER('${SUB_SN}');" || CORE_EC=1
+  fi
+  mysql_q "DELETE FROM provisioning_v2_event WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || CORE_EC=1
+  mysql_q "DELETE FROM provisioning_v2_resource WHERE operation_id IN (SELECT operation_id FROM (SELECT operation_id FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE}) t);" || CORE_EC=1
+  mysql_q "DELETE FROM provisioning_v2_operation WHERE ${JOURNAL_WHERE};" || CORE_EC=1
 fi
 
 if [[ -n "$SUB_SN" ]]; then
-  echo "== Gateway inventory delete $SUB_SN =="
-  mysql_q "DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';" || true
+  printf '\n== Gateway inventory delete %s ==\n' "$SUB_SN" >&2
+  mysql_q "DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn) = UPPER('${SUB_SN}');" || true
   gateway_mysql_q "
-DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';
-DELETE FROM olt_activation_operation WHERE sn = '${SUB_SN}';
-DELETE FROM olt_provisioning_v2_onu_operation WHERE sn = '${SUB_SN}';
+DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn) = UPPER('${SUB_SN}');
+DELETE FROM olt_activation_operation WHERE UPPER(sn) = UPPER('${SUB_SN}');
+DELETE FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn) = UPPER('${SUB_SN}');
 UPDATE olt_mgr_task SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 UPDATE olt_mgr_audit_log SET onu_id = NULL WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 DELETE FROM olt_mgr_onu_status_current WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 DELETE FROM olt_mgr_onu_service_port WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
 DELETE FROM olt_mgr_onu_extra_vlan WHERE onu_id IN (SELECT id FROM (SELECT id FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%') t);
-DELETE FROM olt_mgr_onu WHERE sn = '${SUB_SN}' OR sn LIKE '${SUB_SN}#del#%';
-" || true
+DELETE FROM olt_mgr_onu WHERE UPPER(sn) = UPPER('${SUB_SN}') OR sn LIKE '${SUB_SN}#del#%';
+" || GW_INV_EC=1
+  LEFT_FENCE="$(gateway_mysql_q "SELECT COUNT(*) FROM olt_provisioning_v2_onu_operation WHERE UPPER(sn)=UPPER('${SUB_SN}');" || true)"
+  LEFT_FENCE="$(printf '%s' "$LEFT_FENCE" | tr -d '[:space:]')"
+  echo "remaining_onu_reservation=$LEFT_FENCE"
+  if [[ "${LEFT_FENCE:-1}" != "0" ]]; then
+    GW_INV_EC=1
+    GW_CAUSE="sigue la reserva de otra alta"
+  fi
+  if [[ "$GW_INV_EC" -ne 0 ]]; then
+    GW_STATE="fail"
+    GW_NOTE="$GW_NOTE — no se pudo borrar el inventario de la ONU"
+  elif [[ "$GW_STATE" == "ok" ]]; then
+    GW_NOTE="$GW_NOTE, inventario"
+  fi
 fi
 
-echo "== verify =="
+printf '\n== verify ==\n' >&2
 e2e_doing "verify leftover subscription rows"
 if [[ -n "$SUB_ID" ]]; then
-  LEFT="$(mysql_q "SELECT COUNT(*) FROM subscription WHERE id=${SUB_ID};")"
+  LEFT="$(mysql_q "SELECT COUNT(*) FROM subscription WHERE id=${SUB_ID};" || true)"
+  LEFT="$(printf '%s' "$LEFT" | tr -d '[:space:]')"
   echo "remaining_sub_id=$LEFT"
 fi
 if [[ -n "$SUB_SN" ]]; then
-  LEFT_SN="$(mysql_q "SELECT COUNT(*) FROM subscription WHERE fiber_onu_sn='${SUB_SN}';")"
+  LEFT_SN="$(mysql_q "SELECT COUNT(*) FROM subscription WHERE fiber_onu_sn='${SUB_SN}';" || true)"
+  LEFT_SN="$(printf '%s' "$LEFT_SN" | tr -d '[:space:]')"
   echo "remaining_sub_sn=$LEFT_SN"
 fi
+if [[ -n "$SUB_ID" || -n "$SUB_SN" ]]; then
+  CORE_NOTE=""
+  [[ -n "$SUB_ID" ]] && CORE_NOTE="id=$SUB_ID"
+  if [[ -n "$SUB_SN" ]]; then
+    if [[ -n "$CORE_NOTE" ]]; then
+      CORE_NOTE="$CORE_NOTE sn=$SUB_SN"
+    else
+      CORE_NOTE="sn=$SUB_SN"
+    fi
+  fi
+  if [[ "$CORE_EC" -ne 0 || ( -n "$SUB_ID" && "${LEFT:-1}" != "0" ) || ( -n "$SUB_SN" && "${LEFT_SN:-1}" != "0" ) ]]; then
+    CORE_STATE="fail"
+    CORE_NOTE="$CORE_NOTE (quedó fila en core)"
+  else
+    CORE_STATE="ok"
+  fi
+fi
+print_cleanup_summary
 echo "CLEANUP_DONE"
+CLEANUP_EXIT=0
+if [[ "$GW_STATE" == "fail" || "$ACS_STATE" == "fail" || "$MK_STATE" == "fail" || "$CORE_STATE" == "fail" ]]; then
+  CLEANUP_EXIT=1
+fi
 if [[ "${FIREBASE_EXIT:-0}" -ne 0 ]]; then
   echo "cleanup finished but Firebase delete failed exit=$FIREBASE_EXIT" >&2
   exit "$FIREBASE_EXIT"
 fi
+exit "$CLEANUP_EXIT"
