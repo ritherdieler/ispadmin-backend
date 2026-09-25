@@ -33,7 +33,8 @@ function validateWifiSnapshot(snapshot) {
   if (!snapshot) throw new Error('V2_WIFI_SNAPSHOT_REQUIRED');
   for (const band of ['24', '5']) {
     if (typeof snapshot['ssid' + band] !== 'string' || !snapshot['ssid' + band] ||
-        typeof snapshot['passphrase' + band] !== 'string' || snapshot['passphrase' + band].length < 8 ||
+        typeof snapshot['passphrase' + band] !== 'string' ||
+        (snapshot['passphrase' + band].length > 0 && snapshot['passphrase' + band].length < 8) ||
         typeof snapshot['enabled' + band] !== 'boolean') throw new Error('V2_WIFI_SNAPSHOT_INVALID');
   }
 }
@@ -50,7 +51,7 @@ function restoreWifi(layout, snapshot) {
   ['24', '5'].forEach(function (band, index) {
     const path = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.' + layout.bands[index];
     declare(path + '.SSID', null, { value: snapshot['ssid' + band] });
-    declare(path + '.KeyPassphrase', null, { value: snapshot['passphrase' + band] });
+    if (snapshot['passphrase' + band]) declare(path + '.KeyPassphrase', null, { value: snapshot['passphrase' + band] });
     declare(path + '.Enable', null, { value: snapshot['enabled' + band] });
     commit();
   });

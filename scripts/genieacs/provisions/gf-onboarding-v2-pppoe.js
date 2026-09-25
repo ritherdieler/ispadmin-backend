@@ -120,6 +120,10 @@ function applyInternet() {
   deleteOtherWans(layout, internet);
   ensureInstance(parent, internet);
   setInternetLeaves(internet, layout, request);
+  declare(internet + '.ConnectionStatus', { value: Date.now() });
+  declare(internet + '.LastConnectionError', { value: Date.now() });
+  declare(internet + '.ExternalIPAddress', { value: Date.now() });
+  commit();
   log('gf-onboarding-v2-pppoe applied operation=' + request.operationId + ' mode=' + request.mode);
 }
 applyInternet();

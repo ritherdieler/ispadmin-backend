@@ -120,7 +120,7 @@ class OnboardingV2TaskService(
         val ppp = client.findWanPppConnections(row.deviceId, wcd, ownedName)
         val ip = client.findWanIpConnections(row.deviceId, wcd, ownedName)
         if (ppp.size + ip.size > 1) conflict("Multiple owned v2 WANs were found")
-        val owned = ppp.singleOrNull() ?: ip.singleOrNull()
+        val owned = refreshOwnedWan(row.deviceId, wcd, ownedName, ppp.singleOrNull() ?: ip.singleOrNull(), compensation)
         val state = if (compensation) {
             if (owned == null) "COMPLETE" else "WAITING"
         } else {
@@ -168,8 +168,8 @@ class OnboardingV2TaskService(
         val cipher = (if (compensation) source.baselineCipher else source.desiredCipher)
             ?: conflict("Wi-Fi expected state was not captured")
         val expected = json.readTree(baselineCipher.decrypt(cipher))
-        val actual = readWifiBaseline(identity)
-        val complete = expected == json.valueToTree(actual)
+        val actual = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(readWifiBaseline(identity))
+        val complete = wifiEvidenceMatches(expected, actual)
         return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse(if (complete) "COMPLETE" else "WAITING", taskId)
     }
 
@@ -216,14 +216,52 @@ class OnboardingV2TaskService(
     private fun identity(operationId: String, sn: String, deviceId: String, model: String, firmware: String) =
         OnboardingV2InternetRequest(operationId, sn, deviceId, model, firmware, "identity", "identity", MANAGEMENT_VLAN + 1)
 
+    private fun refreshOwnedWan(
+        deviceId: String,
+        wanConnectionDevice: Int,
+        name: String,
+        owned: com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection?,
+        compensation: Boolean,
+    ): com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection? {
+        if (compensation || owned == null || !owned.connectionStatus.isNullOrBlank()) return owned
+        client.getParameterValues(deviceId, listOf(
+            "${owned.path}.ConnectionStatus",
+            "${owned.path}.LastConnectionError",
+            "${owned.path}.ExternalIPAddress",
+        ), connectionRequest = true)
+        val ppp = client.findWanPppConnections(deviceId, wanConnectionDevice, name)
+        val ip = client.findWanIpConnections(deviceId, wanConnectionDevice, name)
+        if (ppp.size + ip.size > 1) conflict("Multiple owned v2 WANs were found")
+        return ppp.singleOrNull() ?: ip.singleOrNull()
+    }
+
     private fun readWifiBaseline(request: OnboardingV2InternetRequest): Map<String, Any> {
         val bands = when (request.model.trim().uppercase()) { "F6600R" -> 1 to 5; "VSOLVA74" -> 5 to 1; else -> conflict("Unsupported v2 model") }
-        fun read(index: Int, leaf: String): String = client.getDeviceParameterValue(request.deviceId,
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.$leaf")?.takeIf { it.isNotBlank() }
-            ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Wi-Fi baseline is not readable")
-        return mapOf("ssid24" to read(bands.first, "SSID"), "passphrase24" to read(bands.first, "KeyPassphrase"),
-            "enabled24" to read(bands.first, "Enable").equals("true", true), "ssid5" to read(bands.second, "SSID"),
-            "passphrase5" to read(bands.second, "KeyPassphrase"), "enabled5" to read(bands.second, "Enable").equals("true", true))
+        val leaves = listOf("SSID", "Enable", "KeyPassphrase")
+        client.getParameterValues(request.deviceId, listOf(bands.first, bands.second).flatMap { index ->
+            leaves.map { leaf -> "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.$leaf" }
+        }, connectionRequest = true)
+        fun read(index: Int, leaf: String, required: Boolean): String {
+            val value = client.getDeviceParameterValue(request.deviceId,
+                "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.$leaf").orEmpty()
+            if (required && value.isBlank()) throw ResponseStatusException(HttpStatus.CONFLICT, "Wi-Fi baseline is not readable")
+            return value
+        }
+        return mapOf("ssid24" to read(bands.first, "SSID", true), "passphrase24" to read(bands.first, "KeyPassphrase", false),
+            "enabled24" to read(bands.first, "Enable", true).equals("true", true), "ssid5" to read(bands.second, "SSID", true),
+            "passphrase5" to read(bands.second, "KeyPassphrase", false), "enabled5" to read(bands.second, "Enable", true).equals("true", true))
+    }
+
+    private fun wifiEvidenceMatches(expected: com.fasterxml.jackson.databind.JsonNode, actual: com.fasterxml.jackson.databind.JsonNode): Boolean {
+        val wanted = expected.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        val seen = actual.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        for (key in listOf("passphrase24", "passphrase5")) {
+            if (seen.path(key).asText("").isBlank()) {
+                wanted.remove(key)
+                seen.remove(key)
+            }
+        }
+        return wanted == seen
     }
 
     private fun confirmCurrentDevice(request: OnboardingV2InternetRequest) {
