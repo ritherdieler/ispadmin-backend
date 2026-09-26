@@ -29,7 +29,7 @@ class OltGatewayApiKeyFilter(
         const val ACS_TO_GATEWAY_HEADER = "X-Acs-To-Gateway-Key"
         const val ENV_HEADER = "X-Gigafiber-Env"
         private const val MAX_SN_BODY = 65_536
-        private val pathSerial = Regex("""/(?:onu/(?:move|delete|reboot)|onus)/([^/]+)""")
+        private val pathSerial = Regex("""/(?:onu/(?:move|delete|reboot)|onus/by-sn|onus)/([^/]+)""")
         private val jsonSerial = Regex(""""sn"\s*:\s*"([^"]+)"""")
         private val reservedPathToken = setOf("provisioning", "v2")
 

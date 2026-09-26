@@ -28,7 +28,7 @@ Env equivalente: `CLEANUP_MODE=ask|auto|skip`.
 | `--auto-cleanup` / `--cleanup` | `--cleanup-mode auto` |
 | `--no-cleanup` o `SKIP_POST_CLEANUP=1` | `--cleanup-mode skip` |
 
-El precleanup (ONU libre **antes** del alta) no cambia.
+Al inicio no hay limpieza. Si `GET /onu/getBySn` dice que la ONU ya está registrada, el e2e se detiene y hay que limpiarla a mano.
 
 ## Ejemplos
 

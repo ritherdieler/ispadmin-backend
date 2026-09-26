@@ -26,11 +26,11 @@ E2E_ONU_SN=ZTEGDC47BFFD ./scripts/e2e_register_fiber_staging_espresso.sh \
 
 El 5 GHz es siempre `{ssid} - 5G` y la clave es la misma en ambas bandas. Flags ganan sobre `E2E_WIFI_SSID` / `E2E_WIFI_PASS`. SSID 1–27 (el sufijo « - 5G» cabe en 32). Clave 8–63.
 
-El wrapper: precleanup → login API → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso (`tr069ProvisionStatus=COMPLETE` vía ACS: SSID + WiFi) → cleanup según `--cleanup-mode`.
+El wrapper: login API → si la ONU ya está registrada, se detiene y pide limpiarla → catálogo → espera ONU unconfigured → `emu geo fix` → `installStagingDebug` → `pm clear` → Espresso (`tr069ProvisionStatus=COMPLETE` vía ACS: SSID + WiFi) → cleanup por id de suscripción según `--cleanup-mode`.
 
 Cada paso imprime en **consola** (stderr/stdout, no `/tmp`): `DOING` / `URL` / `HTTP` / `BODY` (recorte, tokens redactados) / `HTTP_FAIL` / `RETRY`. Mismo estilo en `tr069-e2e-hard-cleanup.sh` y `e2e_onu_activation_status_staging.sh`. Helper: `scripts/e2e_console.sh` (Android y backend). `--cleanup-mode skip` y `--access-mode` no cambian.
 
-`--cleanup-mode auto` (default) ejecuta `tr069-e2e-hard-cleanup.sh --env staging` al terminar. `--cleanup-mode ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]` (`s` limpia; Enter/`n` deja la suscripción). `--cleanup-mode skip` no limpia. Aliases: `--ask-cleanup`, `--auto-cleanup` / `--cleanup`, `--no-cleanup`. Env: `CLEANUP_MODE`. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
+`--cleanup-mode auto` (default) ejecuta `tr069-e2e-hard-cleanup.sh --env staging --id <suscripción>` al terminar. `--cleanup-mode ask` pregunta `¿Ejecutar hard cleanup ahora? [s/N]` (`s` limpia; Enter/`n` deja la suscripción). `--cleanup-mode skip` no limpia. Aliases: `--ask-cleanup`, `--auto-cleanup` / `--cleanup`, `--no-cleanup`. Env: `CLEANUP_MODE`. Detalle: [e2e-cleanup-prompt.md](./e2e-cleanup-prompt.md).
 
 Tiempos del cableado (Core/Gateway/ACS, no prod): grep `REG_TIMING` en logs. Detalle: [registration-timing-logs.md](./registration-timing-logs.md).
 

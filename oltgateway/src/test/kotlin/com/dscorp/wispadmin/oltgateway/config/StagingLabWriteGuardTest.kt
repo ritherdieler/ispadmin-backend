@@ -160,6 +160,30 @@ class StagingLabWriteGuardTest {
     }
 
     @Test
+    fun `staging key borra por sn lab`() {
+        val request = gatewayRequest("DELETE", "/api/olt-gateway/onus/by-sn/ZTEGDC47BFFD")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "stg")
+        val response = MockHttpServletResponse()
+
+        filter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_OK, response.status)
+    }
+
+    @Test
+    fun `staging key rechaza borrar por sn que no es lab`() {
+        val request = gatewayRequest("DELETE", "/api/olt-gateway/onus/by-sn/HWTC12345678")
+        request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")
+        request.addHeader(OltGatewayApiKeyFilter.ENV_HEADER, "stg")
+        val response = MockHttpServletResponse()
+
+        filter.doFilter(request, response, MockFilterChain())
+
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.status)
+    }
+
+    @Test
     fun `staging key autoriza por el sn del cuerpo en provisioning authorize`() {
         val request = gatewayRequest("POST", "/api/olt-gateway/onus/provisioning/authorize")
         request.addHeader(OltGatewayApiKeyFilter.HEADER, "stg-key")

@@ -43,7 +43,7 @@ Implementado y probado localmente:
 - Migración aditiva `V56__provisioning_v2_journal.sql`, sin aplicar en staging/prod.
 - `ProvisioningV2Controller`: contratos GET de progreso y POST retry/cancel, condicionales a la existencia del servicio v2. No se registró un runtime incompleto ni se activó selección v2 en el alta.
 - `OmciManagementV2`: componente CLI con validación de identidad/ubicación, perfil compatible, contexto GPON, aplicación idempotente y lectura posterior. Solo pruebas simuladas; no conectado aún al endpoint Gateway ni al worker.
-- Nuevos scripts `gf-onboarding-v2-pppoe`, `gf-onboarding-v2-wifi`, `gf-onboarding-v2-compensate`: identidad/modelo/firmware y propiedad por nombre de operación. En cada ONU la primera WAN queda como aprovisionamiento; cualquier otra se borra y se crea la de Internet en PPPoE o IP estática. El fallo del script llega al cliente con su código. Restauración WiFi con snapshot.
+- Nuevos scripts `gf-onboarding-v2-pppoe`, `gf-onboarding-v2-wifi`, `gf-onboarding-v2-compensate`: identidad/modelo/firmware y propiedad por nombre de operación. Antes de crear Internet, el script deja el service type de la WAN OMCI en solo `TR069` (ZTE `X_ZTE-COM_ServiceList`, VSOL `X_CT-COM_ServiceList`). En cada ONU esa WAN queda como aprovisionamiento; cualquier otra se borra y se crea la de Internet en PPPoE o IP estática. El fallo del script llega al cliente con su código. Restauración WiFi con snapshot.
 
 Pendientes obligatorios para terminar (no confundir las pruebas unitarias con el alta implementada):
 

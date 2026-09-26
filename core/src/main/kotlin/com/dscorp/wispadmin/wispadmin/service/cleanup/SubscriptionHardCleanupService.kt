@@ -15,6 +15,8 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.ResourceAccessException
+import org.springframework.web.util.UriUtils
+import java.nio.charset.StandardCharsets
 
 @Service
 class SubscriptionHardCleanupService(
@@ -130,7 +132,31 @@ class SubscriptionHardCleanupService(
         val sn = snapshot.serial?.trim().orEmpty()
         if (sn.isEmpty()) return
         val http = gatewayHttp.ifAvailable ?: throw missing("OLT")
+        val serial = UriUtils.encodePathSegment(sn.uppercase(), StandardCharsets.UTF_8)
+        delete(http, "/api/olt-gateway/onus/by-sn/$serial")
         post({ path, body -> http.postJsonBody(path, body) }, "/api/olt-gateway/subscription/purge", mapOf("sn" to sn), "OLT")
+    }
+
+    private fun delete(http: OltGatewayHttpClient, path: String) {
+        try {
+            http.deleteJson(path)
+        } catch (ex: HttpStatusCodeException) {
+            if (ex.statusCode.value() == 404) return
+            val retryable = ex.statusCode.is5xxServerError
+            throw CleanupStepException(CleanupFailure(
+                code = if (retryable) "OLT_UNAVAILABLE" else "OLT_REJECTED",
+                message = "No se pudo limpiar OLT. La suscripción sigue en el listado.",
+                detail = "HTTP ${ex.statusCode.value()} $path",
+                retryable = retryable,
+            ))
+        } catch (ex: ResourceAccessException) {
+            throw CleanupStepException(CleanupFailure(
+                code = "OLT_UNAVAILABLE",
+                message = "No se pudo limpiar OLT. La suscripción sigue en el listado.",
+                detail = ex.message ?: path,
+                retryable = true,
+            ))
+        }
     }
 
     private fun firebase(snapshot: CleanupSnapshot) {

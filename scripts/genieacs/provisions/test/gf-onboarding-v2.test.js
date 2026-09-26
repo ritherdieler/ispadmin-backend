@@ -74,6 +74,25 @@ test('PPPoE keeps the provisioning WAN, deletes every other WAN and creates inte
   assert.equal(writes.some(w => w.path.includes('[Name:')), false);
 });
 
+test('PPPoE sets the OMCI management WAN service to TR069 before creating Internet', () => {
+  const provisioning = root + '1.WANIPConnection.1';
+  const writes = run('gf-onboarding-v2-pppoe', request, { [provisioning]: true });
+  const service = writes.find(w => w.path === provisioning + '.X_ZTE-COM_ServiceList');
+  const internet = writes.find(w => w.path.endsWith('WANPPPConnection.2.Name'));
+  assert.equal(service.change.value, 'TR069');
+  assert.ok(writes.indexOf(service) < writes.indexOf(internet));
+  const already = run('gf-onboarding-v2-pppoe', request, {
+    [provisioning]: true,
+    [provisioning + '.X_ZTE-COM_ServiceList']: 'TR069',
+  });
+  assert.equal(already.some(w => w.path.endsWith('ServiceList') && w.path.startsWith(provisioning)), false);
+  const vsol = run('gf-onboarding-v2-pppoe', { ...request, model: 'VSOLVA74', expectedModel: 'VSOLVA74' }, {
+    [root + '1']: true,
+    [provisioning]: true,
+  });
+  assert.equal(vsol.find(w => w.path === provisioning + '.X_CT-COM_ServiceList').change.value, 'TR069');
+});
+
 test('static Internet keeps provisioning and replaces every other WAN with a static IP', () => {
   const provisioning = root + '1.WANIPConnection.1';
   const writes = run('gf-onboarding-v2-pppoe', {

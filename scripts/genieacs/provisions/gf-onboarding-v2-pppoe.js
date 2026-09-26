@@ -1,5 +1,5 @@
 // args[0]: JSON {operationId, expectedSerial, expectedModel, expectedFirmware, vlan, mode, username, password, ip, subnetMask, gateway, dns}.
-// commit() restarts the script. The first WAN stays the provisioning connection; every other WAN is removed and Internet is created as PPPoE or static.
+// commit() restarts the script. The OMCI management WAN service is set to TR069 before Internet is created. The first WAN stays the provisioning connection; every other WAN is removed and Internet is created as PPPoE or static.
 const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
 const F6600 = {
   wcd: 1,
@@ -15,6 +15,7 @@ const F6600 = {
 };
 const VSOL = {
   wcd: 2,
+  provisioning: WAN_ROOT + '1.WANIPConnection.1',
   preserveFirstContainer: true,
   internetPpp: WAN_ROOT + '2.WANPPPConnection.1',
   internetIp: WAN_ROOT + '2.WANIPConnection.1',
@@ -111,11 +112,18 @@ function setInternetLeaves(path, layout, request) {
   declare(path + '.Enable', null, { value: true });
   commit();
 }
+function ensureProvisioningServiceTr069(layout) {
+  const leaf = layout.provisioning + '.' + layout.vendor + layout.service;
+  if (valueAt(leaf) === 'TR069') return;
+  declare(leaf, null, { value: 'TR069' });
+  commit();
+}
 function applyInternet() {
   const request = requestForDevice();
   const layout = WAN_LAYOUTS[request.expectedModel];
   const internet = request.mode === 'static' ? layout.internetIp : layout.internetPpp;
   const parent = request.mode === 'static' ? layout.ipParent : layout.pppParent;
+  ensureProvisioningServiceTr069(layout);
   ensureInternetContainer(layout);
   deleteOtherWans(layout, internet);
   ensureInstance(parent, internet);

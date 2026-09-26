@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Hard cleanup TR-069 e2e lab (§4: MikroTik → ACS schema → Gateway/OLT → GenieACS NBI device delete → Firebase → Core subscription and provisioning journal → Gateway inventory → Traffic).
-# Staging deletes ONU via local OLT Gateway WAR; prod still uses SmartOLT cloud.
+# Hard cleanup TR-069 e2e lab.
+# If a subscription row exists, this script calls the same ADMIN endpoint as the backoffice
+# button: POST /subscription/{id}/hard-cleanup (MikroTik, ACS, OLT, facade photo, traffic, Core).
+# With no row and --allow-empty, it only releases the ONU so autofind can see it again.
 # Usage:
 #   ./scripts/tr069-e2e-hard-cleanup.sh --dni 91234567
 #   ./scripts/tr069-e2e-hard-cleanup.sh --sn HWTCC6FBA6AA
@@ -246,6 +248,79 @@ else
   echo "id=$SUB_ID sn=$SUB_SN ip=$SUB_IP pppoe=$SUB_PPPOE host=$HOST_DEVICE_ID name=$FIRST_NAME $LAST_NAME dni=$ROW_DNI"
 fi
 
+cleanup_via_core() {
+  local sub_id="$1"
+  local base user pass token http_code body status
+  if [[ -n "${API_BASE:-}" ]]; then
+    base="${API_BASE%/}"
+  elif [[ "$E2E_ENV" == "staging" ]]; then
+    base="https://api.gigafiberperu.tech/ispadmin-staging"
+  else
+    base="https://api.gigafiberperu.cloud/ispadmin"
+  fi
+  user="${E2E_USER:-dscorp}"
+  pass="${E2E_PASSWORD:-nohacker}"
+  section "Core hard-cleanup id=$sub_id"
+  e2e_doing "POST $base/subscription/$sub_id/hard-cleanup user=$user"
+  token="$(curl -sS -X POST "$base/users/login" \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$user\",\"password\":\"$pass\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("accessToken") or "")')"
+  if [[ -z "$token" ]]; then
+    echo "Login failed for hard-cleanup user=$user" >&2
+    CORE_STATE="fail"
+    CORE_NOTE="login"
+    print_cleanup_summary
+    return 1
+  fi
+  body="$(mktemp)"
+  http_code="$(curl -sS -o "$body" -w '%{http_code}' -X POST \
+    "$base/subscription/$sub_id/hard-cleanup" \
+    -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/json')"
+  echo "HTTP $http_code"
+  python3 - "$body" <<'PY'
+import json, sys
+path = sys.argv[1]
+raw = open(path, encoding="utf-8").read()
+try:
+    report = json.loads(raw)
+except json.JSONDecodeError:
+    print(raw[:800])
+    sys.exit(0)
+print("status=%s" % report.get("status"))
+for step in report.get("steps") or []:
+    line = "  %-10s %s" % (step.get("step"), step.get("state"))
+    if step.get("code"):
+        line += " %s" % step["code"]
+    if step.get("message"):
+        line += " — %s" % step["message"]
+    print(line)
+PY
+  status="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status") or "")' "$body" 2>/dev/null || true)"
+  rm -f "$body"
+  if [[ "$http_code" == "200" && "$status" == "COMPLETE" ]]; then
+    MK_STATE="ok"
+    ACS_STATE="ok"
+    GW_STATE="ok"
+    CORE_STATE="ok"
+    MK_NOTE="mismo POST que el backoffice"
+    ACS_NOTE="mismo POST que el backoffice"
+    GW_NOTE="mismo POST que el backoffice"
+    CORE_NOTE="id=$sub_id COMPLETE"
+    print_cleanup_summary
+    echo "CLEANUP_DONE"
+    return 0
+  fi
+  MK_STATE="fail"
+  ACS_STATE="fail"
+  GW_STATE="fail"
+  CORE_STATE="fail"
+  CORE_NOTE="id=$sub_id HTTP $http_code status=${status:-}"
+  print_cleanup_summary
+  return 1
+}
+
 is_lab_row() {
   [[ "${FIRST_NAME}" == E2e* || "${FIRST_NAME}" == E2E* ]] && return 0
   [[ "${LAST_NAME}" == Prueba* || "${LAST_NAME}" == Mimi* ]] && return 0
@@ -262,6 +337,8 @@ if [[ -n "$SUB_ID" ]]; then
     echo "Refusing cleanup: subscription $SUB_ID has $TICKETS assistance_ticket row(s). Use --force to override." >&2
     exit 3
   fi
+  cleanup_via_core "$SUB_ID"
+  exit $?
 fi
 
 ACS_DEVICE="$(mysql_q "SELECT IFNULL(genieacs_device_id,'') FROM subscription_acs WHERE subscription_id=${SUB_ID:-0} LIMIT 1;" 2>/dev/null || true)"
