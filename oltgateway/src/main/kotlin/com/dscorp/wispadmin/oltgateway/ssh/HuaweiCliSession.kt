@@ -29,6 +29,7 @@ class HuaweiCliSession(
 
     companion object {
         private val logger = LoggerFactory.getLogger(HuaweiCliSession::class.java)
+        private const val OUTPUT_QUIET_MS = 500L
     }
 
     private val lock = ReentrantLock()
@@ -314,7 +315,7 @@ class HuaweiCliSession(
                 lastLen = text.length
                 lastGrowthAt = System.currentTimeMillis()
             }
-            if (predicate(text)) {
+            if (predicate(text) && System.currentTimeMillis() - lastGrowthAt >= OUTPUT_QUIET_MS) {
                 return stripPaginationMarkers(text)
             }
             if (
