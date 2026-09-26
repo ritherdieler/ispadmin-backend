@@ -7,7 +7,7 @@
 ## Qué quedó
 
 - El prompt solo cierra el comando si es la última línea (`MA5608T(config-if-gpon-0/1)#`) y el texto lleva 500 ms sin crecer.
-- Si falta la línea del perfil, o el host 0 no está en la lectura de IP y tampoco es el aviso de “sin IP”, esa lectura no cuenta y se repite.
+- Si el informe no terminó y falta la línea del perfil, esa lectura no cuenta y se repite. Si el informe ya terminó y la línea no está, cuenta como perfil vacío.
 - Si el host DHCP de la VLAN 1000 ya está y el perfil sigue vacío, se vuelve a enviar el perfil antes de la siguiente lectura.
 
 Pruebas: `:oltgateway:test` de `HuaweiCliPromptDetectorTest` y `OmciManagementV2Test`, en verde. Desplegado en producción (`1.0.3+b21fe95`). Diez altas de `ZTEGDC47BFFD` con 45 s de espera confirmaron la gestión las diez veces, con dirección `10.20.0.110`, en 1 o 2 s.

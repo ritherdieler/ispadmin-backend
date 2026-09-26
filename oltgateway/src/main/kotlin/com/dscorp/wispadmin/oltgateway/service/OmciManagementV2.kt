@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.service
 
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
+import com.dscorp.wispadmin.oltgateway.ssh.HuaweiCliPromptDetector
 import org.slf4j.LoggerFactory
 
 data class OmciManagementTarget(val serial: String, val slot: Int, val port: Int, val ontId: Int, val tr069ProfileId: Int) {
@@ -144,11 +145,8 @@ class OmciManagementV2(
 
     private fun inspectState(command: (String) -> String, target: OmciManagementTarget): OmciManagementState {
         val info = checked(command, "display ont info ${target.port} ${target.ontId}")
-        if (field(info, "TR069 server profile ID") == null) {
-            val flat = info.replace(Regex("\\s+"), " ")
-            val at = flat.indexOf("profile")
-            val window = if (at < 0) "none" else flat.substring(maxOf(0, at - 40), minOf(flat.length, at + 180))
-            error("OMCI_INCOMPLETE_READ profile=$window")
+        if (field(info, "TR069 server profile ID") == null && !HuaweiCliPromptDetector.isComplete(info)) {
+            error("OMCI_INCOMPLETE_READ")
         }
         val parsed = OnuInfoBySnParser().parse(info)
         check(parsed != null && parsed.sn == target.serial && parsed.slot == target.slot &&
@@ -169,7 +167,11 @@ class OmciManagementV2(
             )
         }
         checkedOutput(ip, "display ont ipconfig ${target.port} ${target.ontId}")
-        val host = hostBlock(ip, "0") ?: error("OMCI_INCOMPLETE_READ")
+        val host = hostBlock(ip, "0") ?: if (HuaweiCliPromptDetector.isComplete(ip)) {
+            error("OMCI_UNEXPECTED_IP_HOSTS")
+        } else {
+            error("OMCI_INCOMPLETE_READ")
+        }
         val address = field(host, "ONT IP")?.takeIf { validAddress(it) }
         return OmciManagementState(
             serverProfileId = server,
