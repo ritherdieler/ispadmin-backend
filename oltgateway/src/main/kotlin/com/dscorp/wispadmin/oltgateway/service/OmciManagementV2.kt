@@ -145,7 +145,10 @@ class OmciManagementV2(
     private fun inspectState(command: (String) -> String, target: OmciManagementTarget): OmciManagementState {
         val info = checked(command, "display ont info ${target.port} ${target.ontId}")
         if (field(info, "TR069 server profile ID") == null) {
-            error("OMCI_INCOMPLETE_READ output=${info.replace(Regex("\\s+"), " ").takeLast(280)}")
+            val flat = info.replace(Regex("\\s+"), " ")
+            val at = flat.indexOf("TR069")
+            val window = if (at < 0) "none" else flat.substring(at, minOf(flat.length, at + 160))
+            error("OMCI_INCOMPLETE_READ tr069=$window")
         }
         val parsed = OnuInfoBySnParser().parse(info)
         check(parsed != null && parsed.sn == target.serial && parsed.slot == target.slot &&
