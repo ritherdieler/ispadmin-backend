@@ -170,7 +170,11 @@ class HuaweiCliSessionKeepaliveTest {
         every { channel.invertedIn } returns invertedIn
 
         every { channel.waitFor(any(), any<Long>()) } answers {
-            outRef.get()?.write("MA5608T#\r\n".toByteArray())
+            val out = outRef.get()
+            val current = out?.toString(Charsets.UTF_8).orEmpty()
+            if (!current.trimEnd().endsWith("#")) {
+                out?.write("MA5608T#\r\n".toByteArray())
+            }
             emptySet<ClientChannelEvent>()
         }
 
