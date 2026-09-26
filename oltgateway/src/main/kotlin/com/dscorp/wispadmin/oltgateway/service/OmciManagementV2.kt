@@ -146,9 +146,9 @@ class OmciManagementV2(
         val info = checked(command, "display ont info ${target.port} ${target.ontId}")
         if (field(info, "TR069 server profile ID") == null) {
             val flat = info.replace(Regex("\\s+"), " ")
-            val at = flat.indexOf("TR069")
-            val window = if (at < 0) "none" else flat.substring(at, minOf(flat.length, at + 160))
-            error("OMCI_INCOMPLETE_READ tr069=$window")
+            val at = flat.indexOf("profile")
+            val window = if (at < 0) "none" else flat.substring(maxOf(0, at - 40), minOf(flat.length, at + 180))
+            error("OMCI_INCOMPLETE_READ profile=$window")
         }
         val parsed = OnuInfoBySnParser().parse(info)
         check(parsed != null && parsed.sn == target.serial && parsed.slot == target.slot &&
