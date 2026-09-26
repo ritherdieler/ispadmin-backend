@@ -184,7 +184,7 @@ class DeployEnvScriptTest {
             script.contains("\"\$E2E_ENV\" == \"staging\""),
             "must branch on staging for Gateway delete"
         )
-        val stagingStart = script.indexOf("\"\$E2E_ENV\" == \"staging\"")
+        val stagingStart = script.indexOf("Gateway lookup+delete SN=")
         assertTrue(stagingStart >= 0)
         val afterStaging = script.substring(stagingStart)
         val nextProdBranch = afterStaging.indexOf("\"\$E2E_ENV\" == \"prod\"")
