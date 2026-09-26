@@ -6,7 +6,7 @@
 
 ## Qué quedó
 
-- El prompt solo cierra el comando si es la línea entera (`MA5608T(config-if-gpon-0/1)#`) y el texto lleva 500 ms sin crecer.
+- El prompt solo cierra el comando si es la última línea (`MA5608T(config-if-gpon-0/1)#`) y el texto lleva 500 ms sin crecer.
 - Si falta la línea del perfil, o el host 0 no está en la lectura de IP y tampoco es el aviso de “sin IP”, esa lectura no cuenta y se repite.
 - Si el host DHCP de la VLAN 1000 ya está y el perfil sigue vacío, se vuelve a enviar el perfil antes de la siguiente lectura.
 

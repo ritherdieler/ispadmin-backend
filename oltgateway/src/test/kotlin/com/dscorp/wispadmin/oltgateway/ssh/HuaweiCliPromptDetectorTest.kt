@@ -7,6 +7,17 @@ import org.junit.jupiter.api.Test
 class HuaweiCliPromptDetectorTest {
 
     @Test
+    fun `un prompt anterior no cierra el comando si el informe sigue`() {
+        val buffer = """
+            MA5608T(config-if-gpon-0/1)#
+            display ont info 6 118
+            Run state : online
+        """.trimIndent()
+
+        assertFalse(HuaweiCliPromptDetector.isComplete(buffer))
+    }
+
+    @Test
     fun `una linea de gem index no cierra el comando`() {
         val buffer = """
             MA5608T(config-if-gpon-0/1)#display ont info 6 118

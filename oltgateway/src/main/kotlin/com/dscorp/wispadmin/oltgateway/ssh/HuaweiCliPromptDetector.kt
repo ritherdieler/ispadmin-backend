@@ -2,7 +2,7 @@ package com.dscorp.wispadmin.oltgateway.ssh
 
 internal object HuaweiCliPromptDetector {
 
-    private val promptRegex = Regex("""(?m)^[\w\-]+(?:\([^)\r\n]*\))?[>#]\s*$""")
+    private val promptRegex = Regex("""^[\w\-]+(?:\([^)\r\n]*\))?[>#]\s*$""")
     private val moreRegex = Regex("""----\s*More.*?----|More\s*\(.*?\)""", RegexOption.IGNORE_CASE)
     private val confirmCrTailRegex = Regex(
         """\{\s*<cr>[^}\r\n]*\}\s*:?\s*$""",
@@ -17,14 +17,15 @@ internal object HuaweiCliPromptDetector {
         if (needsConfirmEnter(buffer)) {
             return false
         }
-        return promptRegex.containsMatchIn(cleaned)
+        val lastLine = cleaned.lineSequence().map { it.trim('\r') }.lastOrNull { it.isNotBlank() } ?: return false
+        return promptRegex.matches(lastLine.trim())
     }
 
     fun needsMorePage(buffer: String): Boolean {
         val tail = buffer.takeLast(240)
         val moreMatch = moreRegex.findAll(tail).lastOrNull() ?: return false
         val after = tail.substring(moreMatch.range.last + 1)
-        return !promptRegex.containsMatchIn(after)
+        return after.lineSequence().none { promptRegex.matches(it.trim().trim('\r')) }
     }
 
     fun needsConfirmEnter(buffer: String): Boolean {
