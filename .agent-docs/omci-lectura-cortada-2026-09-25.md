@@ -10,4 +10,4 @@
 - Si el informe no terminó y falta la línea del perfil, esa lectura no cuenta y se repite. Si el informe ya terminó y la línea no está, cuenta como perfil vacío.
 - Si el host DHCP de la VLAN 1000 ya está y el perfil sigue vacío, se vuelve a enviar el perfil antes de la siguiente lectura.
 
-Pruebas: `:oltgateway:test` de `HuaweiCliPromptDetectorTest` y `OmciManagementV2Test`, en verde. Desplegado en producción (`1.0.3+b21fe95`). Diez altas de `ZTEGDC47BFFD` con 45 s de espera confirmaron la gestión las diez veces, con dirección `10.20.0.110`, en 1 o 2 s.
+La confirmación de gestión espera 5 segundos antes de la primera lectura. Cinco pruebas de `ZTEGDC47BFFD` con esa espera confirmaron la gestión.

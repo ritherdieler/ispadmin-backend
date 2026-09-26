@@ -25,6 +25,7 @@ class OmciManagementV2(
             writeJob { command ->
                 checked(command, "interface gpon 0/${target.slot}")
                 try {
+                    pause(SETTLE_MS)
                     val before = inspectComplete(command, target)
                     if (!before.configured) {
                         checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
@@ -225,5 +226,6 @@ class OmciManagementV2(
         const val MANAGEMENT_PRIORITY = 2
         const val READBACK_ATTEMPTS = 3
         const val READBACK_PAUSE_MS = 2_000L
+        const val SETTLE_MS = 5_000L
     }
 }

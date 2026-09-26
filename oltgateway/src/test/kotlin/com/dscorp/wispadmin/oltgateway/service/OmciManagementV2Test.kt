@@ -104,7 +104,7 @@ class OmciManagementV2Test {
             }
         }
         assertEquals(OmciManagementEvidence(true, "10.20.1.166"), service.ensure(target))
-        assertEquals(2_000L, pauses)
+        assertEquals(7_000L, pauses)
         assertEquals(
             listOf(
                 "ont ipconfig 6 39 ip-index 0 dhcp vlan 1000 priority 2",
