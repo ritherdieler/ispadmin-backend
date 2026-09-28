@@ -26,7 +26,7 @@ class OmciManagementV2(
                 checked(command, "interface gpon 0/${target.slot}")
                 try {
                     pause(SETTLE_MS)
-                    val before = inspectComplete(command, target)
+                    val before = waitUntilOnline(command, target)
                     if (!before.configured) {
                         checked(command, "ont ipconfig ${target.port} ${target.ontId} ip-index 0 dhcp vlan 1000 priority 2")
                         checked(command, "ont tr069-server-config ${target.port} ${target.ontId} profile-id ${target.tr069ProfileId}")
@@ -80,6 +80,19 @@ class OmciManagementV2(
         } catch (ex: Exception) {
             logger.warn("OMCI remove failed serial={} reason={}", target.serial, ex.message?.replace(Regex("\\s+"), " ")?.take(400))
             throw ex
+        }
+    }
+
+    private fun waitUntilOnline(command: (String) -> String, target: OmciManagementTarget): OmciManagementEvidence {
+        var waited = 0L
+        while (true) {
+            try {
+                return inspectComplete(command, target)
+            } catch (ex: IllegalStateException) {
+                if (ex.message != "OMCI_ONU_OFFLINE" || waited >= ONLINE_WAIT_MS) throw ex
+                pause(ONLINE_POLL_MS)
+                waited += ONLINE_POLL_MS
+            }
         }
     }
 
@@ -227,5 +240,7 @@ class OmciManagementV2(
         const val READBACK_ATTEMPTS = 3
         const val READBACK_PAUSE_MS = 2_000L
         const val SETTLE_MS = 5_000L
+        const val ONLINE_WAIT_MS = 45_000L
+        const val ONLINE_POLL_MS = 5_000L
     }
 }

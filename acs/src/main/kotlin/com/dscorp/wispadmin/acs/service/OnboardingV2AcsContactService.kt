@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.acs.OnboardingV2ContactState
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
 import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
+import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -23,10 +24,8 @@ class OnboardingV2AcsContactService(
         if (!properties.enabled) {
             throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "ACS is disabled")
         }
-        val matches = client.findDeviceBySerialSuffix(serial).filter { device ->
-            device.serialNumber?.trim()?.equals(serial, ignoreCase = true) == true ||
-                device.id.uppercase().endsWith(serial)
-        }
+        val suffix = Tr069SerialMatcher.normalizeSuffix(serial) ?: return OnboardingV2ContactResponse(OnboardingV2ContactState.WAITING)
+        val matches = client.findDeviceBySerialSuffix(suffix)
         if (matches.isEmpty()) return OnboardingV2ContactResponse(OnboardingV2ContactState.WAITING)
         if (matches.size > 1) throw ResponseStatusException(HttpStatus.CONFLICT, "Multiple ACS devices match the ONU serial")
         val device = matches.single()

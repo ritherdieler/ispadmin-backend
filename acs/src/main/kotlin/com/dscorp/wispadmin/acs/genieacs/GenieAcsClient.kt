@@ -257,6 +257,8 @@ class GenieAcsClient(
         return exchangeDeviceTag(deviceId, tag, HttpMethod.DELETE)
     }
 
+    fun deleteFault(faultId: String): Boolean = deleteResource("/faults/", faultId)
+
     fun listTags(deviceId: String): List<String> {
         val uri = deviceUri(deviceId, "_tags")
         val body = try {

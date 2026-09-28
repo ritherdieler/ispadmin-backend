@@ -109,6 +109,16 @@ Si `oltReachable=false` con ping OK: `./scripts/run-local-prestaging.sh free-olt
 
 Prueba por CLI sin usar la sesión del Gateway: usuario **`root`**, clave **`admin`**. No usar `oltadmin` para ese ingreso; es el usuario del Gateway y un segundo login con él llena el VTY.
 
+### Sesión CLI: abrir y cerrar (obligatorio)
+
+Una sesión mal cerrada deja el VTY ocupado y el siguiente login cae en `Reenter times have reached the upper limit`. Aplica igual si el SSH sale de la Mac o del VPS.
+
+1. Antes de conectar: `./scripts/run-local-prestaging.sh free-olt-ssh` si el origen es esta Mac. Una sola sesión. Si el Gateway ya tiene la suya, no abrir otra.
+2. Entrar con `root` / `admin`. Tras el banner, el prompt es `MA5608T>`. `enable` deja `MA5608T#`. Esperar ese prompt; un `>` suelto en un mensaje de error no es el fin del comando.
+3. Leer lo justo (`display ont autofind all`, `display ont info by-sn {sn}`) y salir en la misma sesión: `quit` y confirmar `y`.
+4. El proceso local (expect, ssh, script) tiene que terminar. Si se cuelga, matarlo enseguida para que la OLT suelte el VTY. No dejar la sesión en segundo plano.
+5. Si aparece `Reenter times have reached the upper limit`, parar. No reintentar hasta que la OLT libere el acceso.
+
 ### 4. Arrancar Core WAR local → Gateway local
 
 Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gateway, no corre OLT SSH ni ACS.
@@ -256,6 +266,7 @@ Timeouts: `genieacs.wait-timeout-ms` 90 s + `poll-interval-ms` 5 s en find **y**
 - Usar ONUs sin tag `lab`, MK1 o `mikrotik_test`.
 - Prestaging con `mikrotik.connection.mock.enabled=true` (el perfil `dev` lo enciende; hay que apagarlo en `application-local-prestaging.properties`).
 - SSH directo a la OLT con `oltadmin` en paralelo al Gateway (llena VTY / lockout). La prueba por CLI usa `root` / `admin`.
+- Dejar la sesión CLI abierta o colgada, o reintentar el login tras `Reenter times have reached the upper limit`. Hay que salir con `quit` + `y` y matar el proceso si no vuelve el prompt.
 
 ---
 

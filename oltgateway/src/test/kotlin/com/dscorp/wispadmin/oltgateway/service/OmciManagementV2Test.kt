@@ -171,6 +171,67 @@ class OmciManagementV2Test {
         assertEquals(2, ipReads)
     }
 
+    @Test fun `offline onu that comes back online is configured in the same session`() {
+        var infoReads = 0
+        var pauses = 0L
+        val writes = mutableListOf<String>()
+        val service = OmciManagementV2(pause = { pauses += it }) { run ->
+            run { command ->
+                when {
+                    command.startsWith("display ont info") -> {
+                        infoReads++
+                        if (infoReads == 1) info().replace("Run state : online", "Run state : offline") else info()
+                    }
+                    command.startsWith("display ont ipconfig") -> ip
+                    command.startsWith("ont ") -> { writes += command; "" }
+                    else -> ""
+                }
+            }
+        }
+        assertEquals(OmciManagementEvidence(true, "10.20.1.166"), service.ensure(target))
+        assertEquals(2, infoReads)
+        assertEquals(5_000L + 5_000L, pauses)
+        assertTrue(writes.isEmpty())
+    }
+
+    @Test fun `offline onu fails after a 45s wait without another session`() {
+        var pauses = 0L
+        var sessions = 0
+        val writes = mutableListOf<String>()
+        val service = OmciManagementV2(pause = { pauses += it }) { run ->
+            sessions++
+            run { command ->
+                if (command.startsWith("ont ")) writes += command
+                info().replace("Run state : online", "Run state : offline")
+            }
+        }
+        val error = assertThrows(IllegalStateException::class.java) { service.ensure(target) }
+        assertEquals("OMCI_ONU_OFFLINE", error.message)
+        assertEquals(1, sessions)
+        assertEquals(5_000L + 45_000L, pauses)
+        assertTrue(writes.isEmpty())
+    }
+
+    @Test fun `identity mismatch does not wait for the onu to come online`() {
+        var pauses = 0L
+        val service = OmciManagementV2(pause = { pauses += it }) { run ->
+            run { info("ZTEGDC47BFFD") }
+        }
+        val error = assertThrows(IllegalStateException::class.java) { service.ensure(target) }
+        assertEquals("OMCI_IDENTITY_MISMATCH", error.message)
+        assertEquals(5_000L, pauses)
+    }
+
+    @Test fun `remove does not wait when the onu is offline`() {
+        var pauses = 0L
+        val service = OmciManagementV2(pause = { pauses += it }) { run ->
+            run { info().replace("Run state : online", "Run state : offline") }
+        }
+        val error = assertThrows(IllegalStateException::class.java) { service.remove(target) }
+        assertEquals("OMCI_ONU_OFFLINE", error.message)
+        assertEquals(0L, pauses)
+    }
+
     @Test fun `CLI failure stops the sequence and is not mistaken for success`() {
         val service = OmciManagementV2 { run -> run { command -> when {
             command.startsWith("display ont info") -> info()

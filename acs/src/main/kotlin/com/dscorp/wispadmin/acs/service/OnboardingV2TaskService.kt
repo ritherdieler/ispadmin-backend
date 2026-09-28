@@ -6,16 +6,43 @@ import com.dscorp.wispadmin.acs.OnboardingV2WifiRequest
 import com.dscorp.wispadmin.acs.OnboardingV2WifiCompensateRequest
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
+import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.server.ResponseStatusException
 
+internal const val SESSION_RETRY_STATUS = "SESSION_RETRY"
+
+internal enum class SessionDropDecision { RETRY, TERMINAL }
+
+internal fun wanStatusNeedsRefresh(compensation: Boolean): Boolean = !compensation
+
+internal fun sessionDropDecision(message: String?, alreadyRetried: Boolean): SessionDropDecision =
+    if (message == "The TR-069 session was unsuccessfully terminated" && !alreadyRetried) {
+        SessionDropDecision.RETRY
+    } else {
+        SessionDropDecision.TERMINAL
+    }
+
 internal fun onboardingFaultReason(body: String?): String? {
     if (body.isNullOrBlank()) return null
     val message = runCatching { ObjectMapper().readTree(body).path("message").asText("") }.getOrDefault("").trim()
     return message.takeIf { it.isNotEmpty() }?.take(180)
+}
+
+internal fun internetRetryArg(body: String?): String? {
+    if (body.isNullOrBlank()) return null
+    val row = runCatching { ObjectMapper().readTree(body).path("provisions") }.getOrNull()?.takeIf { it.isArray }?.get(0)
+        ?: return null
+    if (!row.isArray || row.size() < 2 || row[0].asText() != "gf-onboarding-v2-pppoe") return null
+    return row[1].asText(null)?.takeIf { it.isNotBlank() }
+}
+
+internal fun faultDocumentId(body: String?): String? {
+    if (body.isNullOrBlank()) return null
+    return runCatching { ObjectMapper().readTree(body).path("_id").asText(null) }.getOrNull()?.takeIf { it.isNotBlank() }
 }
 
 private data class OnboardingV2TaskRow(
@@ -109,7 +136,13 @@ class OnboardingV2TaskService(
         val taskId = row.taskId ?: return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("WAITING", "")
         val fault = client.findFaultBodyForTask(row.deviceId, taskId)
         if (fault != null) {
-            return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId, onboardingFaultReason(fault))
+            val reason = onboardingFaultReason(fault)
+            val retry = !compensation &&
+                sessionDropDecision(reason, row.status == SESSION_RETRY_STATUS) == SessionDropDecision.RETRY
+            if (retry) {
+                requeueAfterSessionDrop(row, fault)?.let { return it }
+            }
+            return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId, reason)
         }
         val wcd = when (row.model.trim().uppercase()) {
             "F6600R" -> 1
@@ -127,6 +160,23 @@ class OnboardingV2TaskService(
             if (owned?.connectionStatus.equals("Connected", ignoreCase = true)) "COMPLETE" else "WAITING"
         }
         return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse(state, taskId)
+    }
+
+    private fun requeueAfterSessionDrop(
+        row: OnboardingV2TaskRow,
+        fault: String,
+    ): com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse? {
+        val arg = internetRetryArg(fault) ?: return null
+        val faultId = faultDocumentId(fault) ?: return null
+        if (!client.deleteFault(faultId)) return null
+        val queued = client.enqueueProvisions(row.deviceId, INTERNET_PROVISION, listOf(arg), connectionRequest = false)
+        val taskId = queued.taskId?.takeIf { queued.accepted && it.isNotBlank() } ?: return null
+        jdbc.update(
+            """UPDATE acs_onboarding_v2_task SET genie_task_id=?, status=?, updated_at_epoch_ms=?
+                WHERE operation_id=? AND action=?""",
+            taskId, SESSION_RETRY_STATUS, System.currentTimeMillis(), row.operationId, row.action,
+        )
+        return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("WAITING", taskId)
     }
 
     fun enqueueWifi(request: OnboardingV2WifiRequest): OnboardingV2TaskResponse {
@@ -223,7 +273,7 @@ class OnboardingV2TaskService(
         owned: com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection?,
         compensation: Boolean,
     ): com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection? {
-        if (compensation || owned == null || !owned.connectionStatus.isNullOrBlank()) return owned
+        if (owned == null || !wanStatusNeedsRefresh(compensation)) return owned
         client.getParameterValues(deviceId, listOf(
             "${owned.path}.ConnectionStatus",
             "${owned.path}.LastConnectionError",
@@ -266,10 +316,8 @@ class OnboardingV2TaskService(
 
     private fun confirmCurrentDevice(request: OnboardingV2InternetRequest) {
         val serial = request.sn.trim().uppercase()
-        val matches = client.findDeviceBySerialSuffix(serial).filter { device ->
-            device.id == request.deviceId &&
-                (device.serialNumber?.trim()?.equals(serial, ignoreCase = true) == true || device.id.uppercase().endsWith(serial))
-        }
+        val suffix = Tr069SerialMatcher.normalizeSuffix(serial) ?: conflict("ACS device is no longer uniquely identified")
+        val matches = client.findDeviceBySerialSuffix(suffix).filter { device -> device.id == request.deviceId }
         val device = matches.singleOrNull() ?: conflict("ACS device is no longer uniquely identified")
         if (device.productClass?.trim() != request.model || device.softwareVersion?.trim() != request.firmware) {
             conflict("ACS device model or firmware changed")

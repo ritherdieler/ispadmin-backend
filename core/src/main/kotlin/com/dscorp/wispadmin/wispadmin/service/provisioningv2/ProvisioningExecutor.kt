@@ -38,7 +38,7 @@ class ProvisioningExecutor(
     init { require(this.handlers.size == ProvisioningStage.values().size && handlers.size == this.handlers.size) }
 
     fun advance(environment: String, operationId: String) {
-        val lease = journal.claim(environment, operationId, clock.instant(), 60_000) ?: return
+        val lease = journal.claim(environment, operationId, clock.instant(), 120_000) ?: return
         if (lease.operation.state in setOf(ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING)) {
             compensate(lease)
         } else {

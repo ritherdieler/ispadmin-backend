@@ -95,7 +95,8 @@ Cómo:
 
 1. `./scripts/run-local-prestaging.sh free-olt-ssh` (o `start`/`restart`, que ya lo invocan).
 2. Prohibido abrir un segundo `ssh`/`sshpass` a la OLT **en paralelo** al Gateway. Si hace falta CLI manual: `free-olt-ssh`, un solo SSH, cerrarlo, luego relanzar el WAR.
-3. Si ya hubo lockout: esperar a que la OLT libere VTY; no martillar más intentos.
+3. La sesión manual entra con `root` / `admin`, espera el prompt `MA5608T#` y **siempre** sale con `quit` y `y` antes de terminar el proceso. Si el cliente se cuelga, matarlo enseguida. No dejar SSH/expect en segundo plano.
+4. Si ya hubo lockout (`Reenter times have reached the upper limit`): esperar a que la OLT libere VTY; no martillar más intentos.
 
 Regla Cursor: `gigafiber/.cursor/rules/olt-lab-acs-vps-local.mdc`.
 

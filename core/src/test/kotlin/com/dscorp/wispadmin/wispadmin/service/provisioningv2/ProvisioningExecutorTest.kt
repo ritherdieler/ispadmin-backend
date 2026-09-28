@@ -27,6 +27,7 @@ class ProvisioningExecutorTest {
     private var blow: Exception? = null
     private var uncertain = false
     private var cancelDuringApply = false
+    private var leaseUntil: Long? = null
     init {
         ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(dataSource)
         journal.insert(ProvisioningOperation("op", "staging", 42, "ZTEGDC47BFFD"))
@@ -36,6 +37,12 @@ class ProvisioningExecutorTest {
         override fun reconcile(context: ProvisioningStageContext) = if (stage in applied) StageObservation.SATISFIED else StageObservation.NEEDS_APPLY
         override fun apply(context: ProvisioningStageContext): StageObservation {
             context.assertLease()
+            if (leaseUntil == null && stage == ProvisioningStage.VALIDATE) {
+                leaseUntil = JdbcTemplate(dataSource).queryForObject(
+                    "select lease_until from provisioning_v2_operation where operation_id='op'",
+                    Long::class.java,
+                )
+            }
             writes += stage
             blow?.let { throw it }
             if (fail == stage) {
@@ -55,6 +62,11 @@ class ProvisioningExecutorTest {
     } }
     private fun advance() = ProvisioningExecutor(journal, handlers, clock = clock).advance("staging", "op")
     private fun current() = requireNotNull(journal.get("staging", "op"))
+
+    @Test fun `lease lasts long enough for the onu online wait`() {
+        advance()
+        assertEquals(clock.instant().toEpochMilli() + 120_000, leaseUntil)
+    }
 
     @Test fun `remote failure keeps the service reason instead of the status envelope`() {
         val body = """{"timestamp":"2026-09-25T08:54:36.892-05:00","status":500,"error":"Internal Server Error","message":"OMCI_READBACK_MISMATCH configType=Invalid vlan=none priority=none profile=none address=absent","path":"/ispadmin/api/olt-gateway/onus/ZTEGDC47BFFD/omci/management"}"""

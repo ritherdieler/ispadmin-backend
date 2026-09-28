@@ -121,7 +121,7 @@ PENDING, RUNNING, WAITING, SUCCEEDED, FAILED, COMPENSATED
 Cada intento sigue este algoritmo:
 
 1. `ProvisioningRecoveryScheduler` obtiene operaciones vencidas del entorno actual.
-2. `ProvisioningJournal.claim()` adquiere un lease de 60 segundos.
+2. `ProvisioningJournal.claim()` adquiere un lease de 120 segundos, para que quepan los 5 s de asentamiento, la espera de hasta 45 s si la ONU no está en línea y la escritura OMCI.
 3. El executor marca la etapa `RUNNING` e incrementa `attempts`.
 4. El handler ejecuta primero `reconcile()`.
 5. Solo si devuelve `NEEDS_APPLY`, ejecuta `apply()`.
@@ -169,7 +169,7 @@ La tabla existe como V58 en el schema Core usado por el despliegue integrado y c
 | `MIKROTIK` | Busca `/ppp/secret` por usuario. Si falta, captura baseline y crea el secret con comentario `GFv2-{environment}-{operationId}`. No modifica perfiles compartidos. | Lectura posterior coincide en nombre, perfil, servicio, estado y propietario. | Cierra sesiones activas propias y elimina únicamente el secret con el comentario esperado. |
 | `OLT` | Reserva el serial, reconcilia/autoriza la ONU y asegura el service-port de gestión VLAN 1000. Conserva la VLAN Internet solicitada para el transporte de cliente. | `externalId`, board, port, ONT-ID válidos y `managementVlanReady=true`. | Borra únicamente la ONU reservada por esa operación y confirma que ya no existe antes de liberar la reserva. |
 | `OMCI` | Usa la posición confirmada por OLT; asegura IP host 0 DHCP VLAN 1000 prioridad 2 y perfil TR-069. | Readback exacto de WAN de gestión y perfil; captura `omci`. | Ejecuta `undo` solo si WAN/perfil siguen siendo compatibles y pertenecen al target reservado. |
-| `ACS_CONTACT` | Busca un único device por serial completo; no encola tareas. Valida modelo y firmware soportados. | Captura inmutable de `deviceId`, modelo y firmware. | Sin efecto remoto. |
+| `ACS_CONTACT` | Busca por los últimos 6 caracteres hex del serial de la OLT y acepta el equipo solo si hay uno; no encola tareas. Valida modelo y firmware soportados. | Captura inmutable de `deviceId`, modelo y firmware. | Sin efecto remoto. |
 | `INTERNET` | Encola `gf-onboarding-v2-pppoe`. Antes de Internet, deja el service type de la WAN OMCI en solo `TR069`. Conserva esa WAN, borra las demás y crea Internet PPPoE o estática. | Task sin fault y la WAN propia en `Connected`. El fault del script se muestra con su código. | Encola `gf-onboarding-v2-compensate` para la WAN de Internet de esa operación, PPPoE o estática, y espera confirmación. |
 | `WIFI` | ACS lee y cifra primero el baseline; luego encola `gf-onboarding-v2-wifi`. | Estado remoto coincide con SSID, clave y enabled esperados para ambas bandas. | Descifra el baseline dentro de ACS y encola `gf-onboarding-v2-compensate` en modo Wi-Fi. |
 | `VERIFY` | Comprueba que existen evidencias `olt`, `omci`, `acs-contact`, `internet` y `wifi`. | Todas las etapas previas ya pasaron su propio readback. | Sin efecto remoto. |

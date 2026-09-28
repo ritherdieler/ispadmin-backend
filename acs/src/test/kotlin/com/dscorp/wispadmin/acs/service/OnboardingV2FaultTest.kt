@@ -16,4 +16,19 @@ class OnboardingV2FaultTest {
         assertFalse(reason!!.contains("secret"))
         assertNull(onboardingFaultReason("""{"message":""}"""))
     }
+
+    @Test
+    fun `a dropped TR-069 session is retried once and any other fault stays terminal`() {
+        val dropped = "The TR-069 session was unsuccessfully terminated"
+
+        assertEquals(SessionDropDecision.RETRY, sessionDropDecision(dropped, alreadyRetried = false))
+        assertEquals(SessionDropDecision.TERMINAL, sessionDropDecision(dropped, alreadyRetried = true))
+        assertEquals(SessionDropDecision.TERMINAL, sessionDropDecision("V2_WAN_CONFLICT", alreadyRetried = false))
+    }
+
+    @Test
+    fun `internet status is read live and a cached connection status is not trusted`() {
+        assertEquals(true, wanStatusNeedsRefresh(compensation = false))
+        assertEquals(false, wanStatusNeedsRefresh(compensation = true))
+    }
 }
