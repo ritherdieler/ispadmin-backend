@@ -57,10 +57,14 @@ class StagingEnvironmentPropertiesTest {
         assertFalse(staging.contains("olt.gateway.enabled="), staging)
         assertTrue(staging.contains("olt.gateway.writes.enabled=true"), staging)
         assertTrue(staging.contains("olt.gateway.sync.signal-enabled=false"), staging)
-        assertTrue(staging.contains("olt.gateway.sync.inventory-enabled=false"), staging)
+        assertTrue(
+            staging.contains("olt.gateway.sync.inventory-enabled=\${OLT_GATEWAY_SYNC_INVENTORY_ENABLED:true}"),
+            staging,
+        )
         assertTrue(staging.contains("olt.gateway.sync.alarm-enabled=false"), staging)
         assertTrue(staging.contains("olt.gateway.sync.lab-optical-ssh-enabled=false"), staging)
-        assertTrue(staging.contains("olt.gateway.snmp.enabled=false"), staging)
+        assertTrue(staging.contains("olt.gateway.snmp.enabled=\${OLT_GATEWAY_SNMP_ENABLED:true}"), staging)
+        assertTrue(staging.contains("olt.gateway.snmp.ro-community=\${OLT_GATEWAY_SNMP_RO_COMMUNITY:}"), staging)
         assertTrue(staging.contains("olt.gateway.snmp.trap.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.enabled=false"), staging)
         assertTrue(staging.contains("net.diag.snmp.trap.udp-enabled=false"), staging)
