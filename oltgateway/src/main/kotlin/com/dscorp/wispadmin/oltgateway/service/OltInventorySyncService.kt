@@ -31,11 +31,14 @@ import com.dscorp.wispadmin.oltgateway.dto.SyncStatusDto
 import com.dscorp.wispadmin.oltgateway.exception.CliBusBusyException
 import com.dscorp.wispadmin.oltgateway.exception.OltUnreachableException
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
+import com.dscorp.wispadmin.oltgateway.parser.OnuVersionParser
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.NoOpOltSnmpPollLock
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpPollLocker
 import com.dscorp.wispadmin.oltgateway.ssh.OltCliBus
+import com.dscorp.wispadmin.oltgateway.ssh.CliBusResult
+import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.transaction.annotation.Transactional
@@ -61,7 +64,8 @@ open class OltInventorySyncService(
     eventPublisher: org.springframework.context.ApplicationEventPublisher? = null,
     pollLock: OltSnmpPollLocker = NoOpOltSnmpPollLock(),
     fusedInventoryCache: OltFusedInventoryCache? = null,
-    onuOwnership: ProvisioningV2OnuOwnershipService? = null
+    onuOwnership: ProvisioningV2OnuOwnershipService? = null,
+    private val onuVersionParser: OnuVersionParser? = null
 ) {
 
     companion object {
@@ -640,6 +644,7 @@ open class OltInventorySyncService(
             if (onu.deletedAt == null) continue
             existingBySn.putIfAbsent(HuaweiGponSnmpCodec.normalizeOntSn(onu.sn), onu)
         }
+        val vendorIds = readMissingVendorIds(snapshot, existingBySn)
         val pending = PendingWrites()
         val softDeletedOnus = linkedSetOf<OltMgrOnu>()
         val positionMovers = mutableListOf<PositionMove>()
@@ -663,13 +668,13 @@ open class OltInventorySyncService(
             val normSn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
             val current = existingBySn[normSn]
             if (current == null) {
-                pending.onus += buildNewOnu(olt, parsed, now)
+                pending.onus += buildNewOnu(olt, parsed, now, vendorIds[normSn])
                 inserted++
             } else {
                 val beforeBoard = current.board
                 val beforePort = current.port
                 val beforeIndex = current.onuIndex
-                when (applyUpdate(olt, current, parsed, now, pending)) {
+                when (applyUpdate(olt, current, parsed, now, pending, vendorIds[normSn])) {
                     UpdateOutcome.UPDATED -> {
                         updated++
                         if (current.board != beforeBoard ||
@@ -775,10 +780,11 @@ open class OltInventorySyncService(
         }
     }
 
-    private fun buildNewOnu(olt: OltMgrOlt, parsed: ParsedOnuSummary, now: Instant): OltMgrOnu {
+    private fun buildNewOnu(olt: OltMgrOlt, parsed: ParsedOnuSummary, now: Instant, vendorId: String?): OltMgrOnu {
         telemetryPublisher.get()?.publishEvent(OltStateObservation(parsed.sn, parsed.runState, parsed.lastDownCause, now))
         val onu = OltMgrOnu(
             sn = parsed.sn,
+            vendorId = vendorId,
             externalId = externalId(parsed.slot, parsed.port, parsed.ontId),
             olt = olt,
             board = parsed.slot,
@@ -812,7 +818,8 @@ open class OltInventorySyncService(
         onu: OltMgrOnu,
         parsed: ParsedOnuSummary,
         now: Instant,
-        pending: PendingWrites
+        pending: PendingWrites,
+        discoveredVendorId: String?
     ): UpdateOutcome {
         var onuChanged = false
         val wasDeleted = onu.deletedAt != null
@@ -849,6 +856,11 @@ open class OltInventorySyncService(
             onuChanged = true
         }
 
+        if (!discoveredVendorId.isNullOrBlank() && onu.vendorId != discoveredVendorId) {
+            onu.vendorId = discoveredVendorId
+            onuChanged = true
+        }
+
         if (onu.importedFromOlt) {
             val desc = clipName(parsed.description)
             if (!desc.isNullOrBlank() && onu.name != desc) {
@@ -878,6 +890,44 @@ open class OltInventorySyncService(
             pending.onus += onu
         }
         return UpdateOutcome.UPDATED
+    }
+
+    private fun readMissingVendorIds(
+        snapshot: List<ParsedOnuSummary>,
+        existingBySn: Map<String, OltMgrOnu>
+    ): Map<String, String> {
+        val parser = onuVersionParser ?: return emptyMap()
+        val pending = snapshot.filter { parsed ->
+            existingBySn[HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)]?.vendorId.isNullOrBlank()
+        }
+        if (pending.isEmpty() || cliBus() == null) return emptyMap()
+
+        return try {
+            when (val result = cliBus()!!.execute(CliJobType.INVENTORY) { session ->
+                val values = linkedMapOf<String, String>()
+                pending.groupBy { it.slot }.forEach { (slot, onus) ->
+                    session.execute("interface gpon 0/$slot")
+                    onus.forEach { parsed ->
+                        try {
+                            val output = session.execute("display ont version ${parsed.port} ${parsed.ontId}")
+                            parser.parseVendorId(output)?.let { vendor ->
+                                values[HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)] = vendor
+                            }
+                        } catch (ex: Exception) {
+                            logger.debug("Unable to read Vendor-ID for {}/{}/{}: {}", slot, parsed.port, parsed.ontId, ex.message)
+                        }
+                    }
+                    session.execute("quit")
+                }
+                values
+            }) {
+                is CliBusResult.Ok -> result.value
+                is CliBusResult.Skipped -> emptyMap()
+            }
+        } catch (ex: Exception) {
+            logger.warn("Vendor-ID enrichment skipped: {}", ex.message)
+            emptyMap()
+        }
     }
 
     private fun applyStatus(
