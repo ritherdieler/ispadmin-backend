@@ -595,7 +595,12 @@ open class OltInventorySyncService(
                     startedAt
                 )
             }
-            val result = transactionTemplateRef.get()?.execute { persistSnapshot(olt, snapshot) }
+            val result = transactionTemplateRef.get()?.execute {
+                val managedOlt = oltRepository().findById(olt.id!!).orElseThrow {
+                    IllegalStateException("OLT seed missing during inventory persistence")
+                }
+                persistSnapshot(managedOlt, snapshot)
+            }
                 ?: persistSnapshot(olt, snapshot)
             return finish(result, startedAt)
         } catch (ex: CliBusBusyException) {
