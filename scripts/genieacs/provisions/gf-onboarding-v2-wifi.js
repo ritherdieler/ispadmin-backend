@@ -5,11 +5,21 @@ function readValue(path) {
   const result = declare(path, { value: Date.now() });
   return result.value && result.value[0];
 }
+function serialSuffix(serial) {
+  const cleaned = String(serial || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (cleaned.length < 6) return '';
+  const suffix = cleaned.slice(-6);
+  return /^[0-9A-F]{6}$/.test(suffix) ? suffix : '';
+}
+function sameSerial(live, expected) {
+  const suffix = serialSuffix(live);
+  return suffix !== '' && suffix === serialSuffix(expected);
+}
 function validatedRequest() {
   const request = JSON.parse(args[0]);
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(request.operationId || '')) throw new Error('V2_INVALID_OPERATION');
   if (!request.expectedSerial || !request.expectedFirmware ||
-      readValue('DeviceID.SerialNumber') !== request.expectedSerial ||
+      !sameSerial(readValue('DeviceID.SerialNumber'), request.expectedSerial) ||
       readValue('DeviceID.ProductClass') !== request.expectedModel ||
       readValue('InternetGatewayDevice.DeviceInfo.SoftwareVersion') !== request.expectedFirmware) throw new Error('V2_IDENTITY_MISMATCH');
   if (!WIFI_LAYOUTS[request.expectedModel]) throw new Error('V2_MODEL_UNSUPPORTED');

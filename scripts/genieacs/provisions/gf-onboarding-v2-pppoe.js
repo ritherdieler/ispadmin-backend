@@ -31,11 +31,21 @@ function valueAt(path) {
   const result = declare(path, { value: Date.now() });
   return result.value && result.value[0];
 }
+function serialSuffix(serial) {
+  const cleaned = String(serial || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (cleaned.length < 6) return '';
+  const suffix = cleaned.slice(-6);
+  return /^[0-9A-F]{6}$/.test(suffix) ? suffix : '';
+}
+function sameSerial(live, expected) {
+  const suffix = serialSuffix(live);
+  return suffix !== '' && suffix === serialSuffix(expected);
+}
 function requestForDevice() {
   const request = JSON.parse(args[0]);
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(request.operationId || '')) throw new Error('V2_INVALID_OPERATION');
   if (!request.expectedSerial || !request.expectedFirmware ||
-      valueAt('DeviceID.SerialNumber') !== request.expectedSerial || valueAt('DeviceID.ProductClass') !== request.expectedModel ||
+      !sameSerial(valueAt('DeviceID.SerialNumber'), request.expectedSerial) || valueAt('DeviceID.ProductClass') !== request.expectedModel ||
       valueAt('InternetGatewayDevice.DeviceInfo.SoftwareVersion') !== request.expectedFirmware) throw new Error('V2_IDENTITY_MISMATCH');
   if (!WAN_LAYOUTS[request.expectedModel]) throw new Error('V2_MODEL_UNSUPPORTED');
   if (!Number.isInteger(request.vlan) || request.vlan < 1 || request.vlan > 4094 || request.vlan === 1000) throw new Error('V2_INVALID_INTERNET_VLAN');

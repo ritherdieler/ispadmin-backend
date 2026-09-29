@@ -10,11 +10,21 @@ function restoreValue(path) {
   const item = declare(path, { value: Date.now() });
   return item.value && item.value[0];
 }
+function serialSuffix(serial) {
+  const cleaned = String(serial || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (cleaned.length < 6) return '';
+  const suffix = cleaned.slice(-6);
+  return /^[0-9A-F]{6}$/.test(suffix) ? suffix : '';
+}
+function sameSerial(live, expected) {
+  const suffix = serialSuffix(live);
+  return suffix !== '' && suffix === serialSuffix(expected);
+}
 function validateCompensation() {
   const request = JSON.parse(args[0]);
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(request.operationId || '')) throw new Error('V2_INVALID_OPERATION');
   if (!request.expectedSerial || !request.expectedFirmware ||
-      restoreValue('DeviceID.SerialNumber') !== request.expectedSerial || restoreValue('DeviceID.ProductClass') !== request.expectedModel ||
+      !sameSerial(restoreValue('DeviceID.SerialNumber'), request.expectedSerial) || restoreValue('DeviceID.ProductClass') !== request.expectedModel ||
       restoreValue('InternetGatewayDevice.DeviceInfo.SoftwareVersion') !== request.expectedFirmware) throw new Error('V2_IDENTITY_MISMATCH');
   const layout = RESTORE_LAYOUTS[request.expectedModel];
   if (!layout) throw new Error('V2_MODEL_UNSUPPORTED');

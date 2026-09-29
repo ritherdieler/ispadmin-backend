@@ -265,7 +265,7 @@ Provisions nuevos, separados del legado:
 | `gf-onboarding-v2-wifi` | Configura las bandas 2.4 y 5 GHz después de capturar baseline. |
 | `gf-onboarding-v2-compensate` | Retira PPPoE propio o restaura el baseline Wi-Fi. |
 
-Los provisions validan `operationId`, serial esperado, modelo y firmware. No usan los scripts heredados y no purgan tareas globales del CPE.
+Los provisions validan `operationId`, modelo y firmware. El serial se acepta si los últimos 6 caracteres hex coinciden con el de la OLT (el serial TR-069 de la VSOL es más largo). No usan los scripts heredados y no purgan tareas globales del CPE.
 
 Modelos admitidos actualmente por la compuerta: `F6600R` y `VSOLVA74`; la compatibilidad final depende de homologar sus paths y firmware reales.
 

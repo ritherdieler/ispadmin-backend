@@ -34,6 +34,24 @@ const request = {
   username: 'client-42', password: 'pppoe-secret', vlan: 100,
 };
 
+test('Internet accepts a VSOL when only the last 6 serial characters match', () => {
+  const oltSerial = 'VSOL0031C0B6';
+  const acsSerial = '12345B4641531C0B6';
+  const vsol = { ...request, model: 'VSOLVA74', expectedModel: 'VSOLVA74', serial: acsSerial, expectedSerial: oltSerial };
+  const writes = run('gf-onboarding-v2-pppoe', vsol, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+  });
+  assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.1.Name')).change.value, 'GFv2-op-123');
+  assert.throws(() => run('gf-onboarding-v2-pppoe', { ...vsol, expectedSerial: 'VSOL00AAAAAA' }), /IDENTITY/);
+  assert.throws(() => run('gf-onboarding-v2-wifi', { ...vsol, expectedSerial: 'VSOL00AAAAAA' }), /IDENTITY/);
+  run('gf-onboarding-v2-wifi', vsol);
+  run('gf-onboarding-v2-compensate', { ...vsol, mode: 'internet', internetWasAbsent: true }, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+  });
+});
+
 test('WiFi writes only supported WLAN leaves and validates identity before changes', () => {
   const writes = run('gf-onboarding-v2-wifi', request);
   assert.equal(writes.length, 6);
