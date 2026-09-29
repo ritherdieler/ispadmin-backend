@@ -8,7 +8,8 @@ data class SmartOltUnconfiguredItemDto(
     val onu_type_name: String = "",
     val pon_type: String = "",
     val port: String = "",
-    val sn: String = ""
+    val sn: String = "",
+    val vendor_id: String = ""
 )
 
 data class SmartOltUnconfiguredOnusResponseDto(

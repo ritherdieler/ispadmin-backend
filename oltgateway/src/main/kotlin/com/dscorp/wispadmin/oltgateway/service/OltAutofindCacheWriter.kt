@@ -72,7 +72,8 @@ open class OltAutofindCacheWriter(
                     onu_type_name = row.equipmentId.orEmpty(),
                     pon_type = row.ponType,
                     port = row.port.toString(),
-                    sn = row.sn
+                    sn = row.sn,
+                    vendor_id = row.vendorId.orEmpty()
                 )
             }
     }
