@@ -19,6 +19,7 @@ import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
 import com.dscorp.wispadmin.oltgateway.parser.OnuSummaryParser
 import com.dscorp.wispadmin.oltgateway.parser.OpticalInfoParser
 import com.dscorp.wispadmin.oltgateway.parser.VersionParser
+import com.dscorp.wispadmin.oltgateway.parser.OnuVersionParser
 import com.dscorp.wispadmin.oltgateway.service.MockOltGatewayQueryService
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheService
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheWriter
@@ -411,7 +412,8 @@ class OltGatewayConfig {
         eventPublisher: org.springframework.context.ApplicationEventPublisher,
         pollLock: OltSnmpPollLocker,
         fusedInventoryCache: OltFusedInventoryCache,
-        onuOwnership: ProvisioningV2OnuOwnershipService
+        onuOwnership: ProvisioningV2OnuOwnershipService,
+        onuVersionParser: OnuVersionParser
     ): OltInventorySyncService {
         return OltInventorySyncService(
             queryFacade = queryFacade,
@@ -430,7 +432,8 @@ class OltGatewayConfig {
             eventPublisher = eventPublisher,
             pollLock = pollLock,
             fusedInventoryCache = fusedInventoryCache,
-            onuOwnership = onuOwnership
+            onuOwnership = onuOwnership,
+            onuVersionParser = onuVersionParser
         )
     }
 
