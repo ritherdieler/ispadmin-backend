@@ -26,7 +26,8 @@ class SmartOltCompatMapper {
                 onu_type_name = item.equipmentId.orEmpty(),
                 pon_type = "gpon",
                 port = item.port.toString(),
-                sn = item.sn
+                sn = item.sn,
+                vendor_id = item.vendorId.orEmpty()
             )
         }
         return SmartOltUnconfiguredOnusResponseDto(response = responses, status = true)
