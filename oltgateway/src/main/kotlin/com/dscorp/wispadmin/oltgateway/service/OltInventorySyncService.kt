@@ -900,7 +900,7 @@ open class OltInventorySyncService(
         val pending = snapshot.filter { parsed ->
             val normalizedSn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
             isVsolSn(normalizedSn) && existingBySn[normalizedSn]?.vendorId.isNullOrBlank()
-        }
+        }.take(props().sync.vendorEnrichmentMaxOnus.coerceAtLeast(0))
         if (pending.isEmpty() || cliBus() == null) return emptyMap()
 
         return try {

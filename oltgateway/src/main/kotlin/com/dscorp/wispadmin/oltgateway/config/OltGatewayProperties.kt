@@ -137,6 +137,8 @@ class OltGatewayProperties {
         var inventoryEnabled: Boolean = true
         var inventoryIntervalMs: Long = 600000
         var inventoryInitialDelayMs: Long = 30000
+        /** Limits the expensive CLI Vendor-ID enrichment per inventory cycle. */
+        var vendorEnrichmentMaxOnus: Int = 1
         var signalEnabled: Boolean = true
         /** Default 5 min — ~3x SNMP optical walk (~104 s). */
         var signalIntervalMs: Long = 300000
