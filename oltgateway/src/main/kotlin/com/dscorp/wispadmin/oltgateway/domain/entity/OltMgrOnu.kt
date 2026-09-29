@@ -30,6 +30,9 @@ class OltMgrOnu(
     @Column(nullable = false, unique = true, length = 32)
     var sn: String = "",
 
+    @Column(name = "vendor_id", length = 32)
+    var vendorId: String? = null,
+
     @Column(name = "external_id", nullable = false, unique = true, length = 64)
     var externalId: String = "",
 

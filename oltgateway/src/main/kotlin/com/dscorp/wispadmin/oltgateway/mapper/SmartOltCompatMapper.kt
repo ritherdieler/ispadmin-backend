@@ -85,6 +85,7 @@ class SmartOltCompatMapper {
             pon_type = onu.ponType,
             port = onu.port.toString(),
             sn = onu.sn,
+            vendor_id = onu.vendorId.orEmpty(),
             subnet_mask = onu.subnetMask.orEmpty(),
             unique_external_id = onu.externalId,
             vlan = onu.mainVlanId?.toString().orEmpty(),

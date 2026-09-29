@@ -63,6 +63,7 @@ data class SmartOltOnuDto(
     val port: String = "",
     val service_ports: List<Any> = emptyList(),
     val sn: String = "",
+    val vendor_id: String = "",
     val subnet_mask: String = "",
     val tr069_profile: String = "",
     val unique_external_id: String = "",
