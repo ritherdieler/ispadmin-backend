@@ -180,6 +180,7 @@ data class ConfiguredOnuFilter(
 data class ConfiguredOnuItemDto(
     val id: Long,
     val sn: String,
+    val vendorId: String? = null,
     val externalId: String,
     val board: Int,
     val port: Int,
@@ -231,6 +232,7 @@ data class ConfiguredOnuServicePortDto(
 data class ConfiguredOnuDetailDto(
     val id: Long,
     val sn: String,
+    val vendorId: String? = null,
     val externalId: String,
     val board: Int,
     val port: Int,

@@ -422,6 +422,7 @@ open class OltInventorySyncService(
         return ConfiguredOnuItemDto(
             id = onu.id!!,
             sn = onu.sn,
+            vendorId = onu.vendorId,
             externalId = onu.externalId,
             board = onu.board,
             port = onu.port,
@@ -466,6 +467,7 @@ open class OltInventorySyncService(
         return ConfiguredOnuDetailDto(
             id = onu.id!!,
             sn = onu.sn,
+            vendorId = onu.vendorId,
             externalId = onu.externalId,
             board = onu.board,
             port = onu.port,
