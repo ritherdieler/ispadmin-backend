@@ -19,7 +19,8 @@ class AutofindParser {
                 frame = parts[0],
                 slot = parts[1],
                 port = parts[2],
-                vendorId = fieldValue(block, "Vendor\\s*-?\\s*ID"),
+                vendorId = fieldValue(block, "Vendor\\s*-?\\s*ID")
+                    ?: sn.take(4).takeIf { it.length == 4 },
                 equipmentId = fieldValue(block, "Ont EquipmentID"),
                 softwareVersion = fieldValue(block, "Ont SoftwareVersion"),
                 autofindTime = fieldValue(block, "Ont autofind time")
