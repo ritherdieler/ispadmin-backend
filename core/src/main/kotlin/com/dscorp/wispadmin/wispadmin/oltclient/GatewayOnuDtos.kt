@@ -97,6 +97,7 @@ data class GatewayOnuV2AuthorizeRequest(
     val zone: String = "Zone 1",
     val onuMode: String = "Routing",
     val customProfile: String = "Generic_1",
+    val managementMode: String = "PRECONFIGURED",
 )
 
 data class GatewayOnuV2AuthorizeResponse(

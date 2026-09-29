@@ -503,6 +503,28 @@ class OltManagerFacadeTest {
     }
 
     @Test
+    fun `planAuthorize carries preconfigured mode to the CLI planner`() {
+        every { onuRepository.findBySnAndDeletedAtIsNull("VSOL0031C0B6") } returns Optional.empty()
+        every { onuRepository.findMaxOnuIndex(1L, 1, 6) } returns 16
+        val cliRequest = slot<AuthorizeCliRequest>()
+        every { commandService.planAuthorize(capture(cliRequest)) } returns listOf("ont add 6 17 sn-auth VSOL0031C0B6")
+
+        facade.planAuthorize(
+            AuthorizeOnuFormDto(
+                olt_id = "gigafiber-ma5608t",
+                board = "1",
+                port = "6",
+                sn = "VSOL0031C0B6",
+                vlan = "100",
+                name = "VSOL0031C0B6",
+                managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            )
+        )
+
+        assertEquals(ManagementProvisioningMode.PRECONFIGURED, cliRequest.captured.managementMode)
+    }
+
+    @Test
     fun `recordAuthorizeShadow registra la divergencia de posicion sin aplicar nada`() {
         every { onuRepository.findBySnAndDeletedAtIsNull("4857544311E70E9A") } returns Optional.empty()
         every { onuRepository.findMaxOnuIndex(1L, 0, 2) } returns 6

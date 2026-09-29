@@ -1,14 +1,17 @@
 package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
+import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
 import org.springframework.web.client.HttpServerErrorException
 import java.nio.charset.StandardCharsets
 import java.time.Clock
@@ -29,7 +32,7 @@ class ProvisioningExecutorTest {
     private var cancelDuringApply = false
     private var leaseUntil: Long? = null
     init {
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(dataSource)
+        ProvisioningTestSchema.initialize(dataSource)
         journal.insert(ProvisioningOperation("op", "staging", 42, "ZTEGDC47BFFD"))
     }
     private val handlers = ProvisioningStage.values().map { current -> object : ProvisioningStageHandler {
@@ -114,6 +117,42 @@ class ProvisioningExecutorTest {
         assertEquals(ProvisioningState.CANCELLED, current().state)
         assertTrue(writes.isEmpty() && undos.isEmpty())
     }
+
+    @Test fun `photo cleanup failure keeps operator lock until cancellation retry succeeds`() {
+        val target = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100)
+        val preauthorization = ProvisioningOperation(
+            "cancel-photo", "staging", null, "VSOL0031C0B6", flowVersion = 3,
+            managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            phase = ProvisioningPhase.OLT_AUTHORIZATION, operatorId = 71,
+            registrationRequestKey = "cancel-request-1", onuTarget = target,
+        )
+        journal.insertPreauthorization(preauthorization)
+        val ready = journal.updatePreauthorization("staging", preauthorization.id, preauthorization.revision, transform = { current ->
+            current.copy(phase = ProvisioningPhase.READY_FOR_FORM, state = ProvisioningState.READY_FOR_FORM)
+        })
+        val resources = ProvisioningResourceStore(JdbcTemplate(dataSource), CrmSecretCipher("unit-test-only"))
+        val photoUrl = "https://storage.example/photo?token=private-token"
+        resources.savePreauthorizationResource("staging", ready.id, 71, "registration-photo", photoUrl)
+        val storage = mockk<FirebaseStorageService>()
+        every { storage.deleteByPublicUrl(photoUrl) } throws IllegalStateException("storage unavailable") andThen Unit
+        journal.requestCancel("staging", ready.id, ready.revision)
+
+        val executor = ProvisioningExecutor(journal, handlers, resources, clock, storage)
+        executor.advance("staging", ready.id)
+        assertEquals(ProvisioningState.CANCEL_FAILED, currentOperation(ready.id).state)
+        assertEquals("CANCELLATION_CLEANUP_FAILED", currentOperation(ready.id).operationFailure?.code)
+        assertEquals(ready.id, journal.activeForOperator("staging", 71)?.id)
+
+        journal.requestCancel("staging", ready.id, ready.revision)
+        executor.advance("staging", ready.id)
+
+        assertEquals(ProvisioningState.CANCELLED, currentOperation(ready.id).state)
+        assertNull(journal.activeForOperator("staging", 71))
+        assertNull(resources.snapshot("staging", ready.id, "registration-photo"))
+        verify(exactly = 2) { storage.deleteByPublicUrl(photoUrl) }
+    }
+
+    private fun currentOperation(id: String) = requireNotNull(journal.get("staging", id))
 
     @Test fun `one bounded step per invocation and restart resumes persisted progress`() {
         repeat(ProvisioningStage.values().size) { advance() }

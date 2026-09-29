@@ -3,10 +3,17 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 import java.time.Instant
 
 enum class ProvisioningStage { VALIDATE, MIKROTIK, OLT, OMCI, ACS_CONTACT, INTERNET, WIFI, VERIFY }
-enum class ProvisioningState { PENDING, RUNNING, WAITING, SUCCEEDED, FAILED, CANCEL_REQUESTED, CANCELLING, CANCEL_FAILED, CANCELLED }
+enum class ManagementProvisioningMode { OMCI, PRECONFIGURED }
+enum class ProvisioningPhase { OLT_AUTHORIZATION, WAITING_FOR_ACS, READY_FOR_FORM, PROVISIONING }
+enum class ProvisioningState { PENDING, RUNNING, WAITING, READY_FOR_FORM, SUCCEEDED, FAILED, CANCEL_REQUESTED, CANCELLING, CANCEL_FAILED, CANCELLED }
 enum class CheckpointState { PENDING, RUNNING, WAITING, SUCCEEDED, FAILED, COMPENSATED }
 
-data class ProvisioningFailure(val code: String, val message: String, val retryable: Boolean)
+data class ProvisioningFailure(
+    val code: String,
+    val message: String,
+    val retryable: Boolean,
+    val technicalDetails: String? = null,
+)
 data class StageCheckpoint(
     val stage: ProvisioningStage,
     val state: CheckpointState = CheckpointState.PENDING,
@@ -18,20 +25,44 @@ data class StageCheckpoint(
 data class ProvisioningOperation(
     val id: String,
     val environment: String,
-    val subscriptionId: Int,
+    val subscriptionId: Int?,
     val serial: String,
     val revision: Long = 1,
     val flowVersion: Int = 2,
+    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.OMCI,
+    val phase: ProvisioningPhase = ProvisioningPhase.PROVISIONING,
+    val operatorId: Long? = null,
+    val operatorUsername: String? = null,
+    val registrationRequestKey: String? = null,
+    val onuTarget: ProvisioningOnuTarget? = null,
+    val oltEvidence: OltProvisioningResource? = null,
+    val acsContactEvidence: AcsContactProvisioningResource? = null,
+    val operationFailure: ProvisioningFailure? = null,
     val state: ProvisioningState = ProvisioningState.PENDING,
     val checkpoints: List<StageCheckpoint> = ProvisioningStage.values().map { StageCheckpoint(it) },
     val updatedAt: Instant = Instant.EPOCH,
 ) {
     init {
-        require(flowVersion == 2)
-        require(id.isNotBlank() && environment.isNotBlank() && subscriptionId > 0 && serial.isNotBlank())
+        require(flowVersion in 2..3)
+        require(id.isNotBlank() && environment.isNotBlank() && serial.isNotBlank())
+        require(subscriptionId == null || subscriptionId > 0)
+        require(phase != ProvisioningPhase.PROVISIONING || subscriptionId != null)
+        require(phase == ProvisioningPhase.PROVISIONING || flowVersion == 3)
         require(checkpoints.map { it.stage } == ProvisioningStage.values().toList())
     }
 }
+
+data class ProvisioningOnuTarget(
+    val oltId: String,
+    val ponType: String,
+    val board: String,
+    val port: String,
+    val onuType: String,
+    val vlan: Int,
+    val zone: String = "Zone 1",
+    val onuMode: String = "Routing",
+    val customProfile: String = "Generic_1",
+)
 
 /** Pure transitions only; the durable executor owns leases and external effects. */
 class ProvisioningTransitions {
@@ -44,6 +75,13 @@ class ProvisioningTransitions {
     fun retry(operation: ProvisioningOperation, expectedRevision: Long): ProvisioningOperation {
         require(operation.revision == expectedRevision) { "STALE_REVISION" }
         check(operation.state !in cancelling) { "CANCELLATION_IN_PROGRESS" }
+        if (operation.state == ProvisioningState.WAITING && operation.phase == ProvisioningPhase.WAITING_FOR_ACS) {
+            val waiting = operation.checkpoints.singleOrNull { it.state == CheckpointState.WAITING }
+            if (waiting?.stage != ProvisioningStage.ACS_CONTACT) return operation
+            return update(operation, waiting.stage, ProvisioningState.PENDING) {
+                it.copy(state = CheckpointState.PENDING, failure = null)
+            }
+        }
         if (operation.state != ProvisioningState.FAILED) return operation
         check(operation.checkpoints.none { it.failure?.retryable == false }) { "CORRECTION_REQUIRED" }
         return operation.copy(state = ProvisioningState.PENDING, checkpoints = operation.checkpoints.map {
@@ -55,11 +93,12 @@ class ProvisioningTransitions {
         require(operation.revision == expectedRevision) { "STALE_REVISION" }
         check(operation.state != ProvisioningState.SUCCEEDED) { "USE_SUBSCRIPTION_TERMINATION" }
         if (operation.state in cancelling && operation.state != ProvisioningState.CANCEL_FAILED) return operation
-        return operation.copy(state = ProvisioningState.CANCEL_REQUESTED)
+        return operation.copy(state = ProvisioningState.CANCEL_REQUESTED, operationFailure = null)
     }
 
     fun next(operation: ProvisioningOperation): ProvisioningStage? {
-        if (operation.state in cancelling || operation.state in setOf(ProvisioningState.FAILED, ProvisioningState.SUCCEEDED)) return null
+        if (operation.phase != ProvisioningPhase.PROVISIONING || operation.state in cancelling ||
+            operation.state in setOf(ProvisioningState.FAILED, ProvisioningState.SUCCEEDED, ProvisioningState.READY_FOR_FORM)) return null
         return operation.checkpoints.firstOrNull { it.state != CheckpointState.SUCCEEDED }?.stage
     }
 

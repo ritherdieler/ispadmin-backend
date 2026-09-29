@@ -67,7 +67,8 @@ class InternetProvisioningStageHandler(
         val registration = parseRegistration(context.resourceSnapshot(ProvisioningV2RegistrationService.REGISTRATION_RESOURCE_KEY)
             ?: failure("REGISTRATION_SNAPSHOT_MISSING", false))
         val contact = parseContact(context.resourceSnapshot(CONTACT_RESOURCE_KEY) ?: failure("ACS_CONTACT_RESOURCE_MISSING", false))
-        val subscription = subscriptions.lockIdentityOwner(context.operation.subscriptionId)
+        val subscription = subscriptions.lockIdentityOwner(context.operation.subscriptionId
+            ?: failure("SUBSCRIPTION_ID_REQUIRED", retryable = false))
             ?: failure("SUBSCRIPTION_NOT_FOUND", false)
         val username = subscription.pppoeUsername?.trim()?.takeIf { it.isNotEmpty() } ?: failure("PPPOE_USERNAME_REQUIRED", false)
         val password = subscription.pppoePasswordEnc?.takeIf(cipher::looksEncrypted)?.let(cipher::decrypt)

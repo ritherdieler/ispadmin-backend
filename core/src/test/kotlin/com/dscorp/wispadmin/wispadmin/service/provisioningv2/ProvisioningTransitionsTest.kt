@@ -14,6 +14,11 @@ class ProvisioningTransitionsTest {
         return operation
     }
 
+    @Test fun `operation model exposes durable phase for pre-subscription recovery`() {
+        assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "phase" })
+        assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "managementMode" })
+    }
+
     @Test fun `wifi retry preserves internet and OMCI checkpoints`() {
         val ready = through(ProvisioningStage.INTERNET)
         val failed = transitions.failed(transitions.started(ready, ProvisioningStage.WIFI), ProvisioningStage.WIFI,
@@ -24,6 +29,41 @@ class ProvisioningTransitionsTest {
         assertEquals(CheckpointState.SUCCEEDED, retried.checkpoints[ProvisioningStage.OMCI.ordinal].state)
         assertEquals(CheckpointState.SUCCEEDED, retried.checkpoints[ProvisioningStage.INTERNET.ordinal].state)
         assertEquals(retried, transitions.retry(retried, retried.revision))
+    }
+
+    @Test fun `manual ACS retry resumes the waiting contact checkpoint`() {
+        val waiting = fresh().copy(
+            flowVersion = 3,
+            phase = ProvisioningPhase.WAITING_FOR_ACS,
+            state = ProvisioningState.WAITING,
+            checkpoints = fresh().checkpoints.map {
+                if (it.stage == ProvisioningStage.ACS_CONTACT) it.copy(state = CheckpointState.WAITING, attempts = 1, touched = true)
+                else it
+            },
+        )
+
+        val retried = transitions.retry(waiting, waiting.revision)
+
+        assertEquals(ProvisioningState.PENDING, retried.state)
+        assertEquals(CheckpointState.PENDING, retried.checkpoints[ProvisioningStage.ACS_CONTACT.ordinal].state)
+        assertEquals(1, retried.checkpoints[ProvisioningStage.ACS_CONTACT.ordinal].attempts)
+    }
+
+    @Test fun `preauthorization has no subscription and is never claimed by provisioning worker`() {
+        val operation = ProvisioningOperation(
+            id = "preauth-op",
+            environment = "staging",
+            subscriptionId = null,
+            serial = "VSOL0031C0B6",
+            flowVersion = 3,
+            phase = ProvisioningPhase.WAITING_FOR_ACS,
+            operatorId = 77,
+            onuTarget = ProvisioningOnuTarget("olt", "gpon", "1", "6", "VSOLVA74", 100),
+            state = ProvisioningState.WAITING,
+        )
+
+        assertNull(transitions.next(operation))
+        assertEquals(ProvisioningPhase.WAITING_FOR_ACS, operation.phase)
     }
 
     @Test fun `cancellation compensates uncertain writes and preserves management until Internet undone`() {

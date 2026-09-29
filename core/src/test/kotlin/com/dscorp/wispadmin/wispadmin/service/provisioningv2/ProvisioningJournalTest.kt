@@ -3,10 +3,9 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
-import org.springframework.core.io.ClassPathResource
 import java.time.Instant
 import java.util.UUID
 
@@ -15,7 +14,7 @@ class ProvisioningJournalTest {
     private val jdbc = JdbcTemplate(dataSource)
     private val json = jacksonObjectMapper().findAndRegisterModules()
     private val now = Instant.parse("2026-09-22T12:00:00Z")
-    init { ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(dataSource) }
+    init { ProvisioningTestSchema.initialize(dataSource) }
     private fun journal() = ProvisioningJournal(jdbc, json)
     private fun operation() = ProvisioningOperation("op", "staging", 42, "ZTEGDC47BFFD")
 
@@ -62,5 +61,28 @@ class ProvisioningJournalTest {
         store.checkpoint(lease, running, now, true)
         assertEquals(ProvisioningState.CANCEL_REQUESTED, store.get("staging", "op")?.state)
         assertEquals(true, store.get("staging", "op")?.checkpoints?.first()?.touched)
+    }
+
+    @Test fun `preauthorization lock is atomic and releases only after confirmed cancellation`() {
+        val store = journal()
+        val target = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100)
+        val first = ProvisioningOperation(
+            "preauth-1", "staging", null, "VSOL0031C0B6", flowVersion = 3,
+            managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            phase = ProvisioningPhase.OLT_AUTHORIZATION,
+            operatorId = 71, operatorUsername = "tech", registrationRequestKey = "request-0001", onuTarget = target,
+        )
+        store.insertPreauthorization(first)
+        assertEquals(first.id, store.activeForOperator("staging", 71)?.id)
+        assertTrue(store.due("staging", now).isEmpty())
+
+        val duplicate = first.copy(id = "preauth-2", registrationRequestKey = "request-0002")
+        assertThrows(DataIntegrityViolationException::class.java) { store.insertPreauthorization(duplicate) }
+        assertEquals(first.id, store.activeForOperator("staging", 71)?.id)
+
+        store.requestCancel("staging", first.id, first.revision)
+        val lease = requireNotNull(store.claim("staging", first.id, now, 1000))
+        store.checkpoint(lease, lease.operation.copy(state = ProvisioningState.CANCELLED), now, true)
+        assertNull(store.activeForOperator("staging", 71))
     }
 }

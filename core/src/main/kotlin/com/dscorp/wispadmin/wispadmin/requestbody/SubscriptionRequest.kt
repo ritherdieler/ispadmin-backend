@@ -43,6 +43,7 @@ data class SubscriptionRequest(
     var wifiPassword5: String? = null,
     var vlan: String? = null,
     var accessMode: AccessMode? = null,
+    var registrationOperationId: String? = null,
 ) {
     fun toModel(): Subscription = Subscription(
         firstName = firstName.removeSpecialCharacters(),

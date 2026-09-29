@@ -149,6 +149,7 @@ open class OltManagerFacade(
                 vlan = vlan,
                 mgmtVlan = profiles.mgmtVlan,
                 mgmtGemport = profiles.mgmtGemport,
+                managementMode = request.managementMode,
             )
         )
         return AuthorizePlan(

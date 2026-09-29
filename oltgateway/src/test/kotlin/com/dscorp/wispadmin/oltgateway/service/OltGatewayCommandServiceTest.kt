@@ -3,6 +3,8 @@ package com.dscorp.wispadmin.oltgateway.service
 import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.exception.OltWritesDisabledException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -27,6 +29,39 @@ class OltGatewayCommandServiceTest {
             },
             properties = properties
         )
+    }
+
+    @Test
+    fun `authorization request exposes an explicit management provisioning mode`() {
+        val mode = AuthorizeCliRequest::class.java.declaredFields
+            .firstOrNull { it.name == "managementMode" }
+
+        assertNotNull(mode, "AuthorizeCliRequest must distinguish OMCI from preconfigured management WAN")
+    }
+
+    @Test
+    fun `preconfigured management keeps service ports but skips Huawei WAN commands`() {
+        properties.writes.labAcsTr069ProfileId = 20
+        val planned = service.planAuthorize(
+            AuthorizeCliRequest(
+                board = 1,
+                port = 6,
+                ontId = 116,
+                sn = "VSOL0031C0B6",
+                lineProfileId = 30,
+                serviceProfileId = 12,
+                description = "vsol_preconfigured",
+                vlan = 100,
+                mgmtVlan = 1000,
+                mgmtGemport = 2,
+                managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            )
+        )
+
+        assertTrue(planned.any { it.startsWith("service-port vlan 100 gpon 0/1/6 ont 116") })
+        assertTrue(planned.any { it.startsWith("service-port vlan 1000 gpon 0/1/6 ont 116") })
+        assertFalse(planned.any { it.startsWith("ont ipconfig") })
+        assertFalse(planned.any { it.startsWith("ont tr069-server-config") })
     }
 
     @Test
@@ -237,7 +272,7 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
-    fun `authorize con perfil TR-069 emite ipconfig DHCP y tr069-server-config`() {
+    fun `authorize con perfil TR-069 no crea la WAN por OMCI`() {
         properties.writes.labAcsTr069ProfileId = 20
         service.authorize(
             AuthorizeCliRequest(
@@ -254,8 +289,8 @@ class OltGatewayCommandServiceTest {
             )
         )
 
-        assertTrue(commands.any { it == "ont ipconfig 6 116 ip-index 0 dhcp vlan 1000 priority 2" })
-        assertTrue(commands.any { it == "ont tr069-server-config 6 116 profile-id 20" })
+        assertFalse(commands.any { it.startsWith("ont ipconfig") })
+        assertFalse(commands.any { it.startsWith("ont tr069-server-config") })
     }
 
     @Test

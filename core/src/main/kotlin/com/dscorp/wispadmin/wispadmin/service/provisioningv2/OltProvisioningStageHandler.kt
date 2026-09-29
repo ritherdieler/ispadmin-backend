@@ -71,6 +71,7 @@ class OltProvisioningStageHandler(
                 vlan = expected.snapshot.internetVlan.toString(),
                 onuType = expected.snapshot.onu.onuType,
                 subscriberName = expected.subscriberName,
+                managementMode = expected.operation.managementMode.name,
             ))
             return response.toResource()
         } catch (ex: HttpStatusCodeException) {
@@ -88,7 +89,8 @@ class OltProvisioningStageHandler(
     private fun expected(context: ProvisioningStageContext): ExpectedOnu {
         val operation = context.operation
         val snapshot = contextSnapshot(context)
-        val subscription = subscriptions.lockIdentityOwner(operation.subscriptionId)
+        val subscription = subscriptions.lockIdentityOwner(operation.subscriptionId
+            ?: failure("SUBSCRIPTION_ID_REQUIRED", retryable = false))
             ?: failure("SUBSCRIPTION_NOT_FOUND", retryable = false)
         if (!subscription.fiberOnuSn.equals(operation.serial, ignoreCase = true)) {
             failure("ONU_IDENTITY_MISMATCH", retryable = false)

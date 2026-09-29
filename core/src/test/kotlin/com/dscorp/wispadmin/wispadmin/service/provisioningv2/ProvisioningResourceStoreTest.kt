@@ -4,10 +4,8 @@ import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
 import java.time.Instant
 import java.util.UUID
 
@@ -19,7 +17,7 @@ class ProvisioningResourceStoreTest {
     private val now = Instant.parse("2026-09-22T12:00:00Z")
     private val lease: ProvisioningLease
     init {
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(dataSource)
+        ProvisioningTestSchema.initialize(dataSource)
         journal.insert(ProvisioningOperation("op", "staging", 42, "ZTEGDC47BFFD"))
         lease = requireNotNull(journal.claim("staging", "op", now, 1000))
     }
@@ -47,5 +45,32 @@ class ProvisioningResourceStoreTest {
         assertThrows(IllegalStateException::class.java) {
             resources.captureInitial(ProvisioningOperation("op", "staging", 42, "ZTEGDC47BFFD"), "registration", "changed")
         }
+    }
+
+    @Test fun `preauthorization draft is encrypted and can be replaced while restoring the same operation`() {
+        val operation = ProvisioningOperation(
+            id = "preauth",
+            environment = "staging",
+            subscriptionId = null,
+            serial = "VSOL0031C0B6",
+            flowVersion = 3,
+            phase = ProvisioningPhase.OLT_AUTHORIZATION,
+            state = ProvisioningState.PENDING,
+            operatorId = 71,
+            registrationRequestKey = "draft-request-1",
+            onuTarget = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100),
+        )
+        journal.insertPreauthorization(operation)
+        journal.updatePreauthorization("staging", "preauth", operation.revision, transform = { current ->
+            current.copy(phase = ProvisioningPhase.READY_FOR_FORM, state = ProvisioningState.READY_FOR_FORM)
+        })
+
+        resources.savePreauthorizationResource("staging", "preauth", 71, "registration-draft", "{\"dni\":\"private-value\"}")
+        assertEquals("{\"dni\":\"private-value\"}", resources.preauthorizationResource("staging", "preauth", 71, "registration-draft"))
+        val encrypted = jdbc.queryForObject("SELECT snapshot_cipher FROM provisioning_v2_resource WHERE operation_id='preauth'", String::class.java)
+        assertFalse(requireNotNull(encrypted).contains("private-value"))
+
+        resources.savePreauthorizationResource("staging", "preauth", 71, "registration-draft", "{\"dni\":\"updated-value\"}")
+        assertEquals("{\"dni\":\"updated-value\"}", resources.preauthorizationResource("staging", "preauth", 71, "registration-draft"))
     }
 }

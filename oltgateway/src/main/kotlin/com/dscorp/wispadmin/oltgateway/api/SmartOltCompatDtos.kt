@@ -1,5 +1,7 @@
 package com.dscorp.wispadmin.oltgateway.api
 
+import com.dscorp.wispadmin.oltgateway.service.ManagementProvisioningMode
+
 data class SmartOltUnconfiguredItemDto(
     val board: String = "",
     val olt_id: String = "",
@@ -110,7 +112,8 @@ data class AuthorizeOnuFormDto(
     val zone: String = "",
     val name: String = "",
     val onu_mode: String = "",
-    val custom_profile: String = ""
+    val custom_profile: String = "",
+    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.PRECONFIGURED,
 )
 
 data class MoveOnuFormDto(

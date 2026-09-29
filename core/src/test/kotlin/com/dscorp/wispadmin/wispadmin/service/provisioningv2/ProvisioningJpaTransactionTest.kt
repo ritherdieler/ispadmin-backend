@@ -3,10 +3,8 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
 import org.springframework.orm.jpa.JpaTransactionManager
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
@@ -22,7 +20,7 @@ class ProvisioningJpaTransactionTest {
     @Test fun `journal failure rolls back registration even when caller catches it`() {
         val source = DriverManagerDataSource("jdbc:h2:mem:${UUID.randomUUID()};MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "")
         val jdbc = JdbcTemplate(source)
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(source)
+        ProvisioningTestSchema.initialize(source)
         val factory = LocalContainerEntityManagerFactoryBean().apply {
             dataSource = source
             jpaVendorAdapter = HibernateJpaVendorAdapter()

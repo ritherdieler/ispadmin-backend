@@ -22,11 +22,93 @@ class ProvisioningJournal(
 
     fun insert(operation: ProvisioningOperation): ProvisioningOperation = transaction {
         require(operation.state == ProvisioningState.PENDING && operation.checkpoints.none { it.touched })
-        jdbc.update("INSERT INTO provisioning_v2_operation (operation_id, environment, subscription_id, serial, revision, operation_json, state) VALUES (?,?,?,?,?,?,?)",
-            operation.id, operation.environment, operation.subscriptionId, operation.serial, operation.revision,
-            json.writeValueAsString(operation), operation.state.name)
+        insertRow(operation)
         appendEvent(operation)
         operation
+    }
+
+    fun insertPreauthorization(operation: ProvisioningOperation): ProvisioningOperation = transaction {
+        require(operation.flowVersion == 3 && operation.phase == ProvisioningPhase.OLT_AUTHORIZATION)
+        require(operation.subscriptionId == null && operation.operatorId != null && operation.onuTarget != null)
+        require(operation.state == ProvisioningState.PENDING && operation.checkpoints.none { it.touched })
+        jdbc.update("INSERT INTO provisioning_v2_operator_lock (operator_id, environment, operation_id, created_at_epoch_ms) VALUES (?,?,?,?)",
+            operation.operatorId, operation.environment, operation.id, operation.updatedAt.toEpochMilli())
+        insertRow(operation)
+        appendEvent(operation)
+        operation
+    }
+
+    fun activeForOperator(environment: String, operatorId: Long): ProvisioningOperation? = jdbc.query(
+        """SELECT o.operation_json FROM provisioning_v2_operation o
+            JOIN provisioning_v2_operator_lock l ON l.operation_id=o.operation_id AND l.environment=o.environment
+            WHERE o.environment=? AND l.operator_id=?""",
+        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        environment, operatorId).singleOrNull()
+
+    fun preauthorizationForRequest(environment: String, operatorId: Long, requestKey: String): ProvisioningOperation? = jdbc.query(
+        """SELECT operation_json FROM provisioning_v2_operation
+            WHERE environment=? AND operator_id=? AND registration_request_key=?""",
+        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        environment, operatorId, requestKey).singleOrNull()
+
+    fun unlinkedPreauthorizations(environment: String): List<ProvisioningOperation> = jdbc.query(
+        """SELECT operation_json FROM provisioning_v2_operation
+            WHERE environment=? AND subscription_id IS NULL AND phase<>'PROVISIONING' AND state<>'CANCELLED'
+            ORDER BY operation_id DESC LIMIT 200""",
+        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        environment)
+
+    fun updatePreauthorization(
+        environment: String,
+        id: String,
+        expectedRevision: Long,
+        transform: (ProvisioningOperation) -> ProvisioningOperation,
+        now: Instant = Instant.now(),
+    ): ProvisioningOperation = transaction {
+        val current = read(environment, id, true) ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
+        require(current.revision == expectedRevision) { "STALE_REVISION" }
+        require(current.subscriptionId == null && current.phase != ProvisioningPhase.PROVISIONING) { "NOT_PREAUTHORIZATION" }
+        val changed = transform(current).copy(revision = current.revision + 1, updatedAt = now)
+        require(changed.id == current.id && changed.environment == current.environment &&
+            changed.serial == current.serial && changed.operatorId == current.operatorId) { "OPERATION_IDENTITY_CHANGED" }
+        persistUnleased(changed, current.revision)
+        appendEvent(changed)
+        releaseOperatorLockIfTerminal(changed)
+        changed
+    }
+
+    fun promotePreauthorization(
+        environment: String,
+        id: String,
+        operatorId: Long,
+        subscriptionId: Int,
+        now: Instant = Instant.now(),
+    ): ProvisioningOperation = transaction {
+        require(subscriptionId > 0)
+        val current = read(environment, id, true) ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
+        require(current.operatorId == operatorId && current.subscriptionId == null) { "PREAUTHORIZATION_OWNER_MISMATCH" }
+        require(current.phase == ProvisioningPhase.READY_FOR_FORM && current.state == ProvisioningState.READY_FOR_FORM) {
+            "ACS_CONFIRMATION_REQUIRED"
+        }
+        val checkpoints = current.checkpoints.map { checkpoint ->
+            if (checkpoint.stage in PRECONFIGURED_STAGES) checkpoint.copy(
+                state = CheckpointState.SUCCEEDED,
+                touched = checkpoint.stage == ProvisioningStage.OLT,
+                failure = null,
+            ) else checkpoint
+        }
+        val promoted = current.copy(
+            subscriptionId = subscriptionId,
+            phase = ProvisioningPhase.PROVISIONING,
+            state = ProvisioningState.PENDING,
+            managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            checkpoints = checkpoints,
+            revision = current.revision + 1,
+            updatedAt = now,
+        )
+        persistUnleased(promoted, current.revision)
+        appendEvent(promoted)
+        promoted
     }
 
     fun get(environment: String, id: String): ProvisioningOperation? = read(environment, id, false)
@@ -53,7 +135,8 @@ class ProvisioningJournal(
         val token = UUID.randomUUID().toString()
         val changed = jdbc.update("""UPDATE provisioning_v2_operation SET lease_token=?, lease_until=?
             WHERE environment=? AND operation_id=? AND lease_until<=? AND next_attempt_at<=?
-            AND state IN ('PENDING','RUNNING','WAITING','CANCEL_REQUESTED','CANCELLING')""",
+            AND ((phase='PROVISIONING' AND state IN ('PENDING','RUNNING','WAITING','CANCEL_REQUESTED','CANCELLING'))
+                OR state IN ('CANCEL_REQUESTED','CANCELLING'))""",
             token, now.toEpochMilli() + durationMs, environment, id, now.toEpochMilli(), now.toEpochMilli())
         if (changed == 0) null else ProvisioningLease(requireNotNull(get(environment, id)), token)
     }
@@ -74,6 +157,7 @@ class ProvisioningJournal(
             lease.token, now.toEpochMilli())
         check(changed == 1) { "LEASE_LOST" }
         appendEvent(next)
+        releaseOperatorLockIfTerminal(next)
         next
     }
 
@@ -111,7 +195,8 @@ class ProvisioningJournal(
 
     fun due(environment: String, now: Instant): List<String> = jdbc.query(
         """SELECT operation_id FROM provisioning_v2_operation WHERE environment=? AND lease_until<=? AND next_attempt_at<=?
-            AND state IN ('PENDING','RUNNING','WAITING','CANCEL_REQUESTED','CANCELLING') ORDER BY next_attempt_at LIMIT 50""",
+            AND ((phase='PROVISIONING' AND state IN ('PENDING','RUNNING','WAITING','CANCEL_REQUESTED','CANCELLING'))
+                OR state IN ('CANCEL_REQUESTED','CANCELLING')) ORDER BY next_attempt_at LIMIT 50""",
         { rs, _ -> rs.getString("operation_id") }, environment, now.toEpochMilli(), now.toEpochMilli())
 
     fun defer(lease: ProvisioningLease, until: Instant) {
@@ -123,6 +208,36 @@ class ProvisioningJournal(
         jdbc.update("INSERT INTO provisioning_v2_event (operation_id, payload_json) VALUES (?,?)", operation.id, json.writeValueAsString(operation))
     }
 
+    private fun insertRow(operation: ProvisioningOperation) {
+        jdbc.update("""INSERT INTO provisioning_v2_operation
+            (operation_id, environment, subscription_id, serial, revision, operation_json, state, phase,
+             operator_id, operator_username, registration_request_key)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            operation.id, operation.environment, operation.subscriptionId, operation.serial, operation.revision,
+            json.writeValueAsString(operation), operation.state.name, operation.phase.name,
+            operation.operatorId, operation.operatorUsername, operation.registrationRequestKey)
+    }
+
+    private fun persistUnleased(operation: ProvisioningOperation, expectedRevision: Long) {
+        val changed = jdbc.update("""UPDATE provisioning_v2_operation SET subscription_id=?, revision=?, operation_json=?, state=?, phase=?,
+            operator_id=?, operator_username=?, registration_request_key=?, cancel_requested=?, next_attempt_at=0
+            WHERE environment=? AND operation_id=? AND revision=? AND lease_token IS NULL""",
+            operation.subscriptionId, operation.revision, json.writeValueAsString(operation), operation.state.name, operation.phase.name,
+            operation.operatorId, operation.operatorUsername, operation.registrationRequestKey,
+            operation.state in setOf(ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING),
+            operation.environment, operation.id, expectedRevision)
+        check(changed == 1) { "LEASE_LOST_OR_STALE_REVISION" }
+    }
+
+    private fun releaseOperatorLockIfTerminal(operation: ProvisioningOperation) {
+        if (operation.state in setOf(ProvisioningState.SUCCEEDED, ProvisioningState.CANCELLED)) {
+            operation.operatorId?.let { operatorId ->
+                jdbc.update("DELETE FROM provisioning_v2_operator_lock WHERE operator_id=? AND operation_id=? AND environment=?",
+                    operatorId, operation.id, operation.environment)
+            }
+        }
+    }
+
     private fun read(environment: String, id: String, locked: Boolean): ProvisioningOperation? = jdbc.query(
         "SELECT operation_json FROM provisioning_v2_operation WHERE environment=? AND operation_id=?" + if (locked) " FOR UPDATE" else "",
         { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) }, environment, id).singleOrNull()
@@ -132,4 +247,12 @@ class ProvisioningJournal(
         return requireNotNull(result).value
     }
     private data class Box<T>(val value: T)
+
+    private companion object {
+        val PRECONFIGURED_STAGES = setOf(
+            ProvisioningStage.OLT,
+            ProvisioningStage.OMCI,
+            ProvisioningStage.ACS_CONTACT,
+        )
+    }
 }

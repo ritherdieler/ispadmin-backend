@@ -3,10 +3,8 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 import com.dscorp.wispadmin.wispadmin.controller.ProvisioningV2Controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Test
-import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -17,7 +15,7 @@ class ProvisioningHistoryTest {
     private val ds = DriverManagerDataSource("jdbc:h2:mem:${UUID.randomUUID()};MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "")
     private val journal = ProvisioningJournal(JdbcTemplate(ds), jacksonObjectMapper().findAndRegisterModules())
     private val mvc = MockMvcBuilders.standaloneSetup(ProvisioningV2Controller(ProvisioningControlService(journal, "staging"))).build()
-    init { ResourceDatabasePopulator(ClassPathResource("db/migration/V56__provisioning_v2_journal.sql")).execute(ds) }
+    init { ProvisioningTestSchema.initialize(ds) }
 
     @Test fun `reopening subscription resolves latest operation without client stored id`() {
         journal.insert(ProvisioningOperation("op", "staging", 42, "HWTC9F4BF950"))

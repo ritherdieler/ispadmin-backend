@@ -20,7 +20,8 @@ class ValidateProvisioningStageHandler(
     override fun compensate(context: ProvisioningStageContext): StageObservation = StageObservation.SATISFIED
 
     private fun validate(operation: ProvisioningOperation) {
-        val subscription = subscriptions.lockIdentityOwner(operation.subscriptionId)
+        val subscription = subscriptions.lockIdentityOwner(operation.subscriptionId
+            ?: failure("SUBSCRIPTION_ID_REQUIRED", retryable = false))
             ?: failure("SUBSCRIPTION_NOT_FOUND")
         if (!subscription.fiberOnuSn.equals(operation.serial, ignoreCase = true)) failure("ONU_IDENTITY_MISMATCH")
         if (subscription.accessMode != AccessMode.PPPOE_DYNAMIC) failure("PPPOE_DYNAMIC_REQUIRED")

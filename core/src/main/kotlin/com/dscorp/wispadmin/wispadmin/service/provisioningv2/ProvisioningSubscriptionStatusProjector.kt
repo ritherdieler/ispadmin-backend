@@ -12,7 +12,8 @@ class ProvisioningSubscriptionStatusProjector(
 ) {
     fun project(environment: String, operationId: String) {
         val operation = journal.get(environment, operationId) ?: return
-        val subscription = subscriptions.findById(operation.subscriptionId).orElse(null) ?: return
+        val subscriptionId = operation.subscriptionId ?: return
+        val subscription = subscriptions.findById(subscriptionId).orElse(null) ?: return
         fun stage(name: ProvisioningStage) = operation.checkpoints.first { it.stage == name }.state
         when (stage(ProvisioningStage.OLT)) {
             CheckpointState.SUCCEEDED -> subscription.oltProvisionStatus = OltProvisionStatus.COMPLETE

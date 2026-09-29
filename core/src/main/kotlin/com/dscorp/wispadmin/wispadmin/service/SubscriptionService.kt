@@ -178,7 +178,8 @@ class SubscriptionService(
     @Transactional
     fun registerSubscription(
         newSubscription: SubscriptionRequest,
-        onSuccess: (subscription: Subscription) -> Unit
+        onSuccess: (subscription: Subscription) -> Unit,
+        authenticatedOperatorId: Long? = null,
     ): SubscriptionDto {
         var subscription: Subscription? = null
         var queueAdded = false
@@ -186,6 +187,11 @@ class SubscriptionService(
         var onuSn: String? = null
 
         return try {
+            if (!newSubscription.registrationOperationId.isNullOrBlank()) {
+                val registration = provisioningV2RegistrationService
+                    ?: throw IllegalStateException("PREAUTHORIZATION_REGISTRATION_UNAVAILABLE")
+                registration.prepareSubmission(authenticatedOperatorId, newSubscription)
+            }
             findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
                 if (newSubscription.installationType == InstallationType.FIBER) {
                     return existing.toDto().copy(alreadyRegistered = true)
@@ -250,7 +256,7 @@ class SubscriptionService(
 
             val registration = provisioningV2RegistrationService
             if (newSubscription.installationType == InstallationType.FIBER && registration != null) {
-                val operation = registration.start(subscription, newSubscription)
+                val operation = registration.start(subscription, newSubscription, authenticatedOperatorId)
                 logger.info("Registro FIBER creado subscriptionId={} operationId={}", subscription.id, operation.id)
                 return subscription.toDto()
             }

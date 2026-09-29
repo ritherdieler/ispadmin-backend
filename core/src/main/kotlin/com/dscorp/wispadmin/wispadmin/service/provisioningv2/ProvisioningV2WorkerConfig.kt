@@ -5,6 +5,7 @@ import com.dscorp.wispadmin.wispadmin.acsclient.AcsCpeCoreClient
 import com.dscorp.wispadmin.wispadmin.extensions.executeCommand
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
+import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -26,6 +27,7 @@ class ProvisioningV2WorkerConfig {
         gateway: GatewayOnuActivationClient,
         acs: AcsCpeCoreClient,
         json: ObjectMapper,
+        storage: FirebaseStorageService,
     ) = ProvisioningExecutor(journal, listOf(
         ValidateProvisioningStageHandler(subscriptions),
         MikrotikProvisioningStageHandler(subscriptions, cipher) { device, block -> device.executeCommand(block) },
@@ -35,7 +37,7 @@ class ProvisioningV2WorkerConfig {
         InternetProvisioningStageHandler(subscriptions, cipher, acs, json),
         WifiProvisioningStageHandler(acs, json),
         VerifyProvisioningStageHandler(),
-    ), resources, Clock.systemUTC())
+    ), resources, Clock.systemUTC(), storage)
 
     @Bean
     fun provisioningSubscriptionStatusProjector(journal: ProvisioningJournal, subscriptions: SubscriptionRepository) =

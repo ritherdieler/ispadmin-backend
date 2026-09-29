@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
+import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import java.time.Clock
 import org.slf4j.LoggerFactory
 import org.springframework.web.client.HttpStatusCodeException
@@ -32,6 +33,7 @@ class ProvisioningExecutor(
     handlers: List<ProvisioningStageHandler>,
     private val resources: ProvisioningResourceStore? = null,
     private val clock: Clock = Clock.systemUTC(),
+    private val storage: FirebaseStorageService? = null,
 ) {
     private val handlers = handlers.associateBy { it.stage }
     private val transitions = ProvisioningTransitions()
@@ -73,7 +75,7 @@ class ProvisioningExecutor(
         val operation = lease.operation
         val stage = transitions.nextCompensation(operation)
         if (stage == null) {
-            journal.checkpoint(lease, operation.copy(state = ProvisioningState.CANCELLED), clock.instant(), true)
+            finishCancellation(lease, operation)
             return
         }
         logger.info("provision compensate start operation={} serial={} stage={}", operation.id, operation.serial, stage)
@@ -87,6 +89,25 @@ class ProvisioningExecutor(
         } catch (ex: Exception) {
             recordFailure(lease, operation, stage, ex)
         }
+    }
+
+    private fun finishCancellation(lease: ProvisioningLease, operation: ProvisioningOperation) {
+        try {
+            val photoUrl = resources?.preauthorizationPhotoUrl(operation.environment, operation.id)
+            if (!photoUrl.isNullOrBlank()) requireNotNull(storage) { "PHOTO_CLEANUP_UNAVAILABLE" }.deleteByPublicUrl(photoUrl)
+            resources?.deletePreauthorizationResources(operation.environment, operation.id)
+        } catch (ex: Exception) {
+            val failure = ProvisioningFailure(
+                code = "CANCELLATION_CLEANUP_FAILED",
+                message = "No se pudo confirmar la limpieza de la operación. Reintente la cancelación.",
+                retryable = true,
+                technicalDetails = publicDetail(ex),
+            )
+            journal.checkpoint(lease, operation.copy(state = ProvisioningState.CANCEL_FAILED, operationFailure = failure), clock.instant(), true)
+            logger.warn("provision cancellation cleanup failed operation={} code={}", operation.id, failure.code)
+            return
+        }
+        journal.checkpoint(lease, operation.copy(state = ProvisioningState.CANCELLED, operationFailure = null), clock.instant(), true)
     }
 
     private fun assertLease(lease: ProvisioningLease) {
@@ -176,7 +197,7 @@ class ProvisioningExecutor(
 
     private companion object {
         val logger = LoggerFactory.getLogger(ProvisioningExecutor::class.java)
-        val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
+        val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|token)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
         val NON_RETRYABLE = setOf(
             "ONU_ALREADY_RESERVED",
             "OMCI_EXISTING_SERVER_CONFLICT",

@@ -75,7 +75,9 @@ class MikrotikProvisioningStageHandler(
     }
 
     private fun expected(operation: ProvisioningOperation): ExpectedSecret {
-        val subscription = subscriptions.lockIdentityOwner(operation.subscriptionId)
+        val subscriptionId = operation.subscriptionId
+            ?: throw ProvisioningStepException(failure("SUBSCRIPTION_ID_REQUIRED", retryable = false))
+        val subscription = subscriptions.lockIdentityOwner(subscriptionId)
             ?: throw ProvisioningStepException(failure("SUBSCRIPTION_NOT_FOUND", retryable = false))
         if (!subscription.fiberOnuSn.equals(operation.serial, ignoreCase = true)) {
             throw ProvisioningStepException(failure("ONU_IDENTITY_MISMATCH", retryable = false))

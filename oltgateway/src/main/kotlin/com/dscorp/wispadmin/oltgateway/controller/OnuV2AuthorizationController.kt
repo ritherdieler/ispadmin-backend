@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.oltgateway.controller
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OltServicePortService
+import com.dscorp.wispadmin.oltgateway.service.ManagementProvisioningMode
 import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnership
 import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnershipService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -26,6 +27,7 @@ data class OnuV2AuthorizeRequest(
     val zone: String = "Zone 1",
     val onuMode: String = "Routing",
     val customProfile: String = "Generic_1",
+    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.PRECONFIGURED,
 )
 
 data class OnuV2AuthorizeResponse(
@@ -129,6 +131,7 @@ class OnuV2AuthorizationController(
             name = request.subscriberName,
             onu_mode = request.onuMode,
             custom_profile = request.customProfile,
+            managementMode = request.managementMode,
         ))
         val externalId = result.unique_external_id?.takeIf { result.status && it.isNotBlank() }
             ?: throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "OLT v2 authorization was not confirmed")

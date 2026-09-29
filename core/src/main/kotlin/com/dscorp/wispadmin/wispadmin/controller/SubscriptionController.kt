@@ -75,6 +75,9 @@ class SubscriptionController(
         subscriptionId?.let { eventPublisher.publishEvent(SubscriptionChangedEvent(it)) }
     }
 
+    private fun authenticatedOperatorId(http: HttpServletRequest?): Long? =
+        (http?.getAttribute(PlatformAuthFilter.AUTH_USER_ID_ATTRIBUTE) as? Number)?.toLong()
+
     private fun handleRegistrationIntegrityViolation(
         request: SubscriptionRequest,
         ex: DataIntegrityViolationException,
@@ -543,10 +546,11 @@ class SubscriptionController(
     }
 
     @PostMapping
-    fun newSubscription(@RequestBody newSubscription: SubscriptionRequest): BaseResponse {
+    fun newSubscription(@RequestBody newSubscription: SubscriptionRequest, http: HttpServletRequest? = null): BaseResponse {
         return try {
             val subscription = subscriptionService.registerSubscription(
                 newSubscription = newSubscription,
+                authenticatedOperatorId = authenticatedOperatorId(http),
                 onSuccess = {
                     subscriptionLogRepository.save(
                         SubscriptionLog(
@@ -577,9 +581,30 @@ class SubscriptionController(
     )
     fun newSubcriptionWithFacade(
         @RequestPart("subscription") newSubscription: SubscriptionRequest,
-        @RequestPart("facadePhoto") facadephoto: MultipartFile
+        @RequestPart("facadePhoto") facadephoto: MultipartFile,
+        http: HttpServletRequest? = null,
     ): BaseResponse {
         return try {
+            if (!newSubscription.registrationOperationId.isNullOrBlank()) {
+                newSubscription.facadePhotoUrl = null
+                val dto = subscriptionService.registerSubscription(
+                    newSubscription = newSubscription,
+                    authenticatedOperatorId = authenticatedOperatorId(http),
+                    onSuccess = { registered ->
+                        subscriptionLogRepository.save(
+                            SubscriptionLog(
+                                subscription = registered,
+                                actionType = SubscriptionActionType.NEW_SUBSCRIPTION,
+                                planName = registered.plan?.name,
+                                planPrice = registered.plan?.price ?: 0.0,
+                                planId = registered.plan?.id,
+                            )
+                        )
+                    },
+                )
+                publishSubscriptionChanged(dto.id)
+                return BaseResponse(data = dto, status = 200)
+            }
             subscriptionService.findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)
                 ?.let {
                     val dto = subscriptionService.registerSubscription(
@@ -598,6 +623,7 @@ class SubscriptionController(
 
             val subscription = subscriptionService.registerSubscription(
                 newSubscription = newSubscription,
+                authenticatedOperatorId = authenticatedOperatorId(http),
                 onSuccess = {
                     subscriptionLogRepository.save(
                         SubscriptionLog(
