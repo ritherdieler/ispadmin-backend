@@ -898,7 +898,8 @@ open class OltInventorySyncService(
     ): Map<String, String> {
         val parser = onuVersionParser ?: return emptyMap()
         val pending = snapshot.filter { parsed ->
-            existingBySn[HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)]?.vendorId.isNullOrBlank()
+            val normalizedSn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
+            isVsolSn(normalizedSn) && existingBySn[normalizedSn]?.vendorId.isNullOrBlank()
         }
         if (pending.isEmpty() || cliBus() == null) return emptyMap()
 
@@ -929,6 +930,9 @@ open class OltInventorySyncService(
             emptyMap()
         }
     }
+
+    private fun isVsolSn(sn: String): Boolean =
+        sn.startsWith("56534F4C", ignoreCase = true) || sn.startsWith("VSOL", ignoreCase = true)
 
     private fun applyStatus(
         onu: OltMgrOnu,
