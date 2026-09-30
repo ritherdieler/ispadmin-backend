@@ -40,6 +40,27 @@ class SubscriptionTraceEraserEngineTest {
         assertEquals("TRACE_REMAINING", error.failure.code)
         assertEquals("payment", error.failure.detail)
     }
+
+    @Test
+    fun `borra datos de operaciones V2 al borrar la suscripcion`() {
+        val catalog = MemoryTraceCatalog()
+        catalog.row("subscription", mapOf("id" to "42"))
+        catalog.row("provisioning_v2_operation", mapOf("operation_id" to "op-42", "subscription_id" to "42"))
+        catalog.row("provisioning_v2_operator_lock", mapOf(
+            "operator_id" to "71", "environment" to "staging", "operation_id" to "op-42",
+        ))
+        catalog.row("provisioning_v2_event", mapOf("id" to "9", "operation_id" to "op-42"))
+        catalog.row("provisioning_v2_resource", mapOf("operation_id" to "op-42", "resource_key" to "registration-draft"))
+
+        SubscriptionTraceEraserEngine(catalog).erase(CleanupSnapshot(subscriptionId = 42))
+
+        assertTrue(catalog.rows.none { it.table in setOf(
+            "provisioning_v2_operation",
+            "provisioning_v2_operator_lock",
+            "provisioning_v2_event",
+            "provisioning_v2_resource",
+        ) })
+    }
 }
 
 private class MemoryTraceCatalog : SubscriptionTraceCatalog {
@@ -62,12 +83,18 @@ private class MemoryTraceCatalog : SubscriptionTraceCatalog {
         TraceForeignKey("ticket_photo", "ticket_id", "assistance_ticket", "id"),
         TraceForeignKey("assistance_ticket", "subscription_id", "subscription", "id"),
         TraceForeignKey("payment", "subscription_id", "subscription", "id"),
+        TraceForeignKey("provisioning_v2_operator_lock", "operation_id", "provisioning_v2_operation", "operation_id"),
+        TraceForeignKey("provisioning_v2_event", "operation_id", "provisioning_v2_operation", "operation_id"),
+        TraceForeignKey("provisioning_v2_resource", "operation_id", "provisioning_v2_operation", "operation_id"),
     )
 
-    override fun primaryKey(table: String): String = "id"
+    override fun primaryKey(table: String): String = when (table) {
+        "provisioning_v2_operation", "provisioning_v2_resource" -> "operation_id"
+        else -> "id"
+    }
 
     override fun idsWhere(table: String, column: String, value: String): List<String> =
-        rows.filter { it.table == table && it.columns[column] == value }.mapNotNull { it.columns["id"] }
+        rows.filter { it.table == table && it.columns[column] == value }.mapNotNull { it.columns[primaryKey(table)] }
 
     override fun deleteWhere(table: String, column: String, value: String) {
         if (table in sticky) return

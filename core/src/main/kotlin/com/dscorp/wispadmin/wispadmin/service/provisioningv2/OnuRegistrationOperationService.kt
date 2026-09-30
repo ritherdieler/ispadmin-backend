@@ -8,6 +8,8 @@ import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2AuthorizeRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2AuthorizeResponse
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
+import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.springframework.dao.DataIntegrityViolationException
@@ -31,6 +33,7 @@ class OnuRegistrationOperationService(
     private val storage: FirebaseStorageService,
     private val json: com.fasterxml.jackson.databind.ObjectMapper,
     private val environmentProperties: GigafiberEnvironmentProperties,
+    private val hardCleanup: SubscriptionHardCleanupService,
 ) {
     fun start(operatorId: Long, operatorUsername: String, request: OnuRegistrationStartRequest): ProvisioningOperation {
         require(operatorId > 0) { "AUTHENTICATED_OPERATOR_REQUIRED" }
@@ -172,8 +175,16 @@ class OnuRegistrationOperationService(
     }
 
     fun cancel(operatorId: Long, operationId: String, expectedRevision: Long): ProvisioningOperation {
-        owned(operatorId, operationId)
-        return journal.requestCancel(environment(), operationId, expectedRevision)
+        return journal.requestRegistrationCancel(environment(), operationId, operatorId, expectedRevision)
+    }
+
+    fun cleanupCancelled(operatorId: Long, operationId: String): CleanupReport {
+        val operation = journal.get(environment(), operationId)
+            ?.takeIf { it.operatorId == operatorId && it.flowVersion == 3 }
+            ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
+        val subscriptionId = operation.subscriptionId ?: throw IllegalStateException("SUBSCRIPTION_NOT_LINKED")
+        check(operation.state == ProvisioningState.CANCELLED) { "CANCELLATION_NOT_CONFIRMED" }
+        return hardCleanup.cleanup(subscriptionId)
     }
 
     fun unlinkedPreauthorizations(): List<ProvisioningOperation> = journal.unlinkedPreauthorizations(environment())

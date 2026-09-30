@@ -12,6 +12,8 @@ import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2AuthorizeRequest
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2AuthorizeResponse
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
+import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
+import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
 import com.dscorp.wispadmin.wispadmin.service.whatsapp.CrmSecretCipher
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.mockk.every
@@ -37,7 +39,8 @@ class OnuRegistrationOperationServiceTest {
     private val acs = mockk<AcsCpeCoreClient>()
     private val storage = mockk<FirebaseStorageService>(relaxed = true)
     private val environment = GigafiberEnvironmentProperties().apply { tag = "lab" }
-    private val service = OnuRegistrationOperationService(journal, resources, gateway, acs, storage, json, environment)
+    private val hardCleanup = mockk<SubscriptionHardCleanupService>(relaxed = true)
+    private val service = OnuRegistrationOperationService(journal, resources, gateway, acs, storage, json, environment, hardCleanup)
 
     init {
         ProvisioningTestSchema.initialize(dataSource)
@@ -78,6 +81,46 @@ class OnuRegistrationOperationServiceTest {
         assertEquals(first.id, retried.id)
         verify(exactly = 1) { gateway.authorizeV2(any<GatewayOnuV2AuthorizeRequest>()) }
         verify(exactly = 1) { acs.onboardingV2Contact(any<CoreOnboardingV2ContactRequest>()) }
+    }
+
+    @Test
+    fun `operator can cancel a registration after it has been linked to a subscription`() {
+        val linked = ProvisioningOperation(
+            id = "linked-cancel-1",
+            environment = "lab",
+            subscriptionId = 42,
+            serial = "VSOL0031C0B6",
+            flowVersion = 3,
+            operatorId = 12,
+        )
+        journal.insert(linked)
+
+        val cancelled = service.cancel(12, linked.id, linked.revision)
+
+        assertEquals(ProvisioningState.CANCEL_REQUESTED, cancelled.state)
+        assertEquals(42, cancelled.subscriptionId)
+    }
+
+    @Test
+    fun `operator can run hard cleanup only after linked registration cancellation completes`() {
+        val linked = ProvisioningOperation(
+            id = "linked-cleanup-1",
+            environment = "lab",
+            subscriptionId = 84,
+            serial = "VSOL0031C0B6",
+            flowVersion = 3,
+            operatorId = 12,
+        )
+        journal.insert(linked)
+        val lease = requireNotNull(journal.claim("lab", linked.id, java.time.Instant.now(), 120_000))
+        journal.checkpoint(lease, linked.copy(state = ProvisioningState.CANCELLED), java.time.Instant.now(), true)
+        val report = CleanupReport("COMPLETE", emptyList())
+        every { hardCleanup.cleanup(84) } returns report
+
+        val cleaned = service.cleanupCancelled(12, linked.id)
+
+        assertEquals(report, cleaned)
+        verify(exactly = 1) { hardCleanup.cleanup(84) }
     }
 
     @Test

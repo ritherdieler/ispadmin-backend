@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.acs.OnboardingV2InternetRequest
 import com.dscorp.wispadmin.acs.OnboardingV2TaskResponse
 import com.dscorp.wispadmin.acs.OnboardingV2WifiRequest
 import com.dscorp.wispadmin.acs.OnboardingV2WifiCompensateRequest
+import com.dscorp.wispadmin.acs.OnboardingV2WanCleanupRequest
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
@@ -11,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
+import org.slf4j.LoggerFactory
 import org.springframework.web.server.ResponseStatusException
 
 internal const val SESSION_RETRY_STATUS = "SESSION_RETRY"
@@ -18,6 +20,9 @@ internal const val SESSION_RETRY_STATUS = "SESSION_RETRY"
 internal enum class SessionDropDecision { RETRY, TERMINAL }
 
 internal fun wanStatusNeedsRefresh(compensation: Boolean): Boolean = !compensation
+
+internal fun onboardingOwnerMarker(operationId: String): String =
+    "GFv2-" + operationId.filter { it.isLetterOrDigit() }.take(27)
 
 internal fun sessionDropDecision(message: String?, alreadyRetried: Boolean): SessionDropDecision =
     if (message == "The TR-069 session was unsuccessfully terminated" && !alreadyRetried) {
@@ -28,8 +33,24 @@ internal fun sessionDropDecision(message: String?, alreadyRetried: Boolean): Ses
 
 internal fun onboardingFaultReason(body: String?): String? {
     if (body.isNullOrBlank()) return null
+    val detail = onboardingFaultParameterDetail(body)
+    if (!detail.isNullOrBlank()) return detail
     val message = runCatching { ObjectMapper().readTree(body).path("message").asText("") }.getOrDefault("").trim()
     return message.takeIf { it.isNotEmpty() }?.take(180)
+}
+
+internal fun onboardingFaultParameterDetail(body: String?): String? {
+    if (body.isNullOrBlank()) return null
+    return runCatching {
+        val faults = ObjectMapper().readTree(body).path("detail").path("setParameterValuesFault")
+        if (!faults.isArray || faults.isEmpty) return@runCatching null
+        faults.joinToString("; ") { fault ->
+            val parameter = fault.path("parameterName").asText("?")
+            val faultString = fault.path("faultString").asText("Invalid parameter value")
+            val faultCode = fault.path("faultCode").asText("")
+            "$parameter: $faultString" + if (faultCode.isBlank()) "" else " ($faultCode)"
+        }.take(500)
+    }.getOrNull()
 }
 
 internal fun internetRetryArg(body: String?): String? {
@@ -68,6 +89,8 @@ class OnboardingV2TaskService(
     private val json: ObjectMapper,
     private val baselineCipher: OnboardingV2BaselineCipher,
 ) {
+    private val log = LoggerFactory.getLogger(OnboardingV2TaskService::class.java)
+
     fun enqueueInternet(request: OnboardingV2InternetRequest): OnboardingV2TaskResponse {
         validate(request)
         val row = claim(request)
@@ -87,6 +110,17 @@ class OnboardingV2TaskService(
             "gateway" to request.gateway,
             "dns" to request.dns,
         ))
+        log.info(
+            "Onboarding v2 internet enqueue operationId={} deviceId={} model={} firmware={} mode={} vlan={} usernamePresent={} passwordPresent={}",
+            request.operationId,
+            row.deviceId,
+            request.model,
+            request.firmware,
+            request.mode,
+            request.vlan,
+            request.username.isNotBlank(),
+            request.password.isNotBlank(),
+        )
         var queued = client.enqueueProvisions(row.deviceId, INTERNET_PROVISION, listOf(args), connectionRequest = true)
         if (queued.connectionRequestFailed) {
             queued = client.enqueueProvisions(row.deviceId, INTERNET_PROVISION, listOf(args), connectionRequest = false)
@@ -137,6 +171,15 @@ class OnboardingV2TaskService(
         val fault = client.findFaultBodyForTask(row.deviceId, taskId)
         if (fault != null) {
             val reason = onboardingFaultReason(fault)
+            log.warn(
+                "Onboarding v2 GenieACS fault operationId={} taskId={} deviceId={} model={} firmware={} detail={}",
+                row.operationId,
+                taskId,
+                row.deviceId,
+                row.model,
+                row.firmware,
+                reason ?: "unknown",
+            )
             val retry = !compensation &&
                 sessionDropDecision(reason, row.status == SESSION_RETRY_STATUS) == SessionDropDecision.RETRY
             if (retry) {
@@ -149,7 +192,7 @@ class OnboardingV2TaskService(
             "VSOLVA74", "V2804AX15T" -> 2
             else -> conflict("Unsupported v2 model")
         }
-        val ownedName = "GFv2-${row.operationId}"
+        val ownedName = onboardingOwnerMarker(row.operationId)
         val ppp = client.findWanPppConnections(row.deviceId, wcd, ownedName)
         val ip = client.findWanIpConnections(row.deviceId, wcd, ownedName)
         if (ppp.size + ip.size > 1) conflict("Multiple owned v2 WANs were found")
@@ -241,6 +284,48 @@ class OnboardingV2TaskService(
         return OnboardingV2TaskResponse(row.operationId, row.action, taskId, "QUEUED")
     }
 
+    fun enqueueWanCleanup(request: OnboardingV2WanCleanupRequest): OnboardingV2TaskResponse {
+        val identity = identity(request.operationId, request.sn, request.deviceId, request.model, request.firmware)
+        require(request.mode == "pppoe" || request.mode == "static") { "INVALID_INTERNET_MODE" }
+        val row = claim(identity, WAN_CLEANUP_ACTION)
+        row.taskId?.let { return row.response() }
+        confirmCurrentDevice(identity)
+        val args = json.writeValueAsString(mapOf(
+            "operationId" to request.operationId,
+            "expectedSerial" to identity.sn.trim().uppercase(),
+            "expectedModel" to identity.model,
+            "expectedFirmware" to identity.firmware,
+            "mode" to request.mode,
+        ))
+        val queued = client.enqueueProvisions(row.deviceId, WAN_CLEANUP_PROVISION, listOf(args), connectionRequest = false)
+        val taskId = queued.taskId?.takeIf { queued.accepted && it.isNotBlank() }
+            ?: throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "GenieACS did not accept onboarding v2 WAN cleanup task")
+        jdbc.update("""UPDATE acs_onboarding_v2_task SET genie_task_id=?, status='QUEUED', updated_at_epoch_ms=?
+            WHERE operation_id=? AND action=?""", taskId, System.currentTimeMillis(), row.operationId, row.action)
+        return OnboardingV2TaskResponse(row.operationId, row.action, taskId, "QUEUED")
+    }
+
+    fun wanCleanupStatus(request: OnboardingV2WanCleanupRequest): com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse {
+        val row = find(request.operationId, WAN_CLEANUP_ACTION)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Onboarding v2 WAN cleanup task was not found")
+        val identity = identity(request.operationId, request.sn, request.deviceId, request.model, request.firmware)
+        validate(identity)
+        if (row.serial != request.sn.trim().uppercase() || row.deviceId != request.deviceId || row.model != request.model || row.firmware != request.firmware) {
+            conflict("Onboarding v2 WAN cleanup identity changed")
+        }
+        val taskId = row.taskId ?: return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("WAITING", "")
+        val fault = client.findFaultBodyForTask(row.deviceId, taskId)
+        if (fault != null) {
+            val reason = onboardingFaultReason(fault)
+            log.warn("Onboarding v2 WAN cleanup fault operationId={} taskId={} deviceId={} detail={}", row.operationId, taskId, row.deviceId, reason ?: "unknown")
+            return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId, reason)
+        }
+        return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse(
+            if (client.isTaskPending(taskId)) "WAITING" else "COMPLETE",
+            taskId,
+        )
+    }
+
     private fun claim(request: OnboardingV2InternetRequest, action: String = INTERNET_ACTION): OnboardingV2TaskRow {
         val serial = request.sn.trim().uppercase()
         val existing = find(request.operationId, action)
@@ -286,7 +371,11 @@ class OnboardingV2TaskService(
     }
 
     private fun readWifiBaseline(request: OnboardingV2InternetRequest): Map<String, Any> {
-        val bands = when (request.model.trim().uppercase()) { "F6600R" -> 1 to 5; "VSOLVA74" -> 5 to 1; else -> conflict("Unsupported v2 model") }
+        val bands = when (request.model.trim().uppercase()) {
+            "F6600R" -> 1 to 5
+            "V2804AX15T", "VSOLVA74" -> 5 to 1
+            else -> conflict("Unsupported v2 model")
+        }
         val leaves = listOf("SSID", "Enable", "KeyPassphrase")
         client.getParameterValues(request.deviceId, listOf(bands.first, bands.second).flatMap { index ->
             leaves.map { leaf -> "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.$leaf" }
@@ -353,6 +442,8 @@ class OnboardingV2TaskService(
         const val WIFI_ACTION = "WIFI"
         const val WIFI_COMPENSATE_ACTION = "WIFI_COMPENSATE"
         const val WIFI_PROVISION = "gf-onboarding-v2-wifi"
+        const val WAN_CLEANUP_ACTION = "WAN_CLEANUP"
+        const val WAN_CLEANUP_PROVISION = "gf-onboarding-v2-cleanup"
         const val MANAGEMENT_VLAN = 1000
     }
 }

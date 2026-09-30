@@ -185,6 +185,7 @@ class OltManagerFacadeTest {
             onuIndex = 5
         )
         every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_0_5") } returns Optional.of(onu)
+        every { queryFacade.bySnParsed("4857544311E70E9A") } returns null
         every { commandService.delete(any()) } returns Unit
         every { onuRepository.save(any()) } answers { firstArg() }
         try {
@@ -613,6 +614,7 @@ class OltManagerFacadeTest {
             onuIndex = 5
         )
         every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_0_5") } returns Optional.of(onu)
+        every { queryFacade.bySnParsed("4857544311E70E9A") } returns null
         every { commandService.delete(any()) } returns Unit
         every { onuRepository.save(any()) } answers { firstArg() }
 
@@ -627,6 +629,37 @@ class OltManagerFacadeTest {
         assertEquals("gigafiber-ma5608t_deleted_10", onu.externalId)
         verify { commandService.delete(any()) }
         verify { auditLogRepository.save(match { it.action == "delete_onu" }) }
+    }
+
+    @Test
+    fun `deleteOnu usa la posicion live cuando el inventario tiene un ONT-ID obsoleto`() {
+        val onu = OltMgrOnu(
+            id = 10L,
+            sn = "VSOL0031C0B6",
+            externalId = "gigafiber-ma5608t_1_6_116",
+            olt = olt,
+            board = 1,
+            port = 6,
+            onuIndex = 116,
+        )
+        every { onuRepository.findByExternalIdAndDeletedAtIsNull("gigafiber-ma5608t_1_6_116") } returns Optional.of(onu)
+        every { queryFacade.bySnParsed("VSOL0031C0B6") } returns ParsedOnuBySn(
+            sn = "VSOL0031C0B6",
+            frame = 0,
+            slot = 1,
+            port = 6,
+            ontId = 17,
+        )
+        every { commandService.delete(any()) } returns Unit
+        every { onuRepository.save(any()) } answers { firstArg() }
+        val request = slot<DeleteCliRequest>()
+
+        facade.deleteOnu("gigafiber-ma5608t_1_6_116")
+
+        verify { commandService.delete(capture(request)) }
+        assertEquals(1, request.captured.board)
+        assertEquals(6, request.captured.port)
+        assertEquals(17, request.captured.ontId)
     }
 
     @Test

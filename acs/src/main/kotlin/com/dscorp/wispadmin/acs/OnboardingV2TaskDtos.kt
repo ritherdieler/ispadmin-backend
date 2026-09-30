@@ -53,3 +53,8 @@ data class OnboardingV2WifiRequest(
 data class OnboardingV2WifiCompensateRequest(
     val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,
 )
+
+data class OnboardingV2WanCleanupRequest(
+    val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,
+    val mode: String = "pppoe",
+)

@@ -36,6 +36,7 @@ class ProvisioningV2WorkerConfig {
         AcsContactProvisioningStageHandler(acs, json),
         InternetProvisioningStageHandler(subscriptions, cipher, acs, json),
         WifiProvisioningStageHandler(acs, json),
+        WanCleanupProvisioningStageHandler(acs, json),
         VerifyProvisioningStageHandler(),
     ), resources, Clock.systemUTC(), storage)
 

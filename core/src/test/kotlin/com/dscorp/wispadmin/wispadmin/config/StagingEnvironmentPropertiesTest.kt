@@ -78,7 +78,10 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(staging.contains("gigafiber.subsystems.traffic.enabled=true"), staging)
         assertTrue(staging.contains("traffic.poll.enabled=true"), staging)
         assertTrue(staging.contains("traffic.client-enabled=true"), staging)
-        assertTrue(staging.contains("olt.gateway.internal-base-url=http://tomcat9027:8080/ispadmin"), staging)
+        assertTrue(
+            staging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"),
+            staging,
+        )
         assertTrue(staging.contains("olt.gateway.api-key=\${OLT_GATEWAY_STAGING_API_KEY:}"), staging)
         assertTrue(staging.contains("olt.gateway.caller-env=stg"), staging)
         assertTrue(staging.contains("olt.gateway.client-enabled=true"), staging)
@@ -110,6 +113,15 @@ class StagingEnvironmentPropertiesTest {
         assertTrue(
             Regex("""^genieacs\.enabled=\$\{GENIEACS_ENABLED:true\}\s*$""", RegexOption.MULTILINE)
                 .containsMatchIn(staging),
+            staging,
+        )
+    }
+
+    @Test
+    fun staging_core_uses_the_same_war_gateway_context_for_olt_inventory() {
+        val staging = staging()
+        assertTrue(
+            staging.contains("olt.gateway.internal-base-url=http://127.0.0.1:8080/ispadmin-staging"),
             staging,
         )
     }

@@ -43,6 +43,9 @@ data class GenieAcsWanPppConnection(
     val externalIp: String?,
 )
 
+internal fun wanOwnerMatches(name: String?, alias: String?, owner: String): Boolean =
+    name == owner || alias == owner
+
 @Component
 class GenieAcsClient(
     private val properties: GenieAcsProperties,
@@ -320,6 +323,26 @@ class GenieAcsClient(
         }?.let { objectMapper.writeValueAsString(it) }
     }
 
+    fun isTaskPending(taskId: String): Boolean {
+        val queryJson = objectMapper.writeValueAsString(mapOf("_id" to taskId))
+        val uri = UriComponentsBuilder.fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/tasks/")
+            .queryParam("query", queryJson)
+            .build()
+            .encode()
+            .toUri()
+        return try {
+            val body = restTemplate.getForObject(uri, String::class.java) ?: return true
+            val root = objectMapper.readTree(body)
+            if (!root.isArray) true else root.any { it.path("_id").asText() == taskId }
+        } catch (ex: HttpStatusCodeException) {
+            log.warn("No se pudo consultar task de GenieACS {}: HTTP {}", taskId, ex.statusCode.value())
+            true
+        } catch (_: Exception) {
+            true
+        }
+    }
+
     fun getDeviceParameterValue(deviceId: String, dottedPath: String): String? {
         val projection = dottedPath
         val uri = deviceUri(deviceId, projection)
@@ -413,7 +436,8 @@ class GenieAcsClient(
             if (index.toIntOrNull() == null) return@mapNotNull null
             val path = "$DEFAULT_WCD_PARENT.$wanConnectionDevice.$segment.$index"
             val actualName = getDeviceParameterValue(deviceId, "$path.Name") ?: return@mapNotNull null
-            if (actualName != name) return@mapNotNull null
+            val actualAlias = if (actualName == name) null else getDeviceParameterValue(deviceId, "$path.Alias")
+            if (!wanOwnerMatches(actualName, actualAlias, name)) return@mapNotNull null
             GenieAcsWanPppConnection(
                 path = path,
                 name = actualName,

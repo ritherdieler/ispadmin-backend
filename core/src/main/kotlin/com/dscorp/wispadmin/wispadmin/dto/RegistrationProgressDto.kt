@@ -24,5 +24,20 @@ data class RegistrationProgressDto(
     val oltProvisionStatus: OltProvisionStatus? = null,
     val tr069ProvisionStatus: Tr069ProvisionStatus? = null,
     val tr069Message: String? = null,
+    val provisioningCheckpoints: List<RegistrationProgressCheckpointDto> = emptyList(),
     val subscription: SubscriptionDto? = null,
+)
+
+data class RegistrationProgressCheckpointDto(
+    val stage: String,
+    val state: String,
+    val attempts: Int,
+    val failure: RegistrationProgressFailureDto? = null,
+)
+
+data class RegistrationProgressFailureDto(
+    val code: String,
+    val message: String,
+    val retryable: Boolean,
+    val technicalDetails: String? = null,
 )

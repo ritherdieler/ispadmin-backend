@@ -4,7 +4,7 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 class VerifyProvisioningStageHandler : ProvisioningStageHandler {
     override val stage = ProvisioningStage.VERIFY
     override fun reconcile(context: ProvisioningStageContext): StageObservation {
-        listOf("olt", "omci", "acs-contact", "internet", "wifi").forEach { key ->
+        listOf("olt", "omci", "acs-contact", "internet", "wifi", "wan-cleanup").forEach { key ->
             if (context.resourceSnapshot(key) == null) throw ProvisioningStepException(
                 ProvisioningFailure("VERIFY_RESOURCE_MISSING", "Falta evidencia de aprovisionamiento. Consulte el historial.", false))
         }

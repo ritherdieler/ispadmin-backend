@@ -106,6 +106,8 @@ class ProvisioningExecutorTest {
         advance()
         assertEquals(ProvisioningState.CANCEL_REQUESTED, current().state)
         advance()
+        assertEquals(ProvisioningState.CANCELLING, current().state)
+        advance()
         assertEquals(ProvisioningState.CANCELLED, current().state)
         assertTrue(applied.isEmpty())
         assertEquals(listOf(ProvisioningStage.VALIDATE), undos)
@@ -152,6 +154,58 @@ class ProvisioningExecutorTest {
         verify(exactly = 2) { storage.deleteByPublicUrl(photoUrl) }
     }
 
+    @Test fun `linked subscription photo is retained for the hard cleanup step`() {
+        val operation = ProvisioningOperation(
+            id = "cancel-linked-photo",
+            environment = "staging",
+            subscriptionId = 42,
+            serial = "VSOL0031C0B6",
+            flowVersion = 3,
+            operatorId = 71,
+        )
+        journal.insert(operation)
+        val resources = ProvisioningResourceStore(JdbcTemplate(dataSource), CrmSecretCipher("unit-test-only"))
+        val photoUrl = "https://storage.example/linked-photo"
+        resources.captureInitial(operation, "registration-photo", photoUrl)
+        journal.requestCancel("staging", operation.id, operation.revision)
+        val storage = mockk<FirebaseStorageService>(relaxed = true)
+
+        ProvisioningExecutor(journal, handlers, resources, clock, storage).advance("staging", operation.id)
+
+        assertEquals(ProvisioningState.CANCELLED, journal.get("staging", operation.id)?.state)
+        verify(exactly = 0) { storage.deleteByPublicUrl(photoUrl) }
+    }
+
+    @Test fun `last compensation keeps operation active until photo and resources are cleaned`() {
+        val operation = ProvisioningOperation(
+            id = "cancel-final-cleanup",
+            environment = "staging",
+            subscriptionId = 43,
+            serial = "VSOL0031C0B6",
+        )
+        journal.insert(operation)
+        val resources = ProvisioningResourceStore(JdbcTemplate(dataSource), CrmSecretCipher("unit-test-only"))
+        val photoUrl = "https://storage.example/cancel-final-photo"
+        resources.captureInitial(operation, "registration-photo", photoUrl)
+        val executor = ProvisioningExecutor(journal, handlers, clock = clock)
+        executor.advance("staging", operation.id)
+        val touched = requireNotNull(journal.get("staging", operation.id))
+        val storage = mockk<FirebaseStorageService>(relaxed = true)
+        journal.requestCancel("staging", operation.id, touched.revision)
+
+        ProvisioningExecutor(journal, handlers, resources, clock, storage).advance("staging", operation.id)
+
+        assertEquals(ProvisioningState.CANCELLING, journal.get("staging", operation.id)?.state)
+        assertEquals(photoUrl, resources.preauthorizationPhotoUrl("staging", operation.id))
+        verify(exactly = 0) { storage.deleteByPublicUrl(photoUrl) }
+
+        ProvisioningExecutor(journal, handlers, resources, clock, storage).advance("staging", operation.id)
+
+        assertEquals(ProvisioningState.CANCELLED, journal.get("staging", operation.id)?.state)
+        assertNull(resources.snapshot("staging", operation.id, "registration-photo"))
+        verify(exactly = 0) { storage.deleteByPublicUrl(photoUrl) }
+    }
+
     private fun currentOperation(id: String) = requireNotNull(journal.get("staging", id))
 
     @Test fun `one bounded step per invocation and restart resumes persisted progress`() {
@@ -159,6 +213,6 @@ class ProvisioningExecutorTest {
         assertEquals(ProvisioningState.SUCCEEDED, current().state)
         assertEquals(ProvisioningStage.values().toList(), writes)
         advance()
-        assertEquals(8, writes.size)
+        assertEquals(9, writes.size)
     }
 }

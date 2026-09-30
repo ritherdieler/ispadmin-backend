@@ -2,7 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import java.time.Instant
 
-enum class ProvisioningStage { VALIDATE, MIKROTIK, OLT, OMCI, ACS_CONTACT, INTERNET, WIFI, VERIFY }
+enum class ProvisioningStage { VALIDATE, MIKROTIK, OLT, OMCI, ACS_CONTACT, INTERNET, WIFI, WAN_CLEANUP, VERIFY }
 enum class ManagementProvisioningMode { OMCI, PRECONFIGURED }
 enum class ProvisioningPhase { OLT_AUTHORIZATION, WAITING_FOR_ACS, READY_FOR_FORM, PROVISIONING }
 enum class ProvisioningState { PENDING, RUNNING, WAITING, READY_FOR_FORM, SUCCEEDED, FAILED, CANCEL_REQUESTED, CANCELLING, CANCEL_FAILED, CANCELLED }
@@ -66,7 +66,7 @@ data class ProvisioningOnuTarget(
 
 /** Pure transitions only; the durable executor owns leases and external effects. */
 class ProvisioningTransitions {
-    private val compensationOrder = listOf(ProvisioningStage.VERIFY, ProvisioningStage.WIFI,
+    private val compensationOrder = listOf(ProvisioningStage.VERIFY, ProvisioningStage.WAN_CLEANUP, ProvisioningStage.WIFI,
         ProvisioningStage.INTERNET, ProvisioningStage.ACS_CONTACT, ProvisioningStage.MIKROTIK,
         ProvisioningStage.OMCI, ProvisioningStage.OLT, ProvisioningStage.VALIDATE)
     private val cancelling = setOf(ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING,
@@ -94,6 +94,15 @@ class ProvisioningTransitions {
         check(operation.state != ProvisioningState.SUCCEEDED) { "USE_SUBSCRIPTION_TERMINATION" }
         if (operation.state in cancelling && operation.state != ProvisioningState.CANCEL_FAILED) return operation
         return operation.copy(state = ProvisioningState.CANCEL_REQUESTED, operationFailure = null)
+    }
+
+    fun cancelRegistration(operation: ProvisioningOperation, expectedRevision: Long): ProvisioningOperation {
+        require(operation.revision == expectedRevision) { "STALE_REVISION" }
+        require(operation.flowVersion == 3 && operation.operatorId != null) { "REGISTRATION_CANCELLATION_REQUIRED" }
+        if (operation.state == ProvisioningState.SUCCEEDED) {
+            return operation.copy(state = ProvisioningState.CANCEL_REQUESTED, operationFailure = null)
+        }
+        return cancel(operation, expectedRevision)
     }
 
     fun next(operation: ProvisioningOperation): ProvisioningStage? {
@@ -134,7 +143,7 @@ class ProvisioningTransitions {
     fun compensated(operation: ProvisioningOperation, stage: ProvisioningStage): ProvisioningOperation {
         require(nextCompensation(operation) == stage) { "INVALID_COMPENSATION_ORDER" }
         val changed = update(operation, stage, ProvisioningState.CANCELLING) { it.copy(state = CheckpointState.COMPENSATED, failure = null) }
-        return if (nextCompensation(changed) == null) changed.copy(state = ProvisioningState.CANCELLED) else changed
+        return changed
     }
 
     fun waiting(operation: ProvisioningOperation, stage: ProvisioningStage): ProvisioningOperation {

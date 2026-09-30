@@ -93,7 +93,9 @@ class ProvisioningExecutor(
 
     private fun finishCancellation(lease: ProvisioningLease, operation: ProvisioningOperation) {
         try {
-            val photoUrl = resources?.preauthorizationPhotoUrl(operation.environment, operation.id)
+            val photoUrl = if (operation.subscriptionId == null) {
+                resources?.preauthorizationPhotoUrl(operation.environment, operation.id)
+            } else null
             if (!photoUrl.isNullOrBlank()) requireNotNull(storage) { "PHOTO_CLEANUP_UNAVAILABLE" }.deleteByPublicUrl(photoUrl)
             resources?.deletePreauthorizationResources(operation.environment, operation.id)
         } catch (ex: Exception) {

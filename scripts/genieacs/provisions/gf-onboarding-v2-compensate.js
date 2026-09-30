@@ -2,9 +2,9 @@
 // The caller retains management access until this task is verified complete.
 const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
 const RESTORE_LAYOUTS = {
-  F6600R: { wcd: 1, bands: [1, 5], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
-  VSOLVA74: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
-  V2804AX15T: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1' },
+  F6600R: { wcd: 1, bands: [1, 5], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Name' },
+  VSOLVA74: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Alias' },
+  V2804AX15T: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Alias' },
 };
 function restoreValue(path) {
   const item = declare(path, { value: Date.now() });
@@ -19,6 +19,12 @@ function serialSuffix(serial) {
 function sameSerial(live, expected) {
   const suffix = serialSuffix(live);
   return suffix !== '' && suffix === serialSuffix(expected);
+}
+function ownerMarker(operationId) {
+  return 'GFv2-' + String(operationId).replace(/[^A-Za-z0-9]/g, '').slice(0, 27);
+}
+function ownerValue(layout, path, operationId) {
+  return restoreValue(path + '.' + layout.ownerLeaf) === ownerMarker(operationId);
 }
 function validateCompensation() {
   const request = JSON.parse(args[0]);
@@ -35,7 +41,7 @@ function validateCompensation() {
   if (request.mode !== 'wifi' && request.pppPath) {
     const prefix = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.' + layout.wcd + '.WANPPPConnection.';
     if (!request.pppPath.startsWith(prefix) || !/^[1-9][0-9]*$/.test(request.pppPath.slice(prefix.length))) throw new Error('V2_OWNERSHIP_MISMATCH');
-    if (declare(request.pppPath, { path: Date.now() }).path && restoreValue(request.pppPath + '.Name') !== 'GFv2-' + request.operationId) throw new Error('V2_OWNERSHIP_MISMATCH');
+    if (declare(request.pppPath, { path: Date.now() }).path && !ownerValue(layout, request.pppPath, request.operationId)) throw new Error('V2_OWNERSHIP_MISMATCH');
   }
   return request;
 }
@@ -52,7 +58,7 @@ function ownedPppPath(layout, operationId) {
   const prefix = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.' + layout.wcd + '.WANPPPConnection.';
   const paths = [];
   for (const instance of declare(prefix + '*', { path: Date.now() })) {
-    if (instance.path && restoreValue(instance.path + '.Name') === 'GFv2-' + operationId) paths.push(instance.path);
+    if (instance.path && ownerValue(layout, instance.path, operationId)) paths.push(instance.path);
   }
   if (paths.length > 1) throw new Error('V2_OWNERSHIP_MISMATCH');
   return paths[0] || null;
@@ -67,13 +73,12 @@ function restoreWifi(layout, snapshot) {
   });
 }
 function ownedInternetPaths(layout, operationId) {
-  const name = 'GFv2-' + operationId;
   const paths = [];
   for (const segment of ['WANPPPConnection', 'WANIPConnection']) {
     const prefix = WAN_ROOT + layout.wcd + '.' + segment + '.';
     for (const instance of declare(prefix + '*', { path: Date.now() })) {
       if (!instance.path || instance.path === layout.provisioning) continue;
-      if (restoreValue(instance.path + '.Name') === name) paths.push(instance.path);
+      if (ownerValue(layout, instance.path, operationId)) paths.push(instance.path);
     }
   }
   return paths;
@@ -88,7 +93,7 @@ function removeOwnedInternet(request) {
   for (const target of targets) {
     if (target === layout.provisioning) throw new Error('V2_OWNERSHIP_MISMATCH');
     if (!declare(target, { path: Date.now() }).path) continue;
-    if (restoreValue(target + '.Name') !== 'GFv2-' + request.operationId) throw new Error('V2_OWNERSHIP_MISMATCH');
+    if (!ownerValue(layout, target, request.operationId)) throw new Error('V2_OWNERSHIP_MISMATCH');
     declare(target, null, { path: 0 });
     commit();
   }

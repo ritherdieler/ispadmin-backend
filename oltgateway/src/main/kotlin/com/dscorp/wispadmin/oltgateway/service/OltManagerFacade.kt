@@ -409,8 +409,13 @@ open class OltManagerFacade(
             )
         )
         try {
+            val live = queryFacade.bySnParsed(onu.sn)
             val writeResult = writeRouter.delete(
-                DeleteCliRequest(board = onu.board, port = onu.port, ontId = onu.onuIndex),
+                DeleteCliRequest(
+                    board = live?.slot ?: onu.board,
+                    port = live?.port ?: onu.port,
+                    ontId = live?.ontId ?: onu.onuIndex,
+                ),
                 externalId
             )
             if (!writeResult.status) {

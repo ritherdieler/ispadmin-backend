@@ -14,6 +14,15 @@ class ProvisioningTransitionsTest {
         return operation
     }
 
+    @Test fun `registration exposes cleanup after wifi and before final verification`() {
+        assertEquals(
+            listOf("VALIDATE", "MIKROTIK", "OLT", "OMCI", "ACS_CONTACT", "INTERNET", "WIFI", "WAN_CLEANUP", "VERIFY"),
+            ProvisioningStage.values().map { it.name },
+        )
+        assertEquals(ProvisioningStage.WIFI, transitions.next(through(ProvisioningStage.INTERNET)))
+        assertEquals(ProvisioningStage.WAN_CLEANUP, transitions.next(through(ProvisioningStage.WIFI)))
+    }
+
     @Test fun `operation model exposes durable phase for pre-subscription recovery`() {
         assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "phase" })
         assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "managementMode" })
@@ -76,7 +85,7 @@ class ProvisioningTransitionsTest {
             assertEquals(stage, transitions.nextCompensation(cancelled))
             cancelled = transitions.compensated(cancelled, stage)
         }
-        assertEquals(ProvisioningState.CANCELLED, cancelled.state)
+        assertEquals(ProvisioningState.CANCELLING, cancelled.state)
         assertNull(transitions.nextCompensation(cancelled))
         assertThrows(IllegalStateException::class.java) { transitions.retry(cancelled, cancelled.revision) }
     }
@@ -92,10 +101,17 @@ class ProvisioningTransitionsTest {
         assertThrows(IllegalStateException::class.java) { transitions.finished(cancelled, ProvisioningStage.VALIDATE) }
     }
 
-    @Test fun `successful registration cannot be cancelled through onboarding`() {
+    @Test fun `successful legacy provisioning cannot be cancelled through subscription controls`() {
         val done = through(ProvisioningStage.VERIFY)
         assertEquals(ProvisioningState.SUCCEEDED, done.state)
         assertEquals(done, transitions.retry(done, done.revision))
         assertThrows(IllegalStateException::class.java) { transitions.cancel(done, done.revision) }
+    }
+
+    @Test fun `successful registration flow can be cancelled for full cleanup`() {
+        val done = through(ProvisioningStage.VERIFY).copy(flowVersion = 3, operatorId = 12)
+        val cancelled = transitions.cancelRegistration(done, done.revision)
+        assertEquals(ProvisioningState.CANCEL_REQUESTED, cancelled.state)
+        assertEquals(ProvisioningStage.VERIFY, transitions.nextCompensation(cancelled))
     }
 }

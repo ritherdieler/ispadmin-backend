@@ -87,6 +87,10 @@ data class CoreOnboardingV2WifiRequest(
     val ssid24: String, val passphrase24: String, val ssid5: String, val passphrase5: String,
 )
 data class CoreOnboardingV2WifiCompensateRequest(val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String)
+data class CoreOnboardingV2WanCleanupRequest(
+    val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,
+    val mode: String = "pppoe",
+)
 
 class AcsCpeCoreClient(
     private val http: AcsHttpClient,
@@ -136,6 +140,12 @@ class AcsCpeCoreClient(
         val suffix = if (compensation) "/wifi/compensate/status" else "/wifi/status"
         val response = http.postJson("/api/acs/v1/onboarding-v2$suffix", objectMapper.writeValueAsString(request))
         val body = response.body ?: throw IllegalStateException("Empty ACS v2 Wi-Fi status response")
+        return objectMapper.readValue(body, CoreOnboardingV2InternetStatusResponse::class.java)
+    }
+    fun enqueueOnboardingV2WanCleanup(request: CoreOnboardingV2WanCleanupRequest): CoreOnboardingV2TaskResponse = task("/wan-cleanup", request)
+    fun onboardingV2WanCleanupStatus(request: CoreOnboardingV2WanCleanupRequest): CoreOnboardingV2InternetStatusResponse {
+        val response = http.postJson("/api/acs/v1/onboarding-v2/wan-cleanup/status", objectMapper.writeValueAsString(request))
+        val body = response.body ?: throw IllegalStateException("Empty ACS v2 WAN cleanup status response")
         return objectMapper.readValue(body, CoreOnboardingV2InternetStatusResponse::class.java)
     }
 

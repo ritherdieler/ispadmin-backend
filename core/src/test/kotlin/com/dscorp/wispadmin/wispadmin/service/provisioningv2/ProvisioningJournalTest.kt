@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.springframework.dao.DataIntegrityViolationException
@@ -36,6 +37,24 @@ class ProvisioningJournalTest {
         val lease = journal().claim("staging", "op", now, 1000)
         assertNotNull(lease)
         assertNull(journal().claim("staging", "op", now, 1000))
+    }
+
+    @Test fun `reads legacy operations with the new cleanup checkpoint inserted before verify`() {
+        val legacyRoot = json.readTree(json.writeValueAsString(operation())).deepCopy<ObjectNode>()
+        legacyRoot.withArray("checkpoints").remove(ProvisioningStage.WAN_CLEANUP.ordinal)
+        jdbc.update(
+            """INSERT INTO provisioning_v2_operation
+                (operation_id, environment, subscription_id, serial, revision, operation_json, state, phase,
+                 operator_id, operator_username, registration_request_key)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            "op", "staging", 42, "ZTEGDC47BFFD", 1, json.writeValueAsString(legacyRoot),
+            ProvisioningState.PENDING.name, ProvisioningPhase.PROVISIONING.name, null, null, null,
+        )
+
+        val restored = requireNotNull(journal().get("staging", "op"))
+
+        assertEquals(ProvisioningStage.values().toList(), restored.checkpoints.map { it.stage })
+        assertEquals(CheckpointState.PENDING, restored.checkpoints[ProvisioningStage.WAN_CLEANUP.ordinal].state)
     }
 
     @Test fun `expired worker cannot overwrite new owner and checkpoint writes outbox atomically`() {
@@ -84,5 +103,32 @@ class ProvisioningJournalTest {
         val lease = requireNotNull(store.claim("staging", first.id, now, 1000))
         store.checkpoint(lease, lease.operation.copy(state = ProvisioningState.CANCELLED), now, true)
         assertNull(store.activeForOperator("staging", 71))
+    }
+
+    @Test fun `linked registration keeps operator lock through cleanup and reacquires it after success`() {
+        val store = journal()
+        val target = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100)
+        val preauthorization = ProvisioningOperation(
+            "linked-cancel", "staging", null, "VSOL0031C0B6", flowVersion = 3,
+            phase = ProvisioningPhase.OLT_AUTHORIZATION, operatorId = 72,
+            registrationRequestKey = "request-linked-1", onuTarget = target,
+        )
+        store.insertPreauthorization(preauthorization)
+        val ready = store.updatePreauthorization(
+            "staging", preauthorization.id, preauthorization.revision,
+            transform = { it.copy(phase = ProvisioningPhase.READY_FOR_FORM, state = ProvisioningState.READY_FOR_FORM) },
+        )
+        val linked = store.promotePreauthorization("staging", ready.id, 72, 93)
+        val lease = requireNotNull(store.claim("staging", linked.id, now, 1000))
+        store.checkpoint(lease, linked.copy(state = ProvisioningState.SUCCEEDED), now, true)
+        assertNull(store.activeForOperator("staging", 72))
+
+        val cancellation = store.requestRegistrationCancel("staging", linked.id, 72, linked.revision)
+
+        assertEquals(ProvisioningState.CANCEL_REQUESTED, cancellation.state)
+        assertEquals(cancellation.id, store.activeForOperator("staging", 72)?.id)
+        val cancellationLease = requireNotNull(store.claim("staging", cancellation.id, now, 1000))
+        store.checkpoint(cancellationLease, cancellation.copy(state = ProvisioningState.CANCELLED), now, true)
+        assertEquals(cancellation.id, store.activeForOperator("staging", 72)?.id)
     }
 }

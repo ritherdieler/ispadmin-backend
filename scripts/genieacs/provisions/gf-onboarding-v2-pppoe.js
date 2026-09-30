@@ -1,5 +1,5 @@
 // args[0]: JSON {operationId, expectedSerial, expectedModel, expectedFirmware, vlan, mode, username, password, ip, subnetMask, gateway, dns}.
-// commit() restarts the script. The OMCI management WAN service is set to TR069 before Internet is created. The first WAN stays the provisioning connection; every other WAN is removed and Internet is created as PPPoE or static.
+// Block 1: tag the management WAN and create/tag the Internet WAN. Block 3 removes foreign WANs after Wi-Fi completes.
 const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
 const F6600 = {
   wcd: 1,
@@ -12,6 +12,7 @@ const F6600 = {
   vlan: 'VLANID',
   service: 'ServiceList',
   vlanEnable: true,
+  managementName: 'GF-TR069-MGMT',
 };
 const VSOL = {
   wcd: 2,
@@ -24,6 +25,8 @@ const VSOL = {
   vendor: 'X_CT-COM_',
   vlan: 'VLANIDMark',
   service: 'ServiceList',
+  writeAlias: true,
+  managementAlias: 'GF-TR069-MGMT',
   gponVlan: WAN_ROOT + '2.X_CT-COM_WANGponLinkConfig.VLANIDMark',
 };
 const WAN_LAYOUTS = { F6600R: F6600, VSOLVA74: VSOL, V2804AX15T: VSOL };
@@ -41,6 +44,9 @@ function sameSerial(live, expected) {
   const suffix = serialSuffix(live);
   return suffix !== '' && suffix === serialSuffix(expected);
 }
+function ownerMarker(operationId) {
+  return 'GFv2-' + String(operationId).replace(/[^A-Za-z0-9]/g, '').slice(0, 27);
+}
 function requestForDevice() {
   const request = JSON.parse(args[0]);
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(request.operationId || '')) throw new Error('V2_INVALID_OPERATION');
@@ -57,19 +63,6 @@ function requestForDevice() {
     throw new Error('V2_MISSING_PPPOE_CREDENTIALS');
   }
   return request;
-}
-function isProvisioning(layout, instancePath) {
-  if (layout.preserveFirstContainer) return instancePath.startsWith(WAN_ROOT + '1.');
-  return instancePath === layout.provisioning;
-}
-function deleteOtherWans(layout, keep) {
-  for (const segment of ['WANPPPConnection', 'WANIPConnection']) {
-    for (const instance of declare(WAN_ROOT + '*.' + segment + '.*', { path: Date.now() })) {
-      if (!instance.path || isProvisioning(layout, instance.path) || instance.path === keep) continue;
-      declare(instance.path, null, { path: 0 });
-      commit();
-    }
-  }
 }
 function ensureInternetContainer(layout) {
   if (layout.wcd === 1) return;
@@ -92,6 +85,13 @@ function ensureInstance(parent, instancePath) {
 function writeLeaves(path, leaves) {
   for (const key of Object.keys(leaves)) declare(path + '.' + key, null, { value: leaves[key] });
 }
+function traceLeaves(request, path, leaves) {
+  const entries = Object.keys(leaves).sort().map(key => {
+    const value = key === 'Username' || key === 'Password' ? '<REDACTED>' : String(leaves[key]);
+    return key + '=' + value;
+  });
+  log('GFv2_SPV operation=' + request.operationId + ' model=' + request.expectedModel + ' path=' + path + ' leaves=' + entries.join(','));
+}
 function serviceLeaves(layout, request, name) {
   const leaves = { ConnectionType: 'IP_Routed', NATEnabled: true, Name: name };
   leaves[layout.vendor + layout.service] = 'INTERNET';
@@ -100,8 +100,11 @@ function serviceLeaves(layout, request, name) {
   return leaves;
 }
 function setInternetLeaves(path, layout, request) {
-  const name = 'GFv2-' + request.operationId;
+  const owner = ownerMarker(request.operationId);
+  const name = layout.writeAlias ? '2_INTERNET_R_VID_' + request.vlan : owner;
   const leaves = serviceLeaves(layout, request, name);
+  leaves.Enable = true;
+  if (layout.writeAlias) leaves.Alias = owner;
   if (request.mode === 'static') {
     leaves.AddressingType = 'Static';
     leaves.ExternalIPAddress = request.ip;
@@ -116,32 +119,42 @@ function setInternetLeaves(path, layout, request) {
     leaves.Username = request.username;
     leaves.Password = request.password;
   }
+  traceLeaves(request, path, leaves);
   writeLeaves(path, leaves);
   if (layout.gponVlan) declare(layout.gponVlan, null, { value: request.vlan });
   commit();
-  declare(path + '.Enable', null, { value: true });
-  commit();
 }
-function ensureProvisioningServiceTr069(layout) {
+function ensureProvisioningServiceTr069(layout, request) {
+  let changed = false;
+  const marker = layout.managementAlias
+    ? { leaf: 'Alias', value: layout.managementAlias }
+    : layout.managementName
+      ? { leaf: 'Name', value: layout.managementName }
+      : null;
+  if (marker) {
+    const markerPath = layout.provisioning + '.' + marker.leaf;
+    if (valueAt(markerPath) !== marker.value) {
+      declare(markerPath, null, { value: marker.value });
+      log('GFv2_MGMT operation=' + request.operationId + ' model=' + request.expectedModel + ' path=' + layout.provisioning + ' ' + marker.leaf + '=' + marker.value);
+      changed = true;
+    }
+  }
   const leaf = layout.provisioning + '.' + layout.vendor + layout.service;
-  if (valueAt(leaf) === 'TR069') return;
-  declare(leaf, null, { value: 'TR069' });
-  commit();
+  if (valueAt(leaf) !== 'TR069') {
+    declare(leaf, null, { value: 'TR069' });
+    changed = true;
+  }
+  if (changed) commit();
 }
 function applyInternet() {
   const request = requestForDevice();
   const layout = WAN_LAYOUTS[request.expectedModel];
   const internet = request.mode === 'static' ? layout.internetIp : layout.internetPpp;
   const parent = request.mode === 'static' ? layout.ipParent : layout.pppParent;
-  ensureProvisioningServiceTr069(layout);
+  ensureProvisioningServiceTr069(layout, request);
   ensureInternetContainer(layout);
-  deleteOtherWans(layout, internet);
   ensureInstance(parent, internet);
   setInternetLeaves(internet, layout, request);
-  declare(internet + '.ConnectionStatus', { value: Date.now() });
-  declare(internet + '.LastConnectionError', { value: Date.now() });
-  declare(internet + '.ExternalIPAddress', { value: Date.now() });
-  commit();
   log('gf-onboarding-v2-pppoe applied operation=' + request.operationId + ' mode=' + request.mode);
 }
 applyInternet();

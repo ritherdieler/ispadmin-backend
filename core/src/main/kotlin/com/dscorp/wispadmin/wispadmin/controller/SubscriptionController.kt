@@ -43,6 +43,7 @@ import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
 import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupStepException
 import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningJournal
 
 const val DATE_FORMAT = "dd/MM/yyyy"
 
@@ -69,6 +70,7 @@ class SubscriptionController(
     private val environment: GigafiberEnvironmentProperties = GigafiberEnvironmentProperties(),
     private val subscriptionAcsRepository: SubscriptionAcsRepository? = null,
     private val hardCleanup: SubscriptionHardCleanupService? = null,
+    private val provisioningJournal: ProvisioningJournal? = null,
 ) {
 
     private fun publishSubscriptionChanged(subscriptionId: Int?) {
@@ -210,7 +212,20 @@ class SubscriptionController(
         val existing = repository.findById(subscriptionId).orElse(null)
             ?: return ResponseEntity.notFound().build()
         val subscription = subscriptionProvisionService.refreshTr069FromGateway(existing)
-        return ResponseEntity.ok(RegistrationProgressMapper.from(subscription.toDto()))
+        val progress = RegistrationProgressMapper.from(subscription.toDto())
+        val checkpoints = runCatching {
+            provisioningJournal?.latest(environment.normalizedTag().ifBlank { "prod" }, subscriptionId)?.checkpoints.orEmpty()
+        }.getOrDefault(emptyList()).map { checkpoint ->
+            RegistrationProgressCheckpointDto(
+                stage = checkpoint.stage.name,
+                state = checkpoint.state.name,
+                attempts = checkpoint.attempts,
+                failure = checkpoint.failure?.let { failure ->
+                    RegistrationProgressFailureDto(failure.code, failure.message, failure.retryable, failure.technicalDetails)
+                },
+            )
+        }
+        return ResponseEntity.ok(progress.copy(provisioningCheckpoints = checkpoints))
     }
 
     @GetMapping("/{subscriptionId}/acs")

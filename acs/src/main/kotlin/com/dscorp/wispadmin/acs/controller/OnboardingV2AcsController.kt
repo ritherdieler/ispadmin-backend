@@ -9,6 +9,7 @@ import com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse
 import com.dscorp.wispadmin.acs.OnboardingV2WifiRequest
 import com.dscorp.wispadmin.acs.OnboardingV2WifiCompensateRequest
 import com.dscorp.wispadmin.acs.OnboardingV2TaskResponse
+import com.dscorp.wispadmin.acs.OnboardingV2WanCleanupRequest
 import com.dscorp.wispadmin.acs.service.OnboardingV2AcsContactService
 import com.dscorp.wispadmin.acs.service.OnboardingV2TaskService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
@@ -60,4 +61,11 @@ class OnboardingV2TaskController(
 
     @PostMapping("/wifi/compensate/status")
     fun compensateWifiStatus(@RequestBody request: OnboardingV2WifiCompensateRequest): OnboardingV2InternetStatusResponse = tasks.wifiStatus(request, true)
+
+    @PostMapping("/wan-cleanup")
+    fun wanCleanup(@RequestBody request: OnboardingV2WanCleanupRequest): OnboardingV2TaskResponse = tasks.enqueueWanCleanup(request)
+
+    @PostMapping("/wan-cleanup/status")
+    fun wanCleanupStatus(@RequestBody request: OnboardingV2WanCleanupRequest): OnboardingV2InternetStatusResponse =
+        tasks.wanCleanupStatus(request)
 }

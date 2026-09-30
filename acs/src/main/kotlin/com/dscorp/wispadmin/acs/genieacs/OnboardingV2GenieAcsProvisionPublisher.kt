@@ -28,6 +28,6 @@ class OnboardingV2GenieAcsProvisionPublisher(
         .joinToString("") { "%02x".format(it) }
     private companion object {
         val log = LoggerFactory.getLogger(OnboardingV2GenieAcsProvisionPublisher::class.java)
-        val IDS = listOf("gf-onboarding-v2-pppoe", "gf-onboarding-v2-wifi", "gf-onboarding-v2-compensate")
+        val IDS = listOf("gf-onboarding-v2-pppoe", "gf-onboarding-v2-wifi", "gf-onboarding-v2-cleanup", "gf-onboarding-v2-compensate")
     }
 }

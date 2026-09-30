@@ -31,9 +31,9 @@ class ProvisioningJournal(
         require(operation.flowVersion == 3 && operation.phase == ProvisioningPhase.OLT_AUTHORIZATION)
         require(operation.subscriptionId == null && operation.operatorId != null && operation.onuTarget != null)
         require(operation.state == ProvisioningState.PENDING && operation.checkpoints.none { it.touched })
+        insertRow(operation)
         jdbc.update("INSERT INTO provisioning_v2_operator_lock (operator_id, environment, operation_id, created_at_epoch_ms) VALUES (?,?,?,?)",
             operation.operatorId, operation.environment, operation.id, operation.updatedAt.toEpochMilli())
-        insertRow(operation)
         appendEvent(operation)
         operation
     }
@@ -42,20 +42,20 @@ class ProvisioningJournal(
         """SELECT o.operation_json FROM provisioning_v2_operation o
             JOIN provisioning_v2_operator_lock l ON l.operation_id=o.operation_id AND l.environment=o.environment
             WHERE o.environment=? AND l.operator_id=?""",
-        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        { rs, _ -> readOperation(rs.getString("operation_json")) },
         environment, operatorId).singleOrNull()
 
     fun preauthorizationForRequest(environment: String, operatorId: Long, requestKey: String): ProvisioningOperation? = jdbc.query(
         """SELECT operation_json FROM provisioning_v2_operation
             WHERE environment=? AND operator_id=? AND registration_request_key=?""",
-        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        { rs, _ -> readOperation(rs.getString("operation_json")) },
         environment, operatorId, requestKey).singleOrNull()
 
     fun unlinkedPreauthorizations(environment: String): List<ProvisioningOperation> = jdbc.query(
         """SELECT operation_json FROM provisioning_v2_operation
             WHERE environment=? AND subscription_id IS NULL AND phase<>'PROVISIONING' AND state<>'CANCELLED'
             ORDER BY operation_id DESC LIMIT 200""",
-        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        { rs, _ -> readOperation(rs.getString("operation_json")) },
         environment)
 
     fun updatePreauthorization(
@@ -118,7 +118,7 @@ class ProvisioningJournal(
             JOIN provisioning_v2_event e ON e.operation_id=o.operation_id
             WHERE o.environment=? AND o.subscription_id=?
             GROUP BY o.operation_id, o.operation_json ORDER BY MIN(e.id) DESC LIMIT 1""",
-        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) },
+        { rs, _ -> readOperation(rs.getString("operation_json")) },
         environment, subscriptionId).singleOrNull()
 
     fun history(environment: String, id: String, after: Long): List<ProvisioningEvent> {
@@ -126,7 +126,7 @@ class ProvisioningJournal(
         return jdbc.query("""SELECT e.id, e.payload_json FROM provisioning_v2_event e
             JOIN provisioning_v2_operation o ON o.operation_id=e.operation_id
             WHERE o.environment=? AND o.operation_id=? AND e.id>? ORDER BY e.id LIMIT 100""",
-            { rs, _ -> ProvisioningEvent(rs.getLong("id"), json.readValue(rs.getString("payload_json"), ProvisioningOperation::class.java)) },
+            { rs, _ -> ProvisioningEvent(rs.getLong("id"), readOperation(rs.getString("payload_json"))) },
             environment, id, after)
     }
 
@@ -172,6 +172,24 @@ class ProvisioningJournal(
         next
     }
 
+    fun requestRegistrationCancel(environment: String, id: String, operatorId: Long, revision: Long): ProvisioningOperation = transaction {
+        val current = read(environment, id, true) ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
+        require(current.operatorId == operatorId && current.flowVersion == 3) { "REGISTRATION_OPERATOR_MISMATCH" }
+        val next = transitions.cancelRegistration(current, revision)
+        if (next != current) {
+            if (current.state == ProvisioningState.SUCCEEDED) {
+                jdbc.update(
+                    "INSERT INTO provisioning_v2_operator_lock (operator_id, environment, operation_id, created_at_epoch_ms) VALUES (?,?,?,?)",
+                    operatorId, environment, id, current.updatedAt.toEpochMilli(),
+                )
+            }
+            jdbc.update("UPDATE provisioning_v2_operation SET operation_json=?, state=?, cancel_requested=TRUE, next_attempt_at=0 WHERE environment=? AND operation_id=?",
+                json.writeValueAsString(next), next.state.name, environment, id)
+            appendEvent(next)
+        }
+        next
+    }
+
     fun requestRetry(environment: String, id: String, revision: Long): ProvisioningOperation = transaction {
         val current = read(environment, id, true) ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
         val next = transitions.retry(current, revision)
@@ -185,7 +203,7 @@ class ProvisioningJournal(
 
     fun events(): List<ProvisioningEvent> = jdbc.query(
         "SELECT id, payload_json FROM provisioning_v2_event WHERE delivered=FALSE ORDER BY id LIMIT 100",
-        { rs, _ -> ProvisioningEvent(rs.getLong("id"), json.readValue(rs.getString("payload_json"), ProvisioningOperation::class.java)) })
+        { rs, _ -> ProvisioningEvent(rs.getLong("id"), readOperation(rs.getString("payload_json"))) })
 
     fun delivered(eventId: Long) { jdbc.update("UPDATE provisioning_v2_event SET delivered=TRUE WHERE id=?", eventId) }
 
@@ -230,7 +248,9 @@ class ProvisioningJournal(
     }
 
     private fun releaseOperatorLockIfTerminal(operation: ProvisioningOperation) {
-        if (operation.state in setOf(ProvisioningState.SUCCEEDED, ProvisioningState.CANCELLED)) {
+        val cancellationCleanupPending = operation.state == ProvisioningState.CANCELLED && operation.subscriptionId != null
+        if (operation.state == ProvisioningState.SUCCEEDED ||
+            operation.state == ProvisioningState.CANCELLED && !cancellationCleanupPending) {
             operation.operatorId?.let { operatorId ->
                 jdbc.update("DELETE FROM provisioning_v2_operator_lock WHERE operator_id=? AND operation_id=? AND environment=?",
                     operatorId, operation.id, operation.environment)
@@ -240,7 +260,35 @@ class ProvisioningJournal(
 
     private fun read(environment: String, id: String, locked: Boolean): ProvisioningOperation? = jdbc.query(
         "SELECT operation_json FROM provisioning_v2_operation WHERE environment=? AND operation_id=?" + if (locked) " FOR UPDATE" else "",
-        { rs, _ -> json.readValue(rs.getString("operation_json"), ProvisioningOperation::class.java) }, environment, id).singleOrNull()
+        { rs, _ -> readOperation(rs.getString("operation_json")) }, environment, id).singleOrNull()
+
+    /** Adds the new durable cleanup checkpoint when reading operations created before block 3 existed. */
+    private fun readOperation(payload: String): ProvisioningOperation {
+        val root = json.readTree(payload)
+        val source = root.path("checkpoints")
+        if (!source.isArray || source.any { it.path("stage").asText() == ProvisioningStage.WAN_CLEANUP.name }) {
+            return json.treeToValue(root, ProvisioningOperation::class.java)
+        }
+        val upgraded = root.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        val checkpoints = upgraded.withArray("checkpoints")
+        val verifyIndex = checkpoints.indexOfFirst { it.path("stage").asText() == ProvisioningStage.VERIFY.name }
+            .takeIf { it >= 0 } ?: checkpoints.size()
+        val verifyState = if (verifyIndex < checkpoints.size()) checkpoints.get(verifyIndex).path("state").asText() else null
+        val state = when {
+            upgraded.path("state").asText() == ProvisioningState.SUCCEEDED.name || verifyState == CheckpointState.SUCCEEDED.name -> CheckpointState.SUCCEEDED.name
+            upgraded.path("state").asText() == ProvisioningState.CANCELLED.name -> CheckpointState.COMPENSATED.name
+            else -> CheckpointState.PENDING.name
+        }
+        val cleanup = json.createObjectNode().apply {
+            put("stage", ProvisioningStage.WAN_CLEANUP.name)
+            put("state", state)
+            put("attempts", 0)
+            put("touched", false)
+            set<com.fasterxml.jackson.databind.JsonNode>("failure", json.nullNode())
+        }
+        checkpoints.insert(verifyIndex, cleanup)
+        return json.treeToValue(upgraded, ProvisioningOperation::class.java)
+    }
 
     private fun <T> transaction(block: () -> T): T {
         val result = transactions.execute { Box(block()) }

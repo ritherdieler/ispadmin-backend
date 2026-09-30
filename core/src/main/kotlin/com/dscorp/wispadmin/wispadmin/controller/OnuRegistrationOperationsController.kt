@@ -15,6 +15,7 @@ import javax.servlet.http.HttpServletRequest
 
 data class RegistrationOperationRevisionRequest(val expectedRevision: Long)
 data class RegistrationPhotoResponse(val url: String)
+data class RegistrationCancellationCleanupResponse(val status: String, val message: String? = null)
 
 @RestController
 @RequestMapping("/onu-registration-operations")
@@ -93,6 +94,16 @@ class OnuRegistrationOperationsController(private val service: OnuRegistrationOp
         @RequestBody request: RegistrationOperationRevisionRequest,
         http: HttpServletRequest,
     ): ProvisioningOperation = invoke { service.cancel(operatorId(http), operationId, request.expectedRevision) }
+
+    @PostMapping("/{operationId}/cleanup")
+    fun cleanupCancelled(@PathVariable operationId: String, http: HttpServletRequest): RegistrationCancellationCleanupResponse {
+        val report = invoke { service.cleanupCancelled(operatorId(http), operationId) }
+        val failed = report.steps.firstOrNull { it.state != "ok" }
+        return RegistrationCancellationCleanupResponse(
+            status = report.status,
+            message = failed?.let { "${it.step}: ${it.message ?: "No se pudo confirmar la limpieza."}" },
+        )
+    }
 
     private fun operatorId(http: HttpServletRequest): Long {
         val type = http.getAttribute(PlatformAuthFilter.AUTH_USER_TYPE_ATTRIBUTE)?.toString()?.uppercase()

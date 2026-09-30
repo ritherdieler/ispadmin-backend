@@ -5,11 +5,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
-function run(name, request, values = {}) {
+function run(name, request, values = {}, logs = [], metrics = {}) {
   const writes = [];
   const script = fs.readFileSync(path.join(__dirname, '..', name + '.js'), 'utf8');
   const context = {
-    args: [JSON.stringify(request)], log() {}, commit() {},
+    args: [JSON.stringify(request)], log(message) { logs.push(String(message)); }, commit() { metrics.commitCount = (metrics.commitCount || 0) + 1; },
     declare(key, freshness, change) {
       if (change) writes.push({ path: key, change });
       if (key === 'DeviceID.ProductClass') return { value: [request.model] };
@@ -42,7 +42,7 @@ test('Internet accepts a VSOL when only the last 6 serial characters match', () 
     [root + '1']: true,
     [root + '1.WANIPConnection.1']: true,
   });
-  assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.1.Name')).change.value, 'GFv2-op-123');
+  assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.1.Name')).change.value, '2_INTERNET_R_VID_100');
   assert.throws(() => run('gf-onboarding-v2-pppoe', { ...vsol, expectedSerial: 'VSOL00AAAAAA' }), /IDENTITY/);
   assert.throws(() => run('gf-onboarding-v2-wifi', { ...vsol, expectedSerial: 'VSOL00AAAAAA' }), /IDENTITY/);
   run('gf-onboarding-v2-wifi', vsol);
@@ -65,7 +65,63 @@ test('VSOL uses its WiFi band layout', () => {
   assert.equal(writes.find(w => w.path.endsWith('.5.SSID')).change.value, 'client24');
 });
 
-test('PPPoE keeps the provisioning WAN, deletes every other WAN and creates internet PPP', () => {
+test('V2804AX15T selects the VSOL WiFi band layout by product class', () => {
+  const writes = run('gf-onboarding-v2-wifi', {
+    ...request,
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+  });
+  assert.equal(writes.find(w => w.path.endsWith('.5.SSID')).change.value, 'client24');
+  assert.equal(writes.find(w => w.path.endsWith('.1.SSID')).change.value, 'client5');
+});
+
+test('V2804AX15T uses a CPE-compatible WAN name and keeps v2 ownership in Alias', () => {
+  const writes = run('gf-onboarding-v2-pppoe', {
+    ...request,
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+  }, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+  });
+  const name = writes.find(w => w.path.endsWith('WANPPPConnection.1.Name'));
+  const alias = writes.find(w => w.path.endsWith('WANPPPConnection.1.Alias'));
+  assert.equal(name.change.value, '2_INTERNET_R_VID_100');
+  assert.equal(alias.change.value, 'GFv2-op123');
+});
+
+test('V2804 ownership Alias stays within the CPE 32-character limit', () => {
+  const writes = run('gf-onboarding-v2-pppoe', {
+    ...request,
+    operationId: 'ba33deae-99c9-45ed-808c-b1172ae1c11f',
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+  }, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+  });
+  const alias = writes.find(w => w.path.endsWith('WANPPPConnection.1.Alias'));
+  assert.equal(alias.change.value.length, 32);
+  assert.match(alias.change.value, /^GFv2-[A-Za-z0-9]{27}$/);
+});
+
+test('PPPoE trace shows the Alias sent to the CPE without exposing credentials', () => {
+  const logs = [];
+  run('gf-onboarding-v2-pppoe', {
+    ...request,
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+  }, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+  }, logs);
+  assert(logs.some(message => message.includes('path=' + root + '2.WANPPPConnection.1')));
+  assert(logs.some(message => message.includes('Alias=GFv2-op123')));
+  assert(logs.some(message => message.includes('Password=<REDACTED>')));
+  assert(logs.every(message => !message.includes('pppoe-secret')));
+});
+
+test('PPPoE keeps the provisioning WAN and creates internet PPP without cleaning unrelated WANs', () => {
   const provisioning = root + '1.WANIPConnection.1';
   const values = {
     [provisioning]: true,
@@ -79,15 +135,10 @@ test('PPPoE keeps the provisioning WAN, deletes every other WAN and creates inte
   };
   const writes = run('gf-onboarding-v2-pppoe', request, values);
   const deleted = writes.filter(w => w.change.path === 0).map(w => w.path);
-  assert.deepEqual(deleted.sort(), [
-    root + '1.WANIPConnection.3',
-    root + '1.WANPPPConnection.1',
-    root + '1.WANPPPConnection.9',
-    root + '3.WANPPPConnection.1',
-  ].sort());
+  assert.deepEqual(deleted, []);
   assert.equal(writes.some(w => w.path === provisioning), false);
   assert(writes.some(w => w.path === root + '1.WANPPPConnection.*' && w.change.path === 2));
-  assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.2.Name')).change.value, 'GFv2-op-123');
+  assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.2.Name')).change.value, 'GFv2-op123');
   assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.2.Username')).change.value, 'client-42');
   assert.equal(writes.some(w => w.path.includes('[Name:')), false);
 });
@@ -96,22 +147,76 @@ test('PPPoE sets the OMCI management WAN service to TR069 before creating Intern
   const provisioning = root + '1.WANIPConnection.1';
   const writes = run('gf-onboarding-v2-pppoe', request, { [provisioning]: true });
   const service = writes.find(w => w.path === provisioning + '.X_ZTE-COM_ServiceList');
+  const managementAlias = writes.find(w => w.path === provisioning + '.Alias');
+  const managementName = writes.find(w => w.path === provisioning + '.Name');
   const internet = writes.find(w => w.path.endsWith('WANPPPConnection.2.Name'));
   assert.equal(service.change.value, 'TR069');
+  assert.equal(managementAlias, undefined);
+  assert.equal(managementName.change.value, 'GF-TR069-MGMT');
   assert.ok(writes.indexOf(service) < writes.indexOf(internet));
   const already = run('gf-onboarding-v2-pppoe', request, {
     [provisioning]: true,
     [provisioning + '.X_ZTE-COM_ServiceList']: 'TR069',
+    [provisioning + '.Name']: 'GF-TR069-MGMT',
   });
   assert.equal(already.some(w => w.path.endsWith('ServiceList') && w.path.startsWith(provisioning)), false);
+  assert.equal(already.some(w => w.path === provisioning + '.Name'), false);
   const vsol = run('gf-onboarding-v2-pppoe', { ...request, model: 'VSOLVA74', expectedModel: 'VSOLVA74' }, {
     [root + '1']: true,
     [provisioning]: true,
   });
-  assert.equal(vsol.find(w => w.path === provisioning + '.X_CT-COM_ServiceList').change.value, 'TR069');
+  const vsolService = vsol.find(w => w.path === provisioning + '.X_CT-COM_ServiceList');
+  const vsolAlias = vsol.find(w => w.path === provisioning + '.Alias');
+  assert.equal(vsolService.change.value, 'TR069');
+  assert.equal(vsolAlias.change.value, 'GF-TR069-MGMT');
+  assert.equal(vsol.find(w => w.path === provisioning + '.Name'), undefined);
+  assert.ok(vsol.indexOf(vsolAlias) < vsol.indexOf(vsol.find(w => w.path.endsWith('WANPPPConnection.1.Name'))));
+
+  const idempotentVsol = run('gf-onboarding-v2-pppoe', { ...request, model: 'V2804AX15T', expectedModel: 'V2804AX15T' }, {
+    [root + '1']: true,
+    [provisioning]: true,
+    [provisioning + '.X_CT-COM_ServiceList']: 'TR069',
+    [provisioning + '.Alias']: 'GF-TR069-MGMT',
+  });
+  assert.equal(idempotentVsol.some(w => w.path === provisioning + '.Alias'), false);
 });
 
-test('static Internet keeps provisioning and replaces every other WAN with a static IP', () => {
+test('final cleanup removes untagged VSOL WANs after management and Internet are tagged', () => {
+  const provisioning = root + '1.WANIPConnection.1';
+  const stale = root + '1.WANIPConnection.3';
+  const internetName = root + '2.WANPPPConnection.1.Name';
+  const requestForVsol = {
+    ...request,
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+  };
+  const provisioned = run('gf-onboarding-v2-pppoe', requestForVsol, {
+    [root + '1']: true,
+    [provisioning]: true,
+    [stale]: true,
+    [root + '2']: true,
+    [root + '2.WANPPPConnection.1']: true,
+  });
+  assert.equal(provisioned.some(w => w.path === stale && w.change.path === 0), false);
+  const metrics = {};
+  const writes = run('gf-onboarding-v2-cleanup', requestForVsol, {
+    [root + '1']: true,
+    [provisioning]: true,
+    [stale]: true,
+    [root + '2']: true,
+    [root + '2.WANPPPConnection.1']: true,
+    [internetName]: '2_INTERNET_R_VID_100',
+    [internetName.replace('.Name', '.Alias')]: 'GFv2-op123',
+    [provisioning + '.Alias']: 'GF-TR069-MGMT',
+  }, [], metrics);
+  const cleanup = writes.find(w => w.path === stale && w.change.path === 0);
+  assert.ok(cleanup);
+  assert.equal(writes.some(w => w.path === provisioning && w.change.path === 0), false);
+  assert.equal(writes.some(w => w.path === internetName && w.change.path === 0), false);
+  assert.equal(metrics.commitCount, 1);
+});
+
+test('static Internet keeps provisioning and creates a static IP without cleaning unrelated WANs', () => {
   const provisioning = root + '1.WANIPConnection.1';
   const writes = run('gf-onboarding-v2-pppoe', {
     ...request, mode: 'static', ip: '192.168.250.22', subnetMask: '255.255.252.0', gateway: '192.168.248.1', dns: '8.8.8.8',
@@ -122,11 +227,7 @@ test('static Internet keeps provisioning and replaces every other WAN with a sta
     [root + '1.WANIPConnection.4']: true,
   });
   const deleted = writes.filter(w => w.change.path === 0).map(w => w.path);
-  assert.deepEqual(deleted.sort(), [
-    root + '1.WANIPConnection.4',
-    root + '1.WANPPPConnection.1',
-    root + '1.WANPPPConnection.2',
-  ].sort());
+  assert.deepEqual(deleted, []);
   assert.equal(writes.some(w => w.path === provisioning), false);
   assert(writes.some(w => w.path === root + '1.WANIPConnection.*' && w.change.path === 2));
   assert.equal(writes.find(w => w.path.endsWith('WANIPConnection.2.AddressingType')).change.value, 'Static');
@@ -134,7 +235,7 @@ test('static Internet keeps provisioning and replaces every other WAN with a sta
   assert.equal(writes.some(w => w.path.includes('Username')), false);
 });
 
-test('VSOL and V2804 keep the first WAN container and create Internet on the second', () => {
+test('VSOL and V2804 keep the first WAN container and create Internet on the second without cleanup', () => {
   for (const model of ['VSOLVA74', 'V2804AX15T']) {
     const writes = run('gf-onboarding-v2-pppoe', { ...request, model, expectedModel: model }, {
       [root + '1']: true,
@@ -144,8 +245,8 @@ test('VSOL and V2804 keep the first WAN container and create Internet on the sec
       [root + '2.WANPPPConnection.4.Name']: 'foreign',
     });
     assert.equal(writes.some(w => w.path.startsWith(root + '1.') && w.change.path === 0), false);
-    assert(writes.some(w => w.path === root + '2.WANPPPConnection.4' && w.change.path === 0));
-    assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.1.Name')).change.value, 'GFv2-op-123');
+    assert.equal(writes.some(w => w.path === root + '2.WANPPPConnection.4' && w.change.path === 0), false);
+    assert.equal(writes.find(w => w.path.endsWith('WANPPPConnection.1.Name')).change.value, '2_INTERNET_R_VID_100');
   }
 });
 
@@ -157,7 +258,7 @@ test('compensation checks ownership before deleting and requires a known WiFi sn
   const writes = run('gf-onboarding-v2-compensate', {
     ...request, pppPath,
     previousWifi: { ssid24: 'old24', ssid5: 'old5', passphrase24: 'oldpass24', passphrase5: 'oldpass55', enabled24: true, enabled5: false },
-  }, { [pppPath]: true, [pppPath + '.Name']: 'GFv2-op-123' });
+  }, { [pppPath]: true, [pppPath + '.Name']: 'GFv2-op123' });
   assert.equal(writes.filter(w => w.change.path === 0).length, 1);
   assert.equal(writes.find(w => w.change.path === 0).path, pppPath);
   assert(writes.some(w => w.change.value === 'old24'));
@@ -183,7 +284,25 @@ test('compensation removes an owned static Internet WAN and keeps provisioning',
     [provisioning]: true,
     [provisioning + '.Name']: 'aprovisionamiento',
     [ipPath]: true,
-    [ipPath + '.Name']: 'GFv2-op-123',
+    [ipPath + '.Name']: 'GFv2-op123',
   });
   assert.deepEqual(writes.filter(w => w.change.path === 0).map(w => w.path), [ipPath]);
+});
+
+test('V2804 compensation recognizes ownership through Alias', () => {
+  const pppPath = root + '2.WANPPPConnection.1';
+  const writes = run('gf-onboarding-v2-compensate', {
+    ...request,
+    model: 'V2804AX15T',
+    expectedModel: 'V2804AX15T',
+    mode: 'internet',
+    internetWasAbsent: true,
+  }, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+    [pppPath]: true,
+    [pppPath + '.Name']: '2_INTERNET_R_VID_100',
+    [pppPath + '.Alias']: 'GFv2-op123',
+  });
+  assert.deepEqual(writes.filter(w => w.change.path === 0).map(w => w.path), [pppPath]);
 });

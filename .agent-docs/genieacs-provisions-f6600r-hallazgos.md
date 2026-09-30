@@ -75,6 +75,8 @@ Lab canónica VSOL: `B46415-V2804AX15T-12345B4641531C0B6` (tag `lab`). Snapshot 
 
 Hojas VSOL: Alias, `X_CT-COM_ServiceList`, `X_CT-COM_VLANIDMark`, VLAN GPON de WCD.2, NATEnabled, Username, Password, Enable. **No** `X_ZTE-COM_*` (9007).
 
+En el onboarding v2, `Name` de VSOL/V2804 debe conservar el formato CPE `2_INTERNET_R_VID_{vlan}`. El marcador de ownership `GFv2-{operationId}` va en `Alias`; el estado ACS y la compensación aceptan ese alias. El firmware `V1.1.00-260422` rechazó `GFv2-{operationId}` directamente en `Name` con 9007.
+
 ## Secuencia F6600R que funcionó (2026-09-12 17:55 y 17:58 UTC)
 
 Una sola tarea NBI. El access log, en orden:
