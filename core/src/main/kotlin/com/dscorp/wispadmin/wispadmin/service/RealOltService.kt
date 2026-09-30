@@ -33,8 +33,17 @@ class RealOltService(
 
     private val logger = LoggerFactory.getLogger(RealOltService::class.java)
 
+    private companion object {
+        const val DEBUG_AUTOFIND = "[DEBUG-ONU-AUTOFIND]"
+        const val DEBUG_TARGET_SN = "VSOL0031C0B6"
+    }
+
     override fun getUnConfiguredOnus(): List<Response>? {
         val client = gatewayClient()
+        logger.info(
+            "$DEBUG_AUTOFIND stage=core-route transport={}",
+            if (client != null) "olt-gateway" else "smartolt-compat",
+        )
         if (client != null) {
             return try {
                 fetchUnconfiguredFromGateway(client)
@@ -106,8 +115,27 @@ class RealOltService(
         if (gatewayClientEnabled) gatewayHttp.ifAvailable else null
 
     private fun fetchUnconfiguredFromGateway(client: OltGatewayHttpClient): List<Response> {
-        val body = client.getJson("/api/olt-gateway/onu/unconfigured_onus").body ?: return emptyList()
+        val upstream = client.getJson("/api/olt-gateway/onu/unconfigured_onus")
+        val body = upstream.body ?: run {
+            logger.warn(
+                "$DEBUG_AUTOFIND stage=core-proxy status={} emptyBody=true",
+                upstream.statusCode.value(),
+            )
+            return emptyList()
+        }
         val parsed = objectMapper.readValue(body, UnconfirmedOnuResponse::class.java)
+        val targetRawPresent = parsed.response.any { it.sn.contains(DEBUG_TARGET_SN, ignoreCase = true) ||
+            it.sn.contains("56534F4C0031C0B6", ignoreCase = true) }
+        val targetNormalizedPresent = parsed.response.any {
+            OnuSerialNormalizer.preferredSn(it.sn).equals(DEBUG_TARGET_SN, ignoreCase = true)
+        }
+        logger.info(
+            "$DEBUG_AUTOFIND stage=core-proxy status={} rawItems={} targetRawPresent={} targetNormalizedPresent={}",
+            upstream.statusCode.value(),
+            parsed.response.size,
+            targetRawPresent,
+            targetNormalizedPresent,
+        )
         return parsed.response.map { item ->
             item.copy(sn = OnuSerialNormalizer.preferredSn(item.sn))
         }

@@ -27,6 +27,7 @@ import com.dscorp.wispadmin.oltgateway.mapper.SmartOltCompatMapper
 import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltAuthorizeCommand
 import com.dscorp.wispadmin.oltgateway.smartolt.SmartOltMoveCommand
 import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
+import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
@@ -63,13 +64,47 @@ open class OltManagerFacade(
     private val profileResolver: SmartOltAuthorizeProfileResolver = SmartOltAuthorizeProfileResolver(properties),
 ) {
 
+    private companion object {
+        private val logger = LoggerFactory.getLogger(OltManagerFacade::class.java)
+        const val DEBUG_AUTOFIND = "[DEBUG-ONU-AUTOFIND]"
+        const val DEBUG_TARGET_SN = "VSOL0031C0B6"
+    }
+
     @Transactional(transactionManager = "oltGatewayTransactionManager", readOnly = true)
     open fun unconfiguredOnus(): SmartOltUnconfiguredOnusResponseDto {
-        val pending = queryFacade.autofindParsed().filter { parsed ->
+        val parsedItems = queryFacade.autofindParsed()
+        val pending = parsedItems.filter { parsed ->
             val sn = HuaweiGponSnmpCodec.normalizeOntSn(parsed.sn)
             val visible = !GatewayCallContext.labInventoryOnly() || properties.isLabSerial(sn)
-            visible && sn.isNotBlank() && onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isEmpty
+            val activeInventory = if (visible && sn.isNotBlank()) {
+                onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(sn).isPresent
+            } else {
+                false
+            }
+            val included = visible && sn.isNotBlank() && !activeInventory
+            if (sn == DEBUG_TARGET_SN) {
+                logger.info(
+                    "$DEBUG_AUTOFIND stage=gateway-filter rawSn={} normalizedSn={} frame={} slot={} port={} labOnly={} labVisible={} activeInventory={} included={}",
+                    parsed.sn,
+                    sn,
+                    parsed.frame,
+                    parsed.slot,
+                    parsed.port,
+                    GatewayCallContext.labInventoryOnly(),
+                    visible,
+                    activeInventory,
+                    included,
+                )
+            }
+            included
         }
+        logger.info(
+            "$DEBUG_AUTOFIND stage=gateway-response parsedCount={} pendingCount={} labOnly={} targetParsed={}",
+            parsedItems.size,
+            pending.size,
+            GatewayCallContext.labInventoryOnly(),
+            parsedItems.any { HuaweiGponSnmpCodec.normalizeOntSn(it.sn) == DEBUG_TARGET_SN },
+        )
         return mapper.toUnconfirmedOnuResponse(
             pending,
             properties.smartoltOltId.ifBlank { properties.oltId },

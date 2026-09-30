@@ -21,6 +21,7 @@ import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuBySn
 import com.dscorp.wispadmin.oltgateway.parser.ParsedOnuSummary
 import com.dscorp.wispadmin.oltgateway.parser.VersionParser
 import com.dscorp.wispadmin.oltgateway.snmp.GponFsp
+import com.dscorp.wispadmin.oltgateway.snmp.HuaweiGponSnmpCodec
 import com.dscorp.wispadmin.oltgateway.snmp.OltSnmpClient
 import com.dscorp.wispadmin.oltgateway.ssh.CliJobType
 import com.dscorp.wispadmin.oltgateway.ssh.OltCommandExecutor
@@ -41,6 +42,9 @@ class OltGatewayQueryService(
     companion object {
         private val logger = LoggerFactory.getLogger(OltGatewayQueryService::class.java)
         private const val AUTOFIND_COMMAND = "display ont autofind all"
+        private const val DEBUG_AUTOFIND = "[DEBUG-ONU-AUTOFIND]"
+        private const val DEBUG_TARGET_SN = "VSOL0031C0B6"
+        private const val DEBUG_TARGET_HEX = "56534F4C0031C0B6"
     }
 
     private fun snmpReady(): Boolean {
@@ -209,8 +213,32 @@ class OltGatewayQueryService(
     }
 
     private fun autofindViaSsh(): List<ParsedAutofindOnt> {
-        val output = commandExecutor.unconfigured { it.execute(AUTOFIND_COMMAND) }
-        return autofindParser.parse(output)
+        return try {
+            val output = commandExecutor.unconfigured { it.execute(AUTOFIND_COMMAND) }
+            val parsed = autofindParser.parse(output)
+            val targetRawPresent = output.contains(DEBUG_TARGET_HEX, ignoreCase = true) ||
+                output.contains("VSOL-0031C0B6", ignoreCase = true)
+            val targetParsed = parsed.any { HuaweiGponSnmpCodec.normalizeOntSn(it.sn) == DEBUG_TARGET_SN }
+            logger.info(
+                "$DEBUG_AUTOFIND stage=olt-cli command={} rawChars={} hasFsp={} hasOntSn={} targetRawPresent={} parsedCount={} targetParsed={}",
+                AUTOFIND_COMMAND,
+                output.length,
+                output.contains(Regex("(?i)F/S/P\\s*:")),
+                output.contains(Regex("(?i)Ont SN\\s*:")),
+                targetRawPresent,
+                parsed.size,
+                targetParsed,
+            )
+            parsed
+        } catch (ex: Exception) {
+            logger.warn(
+                "$DEBUG_AUTOFIND stage=olt-cli failed command={} errorType={} message={}",
+                AUTOFIND_COMMAND,
+                ex::class.java.simpleName,
+                ex.message,
+            )
+            throw ex
+        }
     }
 
     private fun requireSnmp(op: String) {
