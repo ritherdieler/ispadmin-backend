@@ -11,11 +11,14 @@ import com.dscorp.wispadmin.wispadmin.response.Response
 import com.dscorp.wispadmin.wispadmin.response.UnconfirmedOnuResponse
 import com.dscorp.wispadmin.wispadmin.util.SmartOltHttpClient
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.util.LinkedMultiValueMap
 import org.springframework.util.MultiValueMap
+import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.util.UriUtils
 import java.nio.charset.StandardCharsets
 
@@ -28,21 +31,21 @@ class RealOltService(
     private val mgmtIpDhcpApplier: SmartOltMgmtIpDhcpApplier,
 ) : OltService {
 
+    private val logger = LoggerFactory.getLogger(RealOltService::class.java)
+
     override fun getUnConfiguredOnus(): List<Response>? {
         val client = gatewayClient()
         if (client != null) {
             return try {
                 fetchUnconfiguredFromGateway(client)
             } catch (e: Exception) {
-                e.printStackTrace()
-                emptyList()
+                throwUnconfiguredQueryFailure(e)
             }
         }
         return try {
             smartOltHttpClient.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java).response
         } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
+            throwUnconfiguredQueryFailure(e)
         }
     }
 
@@ -108,6 +111,15 @@ class RealOltService(
         return parsed.response.map { item ->
             item.copy(sn = OnuSerialNormalizer.preferredSn(item.sn))
         }
+    }
+
+    private fun throwUnconfiguredQueryFailure(cause: Exception): Nothing {
+        logger.error("Unable to query unconfigured ONUs", cause)
+        throw ResponseStatusException(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "No se pudo consultar las ONUs no configuradas en la OLT",
+            cause,
+        )
     }
 
     private fun authorizeForm(request: OnuAuthorizationRequest): MultiValueMap<String, String> {

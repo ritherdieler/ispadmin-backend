@@ -14,9 +14,12 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.ResponseEntity
 import org.springframework.util.MultiValueMap
+import org.springframework.web.server.ResponseStatusException
 
 class RealOltServiceTest {
 
@@ -57,6 +60,18 @@ class RealOltServiceTest {
 
         assertEquals(emptyList<com.dscorp.wispadmin.wispadmin.response.Response>(), service(false).getUnConfiguredOnus())
         verify(exactly = 1) { smartOlt.get("onu/unconfigured_onus", UnconfirmedOnuResponse::class.java) }
+    }
+
+    @Test
+    fun `reports gateway autofind failure instead of returning an empty list`() {
+        every { gatewayClient.getJson("/api/olt-gateway/onu/unconfigured_onus") } throws
+            IllegalStateException("simulated gateway failure")
+
+        val error = assertThrows<ResponseStatusException> {
+            service(true).getUnConfiguredOnus()
+        }
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.status)
     }
 
     @Test

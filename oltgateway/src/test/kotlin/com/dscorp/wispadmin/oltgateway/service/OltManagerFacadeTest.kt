@@ -131,6 +131,35 @@ class OltManagerFacadeTest {
     }
 
     @Test
+    fun `unconfiguredOnus compares composite CLI serial using canonical value`() {
+        every { queryFacade.autofindParsed() } returns listOf(
+            ParsedAutofindOnt(
+                frame = 0,
+                slot = 1,
+                port = 6,
+                sn = "56534F4C0031C0B6 (VSOL-0031C0B6)",
+            )
+        )
+        val existing = OltMgrOnu(
+            id = 8L,
+            sn = "VSOL0031C0B6",
+            externalId = "gigafiber-ma5608t_1_6_17",
+            olt = olt,
+            board = 1,
+            port = 6,
+            onuIndex = 17,
+        )
+        every { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull(any()) } answers {
+            if (invocation.args[0] == "VSOL0031C0B6") Optional.of(existing) else Optional.empty()
+        }
+
+        val response = facade.unconfiguredOnus()
+
+        assertTrue(response.response.isEmpty())
+        verify { onuRepository.findBySnIgnoreCaseAndDeletedAtIsNull("VSOL0031C0B6") }
+    }
+
+    @Test
     fun `unconfiguredOnus con caller staging solo incluye seriales lab`() {
         every { queryFacade.autofindParsed() } returns listOf(
             ParsedAutofindOnt(frame = 0, slot = 1, port = 6, sn = "HWTC12345678"),

@@ -32,4 +32,30 @@ class AutofindParserTest {
         val result = parser.parse("Number of autofind ONTs: 0\nMA5608T#")
         assertTrue(result.isEmpty())
     }
+
+    @Test
+    fun `parses VSOL serial in OLT composite format`() {
+        val output = """
+            MA5608T(config)#display ont autofind all
+               -----------------------------------------------------------------------------
+               Number              : 1
+               F/S/P               : 0/1/6
+               Ont SN              : 56534F4C0031C0B6 (VSOL-0031C0B6)
+               Password            : [redacted]
+               VendorID            : HWTC
+               Ont EquipmentID     : VSOLVA74
+               Ont autofind time   : 2026-09-30 12:48:22-05:00
+               -----------------------------------------------------------------------------
+               The number of GPON autofind ONT is 1
+            MA5608T(config)#
+        """.trimIndent()
+
+        val result = parser.parse(output)
+
+        assertEquals(1, result.size)
+        assertEquals("56534F4C0031C0B6 (VSOL-0031C0B6)", result.single().sn)
+        assertEquals(1, result.single().slot)
+        assertEquals(6, result.single().port)
+        assertEquals("VSOLVA74", result.single().equipmentId)
+    }
 }

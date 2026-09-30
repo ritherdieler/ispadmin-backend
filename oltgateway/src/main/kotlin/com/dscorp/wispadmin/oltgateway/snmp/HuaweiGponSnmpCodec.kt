@@ -9,6 +9,7 @@ object HuaweiGponSnmpCodec {
     private const val IFINDEX_BASE = 0xFA000000L
     private const val INVALID_POWER = 2147483647
     private val HEX_SN = Regex("^[0-9A-F]{16}$")
+    private val LABELED_SN = Regex("""\(([^)]+)\)""")
 
     fun encodeIfIndex(slot: Int, port: Int, frame: Int = 0): Long {
         require(frame == 0) { "MA5608T probe used frame=0 only" }
@@ -33,18 +34,25 @@ object HuaweiGponSnmpCodec {
 
     /**
      * Canonical ONT SN is vendor ASCII + 8 hex (e.g. VSOL0086F6E9).
-     * CLI `display ont info summary` often shows the same 8 bytes as 16 hex digits
-     * (56534F4C0086F6E9); normalize both forms for DB matching.
+     * CLI `display ont info summary` and `display ont autofind all` may show the
+     * same 8 bytes as 16 hex digits (56534F4C0086F6E9), optionally followed by a
+     * vendor label in parentheses; normalize both forms for DB matching.
      */
     fun normalizeOntSn(raw: String): String {
         val s = raw.trim().uppercase()
-        if (s.length == 16 && HEX_SN.matches(s)) {
+        if (s.isEmpty()) return s
+
+        // Autofind may include both the hexadecimal value and the vendor label:
+        // `56534F4C0031C0B6 (VSOL-0031C0B6)`.
+        val labeled = LABELED_SN.find(s)?.groupValues?.get(1)
+        val compact = (labeled ?: s).filter { it.isLetterOrDigit() }
+        if (compact.length == 16 && HEX_SN.matches(compact)) {
             val bytes = ByteArray(8) { i ->
-                s.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                compact.substring(i * 2, i * 2 + 2).toInt(16).toByte()
             }
             return decodeOntSn(bytes)
         }
-        return s
+        return compact
     }
 
     fun decodeRunState(raw: Int): String? = when (raw) {

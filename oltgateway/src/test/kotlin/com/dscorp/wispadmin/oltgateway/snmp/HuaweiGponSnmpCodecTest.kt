@@ -45,6 +45,15 @@ class HuaweiGponSnmpCodecTest {
     }
 
     @Test
+    fun `normalize CLI serial with hex and vendor label`() {
+        assertEquals(
+            "VSOL0031C0B6",
+            HuaweiGponSnmpCodec.normalizeOntSn("56534F4C0031C0B6 (VSOL-0031C0B6)"),
+        )
+        assertEquals("VSOL0031C0B6", HuaweiGponSnmpCodec.normalizeOntSn("VSOL-0031C0B6"))
+    }
+
+    @Test
     fun `normalize deja vendor+suffix en mayusculas`() {
         assertEquals("VSOL0086F6E9", HuaweiGponSnmpCodec.normalizeOntSn("vsol0086f6e9"))
     }
