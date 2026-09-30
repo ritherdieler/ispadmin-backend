@@ -4,6 +4,7 @@ import com.dscorp.wispadmin.oltgateway.config.OltGatewayProperties
 import com.dscorp.wispadmin.oltgateway.exception.OltWritesDisabledException
 import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
 import com.dscorp.wispadmin.oltgateway.parser.OntLineProfileGemParser
+import org.slf4j.LoggerFactory
 
 enum class ManagementProvisioningMode { OMCI, PRECONFIGURED }
 
@@ -69,6 +70,8 @@ class OltGatewayCommandService(
     private val gemParser: OntLineProfileGemParser = OntLineProfileGemParser(),
 ) {
 
+    private val logger = LoggerFactory.getLogger(OltGatewayCommandService::class.java)
+
     fun planAuthorize(request: AuthorizeCliRequest): List<String> {
         val commands = mutableListOf(
             "interface gpon 0/${request.board}",
@@ -104,18 +107,37 @@ class OltGatewayCommandService(
         ensureWritesEnabled()
         val planned = planAuthorize(request)
         val executed = mutableListOf<String>()
-        inAuthorizeJob {
-            planned.forEach { cmd ->
-                executed.add(cmd)
-                val output = runCommand(cmd)
-                if (cmd.startsWith("ont add")) {
-                    requireOntAddOk(output, cmd)
-                } else if (cmd.startsWith("service-port")) {
-                    if (looksLikeCliFailure(output)) {
-                        throw IllegalStateException("OLT CLI failed for '$cmd': ${output.takeLast(300)}")
+        var currentCommand = "<not-started>"
+        try {
+            inAuthorizeJob {
+                planned.forEach { cmd ->
+                    currentCommand = cmd
+                    executed.add(cmd)
+                    val output = runCommand(cmd)
+                    if (cmd.startsWith("ont add")) {
+                        requireOntAddOk(output, cmd)
+                    } else if (cmd.startsWith("service-port")) {
+                        if (looksLikeCliFailure(output)) {
+                            throwCliFailure(cmd, output)
+                        }
                     }
                 }
             }
+        } catch (ex: Exception) {
+            logger.error(
+                "OLT authorization failed command={} sn={} board={} port={} ontId={} lineProfileId={} " +
+                    "serviceProfileId={} reason={}",
+                currentCommand,
+                request.sn,
+                request.board,
+                request.port,
+                request.ontId,
+                request.lineProfileId,
+                request.serviceProfileId,
+                ex.message,
+                ex,
+            )
+            throw ex
         }
         return AuthorizeCliResult(ontId = request.ontId, commands = executed)
     }
@@ -166,7 +188,7 @@ class OltGatewayCommandService(
             val deleted = runCommand(deleteCmd)
             if (!isOntAlreadyAbsent(deleted)) {
                 if (looksLikeCliFailure(deleted)) {
-                    throw IllegalStateException("OLT CLI failed for '$deleteCmd': ${deleted.takeLast(300)}")
+                    throwCliFailure(deleteCmd, deleted)
                 }
                 requireCliOk(deleted, deleteCmd)
             }
@@ -220,7 +242,7 @@ class OltGatewayCommandService(
                 val add = "gem mapping $hostGem $nextIndex vlan ${request.vlan}"
                 val addOut = runCommand(add)
                 if (looksLikeCliFailure(addOut) && !isAlreadyApplied(addOut)) {
-                    throw IllegalStateException("OLT CLI failed for '$add': ${addOut.takeLast(300)}")
+                    throwCliFailure(add, addOut)
                 }
                 runCommand("commit")
                 runCommand("quit")
@@ -236,7 +258,7 @@ class OltGatewayCommandService(
             )
             val spOut = runCommand(sp)
             if (looksLikeCliFailure(spOut) && !isAlreadyApplied(spOut)) {
-                throw IllegalStateException("OLT CLI failed for '$sp': ${spOut.takeLast(300)}")
+                throwCliFailure(sp, spOut)
             }
         }
         val after = parseServicePortVlans(displayServicePorts(request.board, request.port, request.ontId))
@@ -254,30 +276,52 @@ class OltGatewayCommandService(
     private fun runChecked(command: String): String {
         val output = runCommand(command)
         if (looksLikeCliFailure(output) && !command.startsWith("undo service-port")) {
-            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(300)}")
+            throwCliFailure(command, output)
         }
         return output
     }
 
     private fun requireOntAddOk(output: String, command: String) {
         if (looksLikeCliFailure(output)) {
-            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(400)}")
+            throwCliFailure(command, output)
         }
         val confirmed = output.contains(Regex("(?i)success:\\s*[1-9]\\d*"))
         if (!confirmed) {
-            throw IllegalStateException("OLT CLI did not confirm ont add for '$command': ${output.takeLast(400)}")
+            val details = summarizeCliOutput(output)
+            logger.error("OLT CLI did not confirm ont add command={} rawOutput={}", command, details)
+            throw IllegalStateException("OLT CLI did not confirm ont add for '$command': $details")
         }
     }
 
     private fun requireCliOk(output: String, command: String) {
         if (looksLikeCliFailure(output)) {
-            throw IllegalStateException("OLT CLI failed for '$command': ${output.takeLast(400)}")
+            throwCliFailure(command, output)
         }
         val confirmed = output.contains(Regex("(?i)success:\\s*[1-9]\\d*")) ||
             output.contains(Regex("(?i)Number of ONTs that can be deleted:\\s*[1-9]\\d*"))
         if (!confirmed) {
-            throw IllegalStateException("OLT CLI did not confirm delete for '$command': ${output.takeLast(400)}")
+            val details = summarizeCliOutput(output)
+            logger.error("OLT CLI did not confirm delete command={} rawOutput={}", command, details)
+            throw IllegalStateException("OLT CLI did not confirm delete for '$command': $details")
         }
+    }
+
+    private fun throwCliFailure(command: String, output: String): Nothing {
+        val details = summarizeCliOutput(output)
+        logger.error("OLT CLI command rejected command={} rawOutput={}", command, details)
+        throw IllegalStateException("OLT CLI failed for '$command': $details")
+    }
+
+    private fun summarizeCliOutput(output: String): String {
+        val normalized = output
+            .replace("\u001B", "<ESC>")
+            .replace("\r", "\\r")
+            .replace("\n", "\\n")
+        val maxLength = 2_000
+        if (normalized.length <= maxLength) return normalized
+        val headLength = 800
+        val tailLength = maxLength - headLength
+        return normalized.take(headLength) + "...<truncated>..." + normalized.takeLast(tailLength)
     }
 
     private fun isOntAlreadyAbsent(output: String): Boolean =
