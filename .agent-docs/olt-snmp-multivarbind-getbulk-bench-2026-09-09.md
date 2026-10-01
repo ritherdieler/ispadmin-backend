@@ -26,7 +26,7 @@ Mismo cursor, `maxRepetitions=25`, medianas de 3-12 muestras:
 | 7 | 175 | **2625 ms** |
 | 13 | 325 | **3929 ms** |
 
-Pedir 13 columnas cuesta **lo mismo o menos** que pedir 1. El agente hace **una lectura DDM/OMCI por ONT** y sirve todas las columnas desde ella. Nunca se observó `tooBig` (13 vb × 25 reps = 325 bindings entran con fragmentación UDP normal).
+Pedir 13 columnas cuesta **lo mismo o menos** que pedir 1. El agente hace **una lectura DDM por ONT** y sirve todas las columnas desde ella. Nunca se observó `tooBig` (13 vb × 25 reps = 325 bindings entran con fragmentación UDP normal).
 
 Coste por ONT según `maxRep` (7 vb): r5 → 396 ms, r10 → 154 ms, r25 → **105 ms**, r50 → 107 ms. **`maxRepetitions=25` es el óptimo**: satura el throughput con la página más pequeña, así un reintento cuesta la mitad que con r50.
 
@@ -70,7 +70,7 @@ Bug adicional del harness: comparar OIDs como **string** (`'…23' <= '…8'`) p
 | 2 | 91.6 s | 26.2 s |
 | 3 | 118.0 s | 44.8 s |
 
-La ruta DDM/OMCI del MA5608T es estrictamente serial: la concurrencia solo añade encolado e **induce drops**. **No subir `max_concurrent_snmp_walks` por encima de 1** y dejar `optical-parallel-ports=1`.
+La lectura DDM del MA5608T es estrictamente serial: la concurrencia solo añade encolado e **induce drops**. **No subir `max_concurrent_snmp_walks` por encima de 1** y dejar `optical-parallel-ports=1`.
 
 ## 6. Configuración recomendada
 

@@ -21,7 +21,7 @@ class ObsDurableIngestionTest {
         every { receipts.save(any()) } answers { firstArg() }
         val json = jacksonObjectMapper()
         val service = ObsDurableIngestionService(ingestion, receipts, json)
-        val event = ReportedEvent("error", "backend", "error", "Falló gestión", "OMCI_FAILED", null,
+        val event = ReportedEvent("error", "backend", "error", "Falló gestión", "ACS_CONTACT_FAILED", null,
             environment = "staging", correlationId = "operation-1")
         ObsDurableIngestionService(ingestion, receipts, json).persist("operation-1:17", event)
         service.persist("operation-1:17", event)

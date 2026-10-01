@@ -25,7 +25,6 @@ class OnuRegistrationOperationsControllerTest {
         val expected = ProvisioningOperation(
             "operation-1", "lab", null, request.serial,
             flowVersion = 3,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             phase = ProvisioningPhase.WAITING_FOR_ACS,
             operatorId = 71,
             operatorUsername = "lab-tech",
@@ -42,7 +41,6 @@ class OnuRegistrationOperationsControllerTest {
             .content(json.writeValueAsBytes(request)))
             .andExpect(status().isAccepted)
             .andExpect(jsonPath("$.operatorId").value(71))
-            .andExpect(jsonPath("$.managementMode").value("PRECONFIGURED"))
 
         verify(exactly = 1) { service.start(71, "lab-tech", request) }
     }

@@ -248,7 +248,6 @@ Ejemplo running config (redactado):
 
 ```text
 interface gpon 0/1
- ont add 0 2 sn-auth "54504C47********" omci ont-lineprofile-id 10 ont-srvprofile-id 10 desc "JEINERALVARADO"
 quit
 service-port 58 vlan 1 gpon 0/1/0 ont 2 gemport 1 multi-service user-vlan 1 tag-transform translate
 ```

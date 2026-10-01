@@ -35,8 +35,8 @@ data class ActionPolicy(val enabled: Boolean, val reason: String? = null, val la
 
 data class CpeGponStatus(val state: String, val rxDbm: String?, val txDbm: String?, val qualityStatus: Quality)
 data class CpeAcsStatus(val state: String, val lastInform: Instant?, val reachable: Boolean, val qualityStatus: Quality)
-data class CpeCapabilities(val canWriteWanViaTr069: Boolean = false, val canWriteWanViaOmci: Boolean = false,
-                           val canWriteWifiViaTr069: Boolean = false, val wanManagedBy: String = "TR069",
+data class CpeCapabilities(val canWriteWanViaTr069: Boolean = false,
+                           val canWriteWifiViaTr069: Boolean = false,
                            val vendor: String? = null, val model: String? = null)
 data class CpeStatus(val online: Boolean, val rxDbm: String?, val lastInform: Instant?, val sn: String?,
                      val gponStatus: CpeGponStatus, val acsStatus: CpeAcsStatus, val capabilities: CpeCapabilities,

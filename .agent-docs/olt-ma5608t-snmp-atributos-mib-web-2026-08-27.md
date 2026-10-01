@@ -28,7 +28,7 @@ Leyenda **Uso:** `YA` = en nuestro código · `PROBE` = documentado MIB, falta s
 | 3 | `…2.43.1.3` | `hwGponDeviceOntSn` | **YA** → `sn` |
 | 4 | `…2.43.1.4` | `hwGponDeviceOntPassword` | DOC (secreto) |
 | 5 | `…2.43.1.5` | `hwGponDeviceOntTimeOut` | DOC |
-| 6 | `…2.43.1.6` | `hwGponDeviceOntManagementMode` | PROBE → OMCI/TR069 mode |
+| 6 | `…2.43.1.6` | `hwGponDeviceOntManagementMode` | PROBE → modo de gestión reportado por la ONT |
 | 7 | `…2.43.1.7` | `hwGponDeviceOntLineProfName` | **YA** → `lineProfileName` (`listConfiguredOnus`) |
 | 8 | `…2.43.1.8` | `hwGponDeviceOntServiceProfName` | **YA** → `serviceProfileName` |
 | 9 | `…2.43.1.9` | `hwGponDeviceOntDespt` | **YA** → `description` / `name` (importadas) |

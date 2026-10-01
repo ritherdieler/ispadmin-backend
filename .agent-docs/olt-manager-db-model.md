@@ -277,7 +277,7 @@ CREATE TABLE onu (
     -- modo WAN
     mode          VARCHAR(12) NOT NULL DEFAULT 'routing',         -- routing | bridging
     wan_mode      VARCHAR(24) NOT NULL DEFAULT 'onu_webpage',     -- onu_webpage|dhcp|static|pppoe
-    configuration_method VARCHAR(8) NOT NULL DEFAULT 'omci',      -- omci | tr069
+    configuration_method VARCHAR(8),
     main_vlan_id  INT NOT NULL,                                   -- WAN VLAN
     wan_ip_source VARCHAR(8),                                     -- pool | manual
     wan_ip_pool_id BIGINT REFERENCES ip_pool(id),

@@ -101,7 +101,6 @@ class ProvisioningJournal(
             subscriptionId = subscriptionId,
             phase = ProvisioningPhase.PROVISIONING,
             state = ProvisioningState.PENDING,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             checkpoints = checkpoints,
             revision = current.revision + 1,
             updatedAt = now,
@@ -262,15 +261,20 @@ class ProvisioningJournal(
         "SELECT operation_json FROM provisioning_v2_operation WHERE environment=? AND operation_id=?" + if (locked) " FOR UPDATE" else "",
         { rs, _ -> readOperation(rs.getString("operation_json")) }, environment, id).singleOrNull()
 
-    /** Adds the new durable cleanup checkpoint when reading operations created before block 3 existed. */
+    /** Drops retired checkpoints and adds the durable cleanup checkpoint to older operations. */
     private fun readOperation(payload: String): ProvisioningOperation {
-        val root = json.readTree(payload)
-        val source = root.path("checkpoints")
-        if (!source.isArray || source.any { it.path("stage").asText() == ProvisioningStage.WAN_CLEANUP.name }) {
-            return json.treeToValue(root, ProvisioningOperation::class.java)
-        }
-        val upgraded = root.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        val upgraded = json.readTree(payload).deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        upgraded.remove("managementMode")
+        val source = upgraded.path("checkpoints")
+        if (!source.isArray) return json.treeToValue(upgraded, ProvisioningOperation::class.java)
         val checkpoints = upgraded.withArray("checkpoints")
+        val supportedStages = ProvisioningStage.values().map { it.name }.toSet()
+        for (index in checkpoints.size() - 1 downTo 0) {
+            if (checkpoints[index].path("stage").asText() !in supportedStages) checkpoints.remove(index)
+        }
+        if (checkpoints.any { it.path("stage").asText() == ProvisioningStage.WAN_CLEANUP.name }) {
+            return json.treeToValue(upgraded, ProvisioningOperation::class.java)
+        }
         val verifyIndex = checkpoints.indexOfFirst { it.path("stage").asText() == ProvisioningStage.VERIFY.name }
             .takeIf { it >= 0 } ?: checkpoints.size()
         val verifyState = if (verifyIndex < checkpoints.size()) checkpoints.get(verifyIndex).path("state").asText() else null
@@ -299,7 +303,6 @@ class ProvisioningJournal(
     private companion object {
         val PRECONFIGURED_STAGES = setOf(
             ProvisioningStage.OLT,
-            ProvisioningStage.OMCI,
             ProvisioningStage.ACS_CONTACT,
         )
     }

@@ -1002,7 +1002,7 @@ class OltInventorySyncServiceTest {
             gponChannel = "gpon",
             customProfile = "Generic_1",
             wanMode = "onu_webpage",
-            configurationMethod = "omci",
+            configurationMethod = "snmp",
             mgmtIpMode = "inactive",
             mgmtVlanId = null,
             mgmtIpAddress = null,
@@ -1046,7 +1046,7 @@ class OltInventorySyncServiceTest {
         assertEquals("gpon", detail.gponChannel)
         assertEquals("Generic_1", detail.customProfile)
         assertEquals("onu_webpage", detail.wanMode)
-        assertEquals("omci", detail.configurationMethod)
+        assertEquals("snmp", detail.configurationMethod)
         assertEquals("inactive", detail.mgmtIpMode)
         assertEquals(-20.96, detail.onuRxDbm)
         assertEquals(-25.53, detail.oltRxDbm)

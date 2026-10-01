@@ -122,7 +122,7 @@ Solo durante el despliegue autorizado, añadir `--apply` y configurar `GENIEACS_
 - Huawei y modelos no validados: identidad/frescura disponible, Wi-Fi `UNSUPPORTED`.
 - La proyección está limitada a 32 instancias de estación por radio. Si hay más, el conteo se conserva y se registra `STATION_LIMIT_EXCEEDED`; la señal por estación es parcial. Las lecturas NBI se fraccionan para no exceder el tamaño de URL; medir este coste en el piloto.
 - Los perfiles de lectura registran modelo/firmware, pero no inventan una validación de firmware: `verified_at` permanece vacío hasta validación operativa.
-- No existe en el código inspeccionado un canal seguro de modificación WAN OMCI equivalente a TR-069. `canWriteWanViaOmci=false`; no se inventaron comandos. Esta capacidad queda pendiente de un adaptador validado.
+- La aplicación no realiza escrituras de WAN por la OLT. La gestión remota de CPE se limita a las operaciones TR-069/ACS implementadas.
 - WAN TR-069 admite la asignación IP/VLAN actual. Migraciones de asignación deben pasar primero por provisión; no se cambia silenciosamente la identidad de tráfico.
 - Una contraseña write-only o un firmware que no refresque valores tras configurar puede terminar `UNVERIFIED`. Aceptar una tarea no se presenta como configuración aplicada.
 - El evaluador recorre la lista piloto cada minuto para vencer frescura. El consumo de anomalías sí usa cursor incremental; una cola de suscripciones modificadas para flotas mayores queda como optimización posterior.

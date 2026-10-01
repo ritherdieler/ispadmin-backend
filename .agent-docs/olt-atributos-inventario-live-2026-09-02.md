@@ -94,7 +94,7 @@ Muestra live `by-sn ZTEGDC47DAD1` (0/1/1:25) y `gpon 0/0` ont 0.
 | Temperature | - (en info; sí en optical) |
 | Authentic type | SN-auth |
 | SN | hex + ASCII (`ZTEG-DC47DAD1`) |
-| Management mode | OMCI |
+| Management mode | — |
 | Software work mode | normal |
 | Isolation state | normal |
 | Description | texto libre |

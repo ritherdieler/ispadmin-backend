@@ -266,7 +266,7 @@ No cambiar `network_device.disabled` de MK1 hasta fase E (MK1 sigue sirviendo re
 |-------|-----------|
 | Backend **no** configura WAN del CPE en alta fibra | `FiberInstallationStrategy` solo authorize OLT + queue MK |
 | TR-069 / ACS | Campo SmartOLT `tr069*` existe; ejemplos documentan `mgmt/tr069=Inactive`, `wan=Setup via ONU webpage`. **No inventar capacidad TR-069 operativa** |
-| Acción | Reconfig **manual** en UI CPE (o OMCI si el modelo/perfil lo permite y está probado): IP, máscara, GW `192.168.30.1` (o GW del pool), DNS, **VLAN WAN 100 tagged**, modo **Router** |
+| Acción | Reconfig **manual** en UI CPE: IP, máscara, GW `192.168.30.1` (o GW del pool), DNS, **VLAN WAN 100 tagged**, modo **Router** |
 
 Sin visita / acceso remoto al CPE, la migración L2/L3 MK2 queda a medias (síntoma piloto: solo ping al gateway).
 
@@ -290,20 +290,19 @@ Sin visita / acceso remoto al CPE, la migración L2/L3 MK2 queda a medias (sínt
 | Paso | Automatizable hoy | Cómo | Gap |
 |------|-------------------|------|-----|
 | Inventario SQL | ✅ | Queries §3 | — |
-| Alta ONU nueva VLAN 100 | ✅ parcial | `FiberInstallationStrategy` + `vlanId` del hostDevice; scripts `olt-onu-pilot-mk2-authorize.expect` | NapBox→VLAN pendiente |
+| Alta ONU nueva VLAN 100 | ✅ parcial | `FiberInstallationStrategy` + `vlanId` del hostDevice | NapBox→VLAN pendiente |
 | Cambio VLAN service-port existente | ⚠️ manual / expect | CLI OLT; no API migrate-vlan | Endpoint + parser |
 | Asignar IP pool por core | ✅ | `SubscriptionIpAllocationService.allocateFreeIp(hostDeviceId)` | Seed `nap_box.host_device_id` |
 | Actualizar hostDevice+IP en DB | ⚠️ manual / SQL | Sin endpoint migración | Feature TDD |
 | Queue create/recreate | ✅ | `QueueManagerService` + API ROS | Validar ROS 7 en masa; fix bulk queue |
 | Address-list deudores | ✅ | Agrupa por `hostDevice` | Probar en MK2 |
-| Config WAN CPE | ❌ | Manual / OMCI puntual | TR-069 **no operativo** |
+| Config WAN CPE | ❌ | Manual | TR-069 **no operativo** |
 | Rollback lote | ⚠️ semi | Scripts inversos OLT+MK+SQL | Empaquetar runbook |
 
 ### Scripts existentes útiles
 
 | Script | Uso en migración |
 |--------|------------------|
-| `scripts/olt-onu-pilot-mk2-authorize.expect` | Referencia alta VLAN 100 |
 | `scripts/olt-vlan100-uplink.expect` | **No** usar en migración de clientes (solo uplink) |
 | `scripts/mikrotik-mk2-pilot-verify.sh` | Validación L3 post-lote |
 | `scripts/mikrotik-mk2-phase1-verify.py` | Salud API MK2 |
@@ -397,7 +396,7 @@ Paralelo recomendado (no bloquea oleadas pequeñas): `NapBox.vlanId` / `hostDevi
 1. **No apagar ni deshabilitar MK1** (`id=1`) hasta migrar el umbral acordado (sugerido ≥95% o residual documentado).
 2. **No tocar OLT 0/3/3** ni quitar VLAN 1 del uplink legacy.
 3. **No migrar en bloque las ~759 ONUs** en una sola ventana.
-4. **No asumir TR-069** para reconfigurar WAN (no está operativo; CPE = manual/OMCI probado).
+4. **No asumir TR-069** para reconfigurar WAN (no está operativo; CPE = manual).
 5. **No re-marcar elegibles los pools MK1** mientras `getFreeIp()` no filtre por core.
 6. **No usar** `POST /subscription/generate-simple-queues` en multi-MK sin corregir el bug del primer `hostDevice`.
 7. **No avanzar a fase C/D** sin ampliación de pools (un `/24` no basta).

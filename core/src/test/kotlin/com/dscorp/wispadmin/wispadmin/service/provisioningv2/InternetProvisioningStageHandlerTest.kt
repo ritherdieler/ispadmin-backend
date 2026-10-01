@@ -32,7 +32,7 @@ class InternetProvisioningStageHandlerTest {
         val internet = InternetProvisioningResource("task-1", "dev-1", "F6600R", "fw")
         val registration = ProvisioningV2RegistrationSnapshot(
             ProvisioningV2OnuSnapshot("1", "gpon", "1", "1", "F6600R"),
-            1, 100, null, null, null, null,
+            100, null, null, null, null,
         )
         val snapshots = mapOf(
             "internet" to json.writeValueAsString(internet),

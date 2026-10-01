@@ -11,26 +11,9 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.request
 import org.springframework.test.web.client.match.MockRestRequestMatchers.content
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 import org.springframework.web.client.RestTemplate
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 class OltGatewayHttpClientTest {
-
-    @Test fun `OMCI management sends exact target through authenticated gateway contract`() {
-        val restTemplate = RestTemplate()
-        val server = MockRestServiceServer.createServer(restTemplate)
-        server.expect(requestTo("http://gateway/api/olt-gateway/onus/HWTC9F4BF950/omci/management"))
-            .andExpect(method(HttpMethod.POST))
-            .andExpect(header(OltGatewayHttpClient.HEADER, "key"))
-            .andExpect(content().json("""{"sn":"HWTC9F4BF950","slot":1,"port":6,"ontId":116,"tr069ProfileId":7}"""))
-            .andRespond(withSuccess("""{"configured":true,"address":"10.0.0.5"}""", MediaType.APPLICATION_JSON))
-        val client = GatewayOnuActivationClient(OltGatewayHttpClient(OltGatewayClientProperties().apply {
-            internalBaseUrl = "http://gateway"; apiKey = "key"
-        }, restTemplate), com.fasterxml.jackson.module.kotlin.jacksonObjectMapper())
-
-        val result = client.ensureOmciManagement(GatewayOmciManagementRequest("HWTC9F4BF950", 1, 6, 116, 7))
-
-        assertEquals(GatewayOmciManagementEvidence(true, "10.0.0.5"), result)
-        server.verify()
-    }
 
     @Test
     fun `getJson llama gateway WAR con X-Olt-Gateway-Key`() {
@@ -97,6 +80,37 @@ class OltGatewayHttpClientTest {
         )
 
         client.postForm("/api/olt-gateway/onu/authorize_onu", org.springframework.util.LinkedMultiValueMap())
+        server.verify()
+    }
+
+    @Test
+    fun `compensation envia la evidencia de identidad de la ONU al gateway`() {
+        val restTemplate = RestTemplate()
+        val server = MockRestServiceServer.createServer(restTemplate)
+        server.expect(requestTo("http://127.0.0.1:8080/ispadmin-staging-oltgateway/api/olt-gateway/onus/provisioning/compensate"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().json(
+                """{"operationId":"cancel-op-1","sn":"ZTEGDC47BFFD","expectedExternalId":"olt_1_1_3"}"""
+            ))
+            .andRespond(withSuccess(
+                """{"externalId":"olt_1_1_3","deleted":true}""",
+                MediaType.APPLICATION_JSON,
+            ))
+        val http = OltGatewayHttpClient(
+            OltGatewayClientProperties().apply {
+                apiKey = "dev-olt-gateway-key"
+                internalBaseUrl = "http://127.0.0.1:8080/ispadmin-staging-oltgateway"
+            },
+            restTemplate,
+        )
+        val client = GatewayOnuActivationClient(http, jacksonObjectMapper())
+
+        val response = client.compensateV2(
+            GatewayOnuV2CompensateRequest("cancel-op-1", "ZTEGDC47BFFD", "olt_1_1_3")
+        )
+
+        assertEquals("olt_1_1_3", response.externalId)
+        assertEquals(true, response.deleted)
         server.verify()
     }
 }

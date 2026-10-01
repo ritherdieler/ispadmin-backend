@@ -167,7 +167,7 @@ El ACS no reemplaza al backend. Responsabilidades:
 |---------|-----|
 | **GenieACS** | Protocolo CWMP, estado CPE, presets, tareas |
 | **ispadmin-backend** | Orquestación negocio: suscripción ↔ serial ↔ deviceId GenieACS |
-| **OLT** | Aprovisionamiento inicial URL/credenciales ACS vía OMCI |
+| **ACS** | Aprovisionamiento de CPE según los parámetros del servicio |
 | **SmartOLT** | Perfil `tr069_profile` al autorizar ONU (cuando aplique) |
 
 API mínima backend → GenieACS NBI:

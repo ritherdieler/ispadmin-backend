@@ -62,7 +62,7 @@ En OLT Huawei a menudo se embebe parte en `description` (ej. `NAME_zone_Zone1_au
 | WAN setup mode | `wan_mode` |
 | WAN IP / mask / gw / DNS | `ip_address`, `subnet_mask`, `default_gateway`, `dns1`, `dns2` |
 | PPPoE user/pass | `username`, `password` |
-| Config method | OMCI / TR069 (modales) |
+| Config method | TR069 |
 
 ### Mgmt / TR069 / VoIP / IPTV / CATV
 

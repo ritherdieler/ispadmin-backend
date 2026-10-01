@@ -224,8 +224,6 @@ Detalle: [mikrotik-mk2-config-olt-uplink.md](./mikrotik-mk2-config-olt-uplink.md
 | Óptica | ~ Rx -20.75 dBm / OLT Rx -24.56 dBm |
 | Estado GPON | **online**, service-port **up** |
 
-Script alta: `scripts/olt-onu-pilot-mk2-authorize.expect`
-
 ### Config CPE (estática)
 
 | Parámetro | Valor |
@@ -424,7 +422,6 @@ Detalle de construcción: [selector-cloud-core-router-android-build.md](./select
 | `scripts/mikrotik-mk2-pilot-gateway-fix.rsc` | Fix gateway en interfaz padre |
 | `scripts/mikrotik-mk2-pilot-verify.sh` | Ping/ARP/stats piloto |
 | `scripts/olt-vlan100-uplink.expect` | VLAN 100 OLT uplink 0/3/2 |
-| `scripts/olt-onu-pilot-mk2-authorize.expect` | Alta ONU piloto + perfiles |
 | `scripts/sql/20260720_network_device_enabled_to_disabled.sql` | Migración columna `disabled` en `network_device` |
 | `scripts/sql/network-device-disabled-seed.sql` | Solo Mikrotik CCR 2 (`id=8`) con `disabled=0`; resto de cores `disabled=1` |
 | `scripts/sql/network-device-vlan-seed.sql` | Seed `vlan_id` cores (1→1, 8→100) |

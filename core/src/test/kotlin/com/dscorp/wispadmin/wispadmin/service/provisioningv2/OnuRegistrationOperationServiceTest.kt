@@ -196,7 +196,6 @@ class OnuRegistrationOperationServiceTest {
             subscriptionId = null,
             serial = "VSOL0031C0B6",
             flowVersion = 3,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             phase = ProvisioningPhase.OLT_AUTHORIZATION,
             operatorId = 12,
             operatorUsername = "tecnico",

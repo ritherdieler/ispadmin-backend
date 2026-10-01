@@ -57,6 +57,32 @@ class ProvisioningJournalTest {
         assertEquals(CheckpointState.PENDING, restored.checkpoints[ProvisioningStage.WAN_CLEANUP.ordinal].state)
     }
 
+    @Test fun `reads operations with the removed management checkpoint`() {
+        val legacyRoot = json.readTree(json.writeValueAsString(operation())).deepCopy<ObjectNode>()
+        legacyRoot.put("managementMode", "OMCI")
+        val retiredCheckpoint = json.createObjectNode().apply {
+            put("stage", "OMCI")
+            put("state", CheckpointState.PENDING.name)
+            put("attempts", 0)
+            put("touched", false)
+            set<com.fasterxml.jackson.databind.JsonNode>("failure", json.nullNode())
+        }
+        legacyRoot.withArray("checkpoints").insert(3, retiredCheckpoint)
+        jdbc.update(
+            """INSERT INTO provisioning_v2_operation
+                (operation_id, environment, subscription_id, serial, revision, operation_json, state, phase,
+                 operator_id, operator_username, registration_request_key)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            "op", "staging", 42, "ZTEGDC47BFFD", 1, json.writeValueAsString(legacyRoot),
+            ProvisioningState.PENDING.name, ProvisioningPhase.PROVISIONING.name, null, null, null,
+        )
+
+        val restored = requireNotNull(journal().get("staging", "op"))
+
+        assertEquals(ProvisioningStage.values().toList(), restored.checkpoints.map { it.stage })
+        assertFalse(ProvisioningOperation::class.java.declaredFields.any { it.name == "managementMode" })
+    }
+
     @Test fun `expired worker cannot overwrite new owner and checkpoint writes outbox atomically`() {
         val store = journal()
         store.insert(operation())
@@ -87,7 +113,6 @@ class ProvisioningJournalTest {
         val target = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100)
         val first = ProvisioningOperation(
             "preauth-1", "staging", null, "VSOL0031C0B6", flowVersion = 3,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             phase = ProvisioningPhase.OLT_AUTHORIZATION,
             operatorId = 71, operatorUsername = "tech", registrationRequestKey = "request-0001", onuTarget = target,
         )

@@ -533,7 +533,7 @@ class OltManagerFacadeTest {
     }
 
     @Test
-    fun `planAuthorize carries preconfigured mode to the CLI planner`() {
+    fun `planAuthorize passes the resolved ONU target to the CLI planner`() {
         every { onuRepository.findBySnAndDeletedAtIsNull("VSOL0031C0B6") } returns Optional.empty()
         every { onuRepository.findMaxOnuIndex(1L, 1, 6) } returns 16
         val cliRequest = slot<AuthorizeCliRequest>()
@@ -547,11 +547,10 @@ class OltManagerFacadeTest {
                 sn = "VSOL0031C0B6",
                 vlan = "100",
                 name = "VSOL0031C0B6",
-                managementMode = ManagementProvisioningMode.PRECONFIGURED,
             )
         )
-
-        assertEquals(ManagementProvisioningMode.PRECONFIGURED, cliRequest.captured.managementMode)
+        assertEquals(1, cliRequest.captured.board)
+        assertEquals(6, cliRequest.captured.port)
     }
 
     @Test

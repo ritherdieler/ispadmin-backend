@@ -6,8 +6,6 @@ import com.dscorp.wispadmin.oltgateway.parser.OnuInfoBySnParser
 import com.dscorp.wispadmin.oltgateway.parser.OntLineProfileGemParser
 import org.slf4j.LoggerFactory
 
-enum class ManagementProvisioningMode { OMCI, PRECONFIGURED }
-
 data class AuthorizeCliRequest(
     val board: Int,
     val port: Int,
@@ -19,7 +17,6 @@ data class AuthorizeCliRequest(
     val vlan: Int,
     val mgmtVlan: Int? = null,
     val mgmtGemport: Int = 2,
-    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.PRECONFIGURED,
 )
 
 data class AuthorizeCliResult(
@@ -90,15 +87,6 @@ class OltGatewayCommandService(
                 ontId = request.ontId,
                 gemport = request.mgmtGemport,
             )
-            val tr069ProfileId = properties.writes.labAcsTr069ProfileId
-            if (request.managementMode == ManagementProvisioningMode.OMCI && tr069ProfileId > 0) {
-                commands += listOf(
-                    "interface gpon 0/${request.board}",
-                    "ont ipconfig ${request.port} ${request.ontId} ip-index 0 dhcp vlan $mgmtVlan priority 2",
-                    "ont tr069-server-config ${request.port} ${request.ontId} profile-id $tr069ProfileId",
-                    "quit",
-                )
-            }
         }
         return commands
     }

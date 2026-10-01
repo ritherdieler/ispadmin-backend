@@ -31,6 +31,7 @@ class CorsConfig {
         config.addAllowedOrigin("https://backoffice-staging.gigafiberperu.cloud")
         config.addAllowedOrigin("https://asistencias.gigafiberperu.cloud")
         config.addAllowedOrigin("https://observability.gigafiberperu.cloud")
+        config.addAllowedOrigin("https://observability.gigafiberperu.tech")
 
         config.addAllowedMethod("*")
         config.addAllowedHeader("*")

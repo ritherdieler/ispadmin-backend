@@ -202,9 +202,6 @@ class ProvisioningExecutor(
         val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|token)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
         val NON_RETRYABLE = setOf(
             "ONU_ALREADY_RESERVED",
-            "OMCI_EXISTING_SERVER_CONFLICT",
-            "OMCI_EXISTING_WAN_CONFLICT",
-            "OMCI_IDENTITY_MISMATCH",
         )
     }
 }

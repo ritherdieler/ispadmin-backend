@@ -2,8 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import java.time.Instant
 
-enum class ProvisioningStage { VALIDATE, MIKROTIK, OLT, OMCI, ACS_CONTACT, INTERNET, WIFI, WAN_CLEANUP, VERIFY }
-enum class ManagementProvisioningMode { OMCI, PRECONFIGURED }
+enum class ProvisioningStage { VALIDATE, MIKROTIK, OLT, ACS_CONTACT, INTERNET, WIFI, WAN_CLEANUP, VERIFY }
 enum class ProvisioningPhase { OLT_AUTHORIZATION, WAITING_FOR_ACS, READY_FOR_FORM, PROVISIONING }
 enum class ProvisioningState { PENDING, RUNNING, WAITING, READY_FOR_FORM, SUCCEEDED, FAILED, CANCEL_REQUESTED, CANCELLING, CANCEL_FAILED, CANCELLED }
 enum class CheckpointState { PENDING, RUNNING, WAITING, SUCCEEDED, FAILED, COMPENSATED }
@@ -29,7 +28,6 @@ data class ProvisioningOperation(
     val serial: String,
     val revision: Long = 1,
     val flowVersion: Int = 2,
-    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.OMCI,
     val phase: ProvisioningPhase = ProvisioningPhase.PROVISIONING,
     val operatorId: Long? = null,
     val operatorUsername: String? = null,
@@ -52,6 +50,27 @@ data class ProvisioningOperation(
     }
 }
 
+/** Orders checkpoints by the full registration timeline, including work completed before submission in v3. */
+fun ProvisioningOperation.progressCheckpointsInExecutionOrder(): List<StageCheckpoint> {
+    val stageOrder = when (flowVersion) {
+        3 -> PREAUTHORIZED_REGISTRATION_STAGE_ORDER
+        else -> ProvisioningStage.values().toList()
+    }
+    val checkpointsByStage = checkpoints.associateBy { it.stage }
+    return stageOrder.map { stage -> requireNotNull(checkpointsByStage[stage]) }
+}
+
+private val PREAUTHORIZED_REGISTRATION_STAGE_ORDER = listOf(
+    ProvisioningStage.OLT,
+    ProvisioningStage.ACS_CONTACT,
+    ProvisioningStage.VALIDATE,
+    ProvisioningStage.MIKROTIK,
+    ProvisioningStage.INTERNET,
+    ProvisioningStage.WIFI,
+    ProvisioningStage.WAN_CLEANUP,
+    ProvisioningStage.VERIFY,
+)
+
 data class ProvisioningOnuTarget(
     val oltId: String,
     val ponType: String,
@@ -68,7 +87,7 @@ data class ProvisioningOnuTarget(
 class ProvisioningTransitions {
     private val compensationOrder = listOf(ProvisioningStage.VERIFY, ProvisioningStage.WAN_CLEANUP, ProvisioningStage.WIFI,
         ProvisioningStage.INTERNET, ProvisioningStage.ACS_CONTACT, ProvisioningStage.MIKROTIK,
-        ProvisioningStage.OMCI, ProvisioningStage.OLT, ProvisioningStage.VALIDATE)
+        ProvisioningStage.OLT, ProvisioningStage.VALIDATE)
     private val cancelling = setOf(ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING,
         ProvisioningState.CANCEL_FAILED, ProvisioningState.CANCELLED)
 

@@ -297,32 +297,6 @@ interface gpon 0/1
   display ont autofind all
 ```
 
-### 5. Autorizar ONU (reemplazo SmartOLT `authorize`)
-
-**Desde autofind (recomendado):**
-
-```text
-interface gpon 0/1
-ont confirm 0 ontid 0 sn-auth 4857544311E70E9A omci \
-  ont-lineprofile-id 10 ont-srvprofile-id 10 desc cliente_1
-```
-
-**Registro offline:**
-
-```text
-ont add 0 0 sn-auth ZTEG00000001 omci \
-  ont-lineprofile-id 100 ont-srvprofile-id 100
-```
-
-**Batch (mismo perfil):**
-
-```text
-ont confirm 0 all sn-auth omci ont-lineprofile-id 10 ont-srvprofile-id 10
-```
-
-Modos de autenticación: `sn-auth`, `loid-auth`, `password-auth`, `mac-auth`.  
-Gestión: `omci` (ONT residencial GPON) o `snmp` (MDU).
-
 ### 6. VLAN nativa del puerto ONT
 
 ```text
@@ -402,7 +376,6 @@ Backend actual (`RealOltService`) usa 6 operaciones SmartOLT:
 |--------------|-------------|
 | `onu/unconfigured_onus` | `display ont autofind all` |
 | `onu/get_onus_details_by_sn/{sn}` | `display ont info by-sn {sn}` |
-| `onu/authorize_onu` | `ont confirm ... sn-auth ... omci ont-lineprofile-id X ont-srvprofile-id Y` |
 | `onu/move/{sn}` | `ont delete` + `ont confirm/add` en nuevo puerto/slot |
 | `onu/delete/{id}` | `undo service-port ...` → `ont delete` |
 | `onu/reboot/{id}` | `ont reset {port} {ont-id}` |

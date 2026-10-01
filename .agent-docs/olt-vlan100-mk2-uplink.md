@@ -71,7 +71,6 @@ display vlan 1
 | Estado | GPON **online**, service-port **up**, ping MK2 OK (~2 ms) |
 | Internet CPE | **Pendiente** — ver sección [Validación internet](#validación-internet) |
 
-Script: `scripts/olt-onu-pilot-mk2-authorize.expect`
 
 ### Perfiles GPON (profile-id 100)
 
@@ -94,14 +93,11 @@ commit
 quit
 ```
 
-### Alta ONU + service-port
+### Service-port piloto
+
+La referencia de alta CLI se retiró. Este registro conserva solo los perfiles y el service-port usados por el piloto.
 
 ```text
-interface gpon 0/1
-ont confirm 6 ontid 127 sn-auth 5A544547DC47C169 omci ont-lineprofile-id 100 ont-srvprofile-id 100 desc "PILOTO-MK2"
-ont port native-vlan 6 127 eth 1 vlan 100
-quit
-
 service-port vlan 100 gpon 0/1/6 ont 127 gemport 1 multi-service user-vlan 100 tag-transform translate inbound traffic-table index 8 outbound traffic-table index 9
 
 save configuration

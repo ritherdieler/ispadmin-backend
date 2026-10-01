@@ -51,7 +51,6 @@ class OnuRegistrationOperationService(
             subscriptionId = null,
             serial = serial,
             flowVersion = 3,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             phase = ProvisioningPhase.OLT_AUTHORIZATION,
             operatorId = operatorId,
             operatorUsername = operatorUsername.trim().take(128),
@@ -308,7 +307,6 @@ class OnuRegistrationOperationService(
             zone = target.zone,
             onuMode = target.onuMode,
             customProfile = target.customProfile,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED.name,
         )
     }
 

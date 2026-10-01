@@ -255,7 +255,7 @@ En PoC: configurar **solo `tplg-router` o `mstc-router`** con parámetros valida
 
 ### 5.3 Credenciales ACS
 
-Definir en preset o vía OLT OMCI:
+Definir en el preset de provisión ACS:
 
 - URL: `https://acs.gigafiberperu.cloud/`
 - Username: `gigafiber-acs`

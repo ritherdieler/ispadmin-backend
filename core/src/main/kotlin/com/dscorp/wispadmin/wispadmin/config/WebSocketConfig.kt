@@ -50,6 +50,7 @@ class WebSocketConfig(
             .setAllowedOriginPatterns(
                 "http://localhost:5175",
                 "https://observability.gigafiberperu.cloud",
+                "https://observability.gigafiberperu.tech",
                 "https://api.gigafiberperu.cloud"
             )
             .withSockJS()

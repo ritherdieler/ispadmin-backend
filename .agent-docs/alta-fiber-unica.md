@@ -4,13 +4,12 @@ El módulo OLT Gateway arranca con el WAR. El campo `olt.gateway.enabled` y la v
 
 Fecha: 2026-09-24.
 
-El alta FIBER ya no elige versión. `POST /subscription` con `installationType=FIBER` siempre abre el pipeline de etapas (OLT, OMCI/VLAN 1000, MikroTik, contacto ACS, WAN y Wi-Fi). No existe selector de flujo ni alta FIBER por `onu/activate`.
+El alta FIBER ya no elige versión. `POST /subscription` con `installationType=FIBER` abre el pipeline durable: validación, MikroTik, autorización OLT, contacto ACS, Internet, Wi-Fi, limpieza WAN y verificación. No existe selector de flujo ni alta FIBER por `onu/activate`.
 
 ## Contrato
 
 - No enviar `provisioningFlowVersion`. El campo se eliminó.
 - Autorización OLT interna: `POST /api/olt-gateway/onus/provisioning/authorize` y `.../compensate`.
-- OMCI: `POST /api/olt-gateway/onus/{sn}/omci/management`.
 - Progreso del pipeline: `GET /subscription/{id}/provisioning`.
 - La pantalla de alta y el e2e siguen leyendo `oltProvisionStatus` y `tr069ProvisionStatus` en `GET /subscription/{id}/registration-progress`. Esos campos pasan a `COMPLETE` cuando la etapa OLT y la operación completa quedan `SUCCEEDED`.
 

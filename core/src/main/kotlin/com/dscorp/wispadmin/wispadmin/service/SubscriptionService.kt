@@ -38,6 +38,7 @@ import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionRegistere
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningV2RegistrationService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -381,8 +382,9 @@ class SubscriptionService(
         }
 
         errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))
-        when (ex) {
-            is IllegalArgumentException, is IllegalStateException -> throw ex
+        when {
+            ex is IllegalArgumentException || ex is IllegalStateException -> throw ex
+            ex is DataIntegrityViolationException -> throw ex
             else -> throw RuntimeException("Error al registrar la suscripción: ${ex.message}", ex)
         }
     }

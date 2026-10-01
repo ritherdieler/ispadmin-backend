@@ -25,7 +25,6 @@ import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheService
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindCacheWriter
 import com.dscorp.wispadmin.oltgateway.service.OltAutofindRefreshScheduler
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayCommandService
-import com.dscorp.wispadmin.oltgateway.service.OmciManagementV2
 import com.dscorp.wispadmin.oltgateway.service.OltGatewaySyncJobRunner
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryFacade
 import com.dscorp.wispadmin.oltgateway.service.OltGatewayQueryService
@@ -189,11 +188,6 @@ class OltGatewayConfig {
             properties = properties
         )
     }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "olt.gateway.mock", name = ["enabled"], havingValue = "false", matchIfMissing = true)
-    fun omciManagementV2(oltCommandExecutor: OltCommandExecutor, properties: OltGatewayProperties): OmciManagementV2 =
-        OmciManagementV2 { run -> oltCommandExecutor.writeBounded(properties.writes.v2WriteMaxRetryAttempts) { session -> run(session::execute) } }
 
     @Bean
     fun onuExternalIdBackfillService(

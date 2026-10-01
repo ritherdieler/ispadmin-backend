@@ -30,7 +30,7 @@ class OltCommandExecutorRetryTest {
             .throws(OltUnreachableException("Connection refused"))
             .andThen(CliBusResult.Ok("OK"))
 
-        val result = executor.run("ont add 1 1 sn-auth VSOL123 omci")
+        val result = executor.run("display ont info 1 1")
 
         assertEquals("OK", result)
         verify(exactly = 2) { cliBus.execute(CliJobType.ADHOC, any<(HuaweiCliSession) -> String>()) }
@@ -113,7 +113,7 @@ class OltCommandExecutorRetryTest {
             .throws(RuntimeException("The ont already exist"))
 
         val exception = assertThrows<RuntimeException> {
-            executor.run("ont add 1 1 sn-auth EXISTING123 omci")
+            executor.run("display ont info 1 1")
         }
 
         assertTrue(exception.message!!.contains("already exist"))

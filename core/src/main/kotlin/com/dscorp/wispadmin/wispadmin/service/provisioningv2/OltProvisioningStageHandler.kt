@@ -6,7 +6,6 @@ import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2AuthorizeResponse
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuV2CompensateRequest
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpStatusCodeException
 
 data class OltProvisioningResource(
@@ -47,15 +46,14 @@ class OltProvisioningStageHandler(
     }
 
     override fun compensate(context: ProvisioningStageContext): StageObservation {
-        try {
-            val result = gateway.compensateV2(GatewayOnuV2CompensateRequest(
+        val result = gateway.compensateV2(
+            GatewayOnuV2CompensateRequest(
                 operationId = context.operation.id,
                 sn = context.operation.serial,
-            ))
-            check(result.deleted) { "OLT_DELETE_UNCONFIRMED" }
-        } catch (_: HttpClientErrorException.NotFound) {
-            // No Gateway reservation means no v2 OLT effect was ever claimed.
-        }
+                expectedExternalId = context.operation.oltEvidence?.externalId,
+            )
+        )
+        check(result.deleted) { "OLT_DELETE_UNCONFIRMED" }
         return StageObservation.SATISFIED
     }
 
@@ -71,7 +69,6 @@ class OltProvisioningStageHandler(
                 vlan = expected.snapshot.internetVlan.toString(),
                 onuType = expected.snapshot.onu.onuType,
                 subscriberName = expected.subscriberName,
-                managementMode = expected.operation.managementMode.name,
             ))
             return response.toResource()
         } catch (ex: HttpStatusCodeException) {

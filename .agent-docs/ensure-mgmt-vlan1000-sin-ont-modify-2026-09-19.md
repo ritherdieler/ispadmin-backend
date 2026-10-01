@@ -23,7 +23,7 @@ El provision GenieACS `gf-tr069-vlan1000` solo escribe la WAN TR-069 identificad
 
 ## Parque
 
-El primer `commit` de un profile compartido (p. ej. `Generic_1_HF291F96D` id 5, ~273 ONUs) empuja OMCI a todas las vinculadas. El mapping es aditivo; no quita VLAN 1 ni 100.
+El primer `commit` de un profile compartido (p. ej. `Generic_1_HF291F96D` id 5, ~273 ONUs) reconfigura todas las ONUs vinculadas a ese profile. El mapping es aditivo; no quita VLAN 1 ni 100.
 
 **Prod 2026-09-19:** WAR `1.0.3+50f2c50` en `tomcat9027`. `GET /ispadmin/` HTTP 200. El runner del parque va contra Core prod. Detalle: [deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md](./deploy-prod-ensure-mgmt-vlan1000-2026-09-19.md).
 

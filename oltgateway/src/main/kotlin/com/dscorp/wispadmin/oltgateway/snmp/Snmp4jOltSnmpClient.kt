@@ -290,8 +290,8 @@ class Snmp4jOltSnmpClient(
 
     /**
      * One bounded multi-varbind GETBULK per page instead of [TreeUtils] and instead of one
-     * walk per column: on the MA5608T the agent bills one OMCI read per ONT and serves every
-     * column from it, so 7-8 columns in the same PDU cost the same as one. Bounded pages also
+     * walk per column: the MA5608T agent reads each ONU and serves all optical columns from
+     * the same cache, so 7-8 columns in the same PDU cost the same as one. Bounded pages also
      * keep an intermittently dropped response from parking the per-OLT SNMP bus forever.
      */
     private fun walkColumns(

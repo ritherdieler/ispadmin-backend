@@ -32,7 +32,6 @@ class ProvisioningV2WorkerConfig {
         ValidateProvisioningStageHandler(subscriptions),
         MikrotikProvisioningStageHandler(subscriptions, cipher) { device, block -> device.executeCommand(block) },
         OltProvisioningStageHandler(subscriptions, gateway, json),
-        OmciProvisioningStageHandler(gateway, json),
         AcsContactProvisioningStageHandler(acs, json),
         InternetProvisioningStageHandler(subscriptions, cipher, acs, json),
         WifiProvisioningStageHandler(acs, json),

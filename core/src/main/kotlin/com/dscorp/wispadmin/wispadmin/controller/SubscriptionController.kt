@@ -44,6 +44,7 @@ import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
 import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupStepException
 import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningJournal
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.progressCheckpointsInExecutionOrder
 
 const val DATE_FORMAT = "dd/MM/yyyy"
 
@@ -85,20 +86,49 @@ class SubscriptionController(
         ex: DataIntegrityViolationException,
         defaultError: String
     ): BaseResponse {
-        return if (integrityViolationClassifier.isIpUniqueViolation(ex)) {
-            ipConflictNocNotifier.notifyIpConflict(request)
-            BaseResponse(
-                status = 409,
-                error = SubscriptionIpConflictNocNotifier.ERROR_MESSAGE,
-                errorCode = SubscriptionIpConflictNocNotifier.ERROR_CODE
+        return when (integrityViolationClassifier.classifyUniqueField(ex)) {
+            SubscriptionIntegrityViolationClassifier.UniqueField.IP -> {
+                ipConflictNocNotifier.notifyIpConflict(request)
+                conflictResponse(
+                    code = SubscriptionIpConflictNocNotifier.ERROR_CODE,
+                    message = SubscriptionIpConflictNocNotifier.ERROR_MESSAGE
+                )
+            }
+
+            SubscriptionIntegrityViolationClassifier.UniqueField.DNI -> conflictResponse(
+                code = "DNI_CONFLICT",
+                message = "El DNI ingresado ya está registrado. Verifica el documento o consulta la suscripción existente."
             )
-        } else {
-            BaseResponse(
+
+            SubscriptionIntegrityViolationClassifier.UniqueField.CLIENT_REQUEST_ID -> conflictResponse(
+                code = "REGISTRATION_ALREADY_EXISTS",
+                message = "La solicitud de registro ya fue procesada. Consulta la suscripción existente o reintenta con un clientRequestId nuevo."
+            )
+
+            SubscriptionIntegrityViolationClassifier.UniqueField.PPPOE_USERNAME -> conflictResponse(
+                code = "PPPOE_USERNAME_CONFLICT",
+                message = "El usuario PPPoE generado ya está en uso. Reintenta el registro o contacta al administrador."
+            )
+
+            SubscriptionIntegrityViolationClassifier.UniqueField.INSTALLATION_ORDER -> conflictResponse(
+                code = "INSTALLATION_ORDER_CONFLICT",
+                message = "La orden de instalación ya está vinculada a otra suscripción. Verifica la orden seleccionada."
+            )
+
+            SubscriptionIntegrityViolationClassifier.UniqueField.UNKNOWN -> BaseResponse(
                 status = 409,
-                error = defaultError
+                error = "No se pudo registrar la suscripción por un conflicto de integridad de datos. Revisa la información enviada o contacta al administrador.",
+                errorCode = "SUBSCRIPTION_DATA_CONFLICT",
+                message = defaultError
             )
         }
     }
+
+    private fun conflictResponse(code: String, message: String): BaseResponse = BaseResponse(
+        status = 409,
+        error = message,
+        errorCode = code
+    )
 
     @GetMapping("/findByElectronicPayerName")
     fun findByElectronicPayerName(@RequestParam("electronicPayerName") electronicPayerName: String): BaseResponse {
@@ -214,7 +244,10 @@ class SubscriptionController(
         val subscription = subscriptionProvisionService.refreshTr069FromGateway(existing)
         val progress = RegistrationProgressMapper.from(subscription.toDto())
         val checkpoints = runCatching {
-            provisioningJournal?.latest(environment.normalizedTag().ifBlank { "prod" }, subscriptionId)?.checkpoints.orEmpty()
+            provisioningJournal
+                ?.latest(environment.normalizedTag().ifBlank { "prod" }, subscriptionId)
+                ?.progressCheckpointsInExecutionOrder()
+                .orEmpty()
         }.getOrDefault(emptyList()).map { checkpoint ->
             RegistrationProgressCheckpointDto(
                 stage = checkpoint.stage.name,

@@ -14,28 +14,27 @@ class ProvisioningTransitionsTest {
         return operation
     }
 
-    @Test fun `registration exposes cleanup after wifi and before final verification`() {
+    @Test fun `registration stage list no longer includes the retired management protocol`() {
         assertEquals(
-            listOf("VALIDATE", "MIKROTIK", "OLT", "OMCI", "ACS_CONTACT", "INTERNET", "WIFI", "WAN_CLEANUP", "VERIFY"),
+            listOf("VALIDATE", "MIKROTIK", "OLT", "ACS_CONTACT", "INTERNET", "WIFI", "WAN_CLEANUP", "VERIFY"),
             ProvisioningStage.values().map { it.name },
         )
         assertEquals(ProvisioningStage.WIFI, transitions.next(through(ProvisioningStage.INTERNET)))
         assertEquals(ProvisioningStage.WAN_CLEANUP, transitions.next(through(ProvisioningStage.WIFI)))
     }
 
-    @Test fun `operation model exposes durable phase for pre-subscription recovery`() {
+    @Test fun `operation model exposes durable phase without a legacy management mode`() {
         assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "phase" })
-        assertTrue(ProvisioningOperation::class.java.declaredFields.any { it.name == "managementMode" })
+        assertFalse(ProvisioningOperation::class.java.declaredFields.any { it.name == "managementMode" })
     }
 
-    @Test fun `wifi retry preserves internet and OMCI checkpoints`() {
+    @Test fun `wifi retry preserves Internet without a retired management checkpoint`() {
         val ready = through(ProvisioningStage.INTERNET)
         val failed = transitions.failed(transitions.started(ready, ProvisioningStage.WIFI), ProvisioningStage.WIFI,
             ProvisioningFailure("CWMP_FAULT", "No se pudo aplicar WiFi", true))
         assertEquals(ProvisioningState.FAILED, failed.state)
         val retried = transitions.retry(failed, failed.revision)
         assertEquals(ProvisioningStage.WIFI, transitions.next(retried))
-        assertEquals(CheckpointState.SUCCEEDED, retried.checkpoints[ProvisioningStage.OMCI.ordinal].state)
         assertEquals(CheckpointState.SUCCEEDED, retried.checkpoints[ProvisioningStage.INTERNET.ordinal].state)
         assertEquals(retried, transitions.retry(retried, retried.revision))
     }
@@ -81,7 +80,7 @@ class ProvisioningTransitionsTest {
         assertNull(transitions.next(cancelled))
         assertEquals(ProvisioningStage.WIFI, transitions.nextCompensation(cancelled))
         for (stage in listOf(ProvisioningStage.WIFI, ProvisioningStage.INTERNET, ProvisioningStage.ACS_CONTACT,
-            ProvisioningStage.MIKROTIK, ProvisioningStage.OMCI, ProvisioningStage.OLT, ProvisioningStage.VALIDATE)) {
+            ProvisioningStage.MIKROTIK, ProvisioningStage.OLT, ProvisioningStage.VALIDATE)) {
             assertEquals(stage, transitions.nextCompensation(cancelled))
             cancelled = transitions.compensated(cancelled, stage)
         }

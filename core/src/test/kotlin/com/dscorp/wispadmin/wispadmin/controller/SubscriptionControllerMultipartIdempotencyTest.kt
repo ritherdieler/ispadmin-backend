@@ -20,7 +20,6 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -159,8 +158,11 @@ class SubscriptionControllerMultipartIdempotencyTest {
         )
 
         assertEquals(409, response.status)
-        assertNull(response.errorCode)
-        assertEquals("Este usuario no se encuentra registrado", response.error)
+        assertEquals("DNI_CONFLICT", response.errorCode)
+        assertEquals(
+            "El DNI ingresado ya está registrado. Verifica el documento o consulta la suscripción existente.",
+            response.error
+        )
         verify(exactly = 0) { ipConflictNocNotifier.notifyIpConflict(any()) }
     }
 

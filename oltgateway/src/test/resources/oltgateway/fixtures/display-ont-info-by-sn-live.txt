@@ -9,7 +9,6 @@
   ONT distance(m)         : 3147
   Authentic type          : SN-auth
   SN                      : 5A544547DC47DF15 (ZTEG-DC47DF15)
-  Management mode         : OMCI
   Description             : WALTHER MIGUEL NICHO
   Last down cause         : dying-gasp
   Last up time            : 2026-07-16 16:12:13-05:00

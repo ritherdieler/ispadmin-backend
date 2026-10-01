@@ -25,7 +25,7 @@ class ProvisioningV2PreauthorizationPromotionTest {
     private val json = jacksonObjectMapper().findAndRegisterModules()
     private val journal = ProvisioningJournal(jdbc, json)
     private val resources = ProvisioningResourceStore(jdbc, CrmSecretCipher("unit-test-only"))
-    private val properties = ProvisioningV2Properties().apply { enabled = true; tr069ProfileId = 20 }
+    private val properties = ProvisioningV2Properties().apply { enabled = true }
     private val environment = GigafiberEnvironmentProperties().apply { tag = "lab" }
     private val service = ProvisioningV2RegistrationService(journal, resources, json, environment, properties)
 
@@ -52,11 +52,11 @@ class ProvisioningV2PreauthorizationPromotionTest {
     }
 
     @Test
-    fun `preauthorization promotion seeds OLT OMCI and ACS as completed without reauthorizing`() {
+    fun `preauthorization promotion seeds OLT and ACS as completed without reauthorizing`() {
         val target = ProvisioningOnuTarget("olt-1", "GPON", "0", "1", "VSOLVA74", 100)
         val pending = ProvisioningOperation(
             id = "preauthorization-1", environment = "lab", subscriptionId = null, serial = "VSOL0031C0B6",
-            flowVersion = 3, managementMode = ManagementProvisioningMode.PRECONFIGURED,
+            flowVersion = 3,
             phase = ProvisioningPhase.OLT_AUTHORIZATION, operatorId = 71,
             registrationRequestKey = "client-request-1", onuTarget = target,
         )
@@ -67,7 +67,7 @@ class ProvisioningV2PreauthorizationPromotionTest {
             oltEvidence = OltProvisioningResource("olt-external-1", 0, 1, 7),
             acsContactEvidence = AcsContactProvisioningResource("cpe-1", "VSOLVA74", "1.0"),
             checkpoints = current.checkpoints.map { checkpoint ->
-                if (checkpoint.stage in setOf(ProvisioningStage.OLT, ProvisioningStage.OMCI, ProvisioningStage.ACS_CONTACT))
+                if (checkpoint.stage in setOf(ProvisioningStage.OLT, ProvisioningStage.ACS_CONTACT))
                     checkpoint.copy(state = CheckpointState.SUCCEEDED, touched = checkpoint.stage == ProvisioningStage.OLT)
                 else checkpoint
             },
@@ -90,10 +90,9 @@ class ProvisioningV2PreauthorizationPromotionTest {
         val promoted = service.start(subscription, form, 71)
 
         assertEquals(ProvisioningPhase.PROVISIONING, promoted.phase)
-        assertEquals(ManagementProvisioningMode.PRECONFIGURED, promoted.managementMode)
         assertEquals(71, promoted.operatorId)
         assertTrue(promoted.checkpoints.filter { it.stage in setOf(
-            ProvisioningStage.OLT, ProvisioningStage.OMCI, ProvisioningStage.ACS_CONTACT,
+            ProvisioningStage.OLT, ProvisioningStage.ACS_CONTACT,
         ) }.all { it.state == CheckpointState.SUCCEEDED })
         assertEquals(ProvisioningStage.VALIDATE, ProvisioningTransitions().next(promoted))
         val saved = requireNotNull(resources.snapshot("lab", pending.id, ProvisioningV2RegistrationService.REGISTRATION_RESOURCE_KEY))
@@ -101,6 +100,6 @@ class ProvisioningV2PreauthorizationPromotionTest {
             String::class.java, pending.id)!!.contains("wifi-secret"))
         assertTrue(saved.contains("wifi-secret"))
         assertEquals("olt-external-1", json.readValue(resources.snapshot("lab", pending.id, "olt"), OltProvisioningResource::class.java).externalId)
-        assertEquals(20, json.readValue(resources.snapshot("lab", pending.id, "omci"), OmciProvisioningResource::class.java).tr069ProfileId)
+        assertNull(resources.snapshot("lab", pending.id, "legacy-management"))
     }
 }

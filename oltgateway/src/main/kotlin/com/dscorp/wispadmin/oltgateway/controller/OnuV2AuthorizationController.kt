@@ -3,7 +3,6 @@ package com.dscorp.wispadmin.oltgateway.controller
 import com.dscorp.wispadmin.oltgateway.api.AuthorizeOnuFormDto
 import com.dscorp.wispadmin.oltgateway.service.OltManagerFacade
 import com.dscorp.wispadmin.oltgateway.service.OltServicePortService
-import com.dscorp.wispadmin.oltgateway.service.ManagementProvisioningMode
 import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnership
 import com.dscorp.wispadmin.oltgateway.service.ProvisioningV2OnuOwnershipService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -27,7 +26,6 @@ data class OnuV2AuthorizeRequest(
     val zone: String = "Zone 1",
     val onuMode: String = "Routing",
     val customProfile: String = "Generic_1",
-    val managementMode: ManagementProvisioningMode = ManagementProvisioningMode.PRECONFIGURED,
 )
 
 data class OnuV2AuthorizeResponse(
@@ -41,6 +39,7 @@ data class OnuV2AuthorizeResponse(
 data class OnuV2CompensateRequest(
     val operationId: String,
     val sn: String,
+    val expectedExternalId: String? = null,
 )
 
 data class OnuV2CompensateResponse(
@@ -89,16 +88,50 @@ class OnuV2AuthorizationController(
         require(request.operationId.matches(Regex("[a-zA-Z0-9-]{8,64}"))) { "INVALID_OPERATION_ID" }
         val serial = request.sn.trim().uppercase()
         require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
-        val ownership = ownerships.requireOwner(serial, request.operationId)
-        val externalId = ownership.externalId ?: manager.externalIdBySn(serial)
-        if (!externalId.isNullOrBlank()) {
-            val deleted = manager.deleteOnu(externalId)
-            if (!deleted.status || !manager.externalIdBySn(serial).isNullOrBlank()) {
-                throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "OLT v2 ONU deletion was not confirmed")
+        val ownership = ownerships.find(serial)
+        val configuredExternalId = manager.externalIdBySn(serial)?.takeIf(String::isNotBlank)
+
+        if (ownership == null) {
+            if (configuredExternalId == null) {
+                return OnuV2CompensateResponse(externalId = null, deleted = true)
             }
+            checkExpectedIdentity(request.expectedExternalId, configuredExternalId, required = true)
+            deleteAndConfirm(serial, configuredExternalId)
+            return OnuV2CompensateResponse(externalId = configuredExternalId, deleted = true)
+        }
+
+        val owned = ownerships.requireOwner(serial, request.operationId)
+        owned.externalId?.let { actual ->
+            checkExpectedIdentity(request.expectedExternalId, actual, required = false)
+        }
+        if (configuredExternalId != null) {
+            if (!owned.externalId.isNullOrBlank() && owned.externalId != configuredExternalId) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Configured ONU does not match its reservation")
+            }
+            checkExpectedIdentity(request.expectedExternalId, configuredExternalId, required = false)
+            deleteAndConfirm(serial, configuredExternalId)
         }
         ownerships.releaseAfterConfirmedCleanup(ownership)
-        return OnuV2CompensateResponse(externalId = externalId, deleted = true)
+        return OnuV2CompensateResponse(externalId = configuredExternalId ?: owned.externalId, deleted = true)
+    }
+
+    private fun checkExpectedIdentity(
+        expectedExternalId: String?,
+        actualExternalId: String,
+        required: Boolean,
+    ) {
+        if ((required && expectedExternalId.isNullOrBlank()) ||
+            (!expectedExternalId.isNullOrBlank() && expectedExternalId != actualExternalId)
+        ) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Configured ONU does not match the cancelled operation")
+        }
+    }
+
+    private fun deleteAndConfirm(serial: String, externalId: String) {
+        val deleted = manager.deleteOnu(externalId)
+        if (!deleted.status || !manager.externalIdBySn(serial).isNullOrBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "OLT v2 ONU deletion was not confirmed")
+        }
     }
 
     private fun reconcileOrAuthorize(
@@ -131,7 +164,6 @@ class OnuV2AuthorizationController(
             name = request.subscriberName,
             onu_mode = request.onuMode,
             custom_profile = request.customProfile,
-            managementMode = request.managementMode,
         ))
         val externalId = result.unique_external_id?.takeIf { result.status && it.isNotBlank() }
             ?: throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "OLT v2 authorization was not confirmed")

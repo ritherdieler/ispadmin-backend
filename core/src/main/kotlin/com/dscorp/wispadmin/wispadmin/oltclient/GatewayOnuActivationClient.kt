@@ -98,19 +98,4 @@ class GatewayOnuActivationClient(
         return objectMapper.readValue(body, GatewayServicePortsDto::class.java)
     }
 
-    fun ensureOmciManagement(request: GatewayOmciManagementRequest): GatewayOmciManagementEvidence {
-        val serial = request.sn.trim().uppercase()
-        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
-        val response = http.postJsonBody("/api/olt-gateway/onus/$serial/omci/management",
-            objectMapper.writeValueAsString(request.copy(sn = serial)))
-        val body = response.body ?: throw IllegalStateException("Empty OMCI management response")
-        return objectMapper.readValue(body, GatewayOmciManagementEvidence::class.java)
-    }
-
-    fun compensateOmciManagement(request: GatewayOmciManagementCompensateRequest) {
-        val serial = request.sn.trim().uppercase()
-        require(serial.matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
-        http.postJsonBody("/api/olt-gateway/onus/$serial/omci/management/compensate",
-            objectMapper.writeValueAsString(request.copy(sn = serial)))
-    }
 }

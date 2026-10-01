@@ -143,7 +143,7 @@ test('PPPoE keeps the provisioning WAN and creates internet PPP without cleaning
   assert.equal(writes.some(w => w.path.includes('[Name:')), false);
 });
 
-test('PPPoE sets the OMCI management WAN service to TR069 before creating Internet', () => {
+test('PPPoE preserves the TR-069 management WAN before creating Internet', () => {
   const provisioning = root + '1.WANIPConnection.1';
   const writes = run('gf-onboarding-v2-pppoe', request, { [provisioning]: true });
   const service = writes.find(w => w.path === provisioning + '.X_ZTE-COM_ServiceList');

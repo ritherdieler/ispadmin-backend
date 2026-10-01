@@ -69,7 +69,7 @@ service-port vlan 1000 gpon 0/1/6 ont 116 gemport 2 multi-service user-vlan 1000
 
 Script: [`scripts/olt-vlan1000-mgmt.expect`](../scripts/olt-vlan1000-mgmt.expect) (VLAN + uplink) y [`scripts/olt-vlan1000-lab-onu.expect`](../scripts/olt-vlan1000-lab-onu.expect) (profile + ONU ZTE lab). Ambos aceptan `inspect` o `apply`.
 
-**El profile 6 `Generic_1_V100` no se tocó**: lo usan el resto de ONUs en producción y un `commit` reconfigura por OMCI a todas las vinculadas. El profile 12 es un clon exacto del 6 más el mapeo `gem 2 → VLAN 1000`, y solo está vinculado a las ONUs de laboratorio (`0/1/6` ONT 116 y 117).
+**El profile 6 `Generic_1_V100` no se tocó**: lo usan el resto de ONUs en producción y un `commit` reconfigura todas las ONUs vinculadas. El profile 12 es un clon exacto del 6 más el mapeo `gem 2 → VLAN 1000`, y solo está vinculado a las ONUs de laboratorio (`0/1/6` ONT 116 y 117).
 
 **Trampa del alta FIBER:** `Generic_1:100` resuelve lineprofile **6**. Si se autoriza la VSOL lab con ese binding, la OLT queda solo con service-port VLAN **100** y el CPE pierde el camino al ACS (`WCD.1` tagged 1000, `10.20.0.0/22`). El Gateway ahora detecta el sufijo `0031C0B6` / `12345B4641531C0B6` y fuerza lineprofile **12** + `service-port vlan 1000 … gemport 2`. No tocar WCD.1 en TR-069: internet (PPPoE o static) va en WCD.2 VLAN 100.
 

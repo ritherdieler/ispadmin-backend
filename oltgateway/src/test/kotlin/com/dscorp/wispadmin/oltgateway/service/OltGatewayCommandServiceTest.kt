@@ -32,16 +32,7 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
-    fun `authorization request exposes an explicit management provisioning mode`() {
-        val mode = AuthorizeCliRequest::class.java.declaredFields
-            .firstOrNull { it.name == "managementMode" }
-
-        assertNotNull(mode, "AuthorizeCliRequest must distinguish OMCI from preconfigured management WAN")
-    }
-
-    @Test
     fun `preconfigured management keeps service ports but skips Huawei WAN commands`() {
-        properties.writes.labAcsTr069ProfileId = 20
         val planned = service.planAuthorize(
             AuthorizeCliRequest(
                 board = 1,
@@ -54,7 +45,6 @@ class OltGatewayCommandServiceTest {
                 vlan = 100,
                 mgmtVlan = 1000,
                 mgmtGemport = 2,
-                managementMode = ManagementProvisioningMode.PRECONFIGURED,
             )
         )
 
@@ -82,6 +72,8 @@ class OltGatewayCommandServiceTest {
         assertEquals(5, result.ontId)
         assertTrue(commands.any { it == "interface gpon 0/0" })
         assertTrue(commands.any { it.contains("ont add 2 5 sn-auth 4857544311E70E9A") })
+        assertTrue(commands.any { it.contains("sn-auth 4857544311E70E9A omci ont-lineprofile-id 10") })
+        assertFalse(commands.any { it.contains("snmp") })
         assertTrue(commands.any { it.contains("ont-lineprofile-id 10") })
         assertTrue(commands.any { it.contains("ont-srvprofile-id 10") })
         assertTrue(commands.any { it.startsWith("service-port vlan 100 gpon 0/0/2 ont 5") })
@@ -175,6 +167,8 @@ class OltGatewayCommandServiceTest {
         assertTrue(commands.any { it == "ont delete 2 5" })
         assertTrue(commands.any { it == "interface gpon 0/1" })
         assertTrue(commands.any { it.contains("ont add 0 5 sn-auth 4857544311E70E9A") })
+        assertTrue(commands.any { it.contains("sn-auth 4857544311E70E9A omci ont-lineprofile-id 10") })
+        assertFalse(commands.any { it.contains("snmp") })
     }
 
     @Test
@@ -272,8 +266,7 @@ class OltGatewayCommandServiceTest {
     }
 
     @Test
-    fun `authorize con perfil TR-069 no crea la WAN por OMCI`() {
-        properties.writes.labAcsTr069ProfileId = 20
+    fun `authorize does not configure TR-069 through the OLT command path`() {
         service.authorize(
             AuthorizeCliRequest(
                 board = 1,

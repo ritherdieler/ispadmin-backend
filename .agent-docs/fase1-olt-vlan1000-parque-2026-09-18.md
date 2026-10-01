@@ -21,7 +21,7 @@ ZTE+VSOL en `olt_mgr_onu` (516): **48** ya tienen SP 1000, **468** no.
 | Mapping + SP | 438 | Añadir VLAN 1000 al lineprofile y después el SP |
 | Manual | 2 | `SmartOLT_G_H0F71B8AE`, una VSOL sin profile |
 
-### Commits de profile (OMCI a todos los bindings)
+### Commits de profile (cambio aplicado a todos los bindings)
 
 | Profile | ID | Bindings | Comando | Gem del SP |
 |---|---|---|---|---|

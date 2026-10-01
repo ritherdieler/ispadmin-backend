@@ -19,7 +19,7 @@ Medición 2026-09-09: el agente pierde páginas **incluso con un solo walk seria
 | Retries SNMP4j | **2** (`OLT_GATEWAY_SNMP_RETRIES`) | El cambio que evita que un drop esporádico mate el walk: una página live necesitó 3 intentos (50 s) |
 | maxRepetitions | **25** (default) | Óptimo medido (105 ms/ONT con 7 vb). Ver bench §1 |
 | Óptica per-port | **true** (`OLT_GATEWAY_SNMP_OPTICAL_PER_PORT`) | Mismo wall-clock que full-table pero un drop cuesta un puerto, no el dataset |
-| Paralelismo de puertos | **1** (`OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS`) | La ruta OMCI del MA5608T es serial: par=2/3 empeoró el wall-clock e indujo drops |
+| Paralelismo de puertos | **1** (`OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS`) | La lectura de óptica del MA5608T es serial: par=2/3 empeoró el wall-clock e indujo drops |
 | Retry de puerto | Un GETBULK fallido se **reintenta una vez al final del mismo ciclo** | `OpticalPortWalkRunner`; el primer pase usa `opticalParallelPorts` |
 | Lock Redis mutuo | Key **`olt-snmp-poll`** (no namespaced) | Prod y staging ceden el uno al otro **solo si ambos WARs tienen el código de lock** |
 | Inventario bajo el mismo lock | `OltInventorySyncService` toma `olt-snmp-poll` **antes** de leer la caché fusionada | Si el poll óptico tenía el lock, el sync espera y **relee** la caché al entrar (no camina la OLT otra vez). Persist va fuera del lock. Dos `@Scheduled`, un solo mutex |
@@ -108,7 +108,7 @@ Catálogo: [vps-secrets-management.md](./vps-secrets-management.md). Plantilla: 
 | `OLT_GATEWAY_SNMP_RETRIES` | 2 | Retries snmp4j (drops esporádicos del agente) |
 | `OLT_GATEWAY_SNMP_MAX_REPETITIONS` | 25 | Repeticiones por varbind y página |
 | `OLT_GATEWAY_SNMP_REQUEST_INTERVAL_MS` | 100 | Pacing entre páginas |
-| `OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS` | 1 | Carriles de puertos del poller (ruta OMCI serial) |
+| `OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_PORTS` | 1 | Carriles de puertos del poller (lectura serial por ONU) |
 | `OLT_GATEWAY_SNMP_OPTICAL_PER_PORT` | true | Per-port (aísla el drop en un puerto) |
 | `OLT_GATEWAY_SNMP_OPTICAL_PARALLEL_COLUMNS` | false | No-op con multi-varbind; solo rollback |
 | `OLT_GATEWAY_SNMP_POLL_LOCK_ENABLED` | true | Lock del ciclo óptico |

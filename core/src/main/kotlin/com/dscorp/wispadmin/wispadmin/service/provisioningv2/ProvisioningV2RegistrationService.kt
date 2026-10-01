@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service
 class ProvisioningV2Properties {
     var enabled: Boolean = false
     var workerEnabled: Boolean = false
-    var tr069ProfileId: Int = 0
 }
 
 data class ProvisioningV2OnuSnapshot(
@@ -26,7 +25,6 @@ data class ProvisioningV2OnuSnapshot(
 /** Encrypted at rest and never emitted through progress or observability. */
 data class ProvisioningV2RegistrationSnapshot(
     val onu: ProvisioningV2OnuSnapshot,
-    val tr069ProfileId: Int,
     val internetVlan: Int,
     val wifiSsid24: String?,
     val wifiPassword24: String?,
@@ -55,7 +53,6 @@ class ProvisioningV2RegistrationService(
     fun prepareSubmission(operatorId: Long?, request: SubscriptionRequest) {
         val operationId = request.registrationOperationId?.trim()?.takeIf(String::isNotEmpty) ?: return
         check(properties.enabled) { "PROVISIONING_DISABLED" }
-        require(properties.tr069ProfileId in 1..65535) { "PROVISIONING_TR069_PROFILE_REQUIRED" }
         val authenticatedOperator = requireNotNull(operatorId?.takeIf { it > 0 }) { "AUTHENTICATED_OPERATOR_REQUIRED" }
         val operation = journal.get(environmentTag(), operationId)
             ?.takeIf { it.operatorId == authenticatedOperator }
@@ -80,7 +77,6 @@ class ProvisioningV2RegistrationService(
         operatorId: Long,
     ): ProvisioningOperation {
         check(properties.enabled) { "PROVISIONING_DISABLED" }
-        require(properties.tr069ProfileId in 1..65535) { "PROVISIONING_TR069_PROFILE_REQUIRED" }
         require(subscription.installationType == InstallationType.FIBER) { "PROVISIONING_REQUIRES_FIBER" }
         val subscriptionId = requireNotNull(subscription.id) { "SUBSCRIPTION_ID_REQUIRED" }
         val operationId = requireNotNull(request.registrationOperationId?.trim()?.takeIf(String::isNotEmpty))
@@ -104,7 +100,6 @@ class ProvisioningV2RegistrationService(
                 promoted.onuTarget.port,
                 promoted.onuTarget.onuType,
             ),
-            tr069ProfileId = properties.tr069ProfileId,
             internetVlan = requireNotNull(request.vlan?.trim()?.toIntOrNull()) { "INTERNET_VLAN_REQUIRED" },
             wifiSsid24 = request.wifiSsid24,
             wifiPassword24 = request.wifiPassword24,
@@ -113,7 +108,6 @@ class ProvisioningV2RegistrationService(
         )
         resources.captureInitial(promoted, REGISTRATION_RESOURCE_KEY, json.writeValueAsString(snapshot))
         resources.captureInitial(promoted, OLT_RESOURCE_KEY, json.writeValueAsString(olt))
-        resources.captureInitial(promoted, OMCI_RESOURCE_KEY, json.writeValueAsString(OmciProvisioningResource(properties.tr069ProfileId)))
         resources.captureInitial(promoted, ACS_CONTACT_RESOURCE_KEY, json.writeValueAsString(contact))
         return promoted
     }
@@ -139,7 +133,6 @@ class ProvisioningV2RegistrationService(
         const val DRAFT_RESOURCE_KEY = "registration-draft"
         const val PHOTO_RESOURCE_KEY = "registration-photo"
         const val OLT_RESOURCE_KEY = "olt"
-        const val OMCI_RESOURCE_KEY = "omci"
         const val ACS_CONTACT_RESOURCE_KEY = "acs-contact"
     }
 }

@@ -96,7 +96,6 @@ def main() -> int:
         "|--------------------|--------------|",
         "| ONUs no configuradas | `display ont autofind all` |",
         "| Detalle ONU por SN | `display ont info by-sn <sn> all` |",
-        "| Autorizar ONU | `interface gpon 0/X` → `ont confirm <port> sn-auth \"<sn>\" omci ...` |",
         "| Eliminar ONU | `ont delete <port> <ont-id>` |",
         "| Reiniciar ONU | `ont reset <port> <ont-id>` |",
         "| Perfiles | `display ont-lineprofile gpon all`, `display ont-srvprofile gpon all` |",

@@ -53,7 +53,7 @@ El parser clasifica por **Alarm ID** (preferido) y por nombre. Los IDs `0x2e12*`
 | `0x2e11a00f` | `0x2e12a00f` | `ONT_PEE` | P2 | Physical equipment error |
 | `0x2e111999` | `0x2e121999` | `ONT_INITIATIVE_OFFLINE` | P2 | ONT se fue offline por iniciativa |
 | `0x2e305015` | — | `ONT_AUTH_INVALID` | P1 | Autenticación inválida |
-| `0x2e21a102` | `0x2e22a102` | `ONT_CONFIG_RECOVERY_FAIL` | P2 | Fallo recovery config OMCI |
+| `0x2e21a102` | `0x2e22a102` | `ONT_CONFIG_RECOVERY_FAIL` | P2 | Fallo de recuperación de configuración de la ONT |
 | `0x2e11999e` | `0x2e12999e` | `ONT_DOWNSTREAM_SD` | P2 | Downstream signal degrade |
 | `0x2e11999f` | `0x2e12999f` | `ONT_DOWNSTREAM_SF` | P1 | Downstream signal fail |
 | `0x2e31305c` / `05e` | — | `ONT_OPTICAL_ALARM` | P2 | Parámetros ópticos alarm |

@@ -102,7 +102,7 @@ class OltMgrOnu(
     var wanMode: String? = "onu_webpage",
 
     @Column(name = "configuration_method", length = 8)
-    var configurationMethod: String? = "omci",
+    var configurationMethod: String? = null,
 
     @Column(name = "main_vlan_id")
     var mainVlanId: Int? = null,

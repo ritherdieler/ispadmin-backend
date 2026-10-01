@@ -72,7 +72,7 @@ class ProvisioningExecutorTest {
     }
 
     @Test fun `remote failure keeps the service reason instead of the status envelope`() {
-        val body = """{"timestamp":"2026-09-25T08:54:36.892-05:00","status":500,"error":"Internal Server Error","message":"OMCI_READBACK_MISMATCH configType=Invalid vlan=none priority=none profile=none address=absent","path":"/ispadmin/api/olt-gateway/onus/ZTEGDC47BFFD/omci/management"}"""
+        val body = """{"timestamp":"2026-09-25T08:54:36.892-05:00","status":500,"error":"Internal Server Error","message":"ACS_CONTACT_REJECTED","path":"/api/acs/contact"}"""
         blow = HttpServerErrorException.create(
             HttpStatus.INTERNAL_SERVER_ERROR,
             "",
@@ -82,11 +82,8 @@ class ProvisioningExecutorTest {
         )
         advance()
         val failure = current().checkpoints.first { it.stage == ProvisioningStage.VALIDATE }.failure
-        assertEquals("OMCI_READBACK_MISMATCH", failure?.code)
-        assertEquals(
-            "OMCI_READBACK_MISMATCH configType=Invalid vlan=none priority=none profile=none address=absent",
-            failure?.message,
-        )
+        assertEquals("ACS_CONTACT_REJECTED", failure?.code)
+        assertEquals("ACS_CONTACT_REJECTED", failure?.message)
     }
 
     @Test fun `retry after uncertain write reconciles without duplicating effects`() {
@@ -124,7 +121,6 @@ class ProvisioningExecutorTest {
         val target = ProvisioningOnuTarget("olt", "GPON", "0", "1", "VSOLVA74", 100)
         val preauthorization = ProvisioningOperation(
             "cancel-photo", "staging", null, "VSOL0031C0B6", flowVersion = 3,
-            managementMode = ManagementProvisioningMode.PRECONFIGURED,
             phase = ProvisioningPhase.OLT_AUTHORIZATION, operatorId = 71,
             registrationRequestKey = "cancel-request-1", onuTarget = target,
         )
@@ -213,6 +209,6 @@ class ProvisioningExecutorTest {
         assertEquals(ProvisioningState.SUCCEEDED, current().state)
         assertEquals(ProvisioningStage.values().toList(), writes)
         advance()
-        assertEquals(9, writes.size)
+        assertEquals(ProvisioningStage.values().size, writes.size)
     }
 }
