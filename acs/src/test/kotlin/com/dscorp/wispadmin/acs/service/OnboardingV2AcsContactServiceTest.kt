@@ -50,4 +50,20 @@ class OnboardingV2AcsContactServiceTest {
 
         assertEquals(HttpStatus.CONFLICT, error.status)
     }
+
+    @Test
+    fun `Huawei HG8145X6 is ready after matching its vendor and ACS serials`() {
+        val device = GenieAcsDevice(
+            id = "00259E-HG8145X6-48575443C6FBA6AA",
+            serialNumber = "48575443C6FBA6AA",
+            productClass = "HG8145X6",
+            softwareVersion = "V5R021C10S165",
+        )
+        every { client.findDeviceBySerialSuffix("FBA6AA") } returns listOf(device)
+
+        val response = service.contact(OnboardingV2ContactRequest("op-12345678", "HWTCC6FBA6AA"))
+
+        assertEquals(OnboardingV2ContactState.READY, response.state)
+        assertEquals("HG8145X6", response.model)
+    }
 }

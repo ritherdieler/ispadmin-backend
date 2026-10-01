@@ -306,3 +306,134 @@ test('V2804 compensation recognizes ownership through Alias', () => {
   });
   assert.deepEqual(writes.filter(w => w.change.path === 0).map(w => w.path), [pppPath]);
 });
+
+test('HG8145X6 provisions a separate static Internet WAN and keeps management untouched', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+    mode: 'static', ip: '192.0.2.25', subnetMask: '255.255.255.0',
+    gateway: '192.0.2.1', dns: '1.1.1.1',
+  };
+  const management = root + '1.WANIPConnection.1';
+  const internet = root + '2.WANIPConnection.1';
+  const writes = run('gf-onboarding-v2-pppoe', huawei, {
+    [root + '1']: true,
+    [management]: true,
+    [management + '.X_HW_SERVICELIST']: 'TR069',
+  });
+  const valueOf = suffix => writes.find(w => w.path === internet + suffix)?.change.value;
+  assert.equal(valueOf('.X_HW_SERVICELIST'), 'INTERNET');
+  assert.equal(valueOf('.X_HW_VLAN'), 100);
+  assert.equal(valueOf('.AddressingType'), 'Static');
+  assert.equal(valueOf('.NATEnabled'), true);
+  assert.equal(valueOf('.X_HW_LANBIND.Lan1Enable'), 1);
+  assert.equal(valueOf('.X_HW_LANBIND.SSID1Enable'), 1);
+  assert.equal(writes.some(w => w.path.startsWith(management + '.')), false);
+  assert.equal(writes.some(w => /X_(ZTE|CT)-COM_/.test(w.path)), false);
+  assert.equal(writes.some(w => w.change.path === 0), false);
+});
+
+test('HG8145X6 uses WLAN 1 and 5 and preserves foreign WANs in cleanup', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+  };
+  const wifiWrites = run('gf-onboarding-v2-wifi', huawei);
+  assert.equal(wifiWrites.find(w => w.path.endsWith('.1.SSID'))?.change.value, 'client24');
+  assert.equal(wifiWrites.find(w => w.path.endsWith('.5.SSID'))?.change.value, 'client5');
+  assert.equal(wifiWrites.some(w => w.path.endsWith('.BeaconType')), false);
+  const management = root + '1.WANIPConnection.1';
+  const foreign = root + '3.WANIPConnection.1';
+  const cleanupWrites = run('gf-onboarding-v2-cleanup', huawei, {
+    [root + '1']: true, [management]: true,
+    [root + '2']: true, [root + '2.WANIPConnection.1']: true,
+    [foreign]: true,
+  });
+  assert.equal(cleanupWrites.some(w => w.change.path === 0), false);
+});
+
+test('HG8145X6 PPPoE uses Huawei service leaves on a separate WAN', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+  };
+  const management = root + '1.WANIPConnection.1';
+  const internet = root + '2.WANPPPConnection.1';
+  const writes = run('gf-onboarding-v2-pppoe', huawei, {
+    [root + '1']: true,
+    [management]: true,
+    [management + '.X_HW_SERVICELIST']: 'TR069',
+  });
+  assert.equal(writes.find(w => w.path === internet + '.X_HW_SERVICELIST')?.change.value, 'INTERNET');
+  assert.equal(writes.find(w => w.path === internet + '.X_HW_VLAN')?.change.value, 100);
+  assert.equal(writes.find(w => w.path === internet + '.Username')?.change.value, 'client-42');
+  assert.equal(writes.some(w => w.path.startsWith(management + '.')), false);
+});
+
+test('HG8145X6 compensation removes only the owned Internet WAN', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+    mode: 'internet', internetWasAbsent: true,
+  };
+  const management = root + '1.WANIPConnection.1';
+  const internet = root + '2.WANIPConnection.1';
+  const foreign = root + '3.WANIPConnection.1';
+  const writes = run('gf-onboarding-v2-compensate', huawei, {
+    [management]: true, [management + '.Name']: 'management',
+    [internet]: true, [internet + '.Name']: 'GFv2-op123',
+    [foreign]: true, [foreign + '.Name']: 'foreign',
+  });
+  assert.deepEqual(writes.filter(w => w.change.path === 0).map(w => w.path), [internet]);
+});
+
+test('HG8145X6 refuses to overwrite a pre-existing unowned Internet slot', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+    mode: 'static', ip: '192.0.2.25',
+  };
+  const internet = root + '2.WANIPConnection.1';
+  assert.throws(() => run('gf-onboarding-v2-pppoe', huawei, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+    [root + '2']: true,
+    [internet]: true,
+    [internet + '.Name']: 'other-service',
+  }), /V2_INTERNET_SLOT_OCCUPIED/);
+});
+
+test('HG8145X6 requires its separate TR-069 management WAN before provisioning', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+  };
+  assert.throws(() => run('gf-onboarding-v2-pppoe', huawei, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+    [root + '1.WANIPConnection.1.X_HW_SERVICELIST']: 'INTERNET',
+  }), /V2_MANAGEMENT_WAN_UNVERIFIED/);
+});
+
+test('HG8145X6 refuses a foreign WAN in the designated Internet container', () => {
+  const huawei = {
+    ...request,
+    model: 'HG8145X6', expectedModel: 'HG8145X6',
+    serial: '48575443C6FBA6AA', expectedSerial: 'HWTCC6FBA6AA',
+  };
+  const foreign = root + '2.WANIPConnection.4';
+  assert.throws(() => run('gf-onboarding-v2-pppoe', huawei, {
+    [root + '1']: true,
+    [root + '1.WANIPConnection.1']: true,
+    [root + '1.WANIPConnection.1.X_HW_SERVICELIST']: 'TR069',
+    [root + '2']: true,
+    [foreign]: true,
+    [foreign + '.Name']: 'other-service',
+  }), /V2_INTERNET_SLOT_OCCUPIED/);
+});

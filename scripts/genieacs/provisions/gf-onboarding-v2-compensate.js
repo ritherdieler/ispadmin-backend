@@ -5,6 +5,7 @@ const RESTORE_LAYOUTS = {
   F6600R: { wcd: 1, bands: [1, 5], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Name' },
   VSOLVA74: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Alias' },
   V2804AX15T: { wcd: 2, bands: [5, 1], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Alias' },
+  HG8145X6: { wcd: 2, bands: [1, 5], provisioning: WAN_ROOT + '1.WANIPConnection.1', ownerLeaf: 'Name' },
 };
 function restoreValue(path) {
   const item = declare(path, { value: Date.now() });

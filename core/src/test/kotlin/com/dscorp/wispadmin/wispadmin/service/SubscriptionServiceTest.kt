@@ -26,6 +26,7 @@ import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.IInstallat
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationResult
 import com.dscorp.wispadmin.wispadmin.service.subscription.strategies.InstallationStrategyFactory
 import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -173,6 +174,48 @@ class SubscriptionServiceTest {
 
         assertEquals("192.168.30.191", saved.captured.ip)
         assertEquals("192.168.30.191", result.ip)
+    }
+
+    @Test
+    fun `registration response includes decrypted pppoe password`() {
+        every { repository.findByClientRequestId(any()) } returns Optional.empty()
+        every { installationStrategyFactory.getStrategy(any()) } returns installationStrategy
+        every { networkDeviceRepository.findById(1) } returns Optional.of(NetworkDevice(id = 1, name = "MK1"))
+        every { planRepository.findById(1) } returns Optional.of(
+            Plan(id = 1, name = "Fibra 300", downloadSpeed = 300, uploadSpeed = 100)
+        )
+        every { placeRepository.findById(1) } returns Optional.of(Place(id = 1, name = "Huacho"))
+        every { repository.save(any()) } answers {
+            firstArg<Subscription>().apply { id = 223 }
+        }
+        every {
+            installationStrategy.processInstallation(any(), any(), any(), any(), any())
+        } returns InstallationResult(queueAdded = true)
+        every { pppoeAccessService.decryptedPassword(any()) } returns "demo-pppoe-password"
+
+        val result = service.registerSubscription(
+            newSubscription = SubscriptionRequest(
+                firstName = "Juan",
+                lastName = "Pérez",
+                dni = "12345678",
+                address = "Calle 1",
+                phone = "999888777",
+                subscriptionDate = System.currentTimeMillis(),
+                planId = 1,
+                additionalDeviceIds = emptyList(),
+                placeId = 1,
+                location = GeoLocation(-11.0, -77.0),
+                technicianId = 1,
+                hostDeviceId = 1,
+                installationType = InstallationType.FIBER,
+                accessMode = AccessMode.PPPOE_DYNAMIC,
+                clientRequestId = "pppoe-password-response",
+            ),
+            onSuccess = { },
+        )
+
+        val json = ObjectMapper().readTree(ObjectMapper().writeValueAsBytes(result))
+        assertEquals("demo-pppoe-password", json.path("pppoePassword").asText())
     }
 
     @Test

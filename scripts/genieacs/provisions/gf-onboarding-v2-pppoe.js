@@ -1,5 +1,5 @@
 // args[0]: JSON {operationId, expectedSerial, expectedModel, expectedFirmware, vlan, mode, username, password, ip, subnetMask, gateway, dns}.
-// Block 1: tag the management WAN and create/tag the Internet WAN. Block 3 removes foreign WANs after Wi-Fi completes.
+// Block 1: preserve or tag management, then create the Internet WAN owned by this operation.
 const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
 const F6600 = {
   wcd: 1,
@@ -29,7 +29,20 @@ const VSOL = {
   managementAlias: 'GF-TR069-MGMT',
   gponVlan: WAN_ROOT + '2.X_CT-COM_WANGponLinkConfig.VLANIDMark',
 };
-const WAN_LAYOUTS = { F6600R: F6600, VSOLVA74: VSOL, V2804AX15T: VSOL };
+const HUAWEI = {
+  wcd: 2,
+  provisioning: WAN_ROOT + '1.WANIPConnection.1',
+  internetPpp: WAN_ROOT + '2.WANPPPConnection.1',
+  internetIp: WAN_ROOT + '2.WANIPConnection.1',
+  pppParent: WAN_ROOT + '2.WANPPPConnection',
+  ipParent: WAN_ROOT + '2.WANIPConnection',
+  vendor: 'X_HW_',
+  vlan: 'VLAN',
+  service: 'SERVICELIST',
+  preserveManagement: true,
+  bindLan: true,
+};
+const WAN_LAYOUTS = { F6600R: F6600, VSOLVA74: VSOL, V2804AX15T: VSOL, HG8145X6: HUAWEI };
 function valueAt(path) {
   const result = declare(path, { value: Date.now() });
   return result.value && result.value[0];
@@ -82,6 +95,20 @@ function ensureInstance(parent, instancePath) {
   declare(parent + '.*', { path: Date.now() }, { path: Math.max(known, slot) });
   commit();
 }
+function ensureInternetSlotAvailable(layout, path, operationId) {
+  if (!layout.preserveManagement) return;
+  const owner = ownerMarker(operationId);
+  for (const segment of ['WANPPPConnection', 'WANIPConnection']) {
+    for (const instance of declare(WAN_ROOT + layout.wcd + '.' + segment + '.*', { path: Date.now() })) {
+      if (instance.path && (instance.path !== path || valueAt(instance.path + '.Name') !== owner)) {
+        throw new Error('V2_INTERNET_SLOT_OCCUPIED');
+      }
+    }
+  }
+  if (declare(path, { path: Date.now() }).path && valueAt(path + '.Name') !== owner) {
+    throw new Error('V2_INTERNET_SLOT_OCCUPIED');
+  }
+}
 function writeLeaves(path, leaves) {
   for (const key of Object.keys(leaves)) declare(path + '.' + key, null, { value: leaves[key] });
 }
@@ -97,6 +124,13 @@ function serviceLeaves(layout, request, name) {
   leaves[layout.vendor + layout.service] = 'INTERNET';
   leaves[layout.vendor + layout.vlan] = request.vlan;
   if (layout.vlanEnable) leaves[layout.vendor + 'VLANEnable'] = true;
+  if (layout.bindLan) {
+    leaves.X_HW_IPv4Enable = true;
+    for (let index = 1; index <= 4; index++) {
+      leaves['X_HW_LANBIND.Lan' + index + 'Enable'] = 1;
+      leaves['X_HW_LANBIND.SSID' + index + 'Enable'] = 1;
+    }
+  }
   return leaves;
 }
 function setInternetLeaves(path, layout, request) {
@@ -125,6 +159,12 @@ function setInternetLeaves(path, layout, request) {
   commit();
 }
 function ensureProvisioningServiceTr069(layout, request) {
+  if (layout.preserveManagement) {
+    if (valueAt(layout.provisioning + '.' + layout.vendor + layout.service) !== 'TR069') {
+      throw new Error('V2_MANAGEMENT_WAN_UNVERIFIED');
+    }
+    return;
+  }
   let changed = false;
   const marker = layout.managementAlias
     ? { leaf: 'Alias', value: layout.managementAlias }
@@ -151,6 +191,7 @@ function applyInternet() {
   const layout = WAN_LAYOUTS[request.expectedModel];
   const internet = request.mode === 'static' ? layout.internetIp : layout.internetPpp;
   const parent = request.mode === 'static' ? layout.ipParent : layout.pppParent;
+  ensureInternetSlotAvailable(layout, internet, request.operationId);
   ensureProvisioningServiceTr069(layout, request);
   ensureInternetContainer(layout);
   ensureInstance(parent, internet);

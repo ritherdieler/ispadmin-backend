@@ -5,7 +5,7 @@ import com.dscorp.wispadmin.acs.OnboardingV2ContactResponse
 import com.dscorp.wispadmin.acs.OnboardingV2ContactState
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
-import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
+import com.dscorp.wispadmin.acs.genieacs.OnboardingV2CpeLayouts
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -31,7 +31,7 @@ class OnboardingV2AcsContactService(
         val device = matches.single()
         val model = device.productClass?.trim()?.takeIf { it.isNotBlank() }
             ?: throw ResponseStatusException(HttpStatus.CONFLICT, "ACS device model is missing")
-        if (!NamedCpeLayouts.supported(model)) {
+        if (!OnboardingV2CpeLayouts.supported(model)) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "ACS device model is not supported by onboarding v2")
         }
         val firmware = device.softwareVersion?.trim()?.takeIf { it.isNotBlank() }

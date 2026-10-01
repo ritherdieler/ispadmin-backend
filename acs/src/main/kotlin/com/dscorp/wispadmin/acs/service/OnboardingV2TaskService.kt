@@ -6,7 +6,7 @@ import com.dscorp.wispadmin.acs.OnboardingV2WifiRequest
 import com.dscorp.wispadmin.acs.OnboardingV2WifiCompensateRequest
 import com.dscorp.wispadmin.acs.OnboardingV2WanCleanupRequest
 import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
-import com.dscorp.wispadmin.acs.genieacs.NamedCpeLayouts
+import com.dscorp.wispadmin.acs.genieacs.OnboardingV2CpeLayouts
 import com.dscorp.wispadmin.acs.genieacs.Tr069SerialMatcher
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.dao.DuplicateKeyException
@@ -187,11 +187,8 @@ class OnboardingV2TaskService(
             }
             return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse("FAILED", taskId, reason)
         }
-        val wcd = when (row.model.trim().uppercase()) {
-            "F6600R" -> 1
-            "VSOLVA74", "V2804AX15T" -> 2
-            else -> conflict("Unsupported v2 model")
-        }
+        val wcd = OnboardingV2CpeLayouts.of(row.model)?.wanConnectionDevice
+            ?: conflict("Unsupported v2 model")
         val ownedName = onboardingOwnerMarker(row.operationId)
         val ppp = client.findWanPppConnections(row.deviceId, wcd, ownedName)
         val ip = client.findWanIpConnections(row.deviceId, wcd, ownedName)
@@ -371,11 +368,8 @@ class OnboardingV2TaskService(
     }
 
     private fun readWifiBaseline(request: OnboardingV2InternetRequest): Map<String, Any> {
-        val bands = when (request.model.trim().uppercase()) {
-            "F6600R" -> 1 to 5
-            "V2804AX15T", "VSOLVA74" -> 5 to 1
-            else -> conflict("Unsupported v2 model")
-        }
+        val layout = OnboardingV2CpeLayouts.of(request.model) ?: conflict("Unsupported v2 model")
+        val bands = layout.wifi24Index to layout.wifi5Index
         val leaves = listOf("SSID", "Enable", "KeyPassphrase")
         client.getParameterValues(request.deviceId, listOf(bands.first, bands.second).flatMap { index ->
             leaves.map { leaf -> "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.$leaf" }
@@ -416,7 +410,7 @@ class OnboardingV2TaskService(
     private fun validate(request: OnboardingV2InternetRequest) {
         require(request.operationId.matches(Regex("[a-zA-Z0-9-]{8,64}"))) { "INVALID_OPERATION_ID" }
         require(request.sn.trim().uppercase().matches(Regex("[A-Z0-9]{12,16}"))) { "INVALID_ONU_SERIAL" }
-        require(request.deviceId.isNotBlank() && NamedCpeLayouts.supported(request.model)) { "UNSUPPORTED_ONU_MODEL" }
+        require(request.deviceId.isNotBlank() && OnboardingV2CpeLayouts.supported(request.model)) { "UNSUPPORTED_ONU_MODEL" }
         require(request.firmware.isNotBlank()) { "INTERNET_INPUT_REQUIRED" }
         if (request.mode == "static") require(!request.ip.isNullOrBlank()) { "INTERNET_INPUT_REQUIRED" }
         else require(request.mode == "pppoe" && request.username.isNotBlank() && request.password.isNotBlank()) { "INTERNET_INPUT_REQUIRED" }

@@ -1,5 +1,5 @@
 // args[0]: JSON {operationId, expectedSerial, expectedModel, expectedFirmware, mode}.
-// Block 3: preserve only the platform-tagged management and Internet WANs, then delete every other WAN in one commit.
+// Block 3: keep foreign WANs on Huawei; legacy layouts remove untagged WANs.
 const WAN_ROOT = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.';
 const F6600 = {
   provisioning: WAN_ROOT + '1.WANIPConnection.1',
@@ -15,7 +15,15 @@ const VSOL = {
   managementLeaf: 'Alias',
   internetLeaf: 'Alias',
 };
-const WAN_LAYOUTS = { F6600R: F6600, VSOLVA74: VSOL, V2804AX15T: VSOL };
+const HUAWEI = {
+  provisioning: WAN_ROOT + '1.WANIPConnection.1',
+  internetPpp: WAN_ROOT + '2.WANPPPConnection.1',
+  internetIp: WAN_ROOT + '2.WANIPConnection.1',
+  managementLeaf: 'Name',
+  internetLeaf: 'Name',
+  preserveForeign: true,
+};
+const WAN_LAYOUTS = { F6600R: F6600, VSOLVA74: VSOL, V2804AX15T: VSOL, HG8145X6: HUAWEI };
 
 function valueAt(path) {
   const result = declare(path, { value: Date.now() });
@@ -59,6 +67,7 @@ function isManaged(path, layout, internet, request) {
 function cleanup() {
   const request = requestForDevice();
   const layout = WAN_LAYOUTS[request.expectedModel];
+  if (layout.preserveForeign) return;
   const internet = request.mode === 'static' ? layout.internetIp : layout.internetPpp;
   const deleted = [];
   for (const segment of ['WANPPPConnection', 'WANIPConnection']) {

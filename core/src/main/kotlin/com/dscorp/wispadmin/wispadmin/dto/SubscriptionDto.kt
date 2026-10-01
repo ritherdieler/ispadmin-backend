@@ -8,6 +8,7 @@ import com.dscorp.wispadmin.wispadmin.data.model.MikrotikProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.OltProvisionStatus
 import com.dscorp.wispadmin.wispadmin.data.model.ServiceStatus
 import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
+import com.fasterxml.jackson.annotation.JsonInclude
 import java.io.Serializable
 import java.time.LocalDate
 
@@ -69,6 +70,8 @@ data class SubscriptionDto(
     val pppoeUsername: String? = null,
     val accessMigrationStage: AccessMigrationStage? = null,
     val accessMigration: AccessMigrationProgressDto? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val pppoePassword: String? = null,
 ) : Serializable
 
 
@@ -89,4 +92,3 @@ data class SubscriptionCutDto(
     val ip: String? = null,
     val name: String
 )
-

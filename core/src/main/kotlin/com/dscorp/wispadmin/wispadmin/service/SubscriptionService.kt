@@ -195,10 +195,10 @@ class SubscriptionService(
             }
             findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
                 if (newSubscription.installationType == InstallationType.FIBER) {
-                    return existing.toDto().copy(alreadyRegistered = true)
+                    return existing.toRegistrationDto().copy(alreadyRegistered = true)
                 }
                 subscriptionProvisionService.reconcile(existing, newSubscription)
-                return existing.toDto().copy(alreadyRegistered = true)
+                return existing.toRegistrationDto().copy(alreadyRegistered = true)
             }
 
             subscriptionValidator.validateSubscriptionRequest(newSubscription)
@@ -259,7 +259,7 @@ class SubscriptionService(
             if (newSubscription.installationType == InstallationType.FIBER && registration != null) {
                 val operation = registration.start(subscription, newSubscription, authenticatedOperatorId)
                 logger.info("Registro FIBER creado subscriptionId={} operationId={}", subscription.id, operation.id)
-                return subscription.toDto()
+                return subscription.toRegistrationDto()
             }
 
             val strategy = installationStrategyFactory.getStrategy(newSubscription.installationType)
@@ -295,7 +295,7 @@ class SubscriptionService(
             }
 
             onSuccess(subscription.copy(plan = plan))
-            subscription.toDto()
+            subscription.toRegistrationDto()
         } catch (ex: Exception) {
             ex.printStackTrace()
             handleRegistrationError(ex, subscription, queueAdded, onuAuthorized, onuSn)
@@ -355,6 +355,10 @@ class SubscriptionService(
         repository.save(subscription)
         logger.info("Credenciales PPPoE generadas para la suscripción ${subscription.id} con username $username")
     }
+
+    private fun Subscription.toRegistrationDto(): SubscriptionDto = toDto().copy(
+        pppoePassword = runCatching { pppoeAccessService.decryptedPassword(this) }.getOrNull()
+    )
 
     private fun processOnuForFiber(subscriptionToSave: Subscription, newSubscription: SubscriptionRequest) {
         val sn = newSubscription.onu?.sn?.takeIf { it.isNotBlank() }

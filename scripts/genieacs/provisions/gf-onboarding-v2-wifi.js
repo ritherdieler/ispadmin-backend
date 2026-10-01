@@ -1,6 +1,6 @@
 // args[0]: JSON {operationId, expectedSerial, expectedModel, expectedFirmware, ssid24, ssid5, passphrase24, passphrase5}.
 // Only WLAN leaves are writable. The caller must persist the encrypted pre-change snapshot first.
-const WIFI_LAYOUTS = { F6600R: [1, 5], V2804AX15T: [5, 1], VSOLVA74: [5, 1] };
+const WIFI_LAYOUTS = { F6600R: [1, 5], V2804AX15T: [5, 1], VSOLVA74: [5, 1], HG8145X6: [1, 5] };
 function readValue(path) {
   const result = declare(path, { value: Date.now() });
   return result.value && result.value[0];
