@@ -18,6 +18,8 @@ class CorrelationIdFilter : OncePerRequestFilter() {
         const val HEADER = "X-Correlation-Id"
         const val ATTRIBUTE = "obsCorrelationId"
         const val MDC_KEY = "correlationId"
+        const val OPERATION_HEADER = "X-Operation-Id"
+        const val OPERATION_MDC_KEY = "operationId"
     }
 
     override fun doFilterInternal(
@@ -30,10 +32,14 @@ class CorrelationIdFilter : OncePerRequestFilter() {
         request.setAttribute(ATTRIBUTE, correlationId)
         response.setHeader(HEADER, correlationId)
         MDC.put(MDC_KEY, correlationId)
+        request.getHeader(OPERATION_HEADER)?.trim()?.takeIf { OPERATION_ID.matches(it) }?.let { MDC.put(OPERATION_MDC_KEY, it) }
         try {
             filterChain.doFilter(request, response)
         } finally {
             MDC.remove(MDC_KEY)
+            MDC.remove(OPERATION_MDC_KEY)
         }
     }
+
+    private val OPERATION_ID = Regex("[A-Za-z0-9_-]{8,64}")
 }

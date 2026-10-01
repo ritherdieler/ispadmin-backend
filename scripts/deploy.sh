@@ -388,40 +388,38 @@ if not compose_path.is_file():
 if service_header not in text:
     raise SystemExit("compose service not found: $TOMCAT_COMPOSE_SERVICE")
 lines = text.splitlines()
-out = []
-in_tomcat = False
-in_volumes = False
-inserted = False
-for line in lines:
-    if line.rstrip() == service_header:
-        in_tomcat = True
-        in_volumes = False
-    elif in_tomcat and line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
-        if not inserted:
-            out.append("    volumes:")
-            out.append(f"      - {mount}")
-            inserted = True
-        in_tomcat = False
-        in_volumes = False
-    if in_tomcat and line.strip() == "volumes:":
-        in_volumes = True
-    if in_tomcat and mount in line:
-        inserted = True
-    out.append(line)
-    if in_tomcat and in_volumes and not inserted and line.startswith("      - "):
-        out.append(f"      - {mount}")
-        inserted = True
-if in_tomcat and not inserted:
-    out.append("    volumes:")
-    out.append(f"      - {mount}")
-    inserted = True
-if not inserted:
-    raise SystemExit("Could not insert face models volume under $TOMCAT_COMPOSE_SERVICE")
+mount_line = f"      - {mount}"
+start = next(i for i, line in enumerate(lines) if line.rstrip() == service_header)
+end = start + 1
+while end < len(lines):
+    line = lines[end]
+    if line.strip() and not line.startswith("    ") and not line.lstrip().startswith("#"):
+        break
+    end += 1
+block = lines[start:end]
+kept = False
+deduped = []
+for line in block:
+    if mount in line:
+        if kept:
+            continue
+        kept = True
+    deduped.append(line)
+if not kept:
+    volumes_at = next((i for i, line in enumerate(deduped) if line.rstrip() == "    volumes:"), None)
+    if volumes_at is not None:
+        deduped.insert(volumes_at + 1, mount_line)
+    else:
+        tail = len(deduped)
+        while tail > 1 and not deduped[tail - 1].strip():
+            tail -= 1
+        deduped[tail:tail] = ["    volumes:", mount_line]
+out = lines[:start] + deduped + lines[end:]
 if "\\n".join(out) == "\\n".join(lines):
     print("docker-compose already mounts face models on $TOMCAT_COMPOSE_SERVICE")
 else:
     compose_path.write_text("\\n".join(out) + "\\n")
-    print("Added face models volume to $TOMCAT_COMPOSE_SERVICE")
+    print("Updated face models volume on $TOMCAT_COMPOSE_SERVICE")
 PY
 EOF
 }

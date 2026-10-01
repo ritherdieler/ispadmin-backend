@@ -26,6 +26,8 @@ data class RegistrationProgressDto(
     val tr069Message: String? = null,
     val provisioningCheckpoints: List<RegistrationProgressCheckpointDto> = emptyList(),
     val subscription: SubscriptionDto? = null,
+    val outcome: String? = null,
+    val operationId: String? = null,
 )
 
 data class RegistrationProgressCheckpointDto(

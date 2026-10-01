@@ -257,6 +257,10 @@ interface SubscriptionRepository : JpaRepository<Subscription, Int> {
     @Query("SELECT COUNT(s) FROM Subscription s WHERE s.serviceStatus = :serviceStatus")
     fun countByServiceStatus(serviceStatus: ServiceStatus): Long
 
+    fun countByDni(dni: String): Long
+
+    fun countByDniAndServiceStatus(dni: String, serviceStatus: ServiceStatus): Long
+
     @Query("SELECT COUNT(s) FROM Subscription s WHERE s.serviceStatus != 'CANCELLED'")
     fun countNonCancelledSubscriptions(): Long
 

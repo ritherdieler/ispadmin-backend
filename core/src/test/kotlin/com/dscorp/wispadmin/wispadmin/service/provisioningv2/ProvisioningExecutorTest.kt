@@ -66,9 +66,10 @@ class ProvisioningExecutorTest {
     private fun advance() = ProvisioningExecutor(journal, handlers, clock = clock).advance("staging", "op")
     private fun current() = requireNotNull(journal.get("staging", "op"))
 
-    @Test fun `lease lasts long enough for the onu online wait`() {
+    @Test fun `lease outlives the slowest remote stage so a running stage is never reclaimed`() {
         advance()
-        assertEquals(clock.instant().toEpochMilli() + 120_000, leaseUntil)
+        assertEquals(clock.instant().toEpochMilli() + ProvisioningExecutor.LEASE_DURATION.toMillis(), leaseUntil)
+        assertTrue(ProvisioningExecutor.LEASE_DURATION.toMillis() > 180_000L + 60_000L)
     }
 
     @Test fun `remote failure keeps the service reason instead of the status envelope`() {
@@ -90,10 +91,9 @@ class ProvisioningExecutorTest {
         fail = ProvisioningStage.VALIDATE
         uncertain = true
         advance()
-        assertEquals(ProvisioningState.FAILED, current().state)
-        journal.requestRetry("staging", "op", 1)
+        assertEquals(ProvisioningState.WAITING, current().state)
         fail = null
-        advance()
+        ProvisioningExecutor(journal, handlers, clock = Clock.offset(clock, java.time.Duration.ofSeconds(10))).advance("staging", "op")
         assertEquals(CheckpointState.SUCCEEDED, current().checkpoints.first().state)
         assertEquals(listOf(ProvisioningStage.VALIDATE), writes)
     }

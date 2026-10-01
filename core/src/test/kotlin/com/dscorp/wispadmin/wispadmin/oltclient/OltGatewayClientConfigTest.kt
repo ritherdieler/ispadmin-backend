@@ -9,8 +9,7 @@ class OltGatewayClientConfigTest {
 
     @Test
     fun `core to gateway read timeout covers olt authorize ssh`() {
-        val factory = OltGatewayClientConfig().oltGatewayRestTemplate().requestFactory
-            as SimpleClientHttpRequestFactory
+        val factory = OltGatewayClientConfig().oltGatewayRequestFactory()
         val readMs = readTimeoutMs(factory)
         assertTrue(
             readMs >= OltGatewayClientConfig.READ_TIMEOUT_MS,

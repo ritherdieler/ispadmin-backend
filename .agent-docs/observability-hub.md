@@ -10,6 +10,7 @@ pero diseñado como un servicio independiente que casualmente corre dentro del m
 - Autenticación de todo `/observability/**`: header **`X-Obs-Api-Key`** (excepto preflight `OPTIONS` y el webhook del tracker). Cualquier key de plataforma válida es aceptada; sin ella o inválida → `401`. El acceso restringido a administradores se aplica en el **frontend** del panel (`ispadmin-observability-web`), que exige usuario con rol `ADMIN`.
 - Correlación front↔back: header **`X-Correlation-Id`** (se genera si no llega y se devuelve en la respuesta).
 - Eventos en vivo: STOMP sobre el WebSocket existente `/ws` (SockJS), topic **`/topic/observability/events`**.
+- Operación de negocio (2026-10-01): **`X-Operation-Id`** (Android, workflow activo) → MDC `operationId` → reenviado a Gateway/ACS. Línea de tiempo por operación: `GET /observability/workflows/{workflowId}/events` (une `workflow_id` y `correlation_id`). Evento de salud `provisioning.health` (solo con anomalía). `HttpTelemetryPolicy` excluye 4xx de rutas internas (`/api/olt-gateway/`, `/api/acs/`, `/api/traffic/`) y el despacho `/error`. Detalle: [`registro-suscripcion-robustez.md`](registro-suscripcion-robustez.md).
 
 ---
 

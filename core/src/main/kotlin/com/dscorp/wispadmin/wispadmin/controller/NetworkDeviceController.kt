@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.data.model.NetworkDevice
 import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceDto
+import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceSummaryDto
+import com.dscorp.wispadmin.wispadmin.dto.toSummaryDto
 import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import com.dscorp.wispadmin.wispadmin.repository.NetworkDeviceRepository
 import com.dscorp.wispadmin.wispadmin.requestbody.NetworkDeviceRequest
@@ -39,6 +41,6 @@ class NetworkDeviceController(
         ResponseEntity.ok(NetworkDevice.NetworkDeviceType.values().map { it.name })
 
     @GetMapping("coreTypes")
-    fun getCoreTypes(): ResponseEntity<List<NetworkDeviceDto>> =
-        ResponseEntity.ok(repository.findActiveCloudCoreRouters().toDto())
+    fun getCoreTypes(): ResponseEntity<List<NetworkDeviceSummaryDto>> =
+        ResponseEntity.ok(repository.findActiveCloudCoreRouters().map { it.toSummaryDto() })
 }

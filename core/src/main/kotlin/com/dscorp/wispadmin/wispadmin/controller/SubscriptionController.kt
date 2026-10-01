@@ -39,11 +39,13 @@ import org.springframework.web.client.RestClientException
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import javax.servlet.http.HttpServletRequest
+import javax.servlet.http.HttpServletResponse
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupReport
 import com.dscorp.wispadmin.wispadmin.service.cleanup.CleanupStepException
 import com.dscorp.wispadmin.wispadmin.service.cleanup.SubscriptionHardCleanupService
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningJournal
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningState
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.progressCheckpointsInExecutionOrder
 
 const val DATE_FORMAT = "dd/MM/yyyy"
@@ -100,10 +102,13 @@ class SubscriptionController(
                 message = "El DNI ingresado ya está registrado. Verifica el documento o consulta la suscripción existente."
             )
 
-            SubscriptionIntegrityViolationClassifier.UniqueField.CLIENT_REQUEST_ID -> conflictResponse(
-                code = "REGISTRATION_ALREADY_EXISTS",
-                message = "La solicitud de registro ya fue procesada. Consulta la suscripción existente o reintenta con un clientRequestId nuevo."
-            )
+            SubscriptionIntegrityViolationClassifier.UniqueField.CLIENT_REQUEST_ID ->
+                subscriptionService.findRegisteredByClientRequestId(request.clientRequestId)
+                    ?.let { BaseResponse(data = it, status = 200) }
+                    ?: conflictResponse(
+                        code = "REGISTRATION_ALREADY_EXISTS",
+                        message = "La solicitud de registro ya fue procesada. Consulta la suscripción existente o reintenta con un clientRequestId nuevo."
+                    )
 
             SubscriptionIntegrityViolationClassifier.UniqueField.PPPOE_USERNAME -> conflictResponse(
                 code = "PPPOE_USERNAME_CONFLICT",
@@ -237,18 +242,29 @@ class SubscriptionController(
         return ResponseEntity.ok(progress)
     }
 
+    @GetMapping("/dni-check")
+    fun dniCheck(@RequestParam dni: String): ResponseEntity<DniCheckDto> {
+        val normalized = dni.trim().takeIf { it.isNotEmpty() } ?: return ResponseEntity.badRequest().build()
+        return ResponseEntity.ok(
+            DniCheckDto(
+                totalSubscriptions = repository.countByDni(normalized),
+                activeSubscriptions = repository.countByDniAndServiceStatus(normalized, ServiceStatus.ACTIVE),
+            )
+        )
+    }
+
     @GetMapping("/{subscriptionId}/registration-progress")
     fun getRegistrationProgress(@PathVariable subscriptionId: Int): ResponseEntity<RegistrationProgressDto> {
         val existing = repository.findById(subscriptionId).orElse(null)
             ?: return ResponseEntity.notFound().build()
-        val subscription = subscriptionProvisionService.refreshTr069FromGateway(existing)
-        val progress = RegistrationProgressMapper.from(subscription.toDto())
-        val checkpoints = runCatching {
-            provisioningJournal
-                ?.latest(environment.normalizedTag().ifBlank { "prod" }, subscriptionId)
-                ?.progressCheckpointsInExecutionOrder()
-                .orEmpty()
-        }.getOrDefault(emptyList()).map { checkpoint ->
+        val operation = runCatching {
+            provisioningJournal?.latest(environment.normalizedTag().ifBlank { "prod" }, subscriptionId)
+        }.getOrNull()
+        val subscription = if (operation == null) subscriptionProvisionService.refreshTr069FromGateway(existing) else existing
+        val dto = subscription.toDto()
+        val mapped = RegistrationProgressMapper.from(dto)
+        val progress = operation?.let { RegistrationProgressMapper.withOperation(mapped, it, dto) } ?: mapped
+        val checkpoints = operation?.progressCheckpointsInExecutionOrder().orEmpty().map { checkpoint ->
             RegistrationProgressCheckpointDto(
                 stage = checkpoint.stage.name,
                 state = checkpoint.state.name,
@@ -316,6 +332,7 @@ class SubscriptionController(
     @PostMapping("/{subscriptionId}/acs/retry-tr069")
     fun retryTr069Provisioning(@PathVariable subscriptionId: Int): ResponseEntity<Any> {
         return try {
+            retryProvisioningV2(subscriptionId)?.let { return ResponseEntity.ok(it) }
             ResponseEntity.ok(subscriptionProvisionService.retryTr069(subscriptionId))
         } catch (_: NoSuchElementException) {
             ResponseEntity.notFound().build()
@@ -326,6 +343,23 @@ class SubscriptionController(
                 mapOf("error" to "No se pudo completar el reintento TR-069 con el Gateway")
             )
         }
+    }
+
+    private fun retryProvisioningV2(subscriptionId: Int): SubscriptionDto? {
+        val journal = provisioningJournal ?: return null
+        val environmentTag = environment.normalizedTag().ifBlank { "prod" }
+        val operation = journal.latest(environmentTag, subscriptionId) ?: return null
+        val subscription = repository.findById(subscriptionId).orElseThrow { NoSuchElementException("SUBSCRIPTION_NOT_FOUND") }
+        val retried = try {
+            journal.requestRetry(environmentTag, operation.id, operation.revision)
+        } catch (ex: IllegalArgumentException) {
+            throw IllegalStateException(ex.message ?: "STALE_REVISION", ex)
+        }
+        if (retried.state == ProvisioningState.PENDING) {
+            subscription.tr069ProvisionStatus = Tr069ProvisionStatus.PENDING
+            repository.save(subscription)
+        }
+        return subscription.toDto()
     }
 
     @PostMapping("/acs/link")
@@ -593,8 +627,17 @@ class SubscriptionController(
         return BaseResponse(status = 200, data = true)
     }
 
+    private fun BaseResponse.applyStatus(httpResponse: HttpServletResponse?): BaseResponse = also {
+        val code = status ?: return@also
+        if (code in 400..599) httpResponse?.status = code
+    }
+
     @PostMapping
-    fun newSubscription(@RequestBody newSubscription: SubscriptionRequest, http: HttpServletRequest? = null): BaseResponse {
+    fun newSubscription(
+        @RequestBody newSubscription: SubscriptionRequest,
+        http: HttpServletRequest? = null,
+        httpResponse: HttpServletResponse? = null,
+    ): BaseResponse {
         return try {
             val subscription = subscriptionService.registerSubscription(
                 newSubscription = newSubscription,
@@ -619,7 +662,7 @@ class SubscriptionController(
                 request = newSubscription,
                 ex = e,
                 defaultError = "Este usuario ya se encuentra registrado"
-            )
+            ).applyStatus(httpResponse)
         }
     }
 
@@ -631,6 +674,7 @@ class SubscriptionController(
         @RequestPart("subscription") newSubscription: SubscriptionRequest,
         @RequestPart("facadePhoto") facadephoto: MultipartFile,
         http: HttpServletRequest? = null,
+        httpResponse: HttpServletResponse? = null,
     ): BaseResponse {
         return try {
             if (!newSubscription.registrationOperationId.isNullOrBlank()) {
@@ -692,7 +736,7 @@ class SubscriptionController(
                 request = newSubscription,
                 ex = e,
                 defaultError = "Este usuario no se encuentra registrado"
-            )
+            ).applyStatus(httpResponse)
         }
     }
 

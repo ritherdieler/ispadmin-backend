@@ -2,6 +2,7 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import com.dscorp.wispadmin.wispadmin.service.FirebaseStorageService
 import java.time.Clock
+import java.time.Duration
 import org.slf4j.LoggerFactory
 import org.springframework.web.client.HttpStatusCodeException
 
@@ -40,7 +41,7 @@ class ProvisioningExecutor(
     init { require(this.handlers.size == ProvisioningStage.values().size && handlers.size == this.handlers.size) }
 
     fun advance(environment: String, operationId: String) {
-        val lease = journal.claim(environment, operationId, clock.instant(), 120_000) ?: return
+        val lease = journal.claim(environment, operationId, clock.instant(), LEASE_DURATION.toMillis()) ?: return
         if (lease.operation.state in setOf(ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING)) {
             compensate(lease)
         } else {
@@ -61,14 +62,37 @@ class ProvisioningExecutor(
             val context = context(lease, running, rejectCancellation = true)
             val observed = handler.reconcile(context)
             val result = if (observed == StageObservation.NEEDS_APPLY) handler.apply(context) else observed
+            if (result != StageObservation.SATISFIED && waitDeadlineExceeded(running, stage)) {
+                failStage(lease, running, stage, ProvisioningFailure(
+                    code = "STAGE_TIMEOUT",
+                    message = "La etapa ${stage.name} no se confirmó dentro del tiempo de espera.",
+                    retryable = true,
+                ))
+                return
+            }
             val next = if (result == StageObservation.SATISFIED) transitions.finished(running, stage)
-                else transitions.waiting(running, stage)
-            if (next.state == ProvisioningState.WAITING) journal.defer(lease, clock.instant().plusSeconds(5))
+                else transitions.waiting(running, stage, clock.instant())
+            if (next.state == ProvisioningState.WAITING) journal.defer(lease, clock.instant().plus(WAITING_POLL_INTERVAL))
             journal.checkpoint(lease, next, clock.instant(), true)
             logger.info("provision stage done operation={} serial={} stage={} result={}", running.id, running.serial, stage, result)
         } catch (ex: Exception) {
             recordFailure(lease, running, stage, ex)
         }
+    }
+
+    private fun waitDeadlineExceeded(operation: ProvisioningOperation, stage: ProvisioningStage): Boolean {
+        val since = operation.checkpoints[stage.ordinal].waitingSinceEpochMs ?: return false
+        return clock.millis() - since > STAGE_WAIT_DEADLINE.toMillis()
+    }
+
+    private fun failStage(lease: ProvisioningLease, operation: ProvisioningOperation, stage: ProvisioningStage, failure: ProvisioningFailure) {
+        logger.warn("provision stage failed operation={} serial={} stage={} code={}", operation.id, operation.serial, stage, failure.code)
+        journal.checkpoint(lease, transitions.failed(operation, stage, failure), clock.instant(), true)
+    }
+
+    private fun retryBackoff(attempts: Int): Duration {
+        val exponent = (attempts - 1).coerceIn(0, 16)
+        return INITIAL_RETRY_BACKOFF.multipliedBy(1L shl exponent).coerceAtMost(MAX_RETRY_BACKOFF)
     }
 
     private fun compensate(lease: ProvisioningLease) {
@@ -137,6 +161,14 @@ class ProvisioningExecutor(
             "provision stage failed operation={} serial={} stage={} code={} detail={}",
             operation.id, operation.serial, stage, failure.code, detail(ex),
         )
+        val attempts = operation.checkpoints[stage.ordinal].attempts
+        val canRetryLater = operation.state !in CANCELLING_STATES && failure.retryable &&
+            attempts < MAX_STAGE_ATTEMPTS && !waitDeadlineExceeded(operation, stage)
+        if (canRetryLater) {
+            journal.defer(lease, clock.instant().plus(retryBackoff(attempts)))
+            journal.checkpoint(lease, transitions.retryLater(operation, stage, failure, clock.instant()), clock.instant(), true)
+            return
+        }
         journal.checkpoint(lease, transitions.failed(operation, stage, failure), clock.instant(), true)
     }
 
@@ -197,10 +229,20 @@ class ProvisioningExecutor(
         return ProvisioningFailure(code, detail, code !in NON_RETRYABLE)
     }
 
-    private companion object {
-        val logger = LoggerFactory.getLogger(ProvisioningExecutor::class.java)
-        val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|token)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
-        val NON_RETRYABLE = setOf(
+    companion object {
+        val LEASE_DURATION: Duration = Duration.ofSeconds(300)
+        const val MAX_STAGE_ATTEMPTS = 8
+        val STAGE_WAIT_DEADLINE: Duration = Duration.ofMinutes(30)
+        private val WAITING_POLL_INTERVAL: Duration = Duration.ofSeconds(5)
+        private val INITIAL_RETRY_BACKOFF: Duration = Duration.ofSeconds(5)
+        private val MAX_RETRY_BACKOFF: Duration = Duration.ofMinutes(5)
+        private val CANCELLING_STATES = setOf(
+            ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING,
+            ProvisioningState.CANCEL_FAILED, ProvisioningState.CANCELLED,
+        )
+        private val logger = LoggerFactory.getLogger(ProvisioningExecutor::class.java)
+        private val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|token)(\"?\\s*[:=]\\s*\"?)[^\"\\s,}]+")
+        private val NON_RETRYABLE = setOf(
             "ONU_ALREADY_RESERVED",
         )
     }

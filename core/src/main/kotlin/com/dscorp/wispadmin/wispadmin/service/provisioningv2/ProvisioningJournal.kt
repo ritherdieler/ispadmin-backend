@@ -204,6 +204,33 @@ class ProvisioningJournal(
         "SELECT id, payload_json FROM provisioning_v2_event WHERE delivered=FALSE ORDER BY id LIMIT 100",
         { rs, _ -> ProvisioningEvent(rs.getLong("id"), readOperation(rs.getString("payload_json"))) })
 
+    fun operationsInStates(environment: String, states: Set<ProvisioningState>, limit: Int = 500): List<ProvisioningOperation> {
+        if (states.isEmpty()) return emptyList()
+        val placeholders = states.joinToString(",") { "?" }
+        return jdbc.query(
+            "SELECT operation_json FROM provisioning_v2_operation WHERE environment=? AND state IN ($placeholders) LIMIT ?",
+            { rs, _ -> readOperation(rs.getString("operation_json")) },
+            environment, *states.map { it.name }.toTypedArray(), limit,
+        )
+    }
+
+    fun undeliveredEventBacklog(): Pair<Long, Long?> = jdbc.queryForObject(
+        "SELECT COUNT(*) AS pending, MIN(created_at_epoch_ms) AS oldest FROM provisioning_v2_event WHERE delivered=FALSE AND created_at_epoch_ms>0",
+        { rs, _ -> rs.getLong("pending") to rs.getLong("oldest").takeIf { !rs.wasNull() } },
+    ) ?: (0L to null)
+
+    fun purgeDeliveredEvents(olderThan: Instant, batchSize: Int = 1_000): Int {
+        val ids = jdbc.queryForList(
+            """SELECT id FROM provisioning_v2_event
+                WHERE delivered=TRUE AND created_at_epoch_ms BETWEEN 1 AND ?
+                AND id NOT IN (SELECT MAX(id) FROM provisioning_v2_event GROUP BY operation_id)
+                ORDER BY id LIMIT ?""",
+            Long::class.java, olderThan.toEpochMilli(), batchSize,
+        )
+        if (ids.isEmpty()) return 0
+        return jdbc.batchUpdate("DELETE FROM provisioning_v2_event WHERE id=?", ids.map { arrayOf<Any>(it) }).sum()
+    }
+
     fun delivered(eventId: Long) { jdbc.update("UPDATE provisioning_v2_event SET delivered=TRUE WHERE id=?", eventId) }
 
     fun owns(lease: ProvisioningLease, now: Instant): Boolean = jdbc.queryForObject(
@@ -222,7 +249,8 @@ class ProvisioningJournal(
     }
 
     private fun appendEvent(operation: ProvisioningOperation) {
-        jdbc.update("INSERT INTO provisioning_v2_event (operation_id, payload_json) VALUES (?,?)", operation.id, json.writeValueAsString(operation))
+        jdbc.update("INSERT INTO provisioning_v2_event (operation_id, payload_json, created_at_epoch_ms) VALUES (?,?,?)",
+            operation.id, json.writeValueAsString(operation), System.currentTimeMillis())
     }
 
     private fun insertRow(operation: ProvisioningOperation) {
@@ -248,7 +276,8 @@ class ProvisioningJournal(
 
     private fun releaseOperatorLockIfTerminal(operation: ProvisioningOperation) {
         val cancellationCleanupPending = operation.state == ProvisioningState.CANCELLED && operation.subscriptionId != null
-        if (operation.state == ProvisioningState.SUCCEEDED ||
+        val linkedFailure = operation.state == ProvisioningState.FAILED && operation.subscriptionId != null
+        if (operation.state == ProvisioningState.SUCCEEDED || linkedFailure ||
             operation.state == ProvisioningState.CANCELLED && !cancellationCleanupPending) {
             operation.operatorId?.let { operatorId ->
                 jdbc.update("DELETE FROM provisioning_v2_operator_lock WHERE operator_id=? AND operation_id=? AND environment=?",

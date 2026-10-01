@@ -55,6 +55,11 @@ class ObsWorkflowQueryService(
         )
     }
 
+    fun timeline(workflowId: String): List<com.dscorp.wispadmin.observability.dto.WorkflowTimelineEventDto> {
+        val id = workflowId.trim().takeIf { it.isNotEmpty() } ?: return emptyList()
+        return ObsWorkflowTimeline.from(eventRepository.findTop500ByWorkflowIdOrCorrelationIdOrderByCreatedAtAsc(id, id))
+    }
+
     private fun toLocalDateTime(value: Any?): LocalDateTime? = when (value) {
         is LocalDateTime -> value
         is Timestamp -> value.toLocalDateTime()

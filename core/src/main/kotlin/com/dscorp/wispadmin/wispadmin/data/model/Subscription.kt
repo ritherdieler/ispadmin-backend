@@ -37,7 +37,6 @@ data class Subscription(
     var lastName: String? = null,
     var businessName: String? = null,
     var email: String? = null,
-    @Column(unique = true)
     var dni: String? = null,
     var password: String? = null,
     var address: String? = null,

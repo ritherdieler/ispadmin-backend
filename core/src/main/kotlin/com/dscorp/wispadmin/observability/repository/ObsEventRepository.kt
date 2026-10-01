@@ -11,6 +11,8 @@ import java.time.LocalDateTime
 
 interface ObsEventRepository : JpaRepository<ObsEvent, Long> {
 
+    fun findTop500ByWorkflowIdOrCorrelationIdOrderByCreatedAtAsc(workflowId: String, correlationId: String): List<ObsEvent>
+
     fun findByIssueIdOrderByCreatedAtDesc(issueId: Long, pageable: Pageable): Page<ObsEvent>
 
     fun findFirstByIssueIdOrderByCreatedAtDesc(issueId: Long): ObsEvent?

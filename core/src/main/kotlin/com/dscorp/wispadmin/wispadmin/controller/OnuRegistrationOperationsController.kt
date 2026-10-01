@@ -2,6 +2,9 @@ package com.dscorp.wispadmin.wispadmin.controller
 
 import com.dscorp.wispadmin.wispadmin.security.PlatformAuthFilter
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.OnuRegistrationOperationService
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.OnuRegistrationOutcome
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningOperationSummary
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningState
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.OnuRegistrationStartRequest
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningEvent
 import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningOperation
@@ -34,6 +37,17 @@ class OnuRegistrationOperationsController(private val service: OnuRegistrationOp
         return invoke { service.unlinkedPreauthorizations() }
     }
 
+    @GetMapping("/admin/operations")
+    fun adminOperations(
+        @RequestParam(required = false) state: List<ProvisioningState>?,
+        @RequestParam(defaultValue = "0") olderThanMinutes: Long,
+        http: HttpServletRequest,
+    ): List<ProvisioningOperationSummary> {
+        requireAdmin(http)
+        val states = state?.toSet()?.takeIf { it.isNotEmpty() } ?: DEFAULT_ADMIN_STATES
+        return invoke { service.adminOperations(states, olderThanMinutes) }
+    }
+
     @GetMapping("/admin/{operationId}")
     fun adminGet(@PathVariable operationId: String, http: HttpServletRequest): ProvisioningOperation {
         requireAdmin(http)
@@ -53,6 +67,10 @@ class OnuRegistrationOperationsController(private val service: OnuRegistrationOp
     @GetMapping("/{operationId}")
     fun get(@PathVariable operationId: String, http: HttpServletRequest): ProvisioningOperation =
         invoke { service.get(operatorId(http), operationId) }
+
+    @GetMapping("/{operationId}/outcome")
+    fun outcome(@PathVariable operationId: String, http: HttpServletRequest): OnuRegistrationOutcome =
+        invoke { service.outcome(operatorId(http), operationId) }
 
     @GetMapping("/{operationId}/history")
     fun history(
@@ -132,5 +150,12 @@ class OnuRegistrationOperationsController(private val service: OnuRegistrationOp
         throw ResponseStatusException(HttpStatus.CONFLICT, "La revisión o los datos de la operación no son válidos", ex)
     } catch (ex: IllegalStateException) {
         throw ResponseStatusException(HttpStatus.CONFLICT, "La acción no está permitida en el estado actual", ex)
+    }
+
+    private companion object {
+        val DEFAULT_ADMIN_STATES = setOf(
+            ProvisioningState.PENDING, ProvisioningState.RUNNING, ProvisioningState.WAITING,
+            ProvisioningState.FAILED, ProvisioningState.CANCEL_FAILED,
+        )
     }
 }

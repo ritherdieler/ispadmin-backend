@@ -80,18 +80,18 @@ class RequestLoggingInterceptor @Autowired constructor(
         val remoteAddr = request.remoteAddr
         val contentType = request.contentType ?: ""
         val userAgent = request.getHeader("User-Agent") ?: ""
-        val authorization = request.getHeader("Authorization")
-            ?.let { if (it.length > 20) it.substring(0, 20) + "..." else it } ?: ""
+        val authorization = HttpLogRedactor.authorization(request.getHeader("Authorization"))
 
-        val reqBody = extractRequestBody(request)
-        val resBody = request.getAttribute(RequestBodyCachingFilter.ATTR_RESPONSE_BODY) as? String ?: ""
+        val reqBody = HttpLogRedactor.bodyForLog(uri, extractRequestBody(request))
+        val rawResBody = request.getAttribute(RequestBodyCachingFilter.ATTR_RESPONSE_BODY) as? String ?: ""
+        val resBody = HttpLogRedactor.bodyForLog(uri, rawResBody)
         val errorMsg = ex?.message ?: ""
         val fromAttr = request.getAttribute(HttpFailureContext.ATTR_STACK_SUMMARY) as? String
         request.removeAttribute(HttpFailureContext.ATTR_STACK_SUMMARY)
         val stackSummary = when {
             ex != null -> StackTraceSummarizer.summarize(ex)
             !fromAttr.isNullOrBlank() -> fromAttr
-            else -> summarizeStackFromResponseBody(resBody)
+            else -> summarizeStackFromResponseBody(rawResBody)
         }
 
         val payload = mapOf(
@@ -130,6 +130,7 @@ class RequestLoggingInterceptor @Autowired constructor(
         val reporter = observabilityReporter ?: return
         if (request.getAttribute(GlobalExceptionHandler.ATTR_OBS_REPORTED) == true) return
         if (uri.contains("/observability")) return
+        if (!HttpTelemetryPolicy.shouldReportHttpError(uri, status)) return
         try {
             val correlationId = request.getAttribute(CorrelationIdFilter.ATTRIBUTE) as? String
                 ?: request.getHeader(CorrelationIdFilter.HEADER)

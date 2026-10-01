@@ -1,5 +1,6 @@
 package com.dscorp.wispadmin.wispadmin.acsclient
 
+import com.dscorp.wispadmin.wispadmin.config.OutboundCorrelationInterceptor
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -16,7 +17,7 @@ class AcsClientConfig {
         val factory = SimpleClientHttpRequestFactory()
         factory.setConnectTimeout(3_000)
         factory.setReadTimeout(60_000)
-        return RestTemplate(factory)
+        return RestTemplate(factory).apply { interceptors.add(OutboundCorrelationInterceptor()) }
     }
 
     @Bean

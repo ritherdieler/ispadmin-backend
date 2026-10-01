@@ -19,6 +19,7 @@ data class StageCheckpoint(
     val attempts: Int = 0,
     val touched: Boolean = false,
     val failure: ProvisioningFailure? = null,
+    val waitingSinceEpochMs: Long? = null,
 )
 
 data class ProvisioningOperation(
@@ -104,7 +105,8 @@ class ProvisioningTransitions {
         if (operation.state != ProvisioningState.FAILED) return operation
         check(operation.checkpoints.none { it.failure?.retryable == false }) { "CORRECTION_REQUIRED" }
         return operation.copy(state = ProvisioningState.PENDING, checkpoints = operation.checkpoints.map {
-            if (it.state == CheckpointState.FAILED) it.copy(state = CheckpointState.PENDING, failure = null) else it
+            if (it.state == CheckpointState.FAILED) it.copy(state = CheckpointState.PENDING, failure = null, waitingSinceEpochMs = null)
+            else it
         })
     }
 
@@ -148,7 +150,9 @@ class ProvisioningTransitions {
     fun finished(operation: ProvisioningOperation, stage: ProvisioningStage): ProvisioningOperation {
         check(operation.state !in cancelling) { "CANCELLATION_IN_PROGRESS" }
         require(next(operation) == stage && operation.checkpoints[stage.ordinal].state == CheckpointState.RUNNING)
-        val changed = update(operation, stage, ProvisioningState.PENDING) { it.copy(state = CheckpointState.SUCCEEDED, failure = null) }
+        val changed = update(operation, stage, ProvisioningState.PENDING) {
+            it.copy(state = CheckpointState.SUCCEEDED, failure = null, waitingSinceEpochMs = null)
+        }
         return if (changed.checkpoints.all { it.state == CheckpointState.SUCCEEDED }) changed.copy(state = ProvisioningState.SUCCEEDED) else changed
     }
 
@@ -165,9 +169,24 @@ class ProvisioningTransitions {
         return changed
     }
 
-    fun waiting(operation: ProvisioningOperation, stage: ProvisioningStage): ProvisioningOperation {
+    fun waiting(operation: ProvisioningOperation, stage: ProvisioningStage, now: Instant = Instant.EPOCH): ProvisioningOperation {
         require(next(operation) == stage && operation.checkpoints[stage.ordinal].state == CheckpointState.RUNNING)
-        return update(operation, stage, ProvisioningState.WAITING) { it.copy(state = CheckpointState.WAITING) }
+        return update(operation, stage, ProvisioningState.WAITING) {
+            it.copy(state = CheckpointState.WAITING, waitingSinceEpochMs = it.waitingSinceEpochMs ?: now.toEpochMilli())
+        }
+    }
+
+    fun retryLater(
+        operation: ProvisioningOperation,
+        stage: ProvisioningStage,
+        failure: ProvisioningFailure,
+        now: Instant,
+    ): ProvisioningOperation {
+        require(next(operation) == stage && operation.checkpoints[stage.ordinal].state == CheckpointState.RUNNING)
+        require(failure.retryable) { "FAILURE_NOT_RETRYABLE" }
+        return update(operation, stage, ProvisioningState.WAITING) {
+            it.copy(state = CheckpointState.WAITING, failure = failure, waitingSinceEpochMs = it.waitingSinceEpochMs ?: now.toEpochMilli())
+        }
     }
 
     private fun update(operation: ProvisioningOperation, stage: ProvisioningStage, state: ProvisioningState,

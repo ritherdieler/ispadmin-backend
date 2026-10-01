@@ -45,19 +45,52 @@ class ProvisioningV2WorkerConfig {
 
     @Bean(initMethod = "start", destroyMethod = "close")
     fun provisioningRecoveryLoop(journal: ProvisioningJournal, executor: ProvisioningExecutor,
-        environment: GigafiberEnvironmentProperties, statuses: ProvisioningSubscriptionStatusProjector) = ProvisioningRecoveryLoop(
-        ProvisioningRecoveryScheduler(
-            journal,
-            executor,
-            Clock.systemUTC(),
-            environment.normalizedTag().ifBlank { "prod" },
-            statuses,
-        ),
-    )
+        environment: GigafiberEnvironmentProperties, statuses: ProvisioningSubscriptionStatusProjector,
+        heartbeat: ProvisioningWorkerHeartbeat,
+        @org.springframework.beans.factory.annotation.Value("\${provisioning.worker-threads:4}") workerThreads: Int,
+    ): ProvisioningRecoveryLoop {
+        val workers = java.util.concurrent.Executors.newFixedThreadPool(workerThreads.coerceIn(1, 16)) { runnable ->
+            Thread(runnable, "provisioning-worker").apply { isDaemon = true }
+        }
+        return ProvisioningRecoveryLoop(
+            ProvisioningRecoveryScheduler(
+                journal,
+                executor,
+                Clock.systemUTC(),
+                environment.normalizedTag().ifBlank { "prod" },
+                statuses,
+                heartbeat,
+                workers,
+            ),
+            workers,
+        )
+    }
 }
 
-class ProvisioningRecoveryLoop(private val recovery: ProvisioningRecoveryScheduler) : AutoCloseable {
+@Configuration
+@ConditionalOnProperty(prefix = "provisioning", name = ["worker-enabled", "preauth-async"], havingValue = "true")
+class ProvisioningPreauthorizationWorkerConfig {
+    @Bean(initMethod = "start", destroyMethod = "close")
+    fun provisioningPreauthorizationLoop(service: OnuRegistrationOperationService) = ProvisioningPreauthorizationLoop(service)
+}
+
+class ProvisioningPreauthorizationLoop(private val service: OnuRegistrationOperationService) : AutoCloseable {
+    private val scheduler = ThreadPoolTaskScheduler().apply { poolSize = 1; setThreadNamePrefix("provisioning-preauth-") }
+    fun start() {
+        scheduler.initialize()
+        scheduler.scheduleWithFixedDelay(Runnable { service.processPendingPreauthorizations(java.time.Instant.now()) }, 3_000)
+    }
+    override fun close() = scheduler.shutdown()
+}
+
+class ProvisioningRecoveryLoop(
+    private val recovery: ProvisioningRecoveryScheduler,
+    private val workers: java.util.concurrent.ExecutorService? = null,
+) : AutoCloseable {
     private val scheduler = ThreadPoolTaskScheduler().apply { poolSize = 1; setThreadNamePrefix("provisioning-") }
     fun start() { scheduler.initialize(); scheduler.scheduleWithFixedDelay(Runnable { recovery.recover() }, 5_000) }
-    override fun close() = scheduler.shutdown()
+    override fun close() {
+        scheduler.shutdown()
+        workers?.shutdown()
+    }
 }

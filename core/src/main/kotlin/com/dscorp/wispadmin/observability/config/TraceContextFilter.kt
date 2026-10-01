@@ -7,6 +7,7 @@ import com.dscorp.wispadmin.observability.tracing.TraceIds
 import com.dscorp.wispadmin.observability.tracing.TraceParent
 import com.dscorp.wispadmin.observability.tracing.TraceScope
 import com.dscorp.wispadmin.wispadmin.config.CorrelationIdFilter
+import com.dscorp.wispadmin.wispadmin.config.HttpTelemetryPolicy
 import com.dscorp.wispadmin.wispadmin.tracing.TraceContext as HttpTraceContext
 import org.slf4j.MDC
 import org.springframework.core.Ordered
@@ -87,7 +88,7 @@ class TraceContextFilter(
         } finally {
             val duration = clock() - start
             val status = if (thrown != null && response.status < 400) 500 else response.status
-            if (shouldRetainServerSpan(sampled, status, duration)) {
+            if (shouldRetainServerSpan(request.requestURI, sampled, status, duration)) {
                 enqueueServerSpan(request, traceId, serverSpanId, parentSpanId, sessionId, start, duration, status)
             }
             TraceContext.clear()
@@ -104,9 +105,9 @@ class TraceContextFilter(
         return randomSupplier() < rate
     }
 
-    private fun shouldRetainServerSpan(sampled: Boolean, status: Int, duration: Long): Boolean {
+    private fun shouldRetainServerSpan(uri: String, sampled: Boolean, status: Int, duration: Long): Boolean {
         if (sampled) return true
-        if (status >= 400) return true
+        if (HttpTelemetryPolicy.forceRetainSpan(uri, status)) return true
         val threshold = properties.tracing.alwaysSampleAboveMs
         return threshold > 0 && duration >= threshold
     }

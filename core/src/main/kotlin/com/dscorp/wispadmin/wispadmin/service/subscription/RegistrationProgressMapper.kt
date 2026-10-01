@@ -6,6 +6,8 @@ import com.dscorp.wispadmin.wispadmin.data.model.Tr069ProvisionStatus
 import com.dscorp.wispadmin.wispadmin.dto.RegistrationProgressDto
 import com.dscorp.wispadmin.wispadmin.dto.RegistrationStep
 import com.dscorp.wispadmin.wispadmin.dto.SubscriptionDto
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningOperation
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningState
 
 object RegistrationProgressMapper {
 
@@ -95,6 +97,33 @@ object RegistrationProgressMapper {
             tr069Message = tr069Message,
         )
     }
+
+    fun withOperation(
+        progress: RegistrationProgressDto,
+        operation: ProvisioningOperation,
+        subscription: SubscriptionDto,
+    ): RegistrationProgressDto {
+        val outcome = when (operation.state) {
+            ProvisioningState.PENDING, ProvisioningState.RUNNING -> "RUNNING"
+            ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING -> "CANCELLING"
+            else -> operation.state.name
+        }
+        val base = progress.copy(outcome = outcome, operationId = operation.id)
+        return when (operation.state) {
+            ProvisioningState.SUCCEEDED -> base.copy(step = RegistrationStep.DONE, done = true, subscription = subscription)
+            ProvisioningState.FAILED, ProvisioningState.CANCEL_FAILED -> base.copy(
+                step = RegistrationStep.FAILED,
+                done = true,
+                message = operation.firstFailureMessage() ?: progress.message,
+                subscription = subscription,
+            )
+            ProvisioningState.CANCELLED -> base.copy(done = true, subscription = subscription)
+            else -> base.copy(done = false)
+        }
+    }
+
+    private fun ProvisioningOperation.firstFailureMessage(): String? =
+        operationFailure?.message ?: checkpoints.firstOrNull { it.failure != null }?.failure?.message
 
     private fun done(dto: SubscriptionDto, subscriptionId: Int) = RegistrationProgressDto(
         subscriptionId = subscriptionId,

@@ -35,7 +35,7 @@ import com.dscorp.wispadmin.wispadmin.service.validators.ISubscriptionValidator
 import com.dscorp.wispadmin.wispadmin.util.fcm.FcmMessage.FcmMessageType
 import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 import com.dscorp.wispadmin.wispadmin.service.subscription.SubscriptionRegisteredEvent
-import com.dscorp.wispadmin.wispadmin.service.provisioningv2.ProvisioningV2RegistrationService
+import com.dscorp.wispadmin.wispadmin.service.provisioningv2.FiberRegistrationService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
@@ -74,7 +74,8 @@ class SubscriptionService(
     private val pppoeProperties: PppoeProperties,
     private val pppoeSecretCipher: CrmSecretCipher,
     private val pppoeAccessService: PppoeAccessService,
-    private val provisioningV2RegistrationService: ProvisioningV2RegistrationService? = null,
+    private val fiberRegistrationService: FiberRegistrationService? = null,
+    private val errorLogRecorder: ErrorLogRecorder? = null,
 ) {
     private val logger = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -82,6 +83,10 @@ class SubscriptionService(
         val normalized = clientRequestId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return repository.findByClientRequestId(normalized).orElse(null)
     }
+
+    @Transactional(readOnly = true)
+    fun findRegisteredByClientRequestId(clientRequestId: String?): SubscriptionDto? =
+        findExistingSubscriptionByClientRequestId(clientRequestId)?.toRegistrationDto()?.copy(alreadyRegistered = true)
 
     fun createSubscriptionsSimpleQueue(): CompletableFuture<QueueCreationStats> {
         return queueManager.createSubscriptionsSimpleQueue()
@@ -189,9 +194,9 @@ class SubscriptionService(
 
         return try {
             if (!newSubscription.registrationOperationId.isNullOrBlank()) {
-                val registration = provisioningV2RegistrationService
+                val fiber = fiberRegistrationService
                     ?: throw IllegalStateException("PREAUTHORIZATION_REGISTRATION_UNAVAILABLE")
-                registration.prepareSubmission(authenticatedOperatorId, newSubscription)
+                fiber.prepare(authenticatedOperatorId, newSubscription)
             }
             findExistingSubscriptionByClientRequestId(newSubscription.clientRequestId)?.let { existing ->
                 if (newSubscription.installationType == InstallationType.FIBER) {
@@ -241,7 +246,6 @@ class SubscriptionService(
             logger.info(
                 "Suscripción creada exitosamente", mapOf(
                     "subscriptionId" to subscription.id,
-                    "customerName" to subscription.getFullName(),
                     "installationType" to subscription.installationType
                 )
             )
@@ -255,10 +259,11 @@ class SubscriptionService(
 
             assignPppoeCredentials(subscription)
 
-            val registration = provisioningV2RegistrationService
-            if (newSubscription.installationType == InstallationType.FIBER && registration != null) {
-                val operation = registration.start(subscription, newSubscription, authenticatedOperatorId)
+            val fiber = fiberRegistrationService
+            if (fiber != null && fiber.handles(newSubscription)) {
+                val operation = fiber.promote(subscription, newSubscription, authenticatedOperatorId)
                 logger.info("Registro FIBER creado subscriptionId={} operationId={}", subscription.id, operation.id)
+                completeRegistration(subscription, newSubscription, plan, onSuccess)
                 return subscription.toRegistrationDto()
             }
 
@@ -285,21 +290,25 @@ class SubscriptionService(
                 installationType = newSubscription.installationType
             )
             subscription = repository.save(subscription)
-
-            newSubscription.installationOrderId?.let { orderId ->
-                processInstallationOrderCompletion(orderId, subscription)
-            }
-
-            subscription.id?.let { subscriptionId ->
-                applicationEventPublisher.publishEvent(SubscriptionRegisteredEvent(subscriptionId))
-            }
-
-            onSuccess(subscription.copy(plan = plan))
+            completeRegistration(subscription, newSubscription, plan, onSuccess)
             subscription.toRegistrationDto()
         } catch (ex: Exception) {
             ex.printStackTrace()
             handleRegistrationError(ex, subscription, queueAdded, onuAuthorized, onuSn)
         }
+    }
+
+    private fun completeRegistration(
+        subscription: Subscription,
+        request: SubscriptionRequest,
+        plan: Plan,
+        onSuccess: (subscription: Subscription) -> Unit,
+    ) {
+        request.installationOrderId?.let { orderId -> processInstallationOrderCompletion(orderId, subscription) }
+        subscription.id?.let { subscriptionId ->
+            applicationEventPublisher.publishEvent(SubscriptionRegisteredEvent(subscriptionId))
+        }
+        onSuccess(subscription.copy(plan = plan))
     }
 
     private fun completePendingInstallation(
@@ -385,7 +394,7 @@ class SubscriptionService(
             cleanupOnu(onuSn)
         }
 
-        errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))
+        errorLogRecorder?.record(ex, Modules.SUBSCRIPTION) ?: errorLogRepository.save(ex.toErrorLog(Modules.SUBSCRIPTION))
         when {
             ex is IllegalArgumentException || ex is IllegalStateException -> throw ex
             ex is DataIntegrityViolationException -> throw ex

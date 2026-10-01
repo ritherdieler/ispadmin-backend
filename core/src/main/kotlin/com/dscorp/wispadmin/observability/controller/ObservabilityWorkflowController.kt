@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.observability.controller
 
 import com.dscorp.wispadmin.observability.dto.PagedResponse
 import com.dscorp.wispadmin.observability.dto.WorkflowSummaryDto
+import com.dscorp.wispadmin.observability.dto.WorkflowTimelineEventDto
+import org.springframework.web.bind.annotation.PathVariable
 import com.dscorp.wispadmin.observability.service.ObsWorkflowQueryService
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.web.bind.annotation.GetMapping
@@ -30,4 +32,8 @@ class ObservabilityWorkflowController(
         val fromDate = from ?: toDate.minusHours(24)
         return workflowQueryService.listWorkflows(fromDate, toDate, release, platform, status, page, size)
     }
+
+    @GetMapping("/{workflowId}/events")
+    fun timeline(@PathVariable workflowId: String): List<WorkflowTimelineEventDto> =
+        workflowQueryService.timeline(workflowId)
 }

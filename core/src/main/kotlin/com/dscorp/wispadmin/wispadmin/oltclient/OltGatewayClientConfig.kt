@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.client.RestTemplate
 import com.dscorp.wispadmin.transport.RegistrationTimingClientInterceptor
+import com.dscorp.wispadmin.wispadmin.config.OutboundCorrelationInterceptor
 
 @Configuration
 class OltGatewayClientConfig {
@@ -18,14 +19,17 @@ class OltGatewayClientConfig {
         const val READ_TIMEOUT_MS = 180_000
     }
 
+    fun oltGatewayRequestFactory() = SimpleClientHttpRequestFactory().apply {
+        setConnectTimeout(CONNECT_TIMEOUT_MS)
+        setReadTimeout(READ_TIMEOUT_MS)
+    }
+
     @Bean("oltGatewayRestTemplate")
     fun oltGatewayRestTemplate(
         timingInterceptor: ObjectProvider<RegistrationTimingClientInterceptor>? = null,
     ): RestTemplate {
-        val factory = SimpleClientHttpRequestFactory()
-        factory.setConnectTimeout(CONNECT_TIMEOUT_MS)
-        factory.setReadTimeout(READ_TIMEOUT_MS)
-        return RestTemplate(factory).apply {
+        return RestTemplate(oltGatewayRequestFactory()).apply {
+            interceptors.add(OutboundCorrelationInterceptor())
             timingInterceptor?.ifAvailable?.let { interceptors.add(it) }
         }
     }

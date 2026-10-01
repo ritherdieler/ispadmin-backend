@@ -161,6 +161,21 @@ data class WorkflowSummaryDto(
     val eventCount: Long
 )
 
+data class WorkflowTimelineEventDto(
+    val id: Long?,
+    val createdAt: LocalDateTime?,
+    val platform: String?,
+    val eventType: String?,
+    val severity: String?,
+    val message: String?,
+    val errorType: String?,
+    val workflowStatus: String?,
+    val httpStatus: Int?,
+    val url: String?,
+    val correlationId: String?,
+    val issueId: Long?,
+)
+
 data class TimeSeriesPointDto(
     val bucket: String,
     val platform: String?,

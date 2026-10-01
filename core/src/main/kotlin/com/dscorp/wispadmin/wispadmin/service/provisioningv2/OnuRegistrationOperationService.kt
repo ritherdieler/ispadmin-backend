@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 
 import com.dscorp.wispadmin.shared.config.GigafiberEnvironmentProperties
 import com.dscorp.wispadmin.wispadmin.acsclient.AcsCpeCoreClient
+import com.dscorp.wispadmin.wispadmin.config.CorrelationIdFilter
+import org.slf4j.MDC
 import com.dscorp.wispadmin.wispadmin.acsclient.CoreOnboardingV2ContactRequest
 import com.dscorp.wispadmin.wispadmin.acsclient.CoreOnboardingV2ContactState
 import com.dscorp.wispadmin.wispadmin.oltclient.GatewayOnuActivationClient
@@ -17,6 +19,29 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
+
+data class OnuRegistrationOutcome(
+    val operationId: String,
+    val subscriptionId: Int?,
+    val phase: ProvisioningPhase,
+    val state: ProvisioningState,
+    val outcome: String,
+)
+
+data class ProvisioningOperationSummary(
+    val operationId: String,
+    val subscriptionId: Int?,
+    val serial: String,
+    val phase: ProvisioningPhase,
+    val state: ProvisioningState,
+    val revision: Long,
+    val operatorUsername: String?,
+    val updatedAtEpochMs: Long,
+    val currentStage: String?,
+    val failureCode: String?,
+    val failureMessage: String?,
+    val retryable: Boolean?,
+)
 
 data class OnuRegistrationStartRequest(
     val requestKey: String,
@@ -34,7 +59,19 @@ class OnuRegistrationOperationService(
     private val json: com.fasterxml.jackson.databind.ObjectMapper,
     private val environmentProperties: GigafiberEnvironmentProperties,
     private val hardCleanup: SubscriptionHardCleanupService,
+    @org.springframework.beans.factory.annotation.Value("\${provisioning.preauth-async:false}")
+    private val asyncPreauthorization: Boolean = false,
 ) {
+    fun processPendingPreauthorizations(now: java.time.Instant) {
+        journal.operationsInStates(environment(), setOf(ProvisioningState.PENDING, ProvisioningState.RUNNING))
+            .filter { it.flowVersion == 3 && it.phase == ProvisioningPhase.OLT_AUTHORIZATION && it.subscriptionId == null }
+            .filter { it.state == ProvisioningState.PENDING || it.updatedAt.isBefore(now.minus(STALE_PREAUTHORIZATION)) }
+            .forEach { operation ->
+                runCatching { authorizeAndCheckAcs(operation) }
+                    .onFailure { org.slf4j.LoggerFactory.getLogger(javaClass).warn("Preautorización pendiente no procesada operationId={}", operation.id, it) }
+            }
+    }
+
     fun start(operatorId: Long, operatorUsername: String, request: OnuRegistrationStartRequest): ProvisioningOperation {
         require(operatorId > 0) { "AUTHENTICATED_OPERATOR_REQUIRED" }
         val environment = environment()
@@ -57,7 +94,7 @@ class OnuRegistrationOperationService(
             registrationRequestKey = request.requestKey,
             onuTarget = request.target,
         )
-        try {
+        val inserted = try {
             journal.insertPreauthorization(operation)
         } catch (ex: DataIntegrityViolationException) {
             journal.preauthorizationForRequest(environment, operatorId, request.requestKey)?.let { return it }
@@ -65,10 +102,25 @@ class OnuRegistrationOperationService(
             throw IllegalStateException("OPERATOR_ALREADY_HAS_ACTIVE_REGISTRATION", ex)
         }
 
+        if (asyncPreauthorization) return inserted
         return authorizeAndCheckAcs(operation)
     }
 
-    private fun authorizeAndCheckAcs(operation: ProvisioningOperation): ProvisioningOperation {
+    private fun authorizeAndCheckAcs(operation: ProvisioningOperation): ProvisioningOperation =
+        withOperationContext(operation.id) { authorizeAndCheckAcsInContext(operation) }
+
+    private fun <T> withOperationContext(operationId: String, block: () -> T): T {
+        val previous = MDC.get(CorrelationIdFilter.OPERATION_MDC_KEY)
+        MDC.put(CorrelationIdFilter.OPERATION_MDC_KEY, operationId)
+        return try {
+            block()
+        } finally {
+            if (previous == null) MDC.remove(CorrelationIdFilter.OPERATION_MDC_KEY)
+            else MDC.put(CorrelationIdFilter.OPERATION_MDC_KEY, previous)
+        }
+    }
+
+    private fun authorizeAndCheckAcsInContext(operation: ProvisioningOperation): ProvisioningOperation {
         val preparing = journal.updatePreauthorization(environment(), operation.id, operation.revision, { current ->
             val checkpoint = current.checkpoints[ProvisioningStage.OLT.ordinal]
             current.copy(state = ProvisioningState.RUNNING, checkpoints = current.checkpoints.withCheckpoint(
@@ -104,6 +156,23 @@ class OnuRegistrationOperationService(
     fun active(operatorId: Long): ProvisioningOperation? = journal.activeForOperator(environment(), operatorId)
 
     fun get(operatorId: Long, operationId: String): ProvisioningOperation = owned(operatorId, operationId)
+
+    fun outcome(operatorId: Long, operationId: String): OnuRegistrationOutcome {
+        val operation = journal.get(environment(), operationId)
+            ?.takeIf { it.operatorId == operatorId && it.flowVersion == 3 }
+            ?: throw NoSuchElementException("OPERATION_NOT_FOUND")
+        return OnuRegistrationOutcome(
+            operationId = operation.id,
+            subscriptionId = operation.subscriptionId,
+            phase = operation.phase,
+            state = operation.state,
+            outcome = when (operation.state) {
+                ProvisioningState.PENDING, ProvisioningState.RUNNING -> "RUNNING"
+                ProvisioningState.CANCEL_REQUESTED, ProvisioningState.CANCELLING -> "CANCELLING"
+                else -> operation.state.name
+            },
+        )
+    }
 
     fun history(operatorId: Long, operationId: String, after: Long): List<ProvisioningEvent> {
         owned(operatorId, operationId)
@@ -170,7 +239,7 @@ class OnuRegistrationOperationService(
         require(operation.phase == ProvisioningPhase.WAITING_FOR_ACS && operation.state in
             setOf(ProvisioningState.WAITING, ProvisioningState.FAILED)) { "ACS_RETRY_NOT_ALLOWED" }
         require(operation.checkpoints[ProvisioningStage.OLT.ordinal].state == CheckpointState.SUCCEEDED) { "OLT_AUTHORIZATION_REQUIRED" }
-        return checkAcs(operation)
+        return withOperationContext(operation.id) { checkAcs(operation) }
     }
 
     fun cancel(operatorId: Long, operationId: String, expectedRevision: Long): ProvisioningOperation {
@@ -187,6 +256,34 @@ class OnuRegistrationOperationService(
     }
 
     fun unlinkedPreauthorizations(): List<ProvisioningOperation> = journal.unlinkedPreauthorizations(environment())
+
+    fun adminOperations(states: Set<ProvisioningState>, olderThanMinutes: Long): List<ProvisioningOperationSummary> {
+        val cutoff = java.time.Instant.now().minusSeconds(olderThanMinutes.coerceAtLeast(0) * 60)
+        return journal.operationsInStates(environment(), states)
+            .filter { olderThanMinutes <= 0 || !it.updatedAt.isAfter(cutoff) }
+            .sortedBy { it.updatedAt }
+            .map { it.toSummary() }
+    }
+
+    private fun ProvisioningOperation.toSummary(): ProvisioningOperationSummary {
+        val failed = checkpoints.firstOrNull { it.failure != null }
+        val current = failed ?: checkpoints.firstOrNull { it.state != CheckpointState.SUCCEEDED }
+        val failure = failed?.failure ?: operationFailure
+        return ProvisioningOperationSummary(
+            operationId = id,
+            subscriptionId = subscriptionId,
+            serial = serial,
+            phase = phase,
+            state = state,
+            revision = revision,
+            operatorUsername = operatorUsername,
+            updatedAtEpochMs = updatedAt.toEpochMilli(),
+            currentStage = current?.stage?.name,
+            failureCode = failure?.code,
+            failureMessage = failure?.message,
+            retryable = failure?.retryable,
+        )
+    }
 
     fun adminGet(operationId: String): ProvisioningOperation = journal.get(environment(), operationId)
         ?.takeIf { it.subscriptionId == null }
@@ -328,6 +425,7 @@ class OnuRegistrationOperationService(
         const val PHOTO_RESOURCE_KEY = "registration-photo"
         const val PREAUTHORIZATION_PHOTO_FOLDER = "onu-registration-preauthorization"
         const val MAX_PHOTO_BYTES = 8L * 1024 * 1024
+        val STALE_PREAUTHORIZATION: java.time.Duration = java.time.Duration.ofMinutes(5)
         val SERIAL = Regex("[A-Z0-9]{12,16}")
         val REQUEST_KEY = Regex("[A-Za-z0-9_-]{8,64}")
         val SECRET = Regex("(?i)(password|passwd|passphrase|secret|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|token)(\\\"?\\s*[:=]\\s*\\\"?)[^\\\"\\s,}]+")

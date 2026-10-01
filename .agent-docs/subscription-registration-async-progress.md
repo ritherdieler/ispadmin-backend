@@ -1,5 +1,7 @@
 # Alta de suscripción: TR-069 async + polling
 
+> **Desfasado para FIBER (2026-10-01).** El alta FIBER usa preautorización + journal v2 + worker; no pasa por `Tr069AsyncApplicator`. Ver [`registro-suscripcion-robustez.md`](registro-suscripcion-robustez.md). Este documento queda como referencia del camino legado (wireless / TV).
+
 ## Contrato
 
 1. `POST /subscription` y `POST /subscription/with-facade-photo` persisten OLT/MikroTik y **encolan** TR-069 (`Tr069AsyncApplicator.schedule`). Responden en segundos con `tr069ProvisionStatus=PENDING` (si aplica).

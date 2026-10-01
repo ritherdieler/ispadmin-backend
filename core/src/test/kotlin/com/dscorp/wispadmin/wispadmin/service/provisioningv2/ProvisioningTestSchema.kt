@@ -25,6 +25,8 @@ internal object ProvisioningTestSchema {
         )""")
         jdbc.execute("CREATE INDEX idx_provisioning_v2_operator_lock_operation ON provisioning_v2_operator_lock (environment, operation_id)")
         jdbc.execute("ALTER TABLE provisioning_v2_operator_lock ADD CONSTRAINT fk_test_operator_lock_operation FOREIGN KEY (operation_id) REFERENCES provisioning_v2_operation (operation_id) ON DELETE CASCADE")
+        jdbc.execute("ALTER TABLE provisioning_v2_event ADD COLUMN created_at_epoch_ms BIGINT NOT NULL DEFAULT 0")
+        jdbc.execute("CREATE INDEX idx_provisioning_v2_event_retention ON provisioning_v2_event (delivered, created_at_epoch_ms)")
         jdbc.execute("ALTER TABLE provisioning_v2_event ADD CONSTRAINT fk_test_event_operation FOREIGN KEY (operation_id) REFERENCES provisioning_v2_operation (operation_id) ON DELETE CASCADE")
         jdbc.execute("ALTER TABLE provisioning_v2_resource ADD CONSTRAINT fk_test_resource_operation FOREIGN KEY (operation_id) REFERENCES provisioning_v2_operation (operation_id) ON DELETE CASCADE")
     }
