@@ -68,7 +68,7 @@ Nunca usar `operationId`/`subscriptionId` como etiqueta de métrica.
 
 ## Hallazgos operativos (2026-10-01)
 
-- `tomcat9027` (prod KVM4) no tenía `PROVISIONING_V2_ENABLED`/`PROVISIONING_V2_WORKER_ENABLED`; resuelto el 2026-10-01 con `/opt/gigafiber/.env.prod-v2` (ver `vps-secrets-management.md`). El WAR de prod sigue siendo el anterior a estos cambios hasta el próximo deploy de prod. `api.gigafiberperu.cloud` aún resuelve al VPS anterior; por eso el prod KVM4 no recibe tráfico de la app (y no hay eventos Android desde 2026-09-19).
+- `tomcat9027` (prod KVM4) no tenía `PROVISIONING_V2_ENABLED`/`PROVISIONING_V2_WORKER_ENABLED`; resuelto el 2026-10-01 con `/opt/gigafiber/.env.prod-v2` (ver `vps-secrets-management.md`). Prod desplegado el 2026-10-01 con `1.0.4+b186417` (tag `v1.0.4`): V62/V63 aplicadas en `ispadmin`, DNI sin índice único, health 200. `api.gigafiberperu.cloud` aún resuelve al VPS anterior; por eso el prod KVM4 no recibe tráfico de la app (y no hay eventos Android desde 2026-09-19).
 - `ensure_face_models_volume` de `deploy.sh` insertaba el montaje `/opt/gigafiber/models` tras la primera entrada de `volumes` en cada deploy (133 líneas duplicadas en `tomcat` y `tomcat-staging`). Corregido el 2026-10-01: ahora analiza el bloque completo del servicio, deja una sola copia y borra las demás. Compose del VPS deduplicado (respaldo `docker-compose.yml.bak-models-dedupe-<timestamp>`), sin reiniciar contenedores.
 
 ## E2E staging (2026-10-01)
