@@ -289,6 +289,7 @@ interface RemoteActionRepository : JpaRepository<RemoteAction, Long> {
     fun findTopByDeviceKeyAndActionInOrderByCreatedAtDesc(key: String, actions: Collection<String>): RemoteAction?
     fun countByActionAndStatus(action: String, status: String): Long
     fun findByStatus(status: String): List<RemoteAction>
+    fun findTopBySubscriptionIdAndTaskIdOrderByCreatedAtDesc(subscriptionId: Int, taskId: String): RemoteAction?
 
     @Query(
         value = """

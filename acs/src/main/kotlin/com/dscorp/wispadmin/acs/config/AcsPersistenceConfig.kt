@@ -14,6 +14,13 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import com.dscorp.wispadmin.acs.genieacs.GenieAcsClient
+import com.dscorp.wispadmin.acs.genieacs.GenieAcsProperties
+import com.dscorp.wispadmin.acs.repository.CpeRecordRepository
+import com.dscorp.wispadmin.acs.service.AcsFaultArchive
+import com.dscorp.wispadmin.acs.service.AcsFaultCollector
+import com.dscorp.wispadmin.acs.service.CpeInspectionMapper
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean
 import org.springframework.transaction.PlatformTransactionManager
 import javax.persistence.EntityManagerFactory
@@ -32,6 +39,20 @@ class AcsDataSourceSettings : SatelliteDataSourceSettings()
     transactionManagerRef = "acsTransactionManager",
 )
 class AcsPersistenceConfig {
+
+    @Bean
+    fun cpeInspectionMapper() = CpeInspectionMapper()
+
+    @Bean
+    fun acsFaultArchive(@Qualifier("acsDataSource") source: DataSource,
+                        @Qualifier("acsTransactionManager") manager: PlatformTransactionManager) =
+        AcsFaultArchive(JdbcTemplate(source), org.springframework.transaction.support.TransactionTemplate(manager))
+
+    @Bean
+    fun acsFaultCollector(records: CpeRecordRepository, client: GenieAcsClient,
+                          mapper: CpeInspectionMapper, archive: AcsFaultArchive,
+                          @org.springframework.beans.factory.annotation.Value("\${genieacs.enabled:false}") enabled: Boolean) =
+        AcsFaultCollector(records, client, mapper, archive, enabled)
 
     @Bean(name = ["acsDataSource"])
     fun acsDataSource(settings: AcsDataSourceSettings): DataSource = SatelliteJpa.dataSource(settings)

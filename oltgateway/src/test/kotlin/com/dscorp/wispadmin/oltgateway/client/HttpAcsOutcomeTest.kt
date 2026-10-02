@@ -26,6 +26,14 @@ class HttpAcsOutcomeTest {
         jacksonObjectMapper(),
     )
 
+    @Test fun `wifi acknowledgement retains ACS task ID`() {
+        server.expect(requestTo("http://acs/api/acs/v1/cpe/SN1/wifi"))
+            .andRespond(withSuccess("""{"accepted":true,"status":"COMPLETE","taskId":"task-42"}""", MediaType.APPLICATION_JSON))
+        val ack = client.setWifi("SN1", AcsCpeWifiRequest("A", "B", "secret123"))
+        org.junit.jupiter.api.Assertions.assertEquals("task-42", ack.taskId)
+        server.verify()
+    }
+
     @Test fun `transport timeout is an uncertain outcome and cannot become a terminal failure`() {
         server.expect(requestTo("http://acs/api/acs/v1/cpe/provision")).andRespond { throw SocketTimeoutException("fixture") }
         assertThrows(RestClientException::class.java) { client.provision(AcsCpeProvisionRequest("SN")) }

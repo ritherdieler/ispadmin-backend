@@ -173,6 +173,7 @@ class NamedCpeProvisionerTest {
         every {
             client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID")
         } returns "vsol-5"
+        every { client.getDeviceParameterValue("vsol-1", match { it.endsWith(".KeyPassphrase") }) } returns "11111111"
         val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })
 
         val result = provisioner.setWifi("VSOL0031C0B6", "vsol", "vsol-5", "11111111")
@@ -180,6 +181,28 @@ class NamedCpeProvisionerTest {
         assertEquals(true, result.accepted)
         assertEquals(CpeStatus.COMPLETE, result.status)
         verify(atLeast = 1) { client.getParameterValues("vsol-1", any(), true) }
+    }
+
+    @Test
+    fun `setWifi does not confirm when SSIDs match but either shared key differs`() {
+        val client = mockk<GenieAcsClient>(relaxed = true)
+        every { client.listDevices() } returns listOf(
+            GenieAcsDevice(id = "vsol-1", serialNumber = "VSOL0031C0B6", productClass = "V2804AX15T")
+        )
+        every { client.enqueueProvisions(any(), any(), any(), any()) } returns GenieAcsTaskResult(202, "accepted", true)
+        every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(200, "ok", true)
+        every { client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID") } returns "vsol"
+        every { client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID") } returns "vsol-5"
+        every { client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.KeyPassphrase") } returns "wrong-key"
+        every { client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase") } returns "11111111"
+        val clock = AtomicLong(0)
+        val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply {
+            enabled = true; waitTimeoutMs = 10; pollIntervalMs = 5
+        }).withTimeControls(clock = { clock.get() }, sleeper = { clock.addAndGet(it) })
+
+        val result = provisioner.setWifi("VSOL0031C0B6", "vsol", "vsol-5", "11111111")
+
+        assertEquals(CpeStatus.PENDING, result.status)
     }
 
     @Test
@@ -221,6 +244,7 @@ class NamedCpeProvisionerTest {
             statusCode = 200,
             body = "ok",
             accepted = true,
+            taskId = "task-42",
         )
         every { client.getParameterValues(any(), any(), any()) } returns GenieAcsTaskResult(
             statusCode = 200,
@@ -233,12 +257,14 @@ class NamedCpeProvisionerTest {
         every {
             client.getDeviceParameterValue("vsol-1", "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID")
         } returns "vsol-5"
+        every { client.getDeviceParameterValue("vsol-1", match { it.endsWith(".KeyPassphrase") }) } returns "11111111"
         val provisioner = NamedCpeProvisioner(client, GenieAcsProperties().apply { enabled = true })
 
         val result = provisioner.setWifi("VSOL0031C0B6", "vsol", "vsol-5", "11111111")
 
         assertEquals(true, result.accepted)
         assertEquals(CpeStatus.COMPLETE, result.status)
+        assertEquals("task-42", result.taskId)
         verify {
             client.enqueueProvisions(
                 "vsol-1",

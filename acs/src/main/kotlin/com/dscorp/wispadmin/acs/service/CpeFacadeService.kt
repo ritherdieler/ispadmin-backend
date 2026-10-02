@@ -147,7 +147,7 @@ class CpeFacadeService(
                 emptyList(),
                 connectionRequest = true,
             )
-            CpeCommandResult(result.accepted, if (result.accepted) CpeStatus.PENDING else CpeStatus.FAILED, result.body)
+            CpeCommandResult(result.accepted, if (result.accepted) CpeStatus.PENDING else CpeStatus.FAILED, result.body, result.taskId)
         } catch (ex: Exception) {
             CpeCommandResult(false, CpeStatus.FAILED, ex.message)
         }

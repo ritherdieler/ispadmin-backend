@@ -6,6 +6,7 @@ import com.dscorp.wispadmin.servicehealth.port.HealthCpeTelemetry
 import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalPort
 import com.dscorp.wispadmin.servicehealth.port.HealthLabOpticalRefresh
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuPort
+import com.dscorp.wispadmin.servicehealth.port.CpeInspectionPort
 import com.dscorp.wispadmin.servicehealth.port.HealthOnuRef
 import com.dscorp.wispadmin.transport.InternalUris
 import com.fasterxml.jackson.databind.JsonNode
@@ -24,7 +25,8 @@ import java.time.Instant
 class HealthOltGatewayHttpClient(
     @Value("\${olt.gateway.internal-base-url:}") private val baseUrl: String,
     @Value("\${olt.gateway.api-key:}") private val apiKey: String,
-) : HealthOnuPort, HealthLabOpticalPort, HealthCpePort {
+    @Value("\${olt.gateway.caller-env:prod}") private val callerEnv: String = "prod",
+) : HealthOnuPort, HealthLabOpticalPort, HealthCpePort, CpeInspectionPort {
 
     private val objectMapper = ObjectMapper()
     private val restTemplate = RestTemplate(SimpleClientHttpRequestFactory().apply {
@@ -89,6 +91,49 @@ class HealthOltGatewayHttpClient(
 
     override fun wifiRefresh(sn: String): HealthCpeCommand = command(path("api", "olt-gateway", "onus", sn, "cpe", "wifi-refresh"))
 
+    override fun setWifi(sn: String, ssid24: String, ssid5: String, passphrase: String): HealthCpeCommand {
+        val body = objectMapper.writeValueAsString(mapOf("ssid24" to ssid24, "ssid5" to ssid5, "passphrase" to passphrase))
+        val node = postJson(path("api", "olt-gateway", "onus", sn, "cpe", "wifi"), body)
+            ?: return HealthCpeCommand(false, "UNVERIFIED", "gateway_unavailable")
+        return HealthCpeCommand(
+            accepted = node.path("accepted").asBoolean(false),
+            status = node.path("status").asText("FAILED"),
+            message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            taskId = node.path("taskId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    override fun summary(sn: String): JsonNode = inspection(path("api", "olt-gateway", "onus", sn, "cpe", "inspection", "summary"))
+
+    override fun tree(sn: String, parent: String?, query: String?): JsonNode = inspection(
+        query("/api/olt-gateway/onus/${java.net.URLEncoder.encode(sn, "UTF-8")}/cpe/inspection/tree",
+            mapOf("parent" to parent, "q" to query)),
+    )
+
+    override fun currentFaults(sn: String): JsonNode =
+        inspection(path("api", "olt-gateway", "onus", sn, "cpe", "inspection", "faults", "current"))
+
+    override fun faultHistory(sn: String, page: Int, size: Int): JsonNode = inspection(
+        query("/api/olt-gateway/onus/${java.net.URLEncoder.encode(sn, "UTF-8")}/cpe/inspection/faults/history",
+            mapOf("page" to page, "size" to size)),
+    )
+
+    private fun inspection(uri: java.net.URI): JsonNode {
+        if (baseUrl.isBlank()) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "OLT Gateway unavailable")
+        val headers = gatewayHeaders()
+        try {
+            val response = restTemplate.exchange(uri, HttpMethod.GET, HttpEntity<Void>(headers), String::class.java)
+            val body = response.body ?: throw com.dscorp.wispadmin.transport.InvalidSubsystemResponse()
+            return objectMapper.readTree(body)
+        } catch (ex: org.springframework.web.client.HttpStatusCodeException) {
+            throw org.springframework.web.server.ResponseStatusException(ex.statusCode, "TR-069 inspection rejected")
+        } catch (ex: org.springframework.web.client.RestClientException) {
+            throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "TR-069 inspection unavailable")
+        }
+    }
+
     private fun command(uri: java.net.URI): HealthCpeCommand {
         val node = postJson(uri, "{}")
             ?: return HealthCpeCommand(false, "FAILED", "gateway_unavailable")
@@ -96,6 +141,7 @@ class HealthOltGatewayHttpClient(
             accepted = node.path("accepted").asBoolean(false),
             status = node.path("status").asText("FAILED"),
             message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            taskId = node.path("taskId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 
@@ -124,8 +170,7 @@ class HealthOltGatewayHttpClient(
     private fun getJson(uri: java.net.URI): JsonNode? {
         if (baseUrl.isBlank()) return null
         return try {
-            val headers = HttpHeaders()
-            headers.set("X-Olt-Gateway-Key", apiKey)
+            val headers = gatewayHeaders()
             val response = restTemplate.exchange(uri, HttpMethod.GET, HttpEntity<Void>(headers), String::class.java)
             val body = response.body ?: return null
             objectMapper.readTree(body)
@@ -138,8 +183,7 @@ class HealthOltGatewayHttpClient(
     private fun postJson(uri: java.net.URI, json: String): JsonNode? {
         if (baseUrl.isBlank()) return null
         return try {
-            val headers = HttpHeaders()
-            headers.set("X-Olt-Gateway-Key", apiKey)
+            val headers = gatewayHeaders()
             headers.set("Content-Type", "application/json")
             val response = restTemplate.exchange(uri, HttpMethod.POST, HttpEntity(json, headers), String::class.java)
             val body = response.body ?: return null
@@ -148,6 +192,11 @@ class HealthOltGatewayHttpClient(
             logger.warn("Health OLT HTTP POST failed for {}: {}", uri, ex.message)
             null
         }
+    }
+
+    private fun gatewayHeaders() = HttpHeaders().apply {
+        set("X-Olt-Gateway-Key", apiKey)
+        set("X-Gigafiber-Env", callerEnv.trim().ifBlank { "prod" })
     }
 
     private companion object {

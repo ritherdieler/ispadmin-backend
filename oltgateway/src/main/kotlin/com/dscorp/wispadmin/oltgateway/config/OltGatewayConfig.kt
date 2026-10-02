@@ -77,6 +77,20 @@ import java.util.concurrent.Executors
 class OltGatewayConfig {
 
     @Bean
+    fun acsInspectionProxy(properties: OltGatewayProperties, objectMapper: ObjectMapper):
+        com.dscorp.wispadmin.oltgateway.client.AcsInspectionProxy =
+        com.dscorp.wispadmin.oltgateway.client.AcsInspectionProxy(
+            properties,
+            org.springframework.web.client.RestTemplate(
+                org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
+                    setConnectTimeout(3_000)
+                    setReadTimeout(30_000)
+                }
+            ),
+            objectMapper,
+        )
+
+    @Bean
     fun huaweiOltAlarmParser(): HuaweiOltAlarmParser = HuaweiOltAlarmParser()
 
     @Bean

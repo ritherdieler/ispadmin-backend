@@ -161,6 +161,35 @@ class RemoteActionPersistenceTest {
         verify { cpe wasNot Called }
         assertEquals(0,actions.count())
     }
+    @Test fun `wifi change confirms both bands when ACS verifies SSIDs and shared key`() {
+        every { cpe.setWifi("sn1", "North-24", "North-5", "secret123") } returns
+            com.dscorp.wispadmin.servicehealth.port.HealthCpeCommand(true, "COMPLETE", taskId = "task-42")
+        val result = remote.configure(
+            1, actor, "wifi-change", CpeConfiguration(wifi = WifiConfiguration("North-24", "North-5", "secret123")),
+        )
+        assertEquals("CONFIRMED", result.status)
+        assertEquals("CONFIRMED", actions.findById(result.actionId).get().wifiStatus)
+        assertTrue(result.appliedWifi)
+        assertEquals("task-42", actions.findById(result.actionId).get().taskId)
+        verify(exactly = 1) { cpe.setWifi("sn1", "North-24", "North-5", "secret123") }
+    }
+
+    @Test fun `accepted wifi task without a readback ends as unverified`() {
+        every { cpe.setWifi("sn1", "North-24", "North-5", "secret123") } returns
+            com.dscorp.wispadmin.servicehealth.port.HealthCpeCommand(true, "PENDING")
+        val result = remote.configure(
+            1, actor, "wifi-pending", CpeConfiguration(wifi = WifiConfiguration("North-24", "North-5", "secret123")),
+        )
+        assertEquals("UNVERIFIED", result.status)
+        assertFalse(result.appliedWifi)
+    }
+
+    @Test fun `admin WAN change is rejected before any device IO`() {
+        assertEquals(409, assertThrows(ResponseStatusException::class.java) {
+            remote.configure(1, HealthActor(2, "ADMIN"), "wan-change", CpeConfiguration(network = NetworkConfiguration(vlanId = 100)))
+        }.rawStatusCode)
+        verify { cpe wasNot Called }
+    }
     @Test fun `optical refresh confirms when ssh collects`() {
         val port=mockk<HealthLabOpticalPort>()
         every { port.refreshBySn("sn1") } returns HealthLabOpticalRefresh(true)

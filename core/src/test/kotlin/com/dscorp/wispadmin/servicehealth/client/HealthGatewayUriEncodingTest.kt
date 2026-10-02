@@ -5,10 +5,22 @@ import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
+import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 import org.springframework.web.client.RestTemplate
 
 class HealthGatewayUriEncodingTest {
+    @Test
+    fun `inspection forwards the configured caller environment`() {
+        val client = HealthOltGatewayHttpClient("http://gateway", "key", "stg")
+        val field = client.javaClass.getDeclaredField("restTemplate").apply { isAccessible = true }
+        val server = MockRestServiceServer.createServer(field.get(client) as RestTemplate)
+        server.expect(requestTo("http://gateway/api/olt-gateway/onus/SN1/cpe/inspection/summary"))
+            .andExpect(header("X-Gigafiber-Env", "stg"))
+            .andRespond(withSuccess("""{"deviceId":"device-1"}""", MediaType.APPLICATION_JSON))
+        assertEquals("device-1", client.summary("SN1").path("deviceId").asText())
+        server.verify()
+    }
     @Test
     fun `serials and names are encoded once in gateway queries`() {
         val client = HealthOltGatewayHttpClient("http://gateway", "key")

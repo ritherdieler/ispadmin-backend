@@ -45,6 +45,7 @@ data class CpeCommandAck(
     val accepted: Boolean,
     val status: CpeProvisionStatus,
     val message: String? = null,
+    val taskId: String? = null,
 )
 
 class NoOpAcsCpeClient : AcsCpeClient {

@@ -179,10 +179,12 @@ data class HealthCpeCommand(
     val accepted: Boolean,
     val status: String,
     val message: String? = null,
+    val taskId: String? = null,
 )
 
 interface HealthCpePort {
     fun telemetry(sn: String): HealthCpeTelemetry?
     fun reboot(sn: String): HealthCpeCommand
     fun wifiRefresh(sn: String): HealthCpeCommand
+    fun setWifi(sn: String, ssid24: String, ssid5: String, passphrase: String): HealthCpeCommand
 }

@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.acs.genieacs
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.dscorp.wispadmin.acs.service.AcsFaultArchive
+import com.dscorp.wispadmin.acs.service.CpeInspectionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpEntity
@@ -53,6 +55,31 @@ class GenieAcsClient(
     @Qualifier("genieAcsRestTemplate") private val restTemplate: RestTemplate,
 ) {
     private val log = LoggerFactory.getLogger(GenieAcsClient::class.java)
+    private val faultMapper = CpeInspectionMapper()
+    private var faultArchive: AcsFaultArchive? = null
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    fun setFaultArchive(archive: AcsFaultArchive) {
+        faultArchive = archive
+    }
+
+    fun getDeviceSnapshot(deviceId: String): JsonNode? {
+        val query = objectMapper.writeValueAsString(mapOf("_id" to deviceId))
+        val uri = UriComponentsBuilder.fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+            .path("/devices/").queryParam("query", query).build().encode().toUri()
+        val root = objectMapper.readTree(restTemplate.getForObject(uri, String::class.java))
+        require(root.isArray) { "Invalid GenieACS device response" }
+        return root.firstOrNull { it.path("_id").asText() == deviceId }
+    }
+
+    fun listFaultDocuments(deviceId: String? = null): List<JsonNode> {
+        val builder = UriComponentsBuilder.fromHttpUrl(properties.nbiBaseUrl.trimEnd('/')).path("/faults/")
+        if (deviceId != null) builder.queryParam("query", objectMapper.writeValueAsString(mapOf("device" to deviceId)))
+        val uri = builder.build().encode().toUri()
+        val root = objectMapper.readTree(restTemplate.getForObject(uri, String::class.java))
+        require(root.isArray) { "Invalid GenieACS faults response" }
+        return root.toList()
+    }
 
     fun listDevices(
         projection: String = DEFAULT_DEVICE_PROJECTION,
@@ -219,8 +246,16 @@ class GenieAcsClient(
      * by stale lab retries (GenieACS replays queued tasks on every connection request).
      */
     fun purgeDeviceQueue(deviceId: String): GenieAcsQueuePurgeResult {
+        val archive = faultArchive
+        if (archive != null) {
+            val before = listFaultDocuments(deviceId).map(faultMapper::fault)
+            archive.captureKnownDevice(deviceId, before)
+        }
         val tasksDeleted = deleteResourcesForDevice("/tasks/", deviceId)
         val faultsDeleted = deleteResourcesForDevice("/faults/", deviceId)
+        if (archive != null && faultsDeleted > 0) {
+            archive.captureKnownDevice(deviceId, listFaultDocuments(deviceId).map(faultMapper::fault))
+        }
         if (tasksDeleted > 0 || faultsDeleted > 0) {
             log.info(
                 "Cola GenieACS purgada para {}: {} tasks, {} faults",
@@ -260,7 +295,24 @@ class GenieAcsClient(
         return exchangeDeviceTag(deviceId, tag, HttpMethod.DELETE)
     }
 
-    fun deleteFault(faultId: String): Boolean = deleteResource("/faults/", faultId)
+    fun deleteFault(faultId: String): Boolean {
+        val archive = faultArchive
+        val before = if (archive != null) {
+            val query = objectMapper.writeValueAsString(mapOf("_id" to faultId))
+            val uri = UriComponentsBuilder.fromHttpUrl(properties.nbiBaseUrl.trimEnd('/'))
+                .path("/faults/").queryParam("query", query).build().encode().toUri()
+            val rows = objectMapper.readTree(restTemplate.getForObject(uri, String::class.java))
+            require(rows.isArray) { "Invalid GenieACS faults response" }
+            rows.firstOrNull()?.let(faultMapper::fault)
+        } else null
+        if (before != null) archive?.captureKnownDevice(before.deviceId,
+            listFaultDocuments(before.deviceId).map(faultMapper::fault))
+        val deleted = deleteResource("/faults/", faultId)
+        if (deleted && before != null) {
+            archive?.captureKnownDevice(before.deviceId, listFaultDocuments(before.deviceId).map(faultMapper::fault))
+        }
+        return deleted
+    }
 
     fun listTags(deviceId: String): List<String> {
         val uri = deviceUri(deviceId, "_tags")

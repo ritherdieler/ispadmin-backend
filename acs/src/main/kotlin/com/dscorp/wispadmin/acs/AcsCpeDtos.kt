@@ -33,6 +33,7 @@ data class CpeCommandResult(
     val accepted: Boolean,
     val status: CpeStatus,
     val message: String? = null,
+    val taskId: String? = null,
 )
 
 data class CpeWifiCommand(

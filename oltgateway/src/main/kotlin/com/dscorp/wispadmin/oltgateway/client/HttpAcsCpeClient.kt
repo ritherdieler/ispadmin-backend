@@ -34,6 +34,7 @@ class HttpAcsCpeClient(
             accepted = node.path("accepted").asBoolean(false),
             status = statusOf(node.path("status").asText("")),
             message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            taskId = node.path("taskId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 
@@ -43,6 +44,7 @@ class HttpAcsCpeClient(
             accepted = node.path("accepted").asBoolean(false),
             status = statusOf(node.path("status").asText("")),
             message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            taskId = node.path("taskId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 
@@ -52,6 +54,7 @@ class HttpAcsCpeClient(
             accepted = node.path("accepted").asBoolean(false),
             status = statusOf(node.path("status").asText("")),
             message = node.path("message").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
+            taskId = node.path("taskId").asText(null)?.takeIf { it.isNotBlank() && it != "null" },
         )
     }
 

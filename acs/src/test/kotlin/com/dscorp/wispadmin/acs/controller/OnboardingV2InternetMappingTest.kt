@@ -33,7 +33,7 @@ class OnboardingV2InternetMappingTest {
     @ComponentScan(
         basePackages = ["com.dscorp.wispadmin.acs.controller", "com.dscorp.wispadmin.acs.config"],
         excludeFilters = [
-            ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = [AcsCpeController::class, OnboardingV2AcsController::class]),
+            ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = [AcsCpeController::class, AcsInspectionController::class, OnboardingV2AcsController::class]),
         ],
     )
     class Scan {

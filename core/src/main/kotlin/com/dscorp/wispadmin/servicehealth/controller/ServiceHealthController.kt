@@ -34,7 +34,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
 
     @GetMapping("/subscription/{id}/cpe-status")
     fun cpe(@PathVariable id: Int,request: HttpServletRequest): CpeStatus {
-        val actor=access.require(request)
+        access.require(request)
         val summary=engine.evaluate(reader.read(id))
         val rx=summary.sources.firstOrNull { it.metric=="onu_rx_dbm" }
         val state=summary.sources.first { it.metric=="run_state" }
@@ -45,7 +45,7 @@ class ServiceHealthController(private val access: HealthAccess,private val reade
             CpeGponStatus(summary.states["gpon"]!!,rx?.value?.toString(),null,state.qualityStatus),
             CpeAcsStatus(if(inform.qualityStatus==Quality.FRESH) "SYNCED" else if(inform.qualityStatus==Quality.STALE) "STALE" else "UNKNOWN",
                 inform.observedAt,inform.qualityStatus==Quality.FRESH,inform.qualityStatus),
-            CpeCapabilities(canWriteWanViaTr069=writable && actor.role=="ADMIN",canWriteWifiViaTr069=writable,
+            CpeCapabilities(canWriteWanViaTr069=false,canWriteWifiViaTr069=writable,
                 vendor=null,model=model),summary.actionsEnabled)
     }
 

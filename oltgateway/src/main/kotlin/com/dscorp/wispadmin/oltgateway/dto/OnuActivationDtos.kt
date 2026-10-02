@@ -58,6 +58,7 @@ data class CpeCommandResponseDto(
     val accepted: Boolean,
     val status: CpeProvisionStatus,
     val message: String? = null,
+    val taskId: String? = null,
 )
 
 data class CpeTelemetryDto(

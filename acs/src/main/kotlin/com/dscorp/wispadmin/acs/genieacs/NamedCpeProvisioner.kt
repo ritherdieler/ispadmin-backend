@@ -182,11 +182,12 @@ class NamedCpeProvisioner(
         if (!result.accepted) {
             return CpeCommandResult(false, CpeStatus.FAILED, result.toErrorDetail())
         }
-        val complete = waitForWifi(device.id, layout, ssid24, ssid5, request.waitTimeoutMs ?: properties.waitTimeoutMs)
+        val complete = waitForWifi(device.id, layout, ssid24, ssid5, passphrase,
+            request.waitTimeoutMs ?: properties.waitTimeoutMs)
         return if (complete) {
-            CpeCommandResult(true, CpeStatus.COMPLETE, "WiFi aplicado")
+            CpeCommandResult(true, CpeStatus.COMPLETE, "WiFi aplicado", result.taskId)
         } else {
-            CpeCommandResult(true, CpeStatus.PENDING, "SSID no se confirmaron en el ACS dentro del tiempo de espera.")
+            CpeCommandResult(true, CpeStatus.PENDING, "SSID y clave no se confirmaron en el ACS dentro del tiempo de espera.", result.taskId)
         }
     }
 
@@ -243,17 +244,22 @@ class NamedCpeProvisioner(
         layout: NamedCpeLayout,
         ssid24: String?,
         ssid5: String?,
+        passphrase: String,
         waitTimeoutMs: Long,
     ): Boolean {
-        val params = listOf(layout.ssid24, layout.ssid5)
+        val key24 = layout.ssid24.removeSuffix(".SSID") + ".KeyPassphrase"
+        val key5 = layout.ssid5.removeSuffix(".SSID") + ".KeyPassphrase"
+        val params = listOf(layout.ssid24, layout.ssid5, key24, key5)
         client.getParameterValues(deviceId, params, connectionRequest = true)
         val deadline = clock() + waitTimeoutMs
         while (clock() <= deadline) {
             val observed24 = client.getDeviceParameterValue(deviceId, layout.ssid24)
             val observed5 = client.getDeviceParameterValue(deviceId, layout.ssid5)
+            val observedKey24 = client.getDeviceParameterValue(deviceId, key24)
+            val observedKey5 = client.getDeviceParameterValue(deviceId, key5)
             val ok24 = ssid24.isNullOrBlank() || observed24 == ssid24
             val ok5 = ssid5.isNullOrBlank() || observed5 == ssid5
-            if (ok24 && ok5) return true
+            if (ok24 && ok5 && observedKey24 == passphrase && observedKey5 == passphrase) return true
             sleeper(properties.pollIntervalMs)
             if (clock() <= deadline) {
                 client.getParameterValues(deviceId, params, connectionRequest = true)

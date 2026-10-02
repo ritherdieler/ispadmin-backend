@@ -137,7 +137,7 @@ class OnuActivationService(
 
     fun reboot(sn: String): CpeCommandResponseDto {
         val ack = acsCpeClient.reboot(sn)
-        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
+        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message, ack.taskId)
     }
 
     fun provisionCpe(sn: String, request: AcsCpeProvisionRequest): AcsCpeProvisionResponse {
@@ -147,7 +147,7 @@ class OnuActivationService(
 
     fun setWifi(sn: String, request: AcsCpeWifiRequest): CpeCommandResponseDto {
         val ack = acsCpeClient.setWifi(sn.trim().uppercase(), request)
-        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
+        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message, ack.taskId)
     }
 
     fun accessLayout(sn: String): com.dscorp.wispadmin.oltgateway.dto.CpeAccessLayoutDto? =
@@ -155,7 +155,7 @@ class OnuActivationService(
 
     fun wifiRefresh(sn: String): CpeCommandResponseDto {
         val ack = acsCpeClient.wifiRefresh(sn)
-        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message)
+        return CpeCommandResponseDto(ack.accepted, ack.status, ack.message, ack.taskId)
     }
 
     fun telemetry(sn: String): CpeTelemetryDto? = acsCpeClient.telemetry(sn)

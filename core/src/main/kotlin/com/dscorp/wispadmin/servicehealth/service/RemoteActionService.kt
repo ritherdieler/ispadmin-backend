@@ -22,7 +22,7 @@ import java.time.Instant
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-data class WifiConfiguration(val ssid: String = "", val password: String = "") {
+data class WifiConfiguration(val ssid24: String = "", val ssid5: String = "", val passphrase: String = "") {
     override fun toString() = "WifiConfiguration([redacted])"
 }
 data class NetworkConfiguration(val ipAddress: String?=null,val subnetMask: String?=null,val gateway: String?=null,
@@ -77,17 +77,20 @@ class RemoteActionService(
             if(needsCr && actions.findByStatus("RUNNING").count { it.action in setOf("WIFI_REFRESH","CONFIG","REBOOT_ACS") }>=properties.crConcurrency.coerceIn(1,3))
                 throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Límite de conexiones ACS concurrentes")
             actions.saveAndFlush(RemoteAction(acsDeviceId=sn,subscriptionId=id,actorId=actor.id,requestKey=key,deviceKey=deviceKey,action=action,
-                status="RUNNING",createdAt=now,requestDigest=payloadDigest)) to true
+                status="RUNNING",createdAt=now,requestDigest=payloadDigest,
+                wifiStatus=if(action=="CONFIG") "PENDING" else null)) to true
         }!!
     }
     fun result(a: RemoteAction)=ActionResult(a.id!!,a.subscriptionId,a.status,
         when(a.status) { "CONFIRMED" -> "Lectura posterior confirma la operación"; "FAILED" -> "La operación falló; revise la evidencia";
-            "UNVERIFIED" -> "Operación sin confirmación; no se reintentará automáticamente"; else -> "Solicitud pendiente; aceptación no significa aplicación" },
+            "UNVERIFIED" -> "Operación sin confirmación; no se reintentará automáticamente";
+            else -> "Solicitud pendiente; aceptación no significa aplicación" },
         a.networkStatus=="CONFIRMED",a.wifiStatus=="CONFIRMED",a.networkStatus,a.wifiStatus,a.networkChannel)
 
     fun finish(id: Long,status: String,taskId: String?=null,error: String?=null) = tx.execute {
         val a=actions.findById(id).orElseThrow { NoSuchElementException() }
         a.status=status; if(taskId!=null) a.taskId=taskId; a.errorReason=error
+        if(a.action=="CONFIG" && status=="CONFIRMED") a.wifiStatus="CONFIRMED"
         if(status in setOf("FAILED","UNVERIFIED")) {
             if(a.networkStatus=="PENDING") a.networkStatus=status
             if(a.wifiStatus=="PENDING") a.wifiStatus=status
@@ -110,7 +113,7 @@ class RemoteActionService(
             val port = cpe.ifAvailable
             if (sn != null && port != null) {
                 val ack = port.reboot(sn)
-                if (ack.accepted) return result(finish(action.id!!, "PENDING"))
+                if (ack.accepted) return result(finish(action.id!!, "PENDING", taskId = ack.taskId))
             }
             requireNotNull(subscriptionActions) { "Reinicio no disponible" }.rebootFiberOnu(id)
             result(finish(action.id!!, "PENDING"))
@@ -148,16 +151,41 @@ class RemoteActionService(
         if(!created) return result(action)
         return try {
             val ack = port.wifiRefresh(sn)
-            result(finish(action.id!!,if(ack.accepted) "PENDING" else "FAILED", error = if(ack.accepted) null else ack.message ?: "ACS_REJECTED"))
+            result(finish(action.id!!,if(ack.accepted) "PENDING" else "FAILED", taskId = ack.taskId,
+                error = if(ack.accepted) null else ack.message ?: "ACS_REJECTED"))
         } catch (_: Exception) { result(finish(action.id!!,"UNVERIFIED",error="ACS_REQUEST_UNCONFIRMED")) }
     }
 
     fun configure(id: Int,actor: HealthActor,key: String,request: CpeConfiguration): ActionResult {
-        replay(id,actor,key,"CONFIG",digest(json.writeValueAsString(request)))?.let { return it }
+        val requestDigest = digest(json.writeValueAsString(request))
+        replay(id,actor,key,"CONFIG",requestDigest)?.let { return it }
         if(!properties.configEnabled) throw ResponseStatusException(HttpStatus.CONFLICT,"Configuración deshabilitada")
         if(request.network!=null && actor.role!="ADMIN") throw ResponseStatusException(HttpStatus.FORBIDDEN,"WAN requiere ADMIN")
         require(request.network!=null || request.wifi!=null) { "Configuración vacía" }
-        throw ResponseStatusException(HttpStatus.CONFLICT,"CPE_WRITE_VIA_GATEWAY_UNSUPPORTED")
+        if(request.network!=null) throw ResponseStatusException(HttpStatus.CONFLICT,"WAN_WRITE_NOT_AVAILABLE")
+        val change = request.wifi!!
+        require(change.ssid24.isNotBlank() && change.ssid5.isNotBlank() &&
+            change.ssid24.length <= 32 && change.ssid5.length <= 32 &&
+            change.passphrase.length in 8..63) { "Configuración Wi-Fi inválida" }
+        val (action, created) = reserve(id,actor,key,"CONFIG",requestDigest,true)
+        if(!created) return result(action)
+        return try {
+            val sn = directory.find(id)?.onuSn ?: return result(finish(action.id!!,"FAILED",error="MISSING_ONU"))
+            val ack = cpe.ifAvailable!!.setWifi(sn,change.ssid24,change.ssid5,change.passphrase)
+            val status = when {
+                !ack.accepted || ack.status == "FAILED" -> "FAILED"
+                ack.status == "COMPLETE" -> "CONFIRMED"
+                else -> "UNVERIFIED"
+            }
+            val reason = when {
+                status == "FAILED" -> "ACS_REJECTED"
+                status == "CONFIRMED" -> null
+                else -> "ACS_WRITE_UNVERIFIED"
+            }
+            result(finish(action.id!!,status,taskId=ack.taskId,error=reason))
+        } catch (_: Exception) {
+            result(finish(action.id!!,"UNVERIFIED",error="ACS_REQUEST_UNCONFIRMED"))
+        }
     }
 
     @Scheduled(fixedDelayString="\${service.health.action-check-interval-ms:120000}",initialDelayString="\${service.health.action-check-initial-delay-ms:120000}")
@@ -172,7 +200,7 @@ class RemoteActionService(
             if(a.action=="WIFI_REFRESH") {
                 if(wifi.findById(a.subscriptionId).orElse(null)?.takeIf { it.qualityStatus==Quality.FRESH }?.observedAt?.isAfter(a.createdAt)==true) finish(a.id!!,"CONFIRMED")
             } else if(a.action in setOf("REBOOT_ACS","REBOOT_ONU")) {
-                val sn = currentSub?.onuSn ?: continue
+                val sn = currentSub.onuSn ?: continue
                 val inform = cpe.ifAvailable?.telemetry(sn)?.lastInformAt
                 if(inform!=null && inform>a.createdAt && inform<=Instant.now()) finish(a.id!!,"CONFIRMED")
             }
