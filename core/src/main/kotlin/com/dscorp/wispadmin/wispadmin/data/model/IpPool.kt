@@ -2,7 +2,6 @@ package com.dscorp.wispadmin.wispadmin.data.model
 
 import com.dscorp.wispadmin.wispadmin.dto.IpPoolDto
 import com.dscorp.wispadmin.wispadmin.dto.NetworkDeviceDto
-import com.dscorp.wispadmin.wispadmin.mapper.toDto
 import javax.persistence.Column
 import javax.persistence.Entity
 import javax.persistence.GeneratedValue
@@ -29,7 +28,7 @@ data class IpPool(
             id = id,
             ipSegment = ipSegment,
             createdAt = createdAt,
-            hostDevice = hostDevice?.toDto() ?: NetworkDeviceDto(),
+            hostDevice = hostDevice?.toReferenceDto() ?: NetworkDeviceDto(),
             isEligible = isEligible
     )
     }

@@ -249,11 +249,11 @@ data class Subscription(
         plan = plan?.toDto(),
         place = place?.toDto(),
         isServiceCutOff = isServiceCutOff,
-        additionalDevices = initializedAdditionalDevices()?.toDto(),
+        additionalDevices = initializedAdditionalDevices()?.map { it.toReferenceDto() },
         location = location?.toDto(),
         napBox = napBox?.toDto(),
         technician = technician?.toDto(),
-        hostDevice = hostDevice?.toDto(),
+        hostDevice = hostDevice?.toReferenceDto(),
         installationType = installationType,
         serviceStatus = serviceStatus,
         ip = ip,
@@ -328,7 +328,7 @@ data class Subscription(
 
     fun toCutDto() = SubscriptionCutDto(
         id = id,
-        hostDevice = hostDevice?.toDto(),
+        hostDevice = hostDevice?.toReferenceDto(),
         ip = ip,
         name = getFullName().uppercase(),
     )

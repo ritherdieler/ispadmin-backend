@@ -39,6 +39,19 @@ internal fun onboardingFaultReason(body: String?): String? {
     return message.takeIf { it.isNotEmpty() }?.take(180)
 }
 
+internal fun internetWanConfirmed(
+    owned: com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection?,
+    mode: String,
+    ip: String?,
+): Boolean {
+    if (!owned?.connectionStatus.equals("Connected", ignoreCase = true)) return false
+    return when (mode) {
+        "static" -> owned!!.path.contains(".WANIPConnection.") && !ip.isNullOrBlank() && owned.externalIp == ip
+        "pppoe" -> owned!!.path.contains(".WANPPPConnection.")
+        else -> false
+    }
+}
+
 internal fun onboardingFaultParameterDetail(body: String?): String? {
     if (body.isNullOrBlank()) return null
     return runCatching {
@@ -197,7 +210,7 @@ class OnboardingV2TaskService(
         val state = if (compensation) {
             if (owned == null) "COMPLETE" else "WAITING"
         } else {
-            if (owned?.connectionStatus.equals("Connected", ignoreCase = true)) "COMPLETE" else "WAITING"
+            if (internetWanConfirmed(owned, request.mode, request.ip)) "COMPLETE" else "WAITING"
         }
         return com.dscorp.wispadmin.acs.OnboardingV2InternetStatusResponse(state, taskId)
     }

@@ -36,6 +36,33 @@ class ValidateProvisioningStageHandlerTest {
         assertEquals(false, error.failure.retryable)
     }
 
+    @Test fun `accepts a static fiber subscription with an assigned IP and no PPPoE credentials`() {
+        every { repository.lockIdentityOwner(42) } returns validSubscription().apply {
+            accessMode = AccessMode.STATIC_IP
+            ip = "192.168.30.20"
+            pppoeUsername = null
+            pppoePasswordEnc = null
+        }
+
+        assertEquals(StageObservation.SATISFIED, ValidateProvisioningStageHandler(repository).apply(context()))
+    }
+
+    @Test fun `rejects static fiber without an assigned IP before touching hardware`() {
+        every { repository.lockIdentityOwner(42) } returns validSubscription().apply {
+            accessMode = AccessMode.STATIC_IP
+            ip = null
+            pppoeUsername = null
+            pppoePasswordEnc = null
+        }
+
+        val error = assertThrows(ProvisioningStepException::class.java) {
+            ValidateProvisioningStageHandler(repository).apply(context())
+        }
+
+        assertEquals("STATIC_IP_REQUIRED", error.failure.code)
+        assertEquals(false, error.failure.retryable)
+    }
+
     private fun context() = ProvisioningStageContext(operation, {}, { _, _ -> }, { null })
 
     private fun validSubscription() = Subscription(id = 42, equipmentCondition = EquipmentCondition.LOAN).apply {

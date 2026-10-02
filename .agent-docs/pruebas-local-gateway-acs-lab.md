@@ -123,6 +123,8 @@ Una sesión mal cerrada deja el VTY ocupado y el siguiente login cae en `Reenter
 
 Main: `WispAdminApplicationKt`. Puerto **8082**. El Core es **cliente** del Gateway, no corre OLT SSH ni ACS.
 
+`./scripts/run-local-prestaging.sh core` exige `OLT_GATEWAY_STAGING_API_KEY` en el entorno y aborta si falta. Debe ser la clave de staging del Gateway en `/opt/gigafiber/.env`; `olt.gateway.api-key` local es otra clave y no se usa como sustituto.
+
 ```text
 --server.port=8082
 --gigafiber.subsystems.oltgateway.enabled=false

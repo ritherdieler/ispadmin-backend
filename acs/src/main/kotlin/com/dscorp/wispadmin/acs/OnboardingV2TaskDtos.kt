@@ -37,6 +37,8 @@ data class OnboardingV2InternetStatusRequest(
     val deviceId: String,
     val model: String,
     val firmware: String,
+    val mode: String = "pppoe",
+    val ip: String? = null,
 )
 
 data class OnboardingV2InternetStatusResponse(

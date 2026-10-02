@@ -15,6 +15,7 @@ import io.mockk.verify
 import io.mockk.verifyOrder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class MikrotikProvisioningStageHandlerTest {
@@ -78,5 +79,77 @@ class MikrotikProvisioningStageHandlerTest {
             session.remove("/ppp/active", "*active")
             session.remove("/ppp/secret", "*1")
         }
+    }
+
+    @Test fun `static registration accepts RouterOS normalized queue limits and reuses the owned queue`() {
+        val static = subscription.apply {
+            accessMode = AccessMode.STATIC_IP
+            ip = "192.168.30.20"
+            pppoeUsername = null
+            pppoePasswordEnc = null
+        }
+        every { repository.lockIdentityOwner(42) } returns static
+        val owned = mapOf(
+            ".id" to "*queue", "target" to "192.168.30.20/32",
+            "max-limit" to "200000000/200000000", "comment" to "GFv2-staging-op",
+        )
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.20/32"), any()) } returnsMany
+            listOf(emptyList(), listOf(owned), listOf(owned))
+        val captured = mutableMapOf<String, String>()
+        val context = ProvisioningStageContext(operation, {}, { key, value -> captured[key] = value }, { captured[it] })
+        val handler = MikrotikProvisioningStageHandler(repository, CrmSecretCipher("unit-test-key"), runner)
+
+        assertEquals(StageObservation.SATISFIED, handler.apply(context))
+        assertEquals(StageObservation.SATISFIED, handler.reconcile(context))
+        assertTrue(captured.containsKey("mikrotik"))
+        verify(exactly = 1) { session.add("/queue/simple", match {
+            it["target"] == "192.168.30.20/32" && it["max-limit"] == "200M/200M" &&
+                it["comment"] == "GFv2-staging-op"
+        }) }
+        verify(exactly = 0) { session.add("/ppp/secret", any()) }
+    }
+
+    @Test fun `static cancellation never removes a queue owned by another operation`() {
+        subscription.apply { accessMode = AccessMode.STATIC_IP; ip = "192.168.30.20" }
+        every { repository.lockIdentityOwner(42) } returns subscription
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.20/32"), any()) } returns
+            listOf(mapOf(".id" to "*foreign", "comment" to "GFv2-staging-other"))
+        val context = ProvisioningStageContext(operation, {}, { _, _ -> }, { "{\"queue\":null}" })
+
+        val error = assertThrows(ProvisioningStepException::class.java) {
+            MikrotikProvisioningStageHandler(repository, CrmSecretCipher("unit-test-key"), runner).compensate(context)
+        }
+
+        assertEquals("MIKROTIK_QUEUE_OWNERSHIP_CONFLICT", error.failure.code)
+        verify(exactly = 0) { session.remove(any(), any()) }
+    }
+
+    @Test fun `static cancellation removes its captured queue once`() {
+        subscription.apply { accessMode = AccessMode.STATIC_IP; ip = "192.168.30.20" }
+        every { repository.lockIdentityOwner(42) } returns subscription
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.20/32"), any()) } returnsMany
+            listOf(listOf(mapOf(".id" to "*owned", "comment" to "GFv2-staging-op")), emptyList())
+        val context = ProvisioningStageContext(operation, {}, { _, _ -> }, { "{\"queue\":null}" })
+
+        assertEquals(StageObservation.SATISFIED,
+            MikrotikProvisioningStageHandler(repository, CrmSecretCipher("unit-test-key"), runner).compensate(context))
+
+        verify(exactly = 1) { session.remove("/queue/simple", "*owned") }
+        verify(exactly = 0) { session.remove("/ppp/secret", any()) }
+    }
+
+    @Test fun `static registration rejects a foreign queue with the assigned target`() {
+        subscription.apply { accessMode = AccessMode.STATIC_IP; ip = "192.168.30.20" }
+        every { repository.lockIdentityOwner(42) } returns subscription
+        every { session.print("/queue/simple", mapOf("target" to "192.168.30.20/32"), any()) } returns
+            listOf(mapOf(".id" to "*foreign", "comment" to "manual"))
+        val context = ProvisioningStageContext(operation, {}, { _, _ -> }, { null })
+
+        val error = assertThrows(ProvisioningStepException::class.java) {
+            MikrotikProvisioningStageHandler(repository, CrmSecretCipher("unit-test-key"), runner).apply(context)
+        }
+
+        assertEquals("MIKROTIK_QUEUE_OWNERSHIP_CONFLICT", error.failure.code)
+        verify(exactly = 0) { session.add(any(), any()) }
     }
 }

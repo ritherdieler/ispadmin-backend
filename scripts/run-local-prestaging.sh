@@ -147,6 +147,11 @@ stop_app() {
 
 run_app() {
   need_secrets
+  if [[ -z "${OLT_GATEWAY_STAGING_API_KEY:-}" ]]; then
+    echo "Missing OLT_GATEWAY_STAGING_API_KEY; load the staging key from the Gateway owner before starting prestaging." >&2
+    exit 1
+  fi
+  export OLT_GATEWAY_STAGING_API_KEY
   ensure_redis
   # Stop WAR first so free_olt_ssh does not SIGTERM the Java process that owns OLT sessions.
   free_listen_port 8082

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertFalse
 
 class SubscriptionToDtoLazySafetyTest {
 
@@ -48,5 +49,38 @@ class SubscriptionToDtoLazySafetyTest {
         assertEquals(0.0, dto.totalDebt)
         assertEquals(0, dto.antiquityInMonths)
         assertEquals(0, dto.qualification)
+    }
+
+    @Test
+    fun `subscription dto does not expose host router credentials`() {
+        every { Hibernate.isInitialized(any()) } returns false
+        val router = NetworkDevice(
+            id = 8,
+            name = "MK2",
+            password = "router-secret-test",
+            username = "router-user-test",
+        )
+        val additionalDevices = listOf(router)
+        every { Hibernate.isInitialized(additionalDevices) } returns true
+        val subscription = Subscription(
+            id = 100,
+            hostDevice = router,
+            additionalDevices = additionalDevices,
+            equipmentCondition = EquipmentCondition.LOAN,
+        )
+
+        val dto = subscription.toDto()
+        val cutDto = subscription.toCutDto()
+        val ipPoolDto = IpPool(id = 5, hostDevice = router).toDto()
+        val serialized = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(dto)
+
+        assertEquals(8, dto.hostDevice?.id)
+        assertEquals(null, dto.hostDevice?.password)
+        assertEquals(null, dto.hostDevice?.username)
+        assertEquals(null, dto.additionalDevices?.single()?.password)
+        assertEquals(null, cutDto.hostDevice?.password)
+        assertEquals(null, ipPoolDto.hostDevice.password)
+        assertFalse(serialized.contains("router-secret-test"))
+        assertFalse(serialized.contains("router-user-test"))
     }
 }

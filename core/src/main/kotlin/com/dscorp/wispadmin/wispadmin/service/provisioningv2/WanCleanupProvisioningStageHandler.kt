@@ -9,6 +9,7 @@ data class WanCleanupProvisioningResource(
     val deviceId: String,
     val model: String,
     val firmware: String,
+    val mode: String = "pppoe",
 )
 
 /** Block 3 removes WANs not tagged by this operation after Internet and Wi-Fi have completed. */
@@ -26,6 +27,12 @@ class WanCleanupProvisioningStageHandler(
     override fun apply(context: ProvisioningStageContext): StageObservation {
         val contact = parseContact(context.resourceSnapshot(CONTACT_RESOURCE_KEY)
             ?: fail("ACS_CONTACT_RESOURCE_MISSING", false))
+        val registration = decode<ProvisioningV2RegistrationSnapshot>(
+            context.resourceSnapshot(ProvisioningV2RegistrationService.REGISTRATION_RESOURCE_KEY)
+                ?: fail("REGISTRATION_SNAPSHOT_MISSING", false),
+            "REGISTRATION_SNAPSHOT_INVALID",
+        )
+        val mode = if (registration.accessMode == "STATIC_IP") "static" else "pppoe"
         context.assertLease()
         val queued = acs.enqueueOnboardingV2WanCleanup(CoreOnboardingV2WanCleanupRequest(
             operationId = context.operation.id,
@@ -33,9 +40,10 @@ class WanCleanupProvisioningStageHandler(
             deviceId = contact.deviceId,
             model = contact.model,
             firmware = contact.firmware,
+            mode = mode,
         ))
         if (queued.taskId.isBlank()) fail("ACS_WAN_CLEANUP_TASK_UNCONFIRMED")
-        val resource = WanCleanupProvisioningResource(queued.taskId, contact.deviceId, contact.model, contact.firmware)
+        val resource = WanCleanupProvisioningResource(queued.taskId, contact.deviceId, contact.model, contact.firmware, mode)
         context.captureResource(RESOURCE_KEY, json.writeValueAsString(resource))
         return observed(resource, context.operation)
     }
@@ -45,7 +53,7 @@ class WanCleanupProvisioningStageHandler(
 
     private fun observed(resource: WanCleanupProvisioningResource, operation: ProvisioningOperation): StageObservation {
         val response = acs.onboardingV2WanCleanupStatus(CoreOnboardingV2WanCleanupRequest(
-            operation.id, operation.serial, resource.deviceId, resource.model, resource.firmware,
+            operation.id, operation.serial, resource.deviceId, resource.model, resource.firmware, resource.mode,
         ))
         return when (response.state) {
             "COMPLETE" -> StageObservation.SATISFIED

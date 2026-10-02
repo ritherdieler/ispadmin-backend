@@ -2,6 +2,8 @@ package com.dscorp.wispadmin.wispadmin.service
 
 import com.dscorp.wispadmin.wispadmin.firebase.FirebaseProperties
 import com.google.auth.oauth2.GoogleCredentials
+import com.google.cloud.storage.BlobId
+import com.google.cloud.storage.BlobInfo
 import com.google.cloud.storage.Storage
 import com.google.cloud.storage.StorageOptions
 import org.springframework.beans.factory.annotation.Autowired
@@ -50,8 +52,10 @@ class FirebaseStorageService @Autowired constructor(
         val fileName = "${folderName}/${timestamp}_${originalFileName}"
         
         val storage = getStorageInstance()
-        val bucket = storage[bucketName] ?: throw RuntimeException("Bucket not found: $bucketName")
-        bucket.create(fileName, inputStream, "image/jpeg")
+        val blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, fileName))
+            .setContentType("image/jpeg")
+            .build()
+        storage.create(blobInfo, inputStream)
 
         return "$imageUrl${java.net.URLEncoder.encode(fileName, "UTF-8")}?alt=media"
     }

@@ -1,6 +1,7 @@
 package com.dscorp.wispadmin.acs.service
 
 import com.dscorp.wispadmin.acs.genieacs.wanOwnerMatches
+import com.dscorp.wispadmin.acs.genieacs.GenieAcsWanPppConnection
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -42,6 +43,18 @@ class OnboardingV2FaultTest {
     fun `internet status is read live and a cached connection status is not trusted`() {
         assertEquals(true, wanStatusNeedsRefresh(compensation = false))
         assertEquals(false, wanStatusNeedsRefresh(compensation = true))
+    }
+
+    @Test
+    fun `static internet completes only when the owned IP WAN reports the assigned address`() {
+        val wan = GenieAcsWanPppConnection(
+            path = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.2.WANIPConnection.1",
+            name = "GFv2-op123", connectionStatus = "Connected", externalIp = "192.168.30.21",
+        )
+
+        assertFalse(internetWanConfirmed(wan, "static", "192.168.30.20"))
+        assertTrue(internetWanConfirmed(wan.copy(externalIp = "192.168.30.20"), "static", "192.168.30.20"))
+        assertFalse(internetWanConfirmed(wan, "pppoe", null))
     }
 
     @Test

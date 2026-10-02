@@ -30,6 +30,7 @@ data class ProvisioningV2RegistrationSnapshot(
     val wifiPassword24: String?,
     val wifiSsid5: String?,
     val wifiPassword5: String?,
+    val accessMode: String = "PPPOE_DYNAMIC",
 )
 
 @Service
@@ -105,6 +106,7 @@ class ProvisioningV2RegistrationService(
             wifiPassword24 = request.wifiPassword24,
             wifiSsid5 = request.wifiSsid5,
             wifiPassword5 = request.wifiPassword5,
+            accessMode = subscription.accessMode.name,
         )
         resources.captureInitial(promoted, REGISTRATION_RESOURCE_KEY, json.writeValueAsString(snapshot))
         resources.captureInitial(promoted, OLT_RESOURCE_KEY, json.writeValueAsString(olt))

@@ -3,6 +3,7 @@ package com.dscorp.wispadmin.wispadmin.service.provisioningv2
 import com.dscorp.wispadmin.wispadmin.data.model.AccessMode
 import com.dscorp.wispadmin.wispadmin.repository.SubscriptionRepository
 import com.dscorp.wispadmin.wispadmin.service.mikrotik.PppoeProfileCatalog
+import com.dscorp.wispadmin.wispadmin.util.isValidIpAddress
 
 /** Validates the durable subscription identity before any remote v2 effect is attempted. */
 class ValidateProvisioningStageHandler(
@@ -24,10 +25,18 @@ class ValidateProvisioningStageHandler(
             ?: failure("SUBSCRIPTION_ID_REQUIRED", retryable = false))
             ?: failure("SUBSCRIPTION_NOT_FOUND")
         if (!subscription.fiberOnuSn.equals(operation.serial, ignoreCase = true)) failure("ONU_IDENTITY_MISMATCH")
-        if (subscription.accessMode != AccessMode.PPPOE_DYNAMIC) failure("PPPOE_DYNAMIC_REQUIRED")
-        if (subscription.pppoeUsername.isNullOrBlank()) failure("PPPOE_USERNAME_REQUIRED")
-        if (subscription.pppoePasswordEnc.isNullOrBlank()) failure("PPPOE_PASSWORD_REQUIRED")
-        if (PppoeProfileCatalog.profileName(subscription.plan) == null) failure("PPPOE_PROFILE_REQUIRED")
+        when (subscription.accessMode) {
+            AccessMode.PPPOE_DYNAMIC -> {
+                if (subscription.pppoeUsername.isNullOrBlank()) failure("PPPOE_USERNAME_REQUIRED")
+                if (subscription.pppoePasswordEnc.isNullOrBlank()) failure("PPPOE_PASSWORD_REQUIRED")
+                if (PppoeProfileCatalog.profileName(subscription.plan) == null) failure("PPPOE_PROFILE_REQUIRED")
+            }
+            AccessMode.STATIC_IP -> {
+                if (subscription.ip?.isValidIpAddress() != true) failure("STATIC_IP_REQUIRED")
+                if (subscription.plan == null) failure("PLAN_REQUIRED")
+            }
+            AccessMode.PPPOE_FIXED -> failure("ACCESS_MODE_UNSUPPORTED")
+        }
         if (subscription.hostDevice?.disabled != false) failure("MIKROTIK_UNAVAILABLE", retryable = true)
     }
 

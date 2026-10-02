@@ -59,6 +59,11 @@ data class CoreOnboardingV2InternetRequest(
     val username: String,
     val password: String,
     val vlan: Int,
+    val mode: String = "pppoe",
+    val ip: String? = null,
+    val subnetMask: String? = null,
+    val gateway: String? = null,
+    val dns: String? = null,
 )
 
 data class CoreOnboardingV2InternetCompensateRequest(
@@ -78,6 +83,7 @@ data class CoreOnboardingV2TaskResponse(
 
 data class CoreOnboardingV2InternetStatusRequest(
     val operationId: String, val sn: String, val deviceId: String, val model: String, val firmware: String,
+    val mode: String = "pppoe", val ip: String? = null,
 )
 
 data class CoreOnboardingV2InternetStatusResponse(val state: String, val taskId: String, val reason: String? = null)

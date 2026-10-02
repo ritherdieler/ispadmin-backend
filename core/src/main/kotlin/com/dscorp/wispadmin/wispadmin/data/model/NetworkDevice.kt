@@ -46,5 +46,13 @@ data class NetworkDevice(
             disabled = disabled
         )
     }
-}
 
+    fun toReferenceDto(): NetworkDeviceDto = NetworkDeviceDto(
+        id = id,
+        name = name,
+        ipAddress = ipAddress,
+        networkDeviceType = networkDeviceType,
+        vlanId = vlanId,
+        disabled = disabled,
+    )
+}

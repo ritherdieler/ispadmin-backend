@@ -99,4 +99,12 @@ class LocalPrestagingE2eScriptTest {
         val e2eSection = doc.substring(doc.indexOf("### E2E alta FIBER"))
         assertFalse(e2eSection.contains("ispadmin_dev"), e2eSection)
     }
+
+    @Test
+    fun local_boot_requires_dedicated_staging_gateway_key() {
+        val script = Files.readString(root.resolve("scripts/run-local-prestaging.sh"))
+        assertTrue(script.contains("export OLT_GATEWAY_STAGING_API_KEY"), script)
+        assertTrue(script.contains("Missing OLT_GATEWAY_STAGING_API_KEY"), script)
+        assertFalse(script.contains("secret_prop olt.gateway.api-key"), script)
+    }
 }
